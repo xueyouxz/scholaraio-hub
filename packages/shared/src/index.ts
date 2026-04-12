@@ -41,6 +41,9 @@ export {
 
 export type {
   UploadedFile,
+  UploadStartMessage,
+  UploadEndMessage,
+  UploadCancelMessage,
   UploadClientMessage,
   UploadProgressMessage,
   UploadCompleteMessage,

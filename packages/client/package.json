@@ -10,9 +10,16 @@
     "typecheck": "tsc --noEmit -p tsconfig.json"
   },
   "dependencies": {
-    "@scholaraio-hub/shared": "workspace:*"
+    "@scholaraio-hub/shared": "workspace:*",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0",
+    "react-router-dom": "^7.11.0",
+    "zod": "^4.3.6"
   },
   "devDependencies": {
+    "@types/react": "^19.0.1",
+    "@types/react-dom": "^19.0.2",
+    "@vitejs/plugin-react": "^4.3.4",
     "typescript": "^5.9.3",
     "vite": "^5.4.21"
   }

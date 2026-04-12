@@ -5,8 +5,18 @@
     "lib": ["ES2022", "DOM", "DOM.Iterable"],
     "module": "ESNext",
     "moduleResolution": "Bundler",
+    "jsx": "react-jsx",
     "noEmit": true,
+    "allowSyntheticDefaultImports": true,
     "types": ["vite/client"]
   },
-  "include": ["src/**/*.ts", "src/**/*.d.ts"]
+  "include": [
+    "src/env.d.ts",
+    "src/vite-env.d.ts",
+    "src/main.tsx",
+    "src/app/**/*.ts",
+    "src/app/**/*.tsx",
+    "src/core/**/*.ts",
+    "src/core/**/*.tsx"
+  ]
 }

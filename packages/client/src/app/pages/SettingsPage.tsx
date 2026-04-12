@@ -43,7 +43,7 @@ export function SettingsPage() {
   const selectedProvider = providers.find((item) => item.name === provider);
 
   return (
-    <>
+    <section className="panel">
       <div className="panel-header">
         <h2 className="title">Settings</h2>
       </div>
@@ -89,6 +89,6 @@ export function SettingsPage() {
           </button>
         </div>
       </div>
-    </>
+    </section>
   );
 }

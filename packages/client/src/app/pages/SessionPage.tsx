@@ -1,74 +1,94 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Link, useParams } from "react-router-dom";
-import { api, messageText, providerLabel } from "../../core/api";
-import type { ProcessSummary, SessionDetail, ThinkingOption, UploadedFile } from "../../core/types";
+import { useMemo, useState } from "react";
+import { useParams } from "react-router-dom";
+import { api, providerLabel } from "../../core/api";
+import type { ProcessSummary, ThinkingOption, UploadedFile } from "../../core/types";
+import { MessageComposer } from "../session/components/MessageComposer";
+import { MessageList } from "../session/components/MessageList";
+import { SessionHeader } from "../session/components/SessionHeader";
+import { getMessageId } from "../session/model";
+import {
+  StreamingMarkdownProvider,
+  useStreamingMarkdownContext,
+} from "../session/streaming/StreamingMarkdownContext";
+import { useSessionPageState } from "../session/useSessionPageState";
 
 export function SessionPage() {
   const { projectId = "", sessionId = "" } = useParams();
-  const [detail, setDetail] = useState<SessionDetail | null>(null);
+
+  if (!projectId || !sessionId) {
+    return (
+      <div className="panel session-workspace">
+        <div className="panel-body">
+          <div className="empty">Invalid session route.</div>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <StreamingMarkdownProvider>
+      <SessionPageContent projectId={projectId} sessionId={sessionId} />
+    </StreamingMarkdownProvider>
+  );
+}
+
+function SessionPageContent({ projectId, sessionId }: { projectId: string; sessionId: string }) {
   const [message, setMessage] = useState("");
   const [thinking, setThinking] = useState<ThinkingOption>("auto");
   const [files, setFiles] = useState<File[]>([]);
   const [busy, setBusy] = useState(false);
-  const [error, setError] = useState("");
-  const [processes, setProcesses] = useState<ProcessSummary[]>([]);
-  const eventSourceRef = useRef<EventSource | null>(null);
+  const [sendError, setSendError] = useState("");
+  const streamingContext = useStreamingMarkdownContext();
 
-  const load = useCallback(
-    async (beforeMessageId?: string) => {
-      const data = await api.getSession(projectId, sessionId, {
-        tailCompactions: beforeMessageId ? 1 : 2,
-        beforeMessageId,
-      });
-      setDetail((current) => {
-        if (!beforeMessageId || !current?.pagination) return data;
-        return {
-          ...data,
-          messages: [...data.messages, ...current.messages],
-        };
-      });
-    },
-    [projectId, sessionId],
-  );
-
-  const loadProcesses = useCallback(async () => {
-    const data = await api.getProcesses();
-    setProcesses([...(data.processes ?? []), ...(data.terminatedProcesses ?? [])]);
-  }, []);
-
-  useEffect(() => {
-    void load().catch((err) =>
-      setError(err instanceof Error ? err.message : "Failed to load session"),
-    );
-    void loadProcesses();
-  }, [load, loadProcesses]);
-
-  useEffect(() => {
-    if (!sessionId) return;
-    const source = new EventSource(`/api/sessions/${sessionId}/stream`);
-    const refresh = () => {
-      void load().catch(() => {});
-      void loadProcesses().catch(() => {});
+  const streamingCallbacks = useMemo(() => {
+    if (!streamingContext) return undefined;
+    return {
+      onAugment: streamingContext.dispatchAugment,
+      onPending: streamingContext.dispatchPending,
+      onStreamEnd: streamingContext.dispatchStreamEnd,
+      setCurrentMessageId: streamingContext.setCurrentMessageId,
+      captureHtml: streamingContext.captureStreamingHtml,
     };
-    source.addEventListener("message", refresh);
-    source.addEventListener("status", refresh);
-    source.addEventListener("complete", refresh);
-    source.onerror = () => {
-      source.close();
-    };
-    eventSourceRef.current = source;
-    return () => source.close();
-  }, [load, loadProcesses, sessionId]);
+  }, [streamingContext]);
 
-  const process = useMemo(
-    () => processes.find((item) => item.sessionId === sessionId) ?? null,
-    [processes, sessionId],
-  );
+  const {
+    session,
+    messages,
+    ownership,
+    pendingInputRequest,
+    pagination,
+    markdownAugments,
+    liveStatus,
+    loading,
+    loadingOlder,
+    error,
+    connected,
+    reconcile,
+    loadOlderMessages,
+    setPendingInputRequest,
+  } = useSessionPageState({
+    projectId,
+    sessionId,
+    streamingMarkdownCallbacks: streamingCallbacks,
+  });
+
+  const processSummary = useMemo<ProcessSummary | null>(() => {
+    if (ownership.owner !== "self") return null;
+    return {
+      id: ownership.processId,
+      sessionId,
+      projectId,
+      provider: session?.provider ?? "claude",
+      state: liveStatus ?? "running",
+      model: session?.model ?? null,
+      permissionMode: ownership.permissionMode,
+    };
+  }, [liveStatus, ownership, projectId, session?.model, session?.provider, sessionId]);
 
   const send = async () => {
-    if (!detail || (!message.trim() && files.length === 0)) return;
+    if (!session || (!message.trim() && files.length === 0)) return;
     setBusy(true);
-    setError("");
+    setSendError("");
     try {
       let attachments: UploadedFile[] = [];
       if (files.length > 0) {
@@ -76,8 +96,14 @@ export function SessionPage() {
           files.map((file) => api.uploadAttachment(projectId, sessionId, file)),
         );
       }
-      if (detail.ownership.owner === "self") {
-        await api.queueMessage({ sessionId, message: message.trim(), thinking, attachments });
+
+      if (ownership.owner === "self") {
+        await api.queueMessage({
+          sessionId,
+          message: message.trim(),
+          thinking,
+          attachments,
+        });
       } else {
         await api.resumeSession({
           projectId,
@@ -87,140 +113,130 @@ export function SessionPage() {
           attachments,
         });
       }
+
       setMessage("");
       setFiles([]);
-      await load();
-      await loadProcesses();
+      await reconcile();
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to send message");
+      setSendError(err instanceof Error ? err.message : "Failed to send message");
     } finally {
       setBusy(false);
     }
   };
 
-  const loadOlder = async () => {
-    if (!detail?.pagination?.truncatedBeforeMessageId) return;
-    await load(detail.pagination.truncatedBeforeMessageId);
-  };
-
-  const title = detail?.session.customTitle ?? detail?.session.title ?? sessionId;
-  const pendingInputRequest = detail?.pendingInputRequest ?? null;
-
-  const respondToPendingInput = (response: "approve" | "approve_accept_edits" | "deny") => {
+  const respondToPendingInput = async (response: "approve" | "approve_accept_edits" | "deny") => {
     if (!pendingInputRequest) return;
-    return api.respondToInput(sessionId, pendingInputRequest.id, response).then(() => load());
+    await api.respondToInput(sessionId, pendingInputRequest.id, response);
+    setPendingInputRequest(null);
+    await reconcile();
   };
+
+  const interrupt = async () => {
+    if (!processSummary) return;
+    await api.interruptProcess(processSummary.id);
+    await reconcile();
+  };
+
+  const abort = async () => {
+    if (!processSummary) return;
+    await api.abortProcess(processSummary.id);
+    await reconcile();
+  };
+
+  const title = session?.customTitle ?? session?.title ?? sessionId;
 
   return (
-    <>
-      <div className="panel-header">
-        <div className="toolbar">
-          <Link to={`/sessions?project=${projectId}`} className="button">
-            Back
-          </Link>
-          <h2 className="title">{title}</h2>
-        </div>
-      </div>
-      <div className="panel-body stack">
-        {detail ? (
-          <div className="inline-meta">
-            <span>{providerLabel(detail.session.provider)}</span>
-            <span>{detail.session.model ?? "default model"}</span>
-            <span>{detail.session.ownership.owner}</span>
-            {process ? (
-              <span>{typeof process.state === "string" ? process.state : process.state?.type}</span>
-            ) : null}
+    <section className="session-workspace">
+      <SessionHeader
+        projectId={projectId}
+        title={title}
+        providerLabel={providerLabel(session?.provider)}
+        modelLabel={session?.model ?? "default model"}
+        ownershipLabel={ownership.owner}
+        liveStatus={liveStatus}
+        connected={connected}
+      />
+
+      {pendingInputRequest ? (
+        <div className="session-alert">
+          <div>
+            <strong>Pending Input</strong>
+            <p>{pendingInputRequest.toolName ?? pendingInputRequest.prompt}</p>
           </div>
-        ) : null}
-        {pendingInputRequest ? (
-          <div className="message">
-            <strong>Pending Input:</strong> {pendingInputRequest.toolName}
-            <div className="toolbar" style={{ marginTop: "0.75rem" }}>
-              <button type="button" onClick={() => void respondToPendingInput("approve")}>
-                Approve
-              </button>
-              <button
-                type="button"
-                onClick={() => void respondToPendingInput("approve_accept_edits")}
-              >
-                Approve + Accept Edits
-              </button>
-              <button
-                type="button"
-                className="danger"
-                onClick={() => void respondToPendingInput("deny")}
-              >
-                Deny
-              </button>
+          <div className="toolbar">
+            <button type="button" onClick={() => void respondToPendingInput("approve")}>
+              Approve
+            </button>
+            <button
+              type="button"
+              onClick={() => void respondToPendingInput("approve_accept_edits")}
+            >
+              Approve + Accept Edits
+            </button>
+            <button
+              type="button"
+              className="danger"
+              onClick={() => void respondToPendingInput("deny")}
+            >
+              Deny
+            </button>
+          </div>
+        </div>
+      ) : null}
+
+      {error ? <div className="empty">{error}</div> : null}
+      {sendError ? <div className="empty">{sendError}</div> : null}
+      {loading ? <div className="empty">Loading session…</div> : null}
+
+      <div className="session-workspace-body">
+        <MessageList
+          messages={messages}
+          markdownAugments={markdownAugments}
+          pagination={pagination}
+          loadingOlder={loadingOlder}
+          onLoadOlderMessages={loadOlderMessages}
+        />
+        <aside className="session-sidepanel">
+          <div className="session-sidecard">
+            <p className="eyebrow">Session Meta</p>
+            <div className="stack">
+              <span className="badge">{providerLabel(session?.provider)}</span>
+              <span className="badge">{session?.model ?? "default model"}</span>
+              <span className="badge">{ownership.owner}</span>
+              {liveStatus ? <span className="badge waiting">{liveStatus}</span> : null}
+              <span className="muted">
+                {session
+                  ? `${messages.filter((entry) => Boolean(getMessageId(entry))).length} messages loaded`
+                  : "No metadata yet"}
+              </span>
             </div>
           </div>
-        ) : null}
-        {error ? <div className="empty">{error}</div> : null}
-        {detail?.pagination?.hasOlderMessages ? (
-          <button type="button" className="ghost" onClick={() => void loadOlder()}>
-            Load older messages
-          </button>
-        ) : null}
-        <div className="conversation">
-          {detail?.messages.map((entry) => (
-            <article
-              key={String(entry.id ?? entry.uuid ?? Math.random())}
-              className={`message ${entry.type === "user" ? "user" : "assistant"}`}
-            >
-              <div className="inline-meta">
-                <span>{entry.type}</span>
-                {"timestamp" in entry && typeof entry.timestamp === "string" ? (
-                  <span>{new Date(entry.timestamp).toLocaleString()}</span>
-                ) : null}
-              </div>
-              <pre>{messageText(entry.content)}</pre>
-            </article>
-          ))}
-        </div>
-        <div className="stack">
-          <select
-            value={thinking}
-            onChange={(event) => setThinking(event.target.value as ThinkingOption)}
-          >
-            <option value="off">off</option>
-            <option value="auto">auto</option>
-            <option value="on:medium">on:medium</option>
-            <option value="on:high">on:high</option>
-          </select>
-          <textarea
-            value={message}
-            onChange={(event) => setMessage(event.target.value)}
-            placeholder="Continue the session…"
-          />
-          <input
-            type="file"
-            multiple
-            onChange={(event) => setFiles(Array.from(event.target.files ?? []))}
-          />
-          <div className="toolbar">
-            <button type="button" className="primary" disabled={busy} onClick={() => void send()}>
-              {busy ? "Sending…" : "Send"}
-            </button>
-            {process ? (
-              <>
-                <button
-                  type="button"
-                  onClick={() => void api.interruptProcess(process.id).then(() => loadProcesses())}
-                >
+          {processSummary ? (
+            <div className="session-sidecard">
+              <p className="eyebrow">Process Controls</p>
+              <div className="toolbar">
+                <button type="button" onClick={() => void interrupt()}>
                   Interrupt
                 </button>
-                <button
-                  type="button"
-                  className="danger"
-                  onClick={() => void api.abortProcess(process.id).then(() => loadProcesses())}
-                >
+                <button type="button" className="danger" onClick={() => void abort()}>
                   Abort
                 </button>
-              </>
-            ) : null}
-          </div>
-        </div>
+              </div>
+            </div>
+          ) : null}
+        </aside>
       </div>
-    </>
+
+      <MessageComposer
+        message={message}
+        thinking={thinking}
+        busy={busy}
+        files={files}
+        onMessageChange={setMessage}
+        onThinkingChange={setThinking}
+        onFilesChange={setFiles}
+        onSend={send}
+      />
+    </section>
   );
 }

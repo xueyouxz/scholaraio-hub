@@ -18,5 +18,6 @@
     "src/app/**/*.tsx",
     "src/core/**/*.ts",
     "src/core/**/*.tsx"
-  ]
+  ],
+  "exclude": ["src/**/*.test.ts", "src/**/*.test.tsx"]
 }

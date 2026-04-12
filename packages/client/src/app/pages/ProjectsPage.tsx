@@ -39,7 +39,7 @@ export function ProjectsPage() {
   };
 
   return (
-    <>
+    <section className="panel">
       <div className="panel-header">
         <h2 className="title">Projects</h2>
       </div>
@@ -75,6 +75,6 @@ export function ProjectsPage() {
           {!loading && projects.length === 0 ? <div className="empty">No projects yet.</div> : null}
         </div>
       </div>
-    </>
+    </section>
   );
 }

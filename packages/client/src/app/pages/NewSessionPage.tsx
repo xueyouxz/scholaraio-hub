@@ -104,7 +104,7 @@ export function NewSessionPage() {
   };
 
   return (
-    <>
+    <section className="panel">
       <div className="panel-header">
         <h2 className="title">New Session</h2>
       </div>
@@ -183,6 +183,6 @@ export function NewSessionPage() {
           </div>
         </form>
       </div>
-    </>
+    </section>
   );
 }

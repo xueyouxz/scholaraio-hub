@@ -19,7 +19,7 @@ export function AgentsPage() {
   }, []);
 
   return (
-    <>
+    <section className="panel">
       <div className="panel-header">
         <h2 className="title">Agents</h2>
       </div>
@@ -49,6 +49,6 @@ export function AgentsPage() {
           ) : null}
         </div>
       </div>
-    </>
+    </section>
   );
 }

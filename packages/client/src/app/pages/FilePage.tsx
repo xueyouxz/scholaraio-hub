@@ -40,7 +40,7 @@ export function FilePage() {
   }, [projectId, filePath]);
 
   return (
-    <div className="shell" style={{ gridTemplateColumns: "1fr" }}>
+    <div className="file-page-shell">
       <main className="panel">
         <div className="panel-header">
           <Link to="/sessions" className="button">

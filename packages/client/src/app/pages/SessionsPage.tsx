@@ -49,7 +49,7 @@ export function SessionsPage() {
   );
 
   return (
-    <>
+    <section className="panel">
       <div className="panel-header">
         <h2 className="title">Sessions</h2>
       </div>
@@ -84,6 +84,6 @@ export function SessionsPage() {
           ) : null}
         </div>
       </div>
-    </>
+    </section>
   );
 }

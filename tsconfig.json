@@ -1,0 +1,27 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "lib": ["ES2022"],
+    "module": "NodeNext",
+    "moduleResolution": "NodeNext",
+    "baseUrl": ".",
+    "paths": {
+      "@scholaraio-hub/shared": ["./packages/shared/src/index.ts"],
+      "@scholaraio-hub/shared/*": ["./packages/shared/src/*"]
+    },
+    "strict": true,
+    "noUncheckedIndexedAccess": true,
+    "resolveJsonModule": true,
+    "esModuleInterop": true,
+    "skipLibCheck": true,
+    "isolatedModules": true,
+    "verbatimModuleSyntax": true,
+    "forceConsistentCasingInFileNames": true
+  },
+  "files": [],
+  "references": [
+    { "path": "./packages/shared/tsconfig.json" },
+    { "path": "./packages/server/tsconfig.json" },
+    { "path": "./packages/client/tsconfig.json" }
+  ]
+}

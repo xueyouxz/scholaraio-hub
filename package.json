@@ -1,0 +1,38 @@
+{
+  "name": "scholaraio-hub-workspace",
+  "private": true,
+  "type": "module",
+  "packageManager": "pnpm@10.27.0",
+  "engines": {
+    "node": ">=20.0.0",
+    "pnpm": ">=10.27.0"
+  },
+  "scripts": {
+    "dev": "pnpm -r --parallel --stream --filter @scholaraio-hub/server --filter @scholaraio-hub/client dev",
+    "build": "pnpm --filter @scholaraio-hub/shared build && pnpm --filter @scholaraio-hub/server build && pnpm --filter @scholaraio-hub/client build",
+    "clean": "node scripts/clean.mjs",
+    "lint": "biome check .",
+    "lint:fix": "biome check --write .",
+    "typecheck": "pnpm --filter @scholaraio-hub/shared build && pnpm --filter @scholaraio-hub/server typecheck && pnpm --filter @scholaraio-hub/client typecheck",
+    "test": "pnpm --filter @scholaraio-hub/shared test && pnpm --filter @scholaraio-hub/server test",
+    "test:e2e": "pnpm --filter @scholaraio-hub/client build && playwright test",
+    "audit:prod": "pnpm audit --prod",
+    "prepare": "husky",
+    "release:web": "node scripts/release-web.mjs"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "^1.9.4",
+    "@playwright/test": "^1.50.1",
+    "husky": "^9.1.7",
+    "lint-staged": "^15.4.3",
+    "vite": "^5.4.21"
+  },
+  "pnpm": {
+    "overrides": {
+      "typescript": "^5.9.3",
+      "vite": "^5.4.21",
+      "vitest": "^2.1.9",
+      "zod": "^4.3.6"
+    }
+  }
+}

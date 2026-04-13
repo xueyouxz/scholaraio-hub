@@ -4,7 +4,6 @@
     "lib": ["ES2022"],
     "module": "NodeNext",
     "moduleResolution": "NodeNext",
-    "baseUrl": ".",
     "paths": {
       "@scholaraio-hub/shared": ["./packages/shared/src/index.ts"],
       "@scholaraio-hub/shared/*": ["./packages/shared/src/*"]

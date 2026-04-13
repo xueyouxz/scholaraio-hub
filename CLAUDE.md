@@ -27,6 +27,8 @@ Run all commands from the repo root:
 
 TypeScript uses Biome formatting: 2-space indentation, double quotes, semicolons, trailing commas, and 100-column line width. Use `pnpm lint:fix` before opening a PR.
 
+Do not use ignore comments to bypass type, linting, or logic errors. All issues must be addressed properly through code fixes, improved typing, or global configuration adjustments.
+
 Match existing naming patterns: `PascalCase` for classes and schema files such as `SessionIndexService.ts`, `camelCase` for functions, and kebab-case for top-level scripts like `release-web.mjs`. Prefer small modules under the relevant package instead of cross-package imports that bypass `@scholaraio-hub/shared`.
 
 For frontend component work and UI implementation, always follow the style design specification documented in `.design-docs/DESIGN.md`. Treat that file as the source of truth for visual and interaction design decisions instead of redefining design rules inline.

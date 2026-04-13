@@ -1,101 +1,272 @@
 import type { AppSessionSummary } from "@scholaraio-hub/shared";
+import {
+  BookOpen,
+  ChevronUp,
+  FolderKanban,
+  Library,
+  PanelLeftClose,
+  PanelLeftOpen,
+  Plus,
+  Search,
+  Settings,
+  User,
+} from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
-import { Link, NavLink, useLocation, useParams, useSearchParams } from "react-router-dom";
-import { api, providerLabel } from "../../core/api";
-import type { ProjectSummary } from "../../core/types";
+import { Link, NavLink, useParams } from "react-router-dom";
+import { api } from "../../core/api";
+import { useProjectScope } from "./NavigationLayout";
 
-const links = [
-  { to: "/projects", label: "Projects" },
-  { to: "/sessions", label: "Sessions" },
-  { to: "/agents", label: "Agents" },
-  { to: "/new-session", label: "New Session" },
-  { to: "/settings", label: "Settings" },
+interface NavEntry {
+  id: string;
+  label: string;
+  to: string;
+  icon: React.ElementType;
+  disabled?: boolean;
+}
+
+const NAV_ENTRIES: NavEntry[] = [
+  { id: "library", label: "Library", to: "/library", icon: Library, disabled: true },
+  { id: "search", label: "Search", to: "/search", icon: Search, disabled: true },
+  { id: "reader", label: "Reader", to: "/reader", icon: BookOpen, disabled: true },
+  { id: "workspaces", label: "Workspaces", to: "/workspaces", icon: FolderKanban, disabled: true },
 ];
 
-export function Sidebar() {
-  const location = useLocation();
-  const [searchParams] = useSearchParams();
-  const { projectId, sessionId } = useParams();
-  const [projects, setProjects] = useState<ProjectSummary[]>([]);
+interface SidebarProps {
+  isDesktop: boolean;
+  isCollapsed: boolean;
+  isOpen: boolean;
+  onToggle: () => void;
+  onClose: () => void;
+}
+
+function compactLabel(value: string) {
+  return value.trim().slice(0, 1).toUpperCase() || "•";
+}
+
+export function Sidebar({ isDesktop, isCollapsed, isOpen, onToggle, onClose }: SidebarProps) {
+  const { sessionId } = useParams();
+  const { selectedProjectId } = useProjectScope();
   const [sessions, setSessions] = useState<AppSessionSummary[]>([]);
 
-  const activeProjectId =
-    projectId ??
-    (location.pathname.startsWith("/sessions") ? (searchParams.get("project") ?? "") : "");
-
+  // Fetch sessions scoped to selectedProjectId (or nothing if none selected)
   useEffect(() => {
-    void api
-      .getProjects()
-      .then((data) => setProjects(data.projects))
-      .catch(() => {});
-  }, []);
-
-  useEffect(() => {
-    if (!activeProjectId) {
+    if (!selectedProjectId) {
       setSessions([]);
       return;
     }
     void api
-      .getProjectSessions(activeProjectId)
-      .then((data) => setSessions(data.sessions.slice(0, 12)))
+      .getProjectSessions(selectedProjectId)
+      .then((data) => setSessions(data.sessions.slice(0, 20)))
       .catch(() => {});
-  }, [activeProjectId]);
+  }, [selectedProjectId]);
 
-  const activeProject = useMemo(
-    () => projects.find((project) => project.id === activeProjectId) ?? null,
-    [activeProjectId, projects],
-  );
+  // Sidebar widths are controlled by parent via margin; sidebar is fixed
+  const widthClass = isCollapsed ? "w-[84px]" : "w-[248px]";
+
+  const visibleClass = isDesktop
+    ? "translate-x-0 opacity-100"
+    : isOpen
+      ? "translate-x-0 opacity-100 pointer-events-auto"
+      : "-translate-x-full opacity-0 pointer-events-none";
 
   return (
-    <aside className="sidebar-shell">
-      <div className="sidebar-brand">
-        <p className="sidebar-tag">The Digital Atelier</p>
-        <h1>ScholarAIO Hub</h1>
-        <p className="muted">Local workbench for sessions, projects, and processes.</p>
-      </div>
+    <aside
+      className={`fixed left-0 top-0 h-full z-40 flex flex-col px-3 py-3 bg-surface-container-low border-r border-outline-variant/30 overflow-hidden transition-all duration-[220ms] ease-in-out ${widthClass} ${visibleClass}`}
+    >
+      {/* Brand / toggle */}
+      <button
+        type="button"
+        onClick={onToggle}
+        className={`mb-4 w-full rounded-[20px] transition-all duration-200 hover:bg-surface-container flex items-center ${
+          isCollapsed ? "justify-center px-0 py-2.5" : "justify-between gap-3 px-3 py-2.5"
+        }`}
+      >
+        {!isCollapsed ? (
+          <div className="min-w-0 -mt-1 text-left">
+            <h1 className="font-serif text-[1.7rem] font-bold leading-none text-primary">
+              ScholarAIO
+            </h1>
+            <p className="mt-0.5 text-[9px] uppercase tracking-[0.28em] text-on-surface-variant font-mono opacity-60">
+              The Digital Atelier
+            </p>
+          </div>
+        ) : null}
+        <span className="flex shrink-0 items-center justify-center text-on-surface-variant">
+          {isCollapsed ? (
+            <PanelLeftOpen className="w-5 h-5" />
+          ) : (
+            <PanelLeftClose className="w-5 h-5" />
+          )}
+        </span>
+      </button>
 
-      <nav className="sidebar-nav">
-        {links.map((link) => (
-          <NavLink
-            key={link.to}
-            to={link.to}
-            className={({ isActive }) => `sidebar-link${isActive ? " active" : ""}`}
+      {/* New chat button */}
+      {!isCollapsed ? (
+        <div className="mb-3">
+          <Link
+            to="/new-session"
+            onClick={!isDesktop ? onClose : undefined}
+            className="w-full flex items-center gap-2.5 rounded-[18px] px-3 py-2.5 text-sm font-medium bg-surface-container text-on-surface hover:bg-surface-container-high transition-colors"
           >
-            {link.label}
-          </NavLink>
-        ))}
+            <Plus className="w-4 h-4 shrink-0" />
+            <span>New Chat</span>
+          </Link>
+        </div>
+      ) : (
+        <div className="mb-3 flex justify-center">
+          <Link
+            to="/new-session"
+            onClick={!isDesktop ? onClose : undefined}
+            className="flex items-center justify-center w-10 h-10 rounded-xl bg-surface-container text-on-surface hover:bg-surface-container-high transition-colors"
+            title="New Chat"
+          >
+            <Plus className="w-4 h-4" />
+          </Link>
+        </div>
+      )}
+
+      {/* Navigation */}
+      <nav className={`space-y-1.5 ${!isCollapsed ? "mb-5" : "mb-3"}`}>
+        {NAV_ENTRIES.map((entry) => {
+          const Icon = entry.icon;
+          if (entry.disabled) {
+            return (
+              <div
+                key={entry.id}
+                title={isCollapsed ? entry.label : undefined}
+                className={`w-full flex items-center rounded-xl transition-all duration-200 opacity-35 cursor-not-allowed ${
+                  isCollapsed ? "justify-center px-0 py-2.5" : "gap-3 px-3 py-2.5"
+                } text-on-surface-variant`}
+              >
+                <Icon className="w-5 h-5 shrink-0" />
+                {!isCollapsed ? (
+                  <span className="font-sans text-[13px] font-medium whitespace-nowrap">
+                    {entry.label}
+                  </span>
+                ) : null}
+              </div>
+            );
+          }
+          return (
+            <NavLink
+              key={entry.id}
+              to={entry.to}
+              onClick={!isDesktop ? onClose : undefined}
+              title={isCollapsed ? entry.label : undefined}
+              className={({ isActive }) =>
+                `w-full flex items-center rounded-xl transition-all duration-200 ${
+                  isCollapsed ? "justify-center px-0 py-2.5" : "gap-3 px-3 py-2.5"
+                } ${
+                  isActive
+                    ? "bg-surface-container-high text-primary border-l-4 border-primary"
+                    : "text-on-surface-variant hover:bg-surface-container"
+                }`
+              }
+            >
+              {({ isActive }) => (
+                <>
+                  <Icon className={`w-5 h-5 shrink-0 ${isActive ? "text-primary" : ""}`} />
+                  {!isCollapsed ? (
+                    <span className="font-sans text-[13px] font-medium whitespace-nowrap">
+                      {entry.label}
+                    </span>
+                  ) : null}
+                </>
+              )}
+            </NavLink>
+          );
+        })}
+
+        {/* Settings always at bottom of nav */}
+        <NavLink
+          to="/settings"
+          onClick={!isDesktop ? onClose : undefined}
+          title={isCollapsed ? "Settings" : undefined}
+          className={({ isActive }) =>
+            `w-full flex items-center rounded-xl transition-all duration-200 ${
+              isCollapsed ? "justify-center px-0 py-2.5" : "gap-3 px-3 py-2.5"
+            } ${
+              isActive
+                ? "bg-surface-container-high text-primary border-l-4 border-primary"
+                : "text-on-surface-variant hover:bg-surface-container"
+            }`
+          }
+        >
+          {({ isActive }) => (
+            <>
+              <Settings className={`w-5 h-5 shrink-0 ${isActive ? "text-primary" : ""}`} />
+              {!isCollapsed ? (
+                <span className="font-sans text-[13px] font-medium whitespace-nowrap">
+                  Settings
+                </span>
+              ) : null}
+            </>
+          )}
+        </NavLink>
       </nav>
 
-      <div className="sidebar-section">
-        <p className="eyebrow">Project Scope</p>
-        {activeProject ? (
-          <>
-            <div className="sidebar-project-card">
-              <strong>{activeProject.name ?? activeProject.path}</strong>
-              <span className="muted">{activeProject.path}</span>
+      {/* Session list (only when project is selected and not collapsed) */}
+      {!isCollapsed ? (
+        <div className="flex-1 min-h-0 overflow-y-auto no-scrollbar pr-1 border-t border-outline-variant/10 pt-3">
+          <p className="px-1 mb-2 text-[10px] font-mono uppercase tracking-[0.24em] text-on-surface-variant/60">
+            Recents
+          </p>
+          {sessions.length > 0 ? (
+            <div className="space-y-1">
+              {sessions.map((session) => {
+                const label = session.customTitle ?? session.title ?? "Untitled";
+                const isActive = session.id === sessionId;
+                return (
+                  <Link
+                    key={session.id}
+                    to={`/projects/${session.projectId}/sessions/${session.id}`}
+                    onClick={!isDesktop ? onClose : undefined}
+                    className={`block w-full rounded-xl px-3 py-1.5 pr-9 text-left transition-colors ${
+                      isActive
+                        ? "bg-surface-container text-primary"
+                        : "text-on-surface hover:bg-surface-container"
+                    }`}
+                  >
+                    <p className="line-clamp-1 text-[13px]">{label}</p>
+                  </Link>
+                );
+              })}
             </div>
-            <div className="sidebar-session-list">
-              {sessions.map((session) => (
-                <Link
-                  key={session.id}
-                  to={`/projects/${session.projectId}/sessions/${session.id}`}
-                  className={`sidebar-session-item${session.id === sessionId ? " active" : ""}`}
-                >
-                  <span>{session.customTitle ?? session.title ?? "Untitled"}</span>
-                  <span className="muted">
-                    {providerLabel(session.provider)} · {session.messageCount}
-                  </span>
-                </Link>
-              ))}
-              {sessions.length === 0 ? (
-                <div className="muted">No sessions in this project.</div>
-              ) : null}
-            </div>
-          </>
-        ) : (
-          <div className="muted">Select a project to browse local sessions.</div>
-        )}
+          ) : (
+            <p className="px-1 text-[12px] text-on-surface-variant/60">
+              {selectedProjectId
+                ? "No sessions in this project."
+                : "Select a project in Settings to browse sessions."}
+            </p>
+          )}
+        </div>
+      ) : (
+        <div className="flex-1" />
+      )}
+
+      {/* User profile */}
+      <div className="mt-3 pt-3 border-t border-outline-variant/10">
+        <div
+          className={`w-full rounded-[20px] bg-surface-container transition-all duration-200 hover:bg-surface-container-high ${
+            isCollapsed ? "flex justify-center p-2.5" : "flex items-center gap-3 px-3 py-3"
+          }`}
+        >
+          <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-primary-container text-on-primary">
+            <User className="w-4 h-4" />
+          </div>
+          {!isCollapsed ? (
+            <>
+              <div className="min-w-0 flex-1 text-left">
+                <p className="truncate text-xs font-bold text-on-surface">Research User</p>
+                <p className="text-[10px] text-on-surface-variant font-mono">Local Workbench</p>
+              </div>
+              <ChevronUp className="shrink-0 w-4 h-4 text-on-surface-variant" />
+            </>
+          ) : null}
+        </div>
       </div>
     </aside>
   );
 }
+
+export { compactLabel };

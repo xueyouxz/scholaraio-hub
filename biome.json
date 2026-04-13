@@ -7,7 +7,9 @@
       "**/coverage/**",
       "**/playwright-report/**",
       "**/test-results/**",
-      "packages/server/src/sdk/providers/codex-protocol/generated/**"
+      "packages/server/src/sdk/providers/codex-protocol/generated/**",
+      "reference/**",
+      "temp/**"
     ]
   },
   "formatter": {

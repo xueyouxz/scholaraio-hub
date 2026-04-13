@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { memo, useCallback, useEffect, useState } from "react";
 import { useStreamingMarkdownContext } from "../streaming/StreamingMarkdownContext";
 import { useStreamingMarkdown } from "../streaming/useStreamingMarkdown";
 
@@ -6,9 +6,15 @@ interface TextBlockProps {
   text: string;
   augmentHtml?: string;
   isStreaming?: boolean;
+  timelineItem?: boolean;
 }
 
-export function TextBlock({ text, augmentHtml, isStreaming = false }: TextBlockProps) {
+export const TextBlock = memo(function TextBlock({
+  text,
+  augmentHtml,
+  isStreaming = false,
+  timelineItem = false,
+}: TextBlockProps) {
   const [copied, setCopied] = useState(false);
   const [useStreamingContent, setUseStreamingContent] = useState(false);
   const streamingMarkdown = useStreamingMarkdown();
@@ -36,40 +42,40 @@ export function TextBlock({ text, augmentHtml, isStreaming = false }: TextBlockP
     return unregister;
   }, [isStreaming, streamingContext, streamingMarkdown]);
 
-  const copy = useCallback(async () => {
+  const handleCopy = useCallback(async () => {
     try {
       await navigator.clipboard.writeText(text);
       setCopied(true);
       window.setTimeout(() => setCopied(false), 1500);
     } catch {
-      // Clipboard failures can be ignored here.
+      // Clipboard failures are ignored.
     }
   }, [text]);
 
   const showStreamingContent = isStreaming && useStreamingContent;
+  const className = `text-block${timelineItem ? " timeline-item" : ""}${isStreaming ? " streaming" : ""}`;
 
   return (
-    <div className={`session-text-block${isStreaming ? " is-streaming" : ""}`}>
+    <div className={className}>
       <button
         type="button"
-        className={`session-text-copy${copied ? " is-copied" : ""}`}
-        onClick={() => void copy()}
+        className={`text-block-copy${copied ? " copied" : ""}`}
+        onClick={() => void handleCopy()}
+        aria-label={copied ? "Copied" : "Copy markdown"}
       >
-        {copied ? "Copied" : "Copy"}
+        {copied ? "✓" : "⧉"}
       </button>
+
       {isStreaming ? (
-        <div
-          className="session-streaming-frame"
-          style={showStreamingContent ? undefined : { display: "none" }}
-        >
+        <div style={showStreamingContent ? undefined : { display: "none" }}>
           <div ref={streamingMarkdown.containerRef} className="streaming-blocks" />
           <span ref={streamingMarkdown.pendingRef} className="streaming-pending" />
         </div>
       ) : null}
+
       {!showStreamingContent &&
         (augmentHtml ? (
           <div
-            className="markdown-html"
             // biome-ignore lint/security/noDangerouslySetInnerHtml: server-rendered markdown HTML
             dangerouslySetInnerHTML={{ __html: augmentHtml }}
           />
@@ -78,4 +84,4 @@ export function TextBlock({ text, augmentHtml, isStreaming = false }: TextBlockP
         ))}
     </div>
   );
-}
+});

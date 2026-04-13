@@ -2,6 +2,7 @@ import type {
   AppSession,
   AppSessionSummary,
   InputRequest,
+  ModelInfo,
   NewSessionDefaults,
   PermissionMode,
   ProviderInfo,
@@ -95,6 +96,7 @@ export interface SessionCreationResult {
 
 export type {
   AppSessionSummary,
+  ModelInfo,
   PermissionMode,
   ProviderInfo,
   ProviderName,

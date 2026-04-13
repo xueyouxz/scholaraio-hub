@@ -19,7 +19,7 @@ The client SHALL restrict new-session provider choices to backend-supported prov
 - **AND** the underlying UI structure MUST remain capable of rendering provider-specific labels, models, and capabilities without being hard-coded to a one-off two-provider design
 
 ### Requirement: Local session interaction parity
-The migrated local session view SHALL preserve the core interaction behaviors already supported by the backend, and it SHALL implement those behaviors through incremental session updates and server-driven markdown rendering rather than page-wide reloads and plain-text-only output.
+The migrated local session view SHALL preserve the core interaction behaviors already supported by the backend, and it SHALL implement those behaviors through incremental session updates and server-driven markdown rendering rather than page-wide reloads and plain-text-only output. Message bubble presentation SHALL follow the `reference/components/ChatMessageBubble.tsx` visual design using Tailwind 4 utility classes; avatar elements SHALL NOT be rendered.
 
 #### Scenario: User interacts with a live local session
 - **WHEN** a user views or continues a session in the first-stage client
@@ -30,6 +30,12 @@ The migrated local session view SHALL preserve the core interaction behaviors al
 - **WHEN** the session SSE stream emits assistant message updates and markdown augment events
 - **THEN** the client MUST update session state incrementally without reloading the entire session on each event
 - **AND** the currently streaming assistant response MUST render pending markdown and completed block augments as they arrive
+
+#### Scenario: Message bubbles match reference visual design
+- **WHEN** user or assistant messages render in the message list
+- **THEN** `MessageItem.tsx` MUST apply Tailwind 4 utility classes for bubble padding, background color, border radius, and layout consistent with the reference design
+- **AND** avatar elements MUST NOT be rendered for any message type
+- **AND** the internal streaming markdown rendering via `TextBlock.tsx` MUST remain unchanged
 
 #### Scenario: Completed assistant message uses persisted augment rendering
 - **WHEN** a streamed assistant response is completed or later reloaded from session history

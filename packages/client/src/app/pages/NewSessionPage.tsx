@@ -1,101 +1,85 @@
-import { useEffect, useMemo, useState } from "react";
-import { useNavigate, useSearchParams } from "react-router-dom";
-import {
-  DEFAULT_NEW_SESSION,
-  PERMISSION_MODES,
-  THINKING_OPTIONS,
-  api,
-  getProviderChoices,
-} from "../../core/api";
-import type {
-  PermissionMode,
-  ProjectSummary,
-  ProviderInfo,
-  ThinkingOption,
-  UploadedFile,
-} from "../../core/types";
+import { Settings } from "lucide-react";
+import { useEffect, useState } from "react";
+import { Link, useNavigate } from "react-router-dom";
+import { api } from "../../core/api";
+import type { ModelInfo, ThinkingOption, UploadedFile } from "../../core/types";
+import { useProjectScope } from "../components/NavigationLayout";
+import { MessageInput } from "../session/components/MessageInput";
 
 export function NewSessionPage() {
-  const [params] = useSearchParams();
   const navigate = useNavigate();
-  const [projects, setProjects] = useState<ProjectSummary[]>([]);
-  const [providers, setProviders] = useState<ProviderInfo[]>([]);
-  const [settingsProvider, setSettingsProvider] = useState(
-    DEFAULT_NEW_SESSION.provider ?? "claude",
-  );
-  const [projectId, setProjectId] = useState(params.get("projectId") ?? "");
-  const [provider, setProvider] = useState(DEFAULT_NEW_SESSION.provider ?? "claude");
-  const [model, setModel] = useState("");
-  const [mode, setMode] = useState<PermissionMode>(DEFAULT_NEW_SESSION.permissionMode ?? "default");
-  const [thinking, setThinking] = useState<ThinkingOption>("auto");
+  const { selectedProjectId, selectedProvider } = useProjectScope();
   const [message, setMessage] = useState("");
+  const [thinking, setThinking] = useState<ThinkingOption>("auto");
   const [files, setFiles] = useState<File[]>([]);
-  const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+  const [models, setModels] = useState<ModelInfo[]>([]);
+  const [selectedModel, setSelectedModel] = useState<string | undefined>(undefined);
 
   useEffect(() => {
-    void (async () => {
-      try {
-        const [projectData, providerData, settingsData] = await Promise.all([
-          api.getProjects(),
-          api.getProviders(),
-          api.getSettings(),
-        ]);
-        setProjects(projectData.projects);
-        setProviders(getProviderChoices(providerData.providers));
-        const defaults = settingsData.settings?.newSessionDefaults;
-        const nextProjectId = projectId || projectData.projects[0]?.id || "";
-        setProjectId(nextProjectId);
-        setSettingsProvider(defaults?.provider ?? "claude");
-        setProvider(defaults?.provider ?? "claude");
-        setModel(defaults?.model ?? "");
-        setMode(defaults?.permissionMode ?? "default");
-      } catch (err) {
-        setError(err instanceof Error ? err.message : "Failed to load form data");
+    if (!selectedProvider) return;
+    api.getProviders().then((data) => {
+      const provider = data.providers.find((p) => p.name === selectedProvider);
+      if (provider?.models && provider.models.length > 0) {
+        setModels(provider.models);
+        setSelectedModel((prev) => prev ?? provider.models?.[0]?.id);
       }
-    })();
-  }, [projectId]);
+    });
+  }, [selectedProvider]);
 
-  const currentProvider = useMemo(
-    () => providers.find((item) => item.name === provider) ?? null,
-    [provider, providers],
-  );
+  if (!selectedProjectId || !selectedProvider) {
+    return (
+      <div className="flex flex-col items-center justify-center min-h-[calc(100vh-10rem)] gap-4">
+        <p className="text-sm text-on-surface-variant text-center max-w-xs">
+          Select an agent and project in Settings before starting a session.
+        </p>
+        <Link
+          to="/settings"
+          className="flex items-center gap-2 px-4 py-2 rounded-xl bg-surface-container text-on-surface text-sm font-medium hover:bg-surface-container-high transition-colors"
+        >
+          <Settings className="w-4 h-4" />
+          Go to Settings
+        </Link>
+      </div>
+    );
+  }
 
-  const submit = async (event: React.FormEvent) => {
-    event.preventDefault();
-    if (!projectId || !message.trim()) return;
+  const handleSend = async () => {
+    if (!message.trim() && files.length === 0) return;
     setBusy(true);
     setError("");
     try {
       let attachments: UploadedFile[] = [];
       if (files.length > 0) {
-        const created = await api.createSession({ projectId, provider, model, mode, thinking });
+        const created = await api.createSession({
+          projectId: selectedProjectId,
+          provider: selectedProvider,
+        });
         attachments = await Promise.all(
-          files.map((file) => api.uploadAttachment(projectId, created.sessionId, file)),
+          files.map((file) => api.uploadAttachment(selectedProjectId, created.sessionId, file)),
         );
         await api.resumeSession({
-          projectId,
+          projectId: selectedProjectId,
           sessionId: created.sessionId,
-          provider,
-          model,
-          mode,
+          provider: selectedProvider,
           thinking,
+          model: selectedModel,
           message: message.trim(),
           attachments,
         });
-        navigate(`/projects/${projectId}/sessions/${created.sessionId}`);
+        navigate(`/projects/${selectedProjectId}/sessions/${created.sessionId}`);
         return;
       }
 
       const started = await api.startSession({
-        projectId,
-        provider,
-        model,
-        mode,
+        projectId: selectedProjectId,
+        provider: selectedProvider,
         thinking,
+        model: selectedModel,
         message: message.trim(),
       });
-      navigate(`/projects/${projectId}/sessions/${started.sessionId}`);
+      navigate(`/projects/${selectedProjectId}/sessions/${started.sessionId}`);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to start session");
     } finally {
@@ -104,85 +88,21 @@ export function NewSessionPage() {
   };
 
   return (
-    <section className="panel">
-      <div className="panel-header">
-        <h2 className="title">New Session</h2>
-      </div>
-      <div className="panel-body">
-        <form className="stack" onSubmit={submit}>
-          <div className="grid-two">
-            <select value={projectId} onChange={(event) => setProjectId(event.target.value)}>
-              {projects.map((project) => (
-                <option key={project.id} value={project.id}>
-                  {project.name ?? project.path}
-                </option>
-              ))}
-            </select>
-            <select
-              value={provider}
-              onChange={(event) => setProvider(event.target.value as typeof provider)}
-            >
-              {providers.map((item) => (
-                <option key={item.name} value={item.name}>
-                  {item.displayName}
-                </option>
-              ))}
-            </select>
-          </div>
-          <div className="grid-two">
-            <select value={model} onChange={(event) => setModel(event.target.value)}>
-              <option value="">Default model</option>
-              {(currentProvider?.models ?? []).map((item) => (
-                <option key={item.id} value={item.id}>
-                  {item.name}
-                </option>
-              ))}
-            </select>
-            <select
-              value={mode}
-              onChange={(event) => setMode(event.target.value as PermissionMode)}
-            >
-              {PERMISSION_MODES.map((item) => (
-                <option key={item} value={item}>
-                  {item}
-                </option>
-              ))}
-            </select>
-          </div>
-          <select
-            value={thinking}
-            onChange={(event) => setThinking(event.target.value as ThinkingOption)}
-          >
-            {THINKING_OPTIONS.map((item) => (
-              <option key={item} value={item}>
-                {item}
-              </option>
-            ))}
-          </select>
-          <textarea
-            value={message}
-            onChange={(event) => setMessage(event.target.value)}
-            placeholder="Describe what you want to work on…"
-          />
-          <input
-            type="file"
-            multiple
-            onChange={(event) => setFiles(Array.from(event.target.files ?? []))}
-          />
-          {files.length > 0 ? (
-            <div className="muted">{files.length} attachments selected</div>
-          ) : null}
-          {settingsProvider !== provider ? (
-            <div className="muted">Server default provider is {settingsProvider}.</div>
-          ) : null}
-          {error ? <div className="empty">{error}</div> : null}
-          <div className="toolbar">
-            <button type="submit" className="primary" disabled={busy}>
-              {busy ? "Starting…" : "Start Session"}
-            </button>
-          </div>
-        </form>
-      </div>
-    </section>
+    <div className="flex flex-col items-center justify-end min-h-[calc(100vh-10rem)] pb-4">
+      {error ? <p className="mb-4 text-sm text-error text-center">{error}</p> : null}
+      <MessageInput
+        message={message}
+        thinking={thinking}
+        busy={busy}
+        files={files}
+        model={selectedModel}
+        models={models}
+        onMessageChange={setMessage}
+        onThinkingChange={setThinking}
+        onFilesChange={setFiles}
+        onModelChange={setSelectedModel}
+        onSend={handleSend}
+      />
+    </div>
   );
 }

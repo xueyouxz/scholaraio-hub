@@ -33,7 +33,12 @@ test.beforeEach(async ({ page }) => {
         customTitle: "Historical provider session",
         provider: "claude-ollama",
         model: "claude-sonnet",
-        ownership: { owner: "self" },
+        ownership: {
+          owner: "self",
+          processId: "proc-1",
+          permissionMode: "default",
+          modeVersion: 0,
+        },
       },
       messages: [
         {
@@ -49,7 +54,12 @@ test.beforeEach(async ({ page }) => {
           content: [{ type: "text", text: "Repo state summary here." }],
         },
       ],
-      ownership: { owner: "self" },
+      ownership: {
+        owner: "self",
+        processId: "proc-1",
+        permissionMode: "default",
+        modeVersion: 0,
+      },
       pendingInputRequest: {
         id: "input-1",
         type: "tool_approval",
@@ -71,7 +81,12 @@ test.beforeEach(async ({ page }) => {
         customTitle: null,
         provider: "codex",
         model: "gpt-5.4-mini",
-        ownership: { owner: "self" },
+        ownership: {
+          owner: "self",
+          processId: "proc-created",
+          permissionMode: "plan",
+          modeVersion: 0,
+        },
       },
       messages: [
         {
@@ -81,7 +96,12 @@ test.beforeEach(async ({ page }) => {
           content: "Start a migration plan.",
         },
       ],
-      ownership: { owner: "self" },
+      ownership: {
+        owner: "self",
+        processId: "proc-created",
+        permissionMode: "plan",
+        modeVersion: 0,
+      },
       pendingInputRequest: null,
       pagination: {
         hasOlderMessages: false,
@@ -329,9 +349,10 @@ test("renders the first-stage workbench shell and excludes unsupported navigatio
 }) => {
   await page.goto("/");
 
-  await expect(page.getByRole("heading", { name: "Scholaraio Hub" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "ScholarAIO Hub" })).toBeVisible();
+  await expect(page.getByText("The Digital Atelier")).toBeVisible();
   await expect(
-    page.getByText("Local workbench rebuilt against the current server API."),
+    page.getByText("Local workbench for sessions, projects, and processes."),
   ).toBeVisible();
   await expect(page.getByRole("link", { name: "Projects", exact: true })).toBeVisible();
   await expect(page.getByRole("link", { name: "Sessions", exact: true })).toBeVisible();
@@ -344,9 +365,7 @@ test("renders the first-stage workbench shell and excludes unsupported navigatio
   await expect(page.getByText("Relay")).toHaveCount(0);
 });
 
-test("covers projects, sessions, session detail, agents, settings, file, and new-session flows", async ({
-  page,
-}) => {
+test("covers the client shell against mocked API contracts", async ({ page }) => {
   await page.goto("/projects");
 
   await expect(page.getByRole("heading", { name: "Projects" })).toBeVisible();
@@ -360,21 +379,30 @@ test("covers projects, sessions, session detail, agents, settings, file, and new
     .click();
   await expect(page).toHaveURL(/\/sessions\?project=proj-1$/);
   await expect(page.getByRole("heading", { name: "Sessions" })).toBeVisible();
-  await expect(page.getByText("Historical provider session")).toBeVisible();
-  await expect(page.getByText("Claude Ollama")).toBeVisible();
+  await expect(
+    page.getByRole("link", { name: /Historical provider session Claude Ollama/ }).first(),
+  ).toBeVisible();
 
-  await page.getByRole("link", { name: /Historical provider session/ }).click();
+  await page
+    .getByRole("link", { name: /Historical provider session/ })
+    .first()
+    .click();
   await expect(page).toHaveURL(/\/projects\/proj-1\/sessions\/sess-existing$/);
-  await expect(page.getByText("Pending Input:")).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Historical provider session" })).toBeVisible();
+  await expect(page.getByText("Session Workspace")).toBeVisible();
+  await expect(page.getByText("Pending Input")).toBeVisible();
+  await expect(page.getByText("Summarize the repo state.")).toBeVisible();
+  await expect(page.getByText("Repo state summary here.")).toBeVisible();
   await expect(page.getByRole("button", { name: "Approve", exact: true })).toBeVisible();
   await expect(page.getByRole("button", { name: "Interrupt" })).toBeVisible();
   await page.getByRole("button", { name: "Approve", exact: true }).click();
-  await expect(page.getByText("Pending Input:")).toHaveCount(0);
+  await expect(page.getByText("Pending Input")).toHaveCount(0);
   await expect(page.getByRole("button", { name: "Load older messages" })).toBeVisible();
+  await page.getByRole("button", { name: "Interrupt" }).click();
 
   await page.getByRole("link", { name: "Agents" }).click();
   await expect(page.getByRole("heading", { name: "Agents" })).toBeVisible();
-  await expect(page.getByText("running")).toBeVisible();
+  await expect(page.getByText("waiting")).toBeVisible();
 
   await page.getByRole("link", { name: "Settings" }).click();
   await expect(page.getByRole("heading", { name: "Settings" })).toBeVisible();
@@ -407,5 +435,6 @@ test("covers projects, sessions, session detail, agents, settings, file, and new
   await page.locator("textarea").fill("Start a migration plan.");
   await page.getByRole("button", { name: "Start Session" }).click();
   await expect(page).toHaveURL(/\/projects\/proj-1\/sessions\/sess-created$/);
-  await expect(page.getByText("Created session")).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Created session" })).toBeVisible();
+  await expect(page.getByText("Start a migration plan.")).toBeVisible();
 });

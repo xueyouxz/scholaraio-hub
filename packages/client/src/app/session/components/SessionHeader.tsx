@@ -1,44 +1,24 @@
-import { Link } from "react-router-dom";
+import { PanelLeftOpen } from "lucide-react";
 
 interface SessionHeaderProps {
-  projectId: string;
   title: string;
-  providerLabel: string;
-  modelLabel: string;
-  ownershipLabel: string;
-  liveStatus: string | null;
-  connected: boolean;
+  onToggleSidebar: () => void;
 }
 
-export function SessionHeader({
-  projectId,
-  title,
-  providerLabel,
-  modelLabel,
-  ownershipLabel,
-  liveStatus,
-  connected,
-}: SessionHeaderProps) {
+export function SessionHeader({ title, onToggleSidebar }: SessionHeaderProps) {
   return (
-    <header className="session-workspace-header">
-      <div className="session-header-topline">
-        <Link to={`/sessions?project=${projectId}`} className="button ghost">
-          Back
-        </Link>
-        <div className={`connection-dot${connected ? " connected" : ""}`} />
-      </div>
-      <div className="session-header-main">
-        <div>
-          <p className="eyebrow">Session Workspace</p>
-          <h1>{title}</h1>
-        </div>
-        <div className="session-header-meta">
-          <span className="badge">{providerLabel}</span>
-          <span className="badge">{modelLabel}</span>
-          <span className="badge">{ownershipLabel}</span>
-          {liveStatus ? <span className="badge waiting">{liveStatus}</span> : null}
-        </div>
-      </div>
+    <header className="flex items-center gap-3 py-3 mb-2">
+      <button
+        type="button"
+        onClick={onToggleSidebar}
+        className="flex items-center justify-center w-9 h-9 rounded-xl text-on-surface-variant hover:bg-surface-container border-0 bg-transparent cursor-pointer transition-colors"
+        aria-label="Toggle sidebar"
+      >
+        <PanelLeftOpen className="w-5 h-5" />
+      </button>
+      <h1 className="font-serif text-xl font-bold text-primary leading-none truncate min-w-0">
+        {title}
+      </h1>
     </header>
   );
 }

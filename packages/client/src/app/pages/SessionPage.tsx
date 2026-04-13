@@ -1,11 +1,11 @@
-import { useMemo, useState } from "react";
+import { Bell, Check, PenLine, X } from "lucide-react";
+import { useEffect, useMemo, useState } from "react";
 import { useParams } from "react-router-dom";
-import { api, providerLabel } from "../../core/api";
-import type { ProcessSummary, ThinkingOption, UploadedFile } from "../../core/types";
+import { api } from "../../core/api";
+import type { ModelInfo, ThinkingOption, UploadedFile } from "../../core/types";
+import { usePageTitle } from "../components/NavigationLayout";
 import { MessageComposer } from "../session/components/MessageComposer";
 import { MessageList } from "../session/components/MessageList";
-import { SessionHeader } from "../session/components/SessionHeader";
-import { getMessageId } from "../session/model";
 import {
   StreamingMarkdownProvider,
   useStreamingMarkdownContext,
@@ -32,12 +32,21 @@ export function SessionPage() {
   );
 }
 
-function SessionPageContent({ projectId, sessionId }: { projectId: string; sessionId: string }) {
+function SessionPageContent({
+  projectId,
+  sessionId,
+}: {
+  projectId: string;
+  sessionId: string;
+}) {
+  const { setTitle } = usePageTitle();
   const [message, setMessage] = useState("");
   const [thinking, setThinking] = useState<ThinkingOption>("auto");
   const [files, setFiles] = useState<File[]>([]);
   const [busy, setBusy] = useState(false);
   const [sendError, setSendError] = useState("");
+  const [models, setModels] = useState<ModelInfo[]>([]);
+  const [selectedModel, setSelectedModel] = useState<string | undefined>(undefined);
   const streamingContext = useStreamingMarkdownContext();
 
   const streamingCallbacks = useMemo(() => {
@@ -58,11 +67,9 @@ function SessionPageContent({ projectId, sessionId }: { projectId: string; sessi
     pendingInputRequest,
     pagination,
     markdownAugments,
-    liveStatus,
     loading,
     loadingOlder,
     error,
-    connected,
     reconcile,
     loadOlderMessages,
     setPendingInputRequest,
@@ -72,18 +79,24 @@ function SessionPageContent({ projectId, sessionId }: { projectId: string; sessi
     streamingMarkdownCallbacks: streamingCallbacks,
   });
 
-  const processSummary = useMemo<ProcessSummary | null>(() => {
-    if (ownership.owner !== "self") return null;
-    return {
-      id: ownership.processId,
-      sessionId,
-      projectId,
-      provider: session?.provider ?? "claude",
-      state: liveStatus ?? "running",
-      model: session?.model ?? null,
-      permissionMode: ownership.permissionMode,
-    };
-  }, [liveStatus, ownership, projectId, session?.model, session?.provider, sessionId]);
+  // Load models for the session's provider
+  useEffect(() => {
+    if (!session?.provider) return;
+    api.getProviders().then((data) => {
+      const provider = data.providers.find((p) => p.name === session.provider);
+      if (provider?.models && provider.models.length > 0) {
+        setModels(provider.models);
+        setSelectedModel((prev) => prev ?? session.model ?? provider.models?.[0]?.id);
+      }
+    });
+  }, [session?.provider, session?.model]);
+
+  const handleModelChange = async (model: string) => {
+    setSelectedModel(model);
+    if (ownership.owner === "self") {
+      await api.changeModel(ownership.processId, model).catch(() => {});
+    }
+  };
 
   const send = async () => {
     if (!session || (!message.trim() && files.length === 0)) return;
@@ -131,112 +144,90 @@ function SessionPageContent({ projectId, sessionId }: { projectId: string; sessi
     await reconcile();
   };
 
-  const interrupt = async () => {
-    if (!processSummary) return;
-    await api.interruptProcess(processSummary.id);
-    await reconcile();
-  };
-
-  const abort = async () => {
-    if (!processSummary) return;
-    await api.abortProcess(processSummary.id);
-    await reconcile();
-  };
-
   const title = session?.customTitle ?? session?.title ?? sessionId;
 
+  useEffect(() => {
+    setTitle(title);
+    return () => setTitle("");
+  }, [title, setTitle]);
+
   return (
-    <section className="session-workspace">
-      <SessionHeader
-        projectId={projectId}
-        title={title}
-        providerLabel={providerLabel(session?.provider)}
-        modelLabel={session?.model ?? "default model"}
-        ownershipLabel={ownership.owner}
-        liveStatus={liveStatus}
-        connected={connected}
-      />
-
-      {pendingInputRequest ? (
-        <div className="session-alert">
-          <div>
-            <strong>Pending Input</strong>
-            <p>{pendingInputRequest.toolName ?? pendingInputRequest.prompt}</p>
-          </div>
-          <div className="toolbar">
-            <button type="button" onClick={() => void respondToPendingInput("approve")}>
-              Approve
-            </button>
-            <button
-              type="button"
-              onClick={() => void respondToPendingInput("approve_accept_edits")}
-            >
-              Approve + Accept Edits
-            </button>
-            <button
-              type="button"
-              className="danger"
-              onClick={() => void respondToPendingInput("deny")}
-            >
-              Deny
-            </button>
-          </div>
-        </div>
-      ) : null}
-
-      {error ? <div className="empty">{error}</div> : null}
-      {sendError ? <div className="empty">{sendError}</div> : null}
-      {loading ? <div className="empty">Loading session…</div> : null}
-
-      <div className="session-workspace-body">
-        <MessageList
-          messages={messages}
-          markdownAugments={markdownAugments}
-          pagination={pagination}
-          loadingOlder={loadingOlder}
-          onLoadOlderMessages={loadOlderMessages}
-        />
-        <aside className="session-sidepanel">
-          <div className="session-sidecard">
-            <p className="eyebrow">Session Meta</p>
-            <div className="stack">
-              <span className="badge">{providerLabel(session?.provider)}</span>
-              <span className="badge">{session?.model ?? "default model"}</span>
-              <span className="badge">{ownership.owner}</span>
-              {liveStatus ? <span className="badge waiting">{liveStatus}</span> : null}
-              <span className="muted">
-                {session
-                  ? `${messages.filter((entry) => Boolean(getMessageId(entry))).length} messages loaded`
-                  : "No metadata yet"}
-              </span>
-            </div>
-          </div>
-          {processSummary ? (
-            <div className="session-sidecard">
-              <p className="eyebrow">Process Controls</p>
-              <div className="toolbar">
-                <button type="button" onClick={() => void interrupt()}>
-                  Interrupt
+    <section className="flex flex-col gap-3 min-h-[calc(100vh-6rem)]">
+      <div className="flex-1 min-h-0">
+        <div className="flex flex-col gap-3">
+          {pendingInputRequest ? (
+            <div className="rounded-[20px] border border-outline-variant/20 bg-surface-container-low p-4 flex flex-col gap-3">
+              <div className="flex items-start gap-3">
+                <div className="flex items-center justify-center w-7 h-7 rounded-lg bg-secondary-container text-primary shrink-0 mt-0.5">
+                  <Bell className="w-3.5 h-3.5" />
+                </div>
+                <div>
+                  <strong className="text-sm font-semibold">Pending Input</strong>
+                  <p className="mt-0.5 text-sm text-on-surface-variant">
+                    {pendingInputRequest.toolName ?? pendingInputRequest.prompt}
+                  </p>
+                </div>
+              </div>
+              <div className="flex flex-wrap gap-2 pl-10">
+                <button
+                  type="button"
+                  onClick={() => void respondToPendingInput("approve")}
+                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-medium bg-primary text-on-primary border-0 cursor-pointer hover:opacity-90"
+                >
+                  <Check className="w-3.5 h-3.5" />
+                  Approve
                 </button>
-                <button type="button" className="danger" onClick={() => void abort()}>
-                  Abort
+                <button
+                  type="button"
+                  onClick={() => void respondToPendingInput("approve_accept_edits")}
+                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-medium bg-surface-container border border-outline-variant/20 cursor-pointer hover:bg-surface-container-high"
+                >
+                  <PenLine className="w-3.5 h-3.5" />
+                  Approve + Accept Edits
+                </button>
+                <button
+                  type="button"
+                  onClick={() => void respondToPendingInput("deny")}
+                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-medium text-error bg-error-container/30 border border-error/20 cursor-pointer hover:bg-error-container/50"
+                >
+                  <X className="w-3.5 h-3.5" />
+                  Deny
                 </button>
               </div>
             </div>
           ) : null}
-        </aside>
+
+          {error ? <div className="empty text-sm text-error">{error}</div> : null}
+          {sendError ? <div className="empty text-sm text-error">{sendError}</div> : null}
+          {loading ? (
+            <div className="empty text-sm text-on-surface-variant">Loading session…</div>
+          ) : null}
+
+          <MessageList
+            messages={messages}
+            markdownAugments={markdownAugments}
+            pagination={pagination}
+            loadingOlder={loadingOlder}
+            onLoadOlderMessages={loadOlderMessages}
+          />
+        </div>
       </div>
 
-      <MessageComposer
-        message={message}
-        thinking={thinking}
-        busy={busy}
-        files={files}
-        onMessageChange={setMessage}
-        onThinkingChange={setThinking}
-        onFilesChange={setFiles}
-        onSend={send}
-      />
+      <footer className="sticky bottom-0 z-20 pt-0 pb-4 bg-surface">
+        <MessageComposer
+          message={message}
+          thinking={thinking}
+          busy={busy}
+          files={files}
+          model={selectedModel}
+          models={models}
+          onMessageChange={setMessage}
+          onThinkingChange={setThinking}
+          onFilesChange={setFiles}
+          onModelChange={(m) => void handleModelChange(m)}
+          onSend={send}
+        />
+      </footer>
     </section>
   );
 }

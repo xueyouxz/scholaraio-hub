@@ -5,7 +5,6 @@ import { FilePage } from "./pages/FilePage";
 import { NewSessionPage } from "./pages/NewSessionPage";
 import { ProjectsPage } from "./pages/ProjectsPage";
 import { SessionPage } from "./pages/SessionPage";
-import { SessionsPage } from "./pages/SessionsPage";
 import { SettingsPage } from "./pages/SettingsPage";
 
 export function App() {
@@ -15,7 +14,6 @@ export function App() {
         <Route element={<NavigationLayout />}>
           <Route path="/" element={<Navigate to="/projects" replace />} />
           <Route path="/projects" element={<ProjectsPage />} />
-          <Route path="/sessions" element={<SessionsPage />} />
           <Route path="/agents" element={<AgentsPage />} />
           <Route path="/new-session" element={<NewSessionPage />} />
           <Route path="/settings" element={<SettingsPage />} />

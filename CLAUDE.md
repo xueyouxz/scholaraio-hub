@@ -29,6 +29,8 @@ TypeScript uses Biome formatting: 2-space indentation, double quotes, semicolons
 
 Match existing naming patterns: `PascalCase` for classes and schema files such as `SessionIndexService.ts`, `camelCase` for functions, and kebab-case for top-level scripts like `release-web.mjs`. Prefer small modules under the relevant package instead of cross-package imports that bypass `@scholaraio-hub/shared`.
 
+For frontend component work and UI implementation, always follow the style design specification documented in `.design-docs/DESIGN.md`. Treat that file as the source of truth for visual and interaction design decisions instead of redefining design rules inline.
+
 ## Testing Guidelines
 
 Vitest is used for unit and integration tests; Playwright covers app smoke flows. Name tests `*.test.ts` and keep them under the owning package, for example `packages/server/test/routes/settings.test.ts`. Add or update tests for behavior changes in routes, session parsing, shared schemas, and port logic.

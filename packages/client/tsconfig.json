@@ -17,7 +17,11 @@
     "src/app/**/*.ts",
     "src/app/**/*.tsx",
     "src/core/**/*.ts",
-    "src/core/**/*.tsx"
+    "src/core/**/*.tsx",
+    "src/features/**/*.ts",
+    "src/features/**/*.tsx",
+    "src/shared/**/*.ts",
+    "src/shared/**/*.tsx"
   ],
   "exclude": ["src/**/*.test.ts", "src/**/*.test.tsx"]
 }

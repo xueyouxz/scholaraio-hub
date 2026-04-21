@@ -1,16 +1,18 @@
+import type { PermissionMode } from "@scholaraio-hub/shared";
 import { Bell, Check, PenLine, X } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { useParams } from "react-router-dom";
 import { api } from "../../core/api";
 import type { ModelInfo, ThinkingOption, UploadedFile } from "../../core/types";
-import { usePageTitle } from "../components/NavigationLayout";
-import { MessageComposer } from "../session/components/MessageComposer";
-import { MessageList } from "../session/components/MessageList";
+import { MessageComposer } from "../../features/session/components/MessageComposer";
+import { MessageList } from "../../features/session/components/MessageList";
+import { useSession } from "../../features/session/hooks/useSession";
 import {
   StreamingMarkdownProvider,
   useStreamingMarkdownContext,
-} from "../session/streaming/StreamingMarkdownContext";
-import { useSessionPageState } from "../session/useSessionPageState";
+} from "../../features/session/streaming/StreamingMarkdownContext";
+import { SessionMetadataProvider } from "../../shared/contexts/SessionMetadataContext";
+import { usePageTitle } from "../components/NavigationLayout";
 
 export function SessionPage() {
   const { projectId = "", sessionId = "" } = useParams();
@@ -26,9 +28,11 @@ export function SessionPage() {
   }
 
   return (
-    <StreamingMarkdownProvider>
-      <SessionPageContent projectId={projectId} sessionId={sessionId} />
-    </StreamingMarkdownProvider>
+    <SessionMetadataProvider projectId={projectId} projectPath={null} sessionId={sessionId}>
+      <StreamingMarkdownProvider>
+        <SessionPageContent projectId={projectId} sessionId={sessionId} />
+      </StreamingMarkdownProvider>
+    </SessionMetadataProvider>
   );
 }
 
@@ -47,6 +51,8 @@ function SessionPageContent({
   const [sendError, setSendError] = useState("");
   const [models, setModels] = useState<ModelInfo[]>([]);
   const [selectedModel, setSelectedModel] = useState<string | undefined>(undefined);
+  const [composerPermissionMode, setComposerPermissionMode] = useState<PermissionMode>("default");
+  const [isHeld, setIsHeld] = useState(false);
   const streamingContext = useStreamingMarkdownContext();
 
   const streamingCallbacks = useMemo(() => {
@@ -73,11 +79,17 @@ function SessionPageContent({
     reconcile,
     loadOlderMessages,
     setPendingInputRequest,
-  } = useSessionPageState({
+    permissionMode,
+    slashCommands,
+  } = useSession({
     projectId,
     sessionId,
     streamingMarkdownCallbacks: streamingCallbacks,
   });
+
+  useEffect(() => {
+    if (permissionMode) setComposerPermissionMode(permissionMode);
+  }, [permissionMode]);
 
   // Load models for the session's provider
   useEffect(() => {
@@ -209,6 +221,7 @@ function SessionPageContent({
             pagination={pagination}
             loadingOlder={loadingOlder}
             onLoadOlderMessages={loadOlderMessages}
+            sessionProvider={session?.provider}
           />
         </div>
       </div>
@@ -221,10 +234,17 @@ function SessionPageContent({
           files={files}
           model={selectedModel}
           models={models}
+          permissionMode={composerPermissionMode}
+          isHeld={isHeld}
+          draftKey={`session:${sessionId}`}
+          slashCommands={slashCommands}
+          contextUsage={session?.contextUsage}
           onMessageChange={setMessage}
           onThinkingChange={setThinking}
           onFilesChange={setFiles}
           onModelChange={(m) => void handleModelChange(m)}
+          onPermissionModeChange={setComposerPermissionMode}
+          onHoldChange={setIsHeld}
           onSend={send}
         />
       </footer>

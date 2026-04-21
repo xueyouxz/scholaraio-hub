@@ -3,8 +3,8 @@ import { useEffect, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { api } from "../../core/api";
 import type { ModelInfo, ThinkingOption, UploadedFile } from "../../core/types";
+import { MessageInput } from "../../features/session/components/MessageInput";
 import { useProjectScope } from "../components/NavigationLayout";
-import { MessageInput } from "../session/components/MessageInput";
 
 export function NewSessionPage() {
   const navigate = useNavigate();

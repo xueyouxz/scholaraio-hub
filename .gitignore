@@ -1,0 +1,8 @@
+node_modules/
+.claude/
+.codex
+.cursor
+temp/
+.playwright/
+dist/
+test-results/

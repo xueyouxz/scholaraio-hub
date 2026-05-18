@@ -3,6 +3,17 @@ import type { LucideIcon } from "lucide-react";
 export type PaperStatus = "ingested" | "indexing" | "pending" | "no-pdf";
 export type ViewMode = "list" | "grid";
 
+/** 阅读器中的内容标签页：L1–L4 层级阅读 + PDF 原文。 */
+export type ReadingTab = "l1" | "l2" | "l3" | "l4" | "pdf";
+
+/** GET /api/papers/{id} 返回的富文本详情，仅在阅读器按需加载。 */
+export interface PaperDetail {
+  /** L4：全文 Markdown（paper.md）。 */
+  content?: string;
+  /** L3：结论段落（需先运行 scholaraio enrich-l3）。 */
+  l3Conclusion?: string;
+}
+
 export interface PaperReference {
   id: string;
   title: string;
@@ -12,7 +23,10 @@ export interface PaperReference {
   date?: string;
   citations: string;
   status: PaperStatus;
+  /** paper.md 是否存在（已处理）。对应 L4 全文可读性。 */
   hasPdf?: boolean;
+  /** paper.pdf 是否存在。对应 PDF 查看器可用性。 */
+  hasPdfFile?: boolean;
   isIndexed?: boolean;
   abstract?: string;
 }

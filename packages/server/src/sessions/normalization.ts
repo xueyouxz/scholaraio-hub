@@ -185,8 +185,9 @@ function convertCodexEntries(entries: CodexSessionEntry[], sessionId: string): M
 
   for (const entry of entries) {
     if (entry.type === "response_item") {
-      const msg = convertCodexResponseItem(entry, messageIndex++, toolCallContexts);
-      if (msg) {
+      const converted = convertCodexResponseItem(entry, messageIndex++, toolCallContexts);
+      const convertedMessages = Array.isArray(converted) ? converted : converted ? [converted] : [];
+      for (const msg of convertedMessages) {
         if (isCodexCorrelationDebugEnabled()) {
           logCodexCorrelationDebug({
             sessionId,
@@ -326,7 +327,7 @@ function convertCodexResponseItem(
   entry: CodexResponseItemEntry,
   index: number,
   toolCallContexts: Map<string, CodexToolCallContext>,
-): Message | null {
+): Message | Message[] | null {
   const payload = entry.payload;
   const uuid = `codex-${index}-${entry.timestamp}`;
 
@@ -604,7 +605,7 @@ function convertCodexWebSearchCallPayload(
   payload: CodexWebSearchCallPayload,
   uuid: string,
   timestamp: string,
-): Message {
+): Message | Message[] {
   const callId = payload.call_id ?? payload.id ?? `${uuid}-web-search`;
   const rawToolName = payload.name ?? payload.type;
   const toolName = canonicalizeCodexToolName(rawToolName);
@@ -637,7 +638,7 @@ function convertCodexWebSearchCallPayload(
     },
   ];
 
-  return {
+  const toolUseMessage: Message = {
     uuid,
     type: "assistant",
     message: {
@@ -645,6 +646,53 @@ function convertCodexWebSearchCallPayload(
       content,
     },
     codexToolName: rawToolName,
+    timestamp,
+  };
+
+  if (!isCompletedCodexWebSearchPayload(payload)) {
+    return toolUseMessage;
+  }
+
+  return [
+    toolUseMessage,
+    createCodexWebSearchToolResultMessage(callId, input, `${uuid}-result`, timestamp),
+  ];
+}
+
+function isCompletedCodexWebSearchPayload(payload: CodexWebSearchCallPayload): boolean {
+  const status = (payload as { status?: unknown }).status;
+  if (typeof status !== "string") {
+    return false;
+  }
+  const normalized = status.replace(/[A-Z]/g, (m) => `_${m.toLowerCase()}`);
+  return normalized !== "in_progress";
+}
+
+function createCodexWebSearchToolResultMessage(
+  callId: string,
+  input: Record<string, unknown>,
+  uuid: string,
+  timestamp: string,
+): Message {
+  const query = typeof input.query === "string" ? input.query : "";
+  const toolResult: ContentBlock = {
+    type: "tool_result",
+    tool_use_id: callId,
+    content: query ? `Search completed for: ${query}` : "Search completed",
+  };
+
+  return {
+    uuid,
+    type: "user",
+    message: {
+      role: "user",
+      content: [toolResult],
+    },
+    toolUseResult: {
+      query,
+      results: [],
+      durationSeconds: 0,
+    },
     timestamp,
   };
 }

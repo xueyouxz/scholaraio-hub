@@ -1,5 +1,6 @@
-import { ChevronDown, ChevronUp, ExternalLink, FolderPlus, X } from "lucide-react";
+import { BookOpen, ChevronDown, ChevronUp, FolderPlus, X } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { scholar } from "../../../core/api";
 import { StatusBadge } from "../../../shared/ui/StatusBadge";
 import type { PaperReference } from "../types";
@@ -10,6 +11,7 @@ interface Props {
 }
 
 export function PaperDetailPanel({ paper, onClose }: Props) {
+  const navigate = useNavigate();
   const [abstractOpen, setAbstractOpen] = useState(false);
   const [workspaces, setWorkspaces] = useState<{ id: string; name: string }[]>([]);
   const [wsOpen, setWsOpen] = useState(false);
@@ -152,15 +154,14 @@ export function PaperDetailPanel({ paper, onClose }: Props) {
           {/* Footer actions */}
           <div className="shrink-0 px-5 pb-5 pt-4 border-t border-outline-variant/10 space-y-2.5">
             {paper.hasPdf ? (
-              <a
-                href={`/api/scholar/api/papers/${paper.id}/pdf`}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="flex items-center justify-center gap-2 w-full py-2.5 rounded-xl bg-surface-container text-on-surface text-xs font-semibold hover:bg-surface-container-high transition-colors"
+              <button
+                type="button"
+                onClick={() => navigate(`/library/${paper.id}`)}
+                className="flex items-center justify-center gap-2 w-full py-2.5 rounded-xl bg-surface-container text-on-surface text-xs font-semibold hover:bg-surface-container-high transition-colors border-0 cursor-pointer"
               >
-                <ExternalLink className="w-3.5 h-3.5" />
-                打开 PDF
-              </a>
+                <BookOpen className="w-3.5 h-3.5" />
+                阅读 PDF
+              </button>
             ) : null}
 
             <div className="relative" ref={wsRef}>

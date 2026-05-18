@@ -97,6 +97,7 @@ function SessionPageContent({
     loadingOlder,
     error,
     connected,
+    hasConnected,
     reconcile,
     loadOlderMessages,
     setPendingInputRequest,
@@ -258,11 +259,12 @@ function SessionPageContent({
         : "Continue this session";
 
   // Treat tools as still-pending (not orphaned) when the session is actively running,
-  // waiting for approval, or the SSE connection hasn't been established yet.
+  // waiting for approval, or the SSE connection hasn't been established yet for the
+  // first time. Once SSE has connected and completed, orphaned tools show as aborted.
   const activeToolApproval =
     liveStatus === "in-turn" ||
     liveStatus === "waiting-input" ||
-    (ownership.owner === "self" && !connected);
+    (ownership.owner === "self" && !connected && !hasConnected);
 
   useEffect(() => {
     setTitle(title);

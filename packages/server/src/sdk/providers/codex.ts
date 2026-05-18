@@ -2226,7 +2226,8 @@ export class CodexProvider implements AgentProvider {
       }
 
       case "web_search": {
-        const message = withCodexTimestamp(
+        const messages: SDKMessage[] = [];
+        const toolUseMessage = withCodexTimestamp(
           {
             type: "assistant",
             session_id: sessionId,
@@ -2245,7 +2246,7 @@ export class CodexProvider implements AgentProvider {
           } as SDKMessage,
           observedAt,
         );
-        logSdkCorrelationDebug(sessionId, message, {
+        logSdkCorrelationDebug(sessionId, toolUseMessage, {
           eventKind: "web_search",
           turnId,
           itemId: item.id,
@@ -2253,7 +2254,44 @@ export class CodexProvider implements AgentProvider {
           phase: isComplete ? "completed" : "started",
           sourceEvent,
         });
-        return [message];
+        messages.push(toolUseMessage);
+
+        if (isComplete) {
+          const toolResultMessage = withCodexTimestamp(
+            {
+              type: "user",
+              session_id: sessionId,
+              uuid: `${uuid}-result`,
+              message: {
+                role: "user",
+                content: [
+                  {
+                    type: "tool_result",
+                    tool_use_id: item.id,
+                    content: `Search completed for: ${item.query}`,
+                  },
+                ],
+              },
+              toolUseResult: {
+                query: item.query,
+                results: [],
+                durationSeconds: 0,
+              },
+            } as SDKMessage,
+            observedAt,
+          );
+          logSdkCorrelationDebug(sessionId, toolResultMessage, {
+            eventKind: "tool_result",
+            turnId,
+            itemId: item.id,
+            callId: item.id,
+            phase: "completed",
+            sourceEvent,
+          });
+          messages.push(toolResultMessage);
+        }
+
+        return messages;
       }
 
       case "todo_list": {

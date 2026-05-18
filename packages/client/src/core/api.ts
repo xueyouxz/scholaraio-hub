@@ -211,7 +211,9 @@ export const scholar = {
     );
   },
   getPaper: (id: string) =>
-    request<{ paper: ScholarPaper & { content?: string } }>(`/api/scholar/api/papers/${id}`),
+    request<{ paper: ScholarPaper & { content?: string; l3Conclusion?: string } }>(
+      `/api/scholar/api/papers/${id}`,
+    ),
   getStats: () =>
     request<{ total: number; missingPdf: number; pendingIngest: number; notIndexed: number }>(
       "/api/scholar/api/stats",
@@ -264,7 +266,10 @@ export interface ScholarPaper {
   date?: string;
   citations: string;
   status: "ingested" | "indexing" | "pending" | "no-pdf";
+  /** `paper.md` が存在するか（処理済みか）を示す。L4 全文の可否に対応。 */
   hasPdf?: boolean;
+  /** `paper.pdf` が存在するか。PDF ビューアーの表示可否に対応。 */
+  hasPdfFile?: boolean;
   isIndexed?: boolean;
   abstract?: string;
   doi?: string;

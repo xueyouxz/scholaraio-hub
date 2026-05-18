@@ -158,6 +158,63 @@ describe("normalizeSession", () => {
     expect(normalized.messages[0].message.content).toEqual("Hello OSS");
   });
 
+  it("normalizes completed Codex web searches with a matching tool_result", () => {
+    const mockSession: LoadedSession = {
+      summary: {
+        id: "codex-web-search-session",
+        projectId: "test-project" as UrlProjectId,
+        title: "Test Session",
+        fullTitle: "Test Session",
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+        messageCount: 1,
+        status: { state: "idle" },
+        provider: "codex",
+      },
+      data: {
+        provider: "codex",
+        session: {
+          entries: [
+            {
+              type: "response_item",
+              timestamp: "2026-05-18T10:00:00.000Z",
+              payload: {
+                type: "web_search_call",
+                id: "ws-1",
+                query: "tool spinner complete",
+                status: "completed",
+              },
+            },
+          ],
+        } as CodexSessionContent,
+      } as UnifiedSession,
+    };
+
+    const normalized = normalizeSession(mockSession);
+
+    expect(normalized.messages).toHaveLength(2);
+    expect(normalized.messages[0].message?.content).toEqual([
+      {
+        type: "tool_use",
+        id: "ws-1",
+        name: "WebSearch",
+        input: { query: "tool spinner complete" },
+      },
+    ]);
+    expect(normalized.messages[1].message?.content).toEqual([
+      {
+        type: "tool_result",
+        tool_use_id: "ws-1",
+        content: "Search completed for: tool spinner complete",
+      },
+    ]);
+    expect(normalized.messages[1].toolUseResult).toEqual({
+      query: "tool spinner complete",
+      results: [],
+      durationSeconds: 0,
+    });
+  });
+
   it("includes chained parallel Tasks on sibling branches", () => {
     // This simulates the real-world scenario where Claude spawns 3 parallel Tasks
     // as CHAINED messages (each task in separate assistant message that chains from previous)

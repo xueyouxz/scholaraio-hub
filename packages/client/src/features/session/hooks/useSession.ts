@@ -50,6 +50,7 @@ interface UseSessionResult {
   loadingOlder: boolean;
   error: string;
   connected: boolean;
+  hasConnected: boolean;
   reconnectKey: number;
   reconcile: () => Promise<void>;
   loadOlderMessages: () => Promise<void>;
@@ -94,6 +95,7 @@ export function useSession({
   const [loadingOlder, setLoadingOlder] = useState(false);
   const [error, setError] = useState("");
   const [connected, setConnected] = useState(false);
+  const [hasConnected, setHasConnected] = useState(false);
   const [reconnectKey, setReconnectKey] = useState(0);
   const [isCompacting, setIsCompacting] = useState(false);
   const currentSessionIdRef = useRef(sessionId);
@@ -137,6 +139,7 @@ export function useSession({
     currentSessionIdRef.current = sessionId;
     setLoading(true);
     setError("");
+    setHasConnected(false);
     setSnapshot(createEmptySessionSnapshot());
     clearStreaming();
     void reconcile()
@@ -164,6 +167,7 @@ export function useSession({
 
     const onConnected = (event: MessageEvent<string>) => {
       setConnected(true);
+      setHasConnected(true);
       setError("");
       try {
         const data = JSON.parse(event.data) as {
@@ -302,6 +306,9 @@ export function useSession({
 
     const onComplete = () => {
       setConnected(false);
+      // Clear the in-turn live status immediately so tools don't keep spinning
+      // while reconcile() fetches the final session state asynchronously.
+      setSnapshot((current) => ({ ...current, liveStatus: null }));
       streamingMarkdownCallbacks?.onStreamEnd?.();
       void reconcile().catch(() => {
         setReconnectKey((current) => current + 1);
@@ -357,6 +364,7 @@ export function useSession({
     loadingOlder,
     error,
     connected,
+    hasConnected,
     reconnectKey,
     reconcile,
     loadOlderMessages,

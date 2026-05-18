@@ -405,6 +405,55 @@ describe("CodexProvider Event Normalization", () => {
     });
   });
 
+  it("emits a tool_result when a WebSearch item completes", () => {
+    const provider = createTestProvider() as unknown as {
+      convertItemToSDKMessages: (
+        item: unknown,
+        sessionId: string,
+        turnId: string,
+        sourceEvent: "item/started" | "item/completed",
+      ) => Array<Record<string, unknown>>;
+    };
+
+    const messages = provider.convertItemToSDKMessages(
+      {
+        id: "search-1",
+        type: "web_search",
+        query: "streaming tool status",
+      },
+      "session-1",
+      "turn-search",
+      "item/completed",
+    );
+
+    expect(messages).toHaveLength(2);
+    expect(messages[0]?.message).toMatchObject({
+      role: "assistant",
+      content: [
+        {
+          type: "tool_use",
+          id: "search-1",
+          name: "WebSearch",
+          input: { query: "streaming tool status" },
+        },
+      ],
+    });
+    expect(messages[1]?.message).toMatchObject({
+      role: "user",
+      content: [
+        {
+          type: "tool_result",
+          tool_use_id: "search-1",
+          content: "Search completed for: streaming tool status",
+        },
+      ],
+    });
+    expect(messages[1]?.toolUseResult).toMatchObject({
+      query: "streaming tool status",
+      results: [],
+    });
+  });
+
   it("does not emit rate limit errors when hasCredits is false but usage is below 100%", () => {
     const provider = createTestProvider() as unknown as {
       convertNotificationToSDKMessages: (

@@ -906,8 +906,8 @@ export class CodexOSSProvider implements AgentProvider {
         return messages;
       }
 
-      case "web_search":
-        return [
+      case "web_search": {
+        const messages: SDKMessage[] = [
           {
             type: "assistant",
             session_id: sessionId,
@@ -925,6 +925,32 @@ export class CodexOSSProvider implements AgentProvider {
             },
           } as SDKMessage,
         ];
+
+        if (isComplete) {
+          messages.push({
+            type: "user",
+            session_id: sessionId,
+            uuid: `${uuid}-result`,
+            message: {
+              role: "user",
+              content: [
+                {
+                  type: "tool_result",
+                  tool_use_id: item.id,
+                  content: `Search completed for: ${item.query}`,
+                },
+              ],
+            },
+            toolUseResult: {
+              query: item.query,
+              results: [],
+              durationSeconds: 0,
+            },
+          } as SDKMessage);
+        }
+
+        return messages;
+      }
 
       case "todo_list":
         return [

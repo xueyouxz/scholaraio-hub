@@ -1,5 +1,6 @@
 import { BrowserRouter, Navigate, Route, Routes } from "react-router-dom";
 import { LibraryPage } from "../features/library/LibraryPage";
+import { PaperReaderPage } from "../features/library/reader/PaperReaderPage";
 import { SearchPage } from "../features/search/SearchPage";
 import { WorkspacesPage } from "../features/workspaces/WorkspacesPage";
 import { NavigationLayout } from "./components/NavigationLayout";
@@ -21,6 +22,7 @@ export function App() {
           <Route path="/new-session" element={<NewSessionPage />} />
           <Route path="/settings" element={<SettingsPage />} />
           <Route path="/library" element={<LibraryPage />} />
+          <Route path="/library/:paperId" element={<PaperReaderPage />} />
           <Route path="/workspaces" element={<WorkspacesPage />} />
           <Route path="/search" element={<SearchPage />} />
           <Route path="/projects/:projectId/sessions/:sessionId" element={<SessionPage />} />

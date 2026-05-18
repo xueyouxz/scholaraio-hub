@@ -97,6 +97,11 @@ export const TextBlock = memo(function TextBlock({
         (augmentHtml ? (
           // biome-ignore lint/security/noDangerouslySetInnerHtml: HTML 来自服务端 markdown 渲染结果
           <div dangerouslySetInnerHTML={{ __html: augmentHtml }} />
+        ) : isStreaming && !text.trim() ? (
+          // 流式输出等待第一个字符时显示闪烁光标。
+          <p>
+            <span className="processing-cursor">|</span>
+          </p>
         ) : (
           // 没有服务端 HTML 时退回纯文本，保证消息至少可读。
           <p>{text}</p>

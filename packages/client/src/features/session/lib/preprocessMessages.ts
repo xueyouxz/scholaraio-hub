@@ -295,7 +295,9 @@ function processMessage(
   if (msg._isStreaming) {
     for (let i = blockArray.length - 1; i >= 0; i--) {
       const block = blockArray[i];
-      if (block?.type === "text" && block.text?.trim()) {
+      // Include empty text blocks when streaming — the last text block is where
+      // the waiting cursor should appear even before the first character arrives.
+      if (block?.type === "text") {
         lastTextBlockIndex = i;
         break;
       }
@@ -309,14 +311,15 @@ function processMessage(
     const blockId = `${msgId}-${i}`;
 
     if (block.type === "text") {
-      if (block.text?.trim()) {
+      const isLastStreamingBlock = msg._isStreaming && i === lastTextBlockIndex;
+      if (block.text?.trim() || isLastStreamingBlock) {
         // 优先使用服务端直接注入到 block 上的 _html。
         // 如果当前是订阅事件路径，则从 markdownAugments 映射里按 messageId 兜底查找。
         const blockHtml = (block as { _html?: string })._html;
         items.push({
           type: "text",
           id: blockId,
-          text: block.text,
+          text: block.text ?? "",
           sourceMessages: [msg],
           isSubagent,
           // 只有最后一个文本块显示流式光标。

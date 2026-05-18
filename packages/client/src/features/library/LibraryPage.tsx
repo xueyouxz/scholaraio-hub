@@ -10,41 +10,16 @@ import {
 } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { usePageTitle } from "../../app/components/NavigationLayout";
-import { type ScholarPaper, scholar } from "../../core/api";
+import { scholar } from "../../core/api";
 import { PaperDetailPanel } from "./components/PaperDetailPanel";
 import { PaperGridCard } from "./components/PaperGridCard";
 import { PaperListRow } from "./components/PaperListRow";
 import { StatCard } from "./components/StatCard";
-import type { PaperReference, StatCardReference, ViewMode, YearGroup } from "./types";
+import { groupByYear, toPaperRef } from "./paperUtils";
+import type { PaperReference, StatCardReference, ViewMode } from "./types";
 
 const SORT_OPTIONS = ["年份（最新）", "引用量（高→低）", "标题"];
 const SORT_KEYS = ["year_desc", "citations_desc", "title_asc"];
-
-function toPaperRef(p: ScholarPaper): PaperReference {
-  return {
-    id: p.id,
-    title: p.title,
-    authors: p.authors,
-    source: p.source,
-    year: p.year,
-    date: p.date,
-    citations: p.citations,
-    status: p.status,
-    hasPdf: p.hasPdf,
-    isIndexed: p.isIndexed,
-    abstract: p.abstract,
-  };
-}
-
-function groupByYear(papers: PaperReference[]): YearGroup[] {
-  const map = new Map<number, PaperReference[]>();
-  for (const p of papers) {
-    const y = p.year || 0;
-    if (!map.has(y)) map.set(y, []);
-    (map.get(y) as PaperReference[]).push(p);
-  }
-  return [...map.entries()].sort((a, b) => b[0] - a[0]).map(([year, papers]) => ({ year, papers }));
-}
 
 export function LibraryPage() {
   const { setTitle } = usePageTitle();

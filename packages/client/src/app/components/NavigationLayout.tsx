@@ -144,6 +144,7 @@ export function NavigationLayout() {
   );
 
   const isSessionRoute = /^\/projects\/[^/]+\/sessions\/[^/]+/.test(location.pathname);
+  const isPaperReaderRoute = /^\/library\/.+/.test(location.pathname);
 
   return (
     <ProjectScopeContext value={projectScopeContext}>
@@ -184,7 +185,13 @@ export function NavigationLayout() {
             ) : null}
 
             {/* Page content */}
-            <main className={isSessionRoute ? "flex-1 min-w-0 min-h-0" : "flex-1 min-w-0 p-8"}>
+            <main
+              className={
+                isSessionRoute || isPaperReaderRoute
+                  ? "flex-1 min-w-0 min-h-0"
+                  : "flex-1 min-w-0 p-8"
+              }
+            >
               <Outlet context={layoutContext} />
             </main>
           </div>

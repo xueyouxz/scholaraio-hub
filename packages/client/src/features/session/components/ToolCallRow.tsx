@@ -147,11 +147,7 @@ export const ToolCallRow = memo(function ToolCallRow({
           </span>
         ) : null}
 
-        {!isNonExpandable && (
-          <span className="expand-chevron" aria-hidden="true">
-            {expanded ? "▾" : "▸"}
-          </span>
-        )}
+        {!isNonExpandable && <span className="expand-chevron" aria-hidden="true" />}
       </div>
 
       {hasCollapsedPreview && (

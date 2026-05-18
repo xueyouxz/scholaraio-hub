@@ -115,31 +115,28 @@ export function NewSessionPage() {
 
   return (
     <div className="flex flex-col items-center flex-1 justify-end pb-4 gap-8">
-      {/* Welcome area — only shown when input is empty */}
-      {!message && !busy ? (
-        <div className="flex flex-col items-center gap-6 mb-4">
-          <div className="text-center">
-            <h2 className="font-serif text-3xl font-bold text-on-surface mb-1">
-              有什么我可以帮你的？
-            </h2>
-            <p className="text-sm text-on-surface-variant">
-              开始一段新对话，或从下方建议中选择一个。
-            </p>
-          </div>
-          <div className="flex flex-wrap justify-center gap-2 max-w-lg">
-            {PROMPT_SUGGESTIONS.map((s) => (
-              <button
-                key={s}
-                type="button"
-                onClick={() => setMessage(s)}
-                className="px-3 py-1.5 rounded-lg text-sm text-on-surface-variant bg-surface-container hover:bg-surface-container-high transition-colors"
-              >
-                {s}
-              </button>
-            ))}
-          </div>
+      <div className="flex flex-col items-center gap-6 mb-4">
+        <div className="text-center">
+          <h2 className="font-serif text-3xl font-bold text-on-surface mb-1">
+            有什么我可以帮你的？
+          </h2>
+          <p className="text-sm text-on-surface-variant">
+            开始一段新对话，或从下方建议中选择一个。
+          </p>
         </div>
-      ) : null}
+        <div className="flex flex-wrap justify-center gap-2 max-w-lg">
+          {PROMPT_SUGGESTIONS.map((s) => (
+            <button
+              key={s}
+              type="button"
+              onClick={() => setMessage(s)}
+              className="px-3 py-1.5 rounded-lg text-sm text-on-surface-variant bg-surface-container hover:bg-surface-container-high transition-colors"
+            >
+              {s}
+            </button>
+          ))}
+        </div>
+      </div>
 
       {error ? <p className="text-sm text-error text-center">{error}</p> : null}
 

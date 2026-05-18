@@ -1,8 +1,20 @@
 node_modules/
-.claude/
-.codex
-.cursor
-temp/
-.playwright/
 dist/
+temp/
 test-results/
+.playwright/
+
+# TypeScript incremental build cache
+*.tsbuildinfo
+
+# IDE / AI tool personal config (project-level commands & skills are tracked intentionally)
+.claude/settings.json
+.claude/settings.local.json
+.claude/memory/
+.claude/todos/
+.claude/statsig/
+.codex/
+.cursor/
+
+# macOS
+.DS_Store

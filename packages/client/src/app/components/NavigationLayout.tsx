@@ -1,5 +1,5 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
-import { Outlet, useOutletContext } from "react-router-dom";
+import { Outlet, useLocation, useOutletContext } from "react-router-dom";
 import { Sidebar } from "./Sidebar";
 
 const DESKTOP_BREAKPOINT = 1100;
@@ -59,6 +59,7 @@ function getIsDesktop() {
 }
 
 export function NavigationLayout() {
+  const location = useLocation();
   const [isDesktop, setIsDesktop] = useState(getIsDesktop);
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
   const [isMobileSidebarOpen, setIsMobileSidebarOpen] = useState(false);
@@ -142,6 +143,8 @@ export function NavigationLayout() {
     [selectedProvider, selectedProjectId, setSelectedProvider, setSelectedProjectId],
   );
 
+  const isSessionRoute = /^\/projects\/[^/]+\/sessions\/[^/]+/.test(location.pathname);
+
   return (
     <ProjectScopeContext value={projectScopeContext}>
       <PageTitleContext value={pageTitleContext}>
@@ -170,16 +173,18 @@ export function NavigationLayout() {
             style={{ marginLeft: isDesktop ? `${sidebarWidth}px` : 0 }}
           >
             {/* TopNav */}
-            <header className="sticky top-0 z-30 flex items-center h-[3.25rem] px-6 bg-surface border-b border-outline-variant/30">
-              {pageTitle ? (
-                <h3 className="font-serif text-[1.65rem] font-bold text-primary leading-none">
-                  {pageTitle}
-                </h3>
-              ) : null}
-            </header>
+            {!isSessionRoute ? (
+              <header className="sticky top-0 z-30 flex items-center h-[3.25rem] px-6 bg-surface border-b border-outline-variant/10">
+                {pageTitle ? (
+                  <h3 className="font-serif text-[1.65rem] font-bold text-primary leading-none">
+                    {pageTitle}
+                  </h3>
+                ) : null}
+              </header>
+            ) : null}
 
             {/* Page content */}
-            <main className="flex-1 min-w-0 p-6">
+            <main className={isSessionRoute ? "flex-1 min-w-0 min-h-0" : "flex-1 min-w-0 p-8"}>
               <Outlet context={layoutContext} />
             </main>
           </div>

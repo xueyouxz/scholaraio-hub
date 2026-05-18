@@ -15,6 +15,7 @@ const __dirname = path.dirname(__filename);
 
 export interface Config {
   dataDir: string;
+  scholarAioApiUrl: string;
   clientDistDir: string;
   claudeProjectsDir: string;
   claudeSessionsDir: string;
@@ -63,6 +64,7 @@ export function loadConfig(): Config {
 
   return {
     dataDir,
+    scholarAioApiUrl: env.SCHOLARAIO_API_URL ?? "http://127.0.0.1:8765",
     clientDistDir: env.CLIENT_DIST_DIR ?? path.resolve(__dirname, "..", "..", "client", "dist"),
     claudeProjectsDir: env.CLAUDE_PROJECTS_DIR ?? claudeSessionsDir,
     claudeSessionsDir,

@@ -1,6 +1,13 @@
 import type { ContextUsage, PermissionMode } from "@scholaraio-hub/shared";
-import { ArrowUp, ChevronDown, Loader2, Plus, X } from "lucide-react";
-import { type KeyboardEvent, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { ArrowUp, ListPlus, Loader2, Paperclip, Square, X } from "lucide-react";
+import {
+  type ClipboardEvent,
+  type KeyboardEvent,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import type { ModelInfo, ThinkingOption } from "../../../core/types";
 import { useDraftPersistence } from "../hooks/useDraftPersistence";
 import { useSpeechRecognition } from "../hooks/useSpeechRecognition";
@@ -31,25 +38,37 @@ interface MessageInputProps {
   onPermissionModeChange?: (mode: PermissionMode) => void;
   onHoldChange?: (held: boolean) => void;
   onSend: () => Promise<void>;
+  onQueue?: () => Promise<void>;
+  onStop?: () => void;
+  isRunning?: boolean;
+  isThinking?: boolean;
   placeholder?: string;
 }
 
 export function MessageInput({
   message,
+  thinking,
   busy,
   files,
   model,
   models,
   permissionMode = "default",
+  isHeld,
   draftKey,
   slashCommands,
   supportsPermissionMode = true,
   contextUsage,
   onMessageChange,
+  onThinkingChange,
   onFilesChange,
   onModelChange,
   onPermissionModeChange,
+  onHoldChange,
   onSend,
+  onQueue,
+  onStop,
+  isRunning,
+  isThinking,
   placeholder = "您想更改或创建什么内容？",
 }: MessageInputProps) {
   const fileInputRef = useRef<HTMLInputElement | null>(null);
@@ -98,61 +117,86 @@ export function MessageInput({
       return;
     }
     if (event.key !== "Enter" || event.shiftKey || event.ctrlKey || event.nativeEvent.isComposing) {
+      if (event.key === "Enter" && event.ctrlKey && !event.shiftKey && onQueue) {
+        event.preventDefault();
+        void onQueue();
+      }
       return;
     }
     event.preventDefault();
     void onSend();
   };
 
+  const handlePaste = (event: ClipboardEvent<HTMLTextAreaElement>) => {
+    const items = event.clipboardData?.items;
+    if (!items) return;
+    const pastedFiles: File[] = [];
+    for (const item of items) {
+      if (item.kind !== "file") continue;
+      const file = item.getAsFile();
+      if (file) pastedFiles.push(file);
+    }
+    if (pastedFiles.length === 0) return;
+    event.preventDefault();
+    onFilesChange([...files, ...pastedFiles]);
+  };
+
   const canSend = Boolean(message.trim() || files.length > 0);
   const showSlashList = Boolean(slashFilter && slashFilter.length > 0 && message.startsWith("/"));
+  const showQueue = Boolean(onQueue && canSend && isRunning);
+  const showStop = Boolean(onStop && isRunning && isThinking && !canSend);
+
+  const activeModelName =
+    models?.find((m) => m.id === model)?.name ?? model ?? models?.[0]?.name ?? "";
 
   return (
-    <div className="w-full max-w-[44rem] mx-auto">
-      {files.length > 0 ? (
-        <div className="flex flex-wrap gap-2 mb-2.5">
-          {files.map((file, index) => (
-            <div
-              key={`${file.name}-${file.size}-${index}`}
-              className="flex items-center gap-2 bg-surface-container-high border border-outline-variant/20 px-3 py-1 rounded-lg text-on-surface-variant"
-            >
-              <span className="text-[11px] font-medium font-mono max-w-44 truncate">
-                {file.name}
-              </span>
-              <button
-                type="button"
-                onClick={() => onFilesChange(files.filter((_, i) => i !== index))}
-                aria-label={`Remove ${file.name}`}
-                className="!border-0 !bg-transparent !p-0 hover:![transform:none] cursor-pointer text-on-surface-variant/60 hover:text-error leading-none flex items-center"
-              >
-                <X className="w-3 h-3" />
-              </button>
-            </div>
-          ))}
-        </div>
-      ) : null}
-
+    <div className="relative w-full">
+      {/* Slash command suggestions */}
       {showSlashList && slashFilter ? (
-        <div className="mb-2 rounded-xl border border-outline-variant/30 bg-surface-container-low overflow-hidden shadow-md">
+        <div className="mb-2 border border-outline-variant/20 rounded-xl bg-surface-container-lowest shadow-lg overflow-hidden">
           {slashFilter.map((cmd) => (
             <button
               key={cmd.name}
               type="button"
               onClick={() => onMessageChange(`/${cmd.name} `)}
-              className="w-full text-left px-3 py-1.5 hover:bg-surface-container flex items-center gap-2 !border-0 !bg-transparent cursor-pointer"
+              className="w-full text-left flex items-center gap-3 px-4 py-2 hover:bg-surface-container transition-colors"
             >
-              <span className="text-xs font-mono text-primary">/{cmd.name}</span>
+              <span className="font-mono text-[11px] text-primary font-bold">/{cmd.name}</span>
               {cmd.description ? (
-                <span className="text-[11px] text-on-surface-variant truncate">
-                  {cmd.description}
-                </span>
+                <span className="text-xs text-on-surface-variant truncate">{cmd.description}</span>
               ) : null}
             </button>
           ))}
         </div>
       ) : null}
 
-      <div className="bg-surface-container pt-0 px-0 pb-2.5 rounded-[24px] shadow-[0_4px_20px_rgba(0,0,0,0.10),0_1px_6px_rgba(0,0,0,0.06)] border-[3px] border-outline/50 flex flex-col gap-1 overflow-hidden">
+      {/* Main input card */}
+      <div
+        className={`bg-surface-container-low border border-outline-variant/20 rounded-xl transition-all focus-within:border-primary/30 focus-within:ring-1 focus-within:ring-primary/10 ${interimTranscript ? "ring-1 ring-error/30 border-error/30" : ""}`}
+      >
+        {/* Attachment chips */}
+        {files.length > 0 ? (
+          <div className="flex flex-wrap gap-2 px-4 pt-3 pb-1">
+            {files.map((file, index) => (
+              <div
+                key={`${file.name}-${file.size}-${index}`}
+                className="inline-flex items-center gap-1.5 max-w-[180px] px-2.5 py-1 bg-surface-container border border-outline-variant/20 rounded-lg text-xs text-on-surface-variant"
+              >
+                <span className="truncate">{file.name}</span>
+                <button
+                  type="button"
+                  onClick={() => onFilesChange(files.filter((_, i) => i !== index))}
+                  aria-label={`Remove ${file.name}`}
+                  className="text-on-surface-variant hover:text-error transition-colors shrink-0"
+                >
+                  <X size={11} />
+                </button>
+              </div>
+            ))}
+          </div>
+        ) : null}
+
+        {/* Textarea */}
         <textarea
           ref={textareaRef}
           value={displayValue}
@@ -161,52 +205,64 @@ export function MessageInput({
             onMessageChange(event.target.value);
           }}
           onKeyDown={handleKeyDown}
+          onPaste={handlePaste}
           placeholder={placeholder}
           rows={2}
           disabled={busy}
-          style={{ height: "56px" }}
-          className="w-full !bg-surface-container !px-4 !pt-3 !pb-0 font-sans text-sm !min-h-[56px] max-h-[45vh] overflow-y-auto !resize-none text-on-surface placeholder:text-on-surface-variant/50 outline-none !border-0 !rounded-none leading-normal"
+          className="block w-full bg-transparent text-sm text-on-surface px-4 pt-3 pb-2 resize-none outline-none border-none placeholder:text-on-surface-variant/50 min-h-[60px] max-h-[45vh] leading-relaxed"
+          style={{ height: "60px" }}
         />
 
-        <div className="flex items-center justify-between gap-2 px-4">
-          <div className="flex items-center gap-1">
+        {/* Bottom toolbar */}
+        <div className="flex items-center justify-between px-3 pb-3 gap-2">
+          {/* Left: attach + toolbar controls */}
+          <div className="flex items-center gap-1 min-w-0">
             <button
               type="button"
               onClick={() => fileInputRef.current?.click()}
               disabled={busy}
               title="Attach files"
-              className="flex items-center justify-center w-8 h-8 rounded-xl text-on-surface-variant hover:bg-surface-container-high !border-0 !bg-transparent !p-0 hover:![transform:none] cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed transition-colors relative"
+              className="relative p-1.5 rounded-lg text-on-surface-variant hover:bg-surface-container hover:text-on-surface transition-colors"
             >
-              <Plus className="w-[18px] h-[18px]" />
+              <Paperclip size={15} aria-hidden="true" />
               {files.length > 0 ? (
-                <span className="absolute -top-0.5 -right-0.5 text-[9px] font-mono leading-none bg-primary text-on-primary rounded-full w-3.5 h-3.5 flex items-center justify-center">
+                <span className="absolute -top-1 -right-1 min-w-[14px] h-3.5 px-0.5 bg-primary text-on-primary text-[9px] font-bold rounded-full flex items-center justify-center leading-none">
                   {files.length}
                 </span>
               ) : null}
             </button>
-          </div>
 
-          <div className="flex items-center gap-1.5">
             <MessageInputToolbar
               permissionMode={permissionMode}
               onPermissionModeChange={onPermissionModeChange ?? (() => {})}
+              thinking={thinking}
+              onThinkingChange={onThinkingChange}
+              isHeld={isHeld}
+              onHoldChange={onHoldChange}
               voiceListening={speech.listening}
               voiceSupported={speech.supported}
               onToggleVoice={() => (speech.listening ? speech.stop() : speech.start())}
               contextUsage={contextUsage}
               supportsPermissionMode={supportsPermissionMode && Boolean(onPermissionModeChange)}
             />
+          </div>
 
+          {/* Right: model selector + queue + send/stop */}
+          <div className="flex items-center gap-2 shrink-0">
             {models && models.length > 0 && onModelChange ? (
-              <div className="relative flex items-center gap-1 cursor-pointer">
-                <span className="text-[12px] font-medium text-on-surface-variant whitespace-nowrap pointer-events-none">
-                  {models.find((m) => m.id === model)?.name ?? model ?? models[0]?.name}
-                </span>
-                <ChevronDown className="w-3 h-3 text-on-surface-variant/60 shrink-0 pointer-events-none" />
+              <div className="relative inline-flex">
+                <button
+                  type="button"
+                  className="flex items-center gap-1 text-[11px] font-medium text-on-surface-variant px-2 py-1 rounded-lg hover:bg-surface-container hover:text-on-surface transition-colors whitespace-nowrap"
+                  tabIndex={-1}
+                >
+                  {activeModelName}
+                </button>
                 <select
                   value={model ?? models[0]?.id}
                   onChange={(event) => onModelChange(event.target.value)}
-                  className="absolute inset-0 opacity-0 cursor-pointer w-full h-full !border-0 !bg-transparent !p-0 !rounded-none !min-h-0"
+                  className="absolute inset-0 opacity-0 cursor-pointer w-full h-full"
+                  aria-label="Select model"
                 >
                   {models.map((m) => (
                     <option key={m.id} value={m.id}>
@@ -217,17 +273,40 @@ export function MessageInput({
               </div>
             ) : null}
 
+            {showQueue ? (
+              <button
+                type="button"
+                onClick={() => void onQueue?.()}
+                disabled={busy}
+                title="Queue message"
+                aria-label="Queue message"
+                className="p-1.5 rounded-lg bg-surface-container text-on-surface-variant hover:bg-surface-container-high hover:text-on-surface transition-colors"
+              >
+                <ListPlus size={15} aria-hidden="true" />
+              </button>
+            ) : null}
+
             <button
               type="button"
-              onClick={() => void onSend()}
-              disabled={busy || !canSend}
-              aria-label={busy ? "Sending…" : "Send"}
-              className="flex items-center justify-center w-8 h-8 rounded-full !bg-on-surface !text-surface !border-0 !p-0 hover:![transform:none] cursor-pointer disabled:opacity-30 disabled:cursor-not-allowed transition-opacity active:scale-95"
+              onClick={() => {
+                if (showStop) {
+                  onStop?.();
+                  return;
+                }
+                void onSend();
+              }}
+              disabled={busy || (!canSend && !showStop)}
+              aria-label={showStop ? "Stop" : busy ? "Sending…" : "Send"}
+              className={`w-8 h-8 flex items-center justify-center rounded-lg transition-all disabled:opacity-40 ${
+                showStop ? "bg-error text-on-error" : "signature-gradient text-on-primary shadow-sm"
+              }`}
             >
               {busy ? (
-                <Loader2 className="w-[15px] h-[15px] animate-spin" />
+                <Loader2 size={15} className="animate-spin" aria-hidden="true" />
+              ) : showStop ? (
+                <Square size={11} aria-hidden="true" />
               ) : (
-                <ArrowUp className="w-[16px] h-[16px]" />
+                <ArrowUp size={15} aria-hidden="true" />
               )}
             </button>
           </div>

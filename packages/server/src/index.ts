@@ -202,6 +202,7 @@ async function startServer() {
     notificationService,
     sessionIndexService,
     frontendDistPath: config.clientDistDir,
+    scholarAioApiUrl: config.scholarAioApiUrl,
   });
 
   supervisorForShutdown = supervisor;

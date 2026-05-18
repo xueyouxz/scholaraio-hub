@@ -1,6 +1,9 @@
 import type { ReactNode } from "react";
 import type { ContentBlock, RenderContext } from "../types";
 
+/**
+ * Bash tool types
+ */
 export interface BashInput {
   command: string;
   description?: string;
@@ -16,6 +19,9 @@ export interface BashResult {
   backgroundTaskId?: string;
 }
 
+/**
+ * Read tool types
+ */
 export interface ReadInput {
   file_path: string;
   offset?: number;
@@ -24,7 +30,7 @@ export interface ReadInput {
 
 export interface PdfFile {
   base64: string;
-  type: string;
+  type: string; // MIME type, e.g. "application/pdf"
   originalSize?: number;
 }
 
@@ -43,7 +49,7 @@ export interface TextFile {
 
 export interface ImageFile {
   base64: string;
-  type: string;
+  type: string; // MIME type
   originalSize?: number;
   dimensions?: {
     originalWidth: number;
@@ -53,6 +59,9 @@ export interface ImageFile {
   };
 }
 
+/**
+ * Edit tool types
+ */
 export interface EditInput {
   file_path: string;
   old_string: string;
@@ -75,9 +84,12 @@ export interface PatchHunk {
   oldLines: number;
   newStart: number;
   newLines: number;
-  lines: string[];
+  lines: string[]; // Prefixed with ' ', '-', or '+'
 }
 
+/**
+ * Write tool types
+ */
 export interface WriteInput {
   file_path: string;
   content: string;
@@ -94,6 +106,9 @@ export interface WriteResult {
   };
 }
 
+/**
+ * TodoWrite tool types
+ */
 export interface TodoWriteInput {
   todos: Todo[];
 }
@@ -109,6 +124,9 @@ export interface Todo {
   activeForm: string;
 }
 
+/**
+ * Glob tool types
+ */
 export interface GlobInput {
   pattern: string;
   path?: string;
@@ -121,6 +139,9 @@ export interface GlobResult {
   truncated: boolean;
 }
 
+/**
+ * Grep tool types
+ */
 export interface GrepInput {
   pattern: string;
   path?: string;
@@ -137,6 +158,9 @@ export interface GrepResult {
   appliedLimit?: number;
 }
 
+/**
+ * Task tool types
+ */
 export interface TaskInput {
   description: string;
   prompt: string;
@@ -154,6 +178,9 @@ export interface TaskResult {
   totalToolUseCount: number;
 }
 
+/**
+ * WebSearch tool types
+ */
 export interface WebSearchInput {
   query: string;
 }
@@ -164,6 +191,9 @@ export interface WebSearchResult {
   durationSeconds: number;
 }
 
+/**
+ * WebFetch tool types
+ */
 export interface WebFetchInput {
   url: string;
   prompt: string;
@@ -178,6 +208,9 @@ export interface WebFetchResult {
   url: string;
 }
 
+/**
+ * AskUserQuestion tool types
+ */
 export interface AskUserQuestionInput {
   questions: Question[];
 }
@@ -194,6 +227,9 @@ export interface AskUserQuestionResult {
   answers: Record<string, string>;
 }
 
+/**
+ * ExitPlanMode tool types
+ */
 export interface ExitPlanModeInput {
   plan?: string;
 }
@@ -204,6 +240,9 @@ export interface ExitPlanModeResult {
   filePath: string;
 }
 
+/**
+ * update_plan tool types
+ */
 export interface UpdatePlanStep {
   step: string;
   status: "pending" | "in_progress" | "completed" | string;
@@ -216,6 +255,9 @@ export interface UpdatePlanInput {
 
 export type UpdatePlanResult = string | { message?: string };
 
+/**
+ * write_stdin tool types
+ */
 export interface WriteStdinInput {
   session_id?: string | number;
   chars?: string;
@@ -226,6 +268,9 @@ export interface WriteStdinInput {
 
 export type WriteStdinResult = string | { content?: string };
 
+/**
+ * BashOutput tool types
+ */
 export interface BashOutputInput {
   bash_id: string;
   block?: boolean;
@@ -244,6 +289,9 @@ export interface BashOutputResult {
   timestamp: string;
 }
 
+/**
+ * TaskOutput tool types
+ */
 export interface TaskOutputInput {
   task_id: string;
   block?: boolean;
@@ -262,6 +310,9 @@ export interface TaskOutputResult {
   };
 }
 
+/**
+ * KillShell tool types
+ */
 export interface KillShellInput {
   shell_id: string;
 }
@@ -271,30 +322,61 @@ export interface KillShellResult {
   shell_id: string;
 }
 
+/**
+ * Tool renderer interface
+ */
+export interface ToolGroupRenderItem<TInput = unknown, TResult = unknown> {
+  id: string;
+  toolName: string;
+  input: TInput;
+  result: TResult | undefined;
+  isError: boolean;
+  status: "pending" | "complete" | "error" | "aborted";
+}
+
 export interface ToolRenderer<TInput = unknown, TResult = unknown> {
+  /** Tool name (e.g., "Bash", "Edit", "Read") */
   tool: string;
+  /** Display name shown in UI (defaults to tool name) */
   displayName?: string;
+  /** Render the tool_use block (what Claude wants to do) */
   renderToolUse(input: TInput, context: RenderContext): ReactNode;
+  /** Render the tool_result block (what happened) */
   renderToolResult(
     result: TResult,
     isError: boolean,
     context: RenderContext,
     input?: TInput,
   ): ReactNode;
+  /** Summary for collapsed tool_use view */
   getUseSummary?(input: TInput): string;
+  /** Summary for collapsed tool_result view */
   getResultSummary?(result: TResult, isError: boolean, input?: TInput): string;
+  /**
+   * Render an interactive summary that replaces the expand/collapse behavior.
+   * When provided, the row won't expand - instead clicking invokes this component.
+   */
   renderInteractiveSummary?(
     input: TInput,
     result: TResult | undefined,
     isError: boolean,
     context: RenderContext,
   ): ReactNode;
+  /**
+   * Render a preview shown in the collapsed state (below the header).
+   * Used to show a condensed view of input/output without expanding.
+   */
   renderCollapsedPreview?(
     input: TInput,
     result: TResult | undefined,
     isError: boolean,
     context: RenderContext,
   ): ReactNode;
+  /**
+   * Render inline without the standard tool row wrapper.
+   * When provided, bypasses the entire tool-row structure (no header, chevrons, margins).
+   * The tool has complete control over its rendering.
+   */
   renderInline?(
     input: TInput,
     result: TResult | undefined,
@@ -302,4 +384,6 @@ export interface ToolRenderer<TInput = unknown, TResult = unknown> {
     status: "pending" | "complete" | "error" | "aborted",
     context: RenderContext,
   ): ReactNode;
+  /** Render a compact item inside a grouped tool run. */
+  renderGroupItem?(item: ToolGroupRenderItem<TInput, TResult>, context: RenderContext): ReactNode;
 }

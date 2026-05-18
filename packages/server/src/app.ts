@@ -11,6 +11,7 @@ import { health } from "./routes/health.js";
 import { createProcessesRoutes } from "./routes/processes.js";
 import { createProjectsRoutes } from "./routes/projects.js";
 import { createProvidersRoutes } from "./routes/providers.js";
+import { createScholarRoutes } from "./routes/scholar.js";
 import { createSessionsRoutes } from "./routes/sessions.js";
 import { createSettingsRoutes } from "./routes/settings.js";
 import { createStreamsRoutes } from "./routes/streams.js";
@@ -30,6 +31,7 @@ import type { EventBus } from "./watcher/index.js";
 
 export interface AppOptions {
   sdk?: ClaudeSDK;
+  scholarAioApiUrl?: string;
   realSdk?: RealClaudeSDKInterface;
   projectsDir?: string;
   idleTimeoutMs?: number;
@@ -281,6 +283,13 @@ export function createApp(options: AppOptions): AppResult {
       }),
     );
   }
+
+  app.route(
+    "/api/scholar",
+    createScholarRoutes({
+      scholarAioApiUrl: options.scholarAioApiUrl ?? "http://127.0.0.1:8765",
+    }),
+  );
 
   if (options.frontendDistPath) {
     app.route("/", createStaticRoutes({ distPath: options.frontendDistPath }));

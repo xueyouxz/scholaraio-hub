@@ -31,7 +31,7 @@ Do not use ignore comments to bypass type, linting, or logic errors. All issues 
 
 Match existing naming patterns: `PascalCase` for classes and schema files such as `SessionIndexService.ts`, `camelCase` for functions, and kebab-case for top-level scripts like `release-web.mjs`. Prefer small modules under the relevant package instead of cross-package imports that bypass `@scholaraio-hub/shared`.
 
-For frontend component work and UI implementation, always follow the style design specification documented in `.design-docs/DESIGN.md`. Treat that file as the source of truth for visual and interaction design decisions instead of redefining design rules inline.
+For frontend component work and UI implementation, always follow the style design specification documented in `.design/DESIGN.md`. Treat that file as the source of truth for visual and interaction design decisions instead of redefining design rules inline.
 
 ## Testing Guidelines
 

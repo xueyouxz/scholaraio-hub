@@ -30,6 +30,7 @@ interface StreamingMarkdownCallbacks {
 interface UseSessionOptions {
   projectId: string;
   sessionId: string;
+  initialOwnership?: SessionOwnership;
   streamingMarkdownCallbacks?: StreamingMarkdownCallbacks;
 }
 
@@ -44,6 +45,7 @@ interface UseSessionResult {
   liveStatus: string | null;
   permissionMode: PermissionMode | null;
   modeVersion: number | null;
+  isCompacting: boolean;
   loading: boolean;
   loadingOlder: boolean;
   error: string;
@@ -80,14 +82,20 @@ function mergeOlderMessages(
 export function useSession({
   projectId,
   sessionId,
+  initialOwnership,
   streamingMarkdownCallbacks,
 }: UseSessionOptions): UseSessionResult {
-  const [snapshot, setSnapshot] = useState<SessionStateSnapshot>(createEmptySessionSnapshot);
+  const [snapshot, setSnapshot] = useState<SessionStateSnapshot>(() => {
+    const empty = createEmptySessionSnapshot();
+    if (initialOwnership) return { ...empty, ownership: initialOwnership };
+    return empty;
+  });
   const [loading, setLoading] = useState(true);
   const [loadingOlder, setLoadingOlder] = useState(false);
   const [error, setError] = useState("");
   const [connected, setConnected] = useState(false);
   const [reconnectKey, setReconnectKey] = useState(0);
+  const [isCompacting, setIsCompacting] = useState(false);
   const currentSessionIdRef = useRef(sessionId);
 
   const mergeIncomingMessage = useCallback((incomingMessage: SessionMessage) => {
@@ -174,6 +182,7 @@ export function useSession({
       } catch {
         // Ignore malformed connected payloads.
       }
+      void reconcile().catch(() => {});
     };
 
     const onMessage = (event: MessageEvent<string>) => {
@@ -183,8 +192,30 @@ export function useSession({
 
         const incoming = data as SessionMessage;
         const incomingId = getMessageId(incoming);
+
+        // Track context compaction: system messages carry status:"compacting";
+        // compact_boundary means compaction completed.
+        if (incoming.type === "system") {
+          const status = (incoming as { status?: string }).status;
+          setIsCompacting(status === "compacting");
+        }
+        if (incoming.type === "compact_boundary") {
+          setIsCompacting(false);
+        }
+
         if ((incoming.type === "assistant" || incoming.type === "user") && incomingId) {
           clearStreaming();
+          // Remove streaming placeholders atomically with the final message merge
+          // to prevent duplicates (streaming placeholder uses Anthropic API ID,
+          // final message uses server UUID — mergeMessages can't match them).
+          setSnapshot((current) => ({
+            ...current,
+            messages: mergeMessages(
+              current.messages.filter((m) => !m._isStreaming),
+              [{ ...incoming, _source: "sdk", _isStreaming: false } as SessionMessage],
+            ),
+          }));
+          return;
         }
 
         mergeIncomingMessage({
@@ -321,6 +352,7 @@ export function useSession({
     liveStatus: snapshot.liveStatus,
     permissionMode: snapshot.permissionMode,
     modeVersion: snapshot.modeVersion,
+    isCompacting,
     loading,
     loadingOlder,
     error,

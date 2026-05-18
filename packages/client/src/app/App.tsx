@@ -1,4 +1,7 @@
 import { BrowserRouter, Navigate, Route, Routes } from "react-router-dom";
+import { LibraryPage } from "../features/library/LibraryPage";
+import { SearchPage } from "../features/search/SearchPage";
+import { WorkspacesPage } from "../features/workspaces/WorkspacesPage";
 import { NavigationLayout } from "./components/NavigationLayout";
 import { AgentsPage } from "./pages/AgentsPage";
 import { FilePage } from "./pages/FilePage";
@@ -17,6 +20,9 @@ export function App() {
           <Route path="/agents" element={<AgentsPage />} />
           <Route path="/new-session" element={<NewSessionPage />} />
           <Route path="/settings" element={<SettingsPage />} />
+          <Route path="/library" element={<LibraryPage />} />
+          <Route path="/workspaces" element={<WorkspacesPage />} />
+          <Route path="/search" element={<SearchPage />} />
           <Route path="/projects/:projectId/sessions/:sessionId" element={<SessionPage />} />
         </Route>
         <Route path="/projects/:projectId/file" element={<FilePage />} />

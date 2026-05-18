@@ -1,23 +1,7 @@
 import type { ReactNode } from "react";
 import type { RenderContext } from "../types";
+import { canonicalizeToolName } from "./toolMetadata";
 import type { ToolRenderer } from "./types";
-
-const TOOL_NAME_ALIASES: Record<string, string> = {
-  shell_command: "Bash",
-  exec_command: "Bash",
-  write_stdin: "WriteStdin",
-  update_plan: "UpdatePlan",
-  apply_patch: "Edit",
-  web_search_call: "WebSearch",
-  search_query: "WebSearch",
-  Agent: "Task", // SDK 0.2.76+ renamed Task → Agent
-  view_image: "ViewImage",
-  imageView: "ViewImage",
-};
-
-function canonicalizeToolName(toolName: string): string {
-  return TOOL_NAME_ALIASES[toolName] ?? TOOL_NAME_ALIASES[toolName.toLowerCase()] ?? toolName;
-}
 
 /**
  * Registry for tool-specific renderers

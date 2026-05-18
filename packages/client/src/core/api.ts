@@ -154,6 +154,22 @@ export const api = {
       method: "POST",
       body: JSON.stringify({ requestId, response, feedback }),
     }),
+  setPermissionMode: (sessionId: string, mode: PermissionMode) =>
+    request<{ permissionMode: PermissionMode; modeVersion: number }>(
+      `/api/sessions/${sessionId}/mode`,
+      {
+        method: "PUT",
+        body: JSON.stringify({ mode }),
+      },
+    ),
+  setHold: (sessionId: string, hold: boolean) =>
+    request<{ isHeld: boolean; holdSince: string | null; state: string }>(
+      `/api/sessions/${sessionId}/hold`,
+      {
+        method: "PUT",
+        body: JSON.stringify({ hold }),
+      },
+    ),
   interruptProcess: (processId: string) =>
     request<{ interrupted: boolean; supported: boolean }>(`/api/processes/${processId}/interrupt`, {
       method: "POST",
@@ -182,6 +198,90 @@ export const api = {
     onProgress?: (uploaded: number, total: number) => void,
   ) => uploadFile(projectId, sessionId, file, { onProgress }),
 };
+
+export const scholar = {
+  getPapers: (params?: { sort?: string; year?: string; limit?: number; offset?: number }) => {
+    const qs = new URLSearchParams();
+    if (params?.sort) qs.set("sort", params.sort);
+    if (params?.year) qs.set("year", params.year);
+    if (params?.limit != null) qs.set("limit", String(params.limit));
+    if (params?.offset != null) qs.set("offset", String(params.offset));
+    return request<{ papers: ScholarPaper[]; total: number }>(
+      `/api/scholar/api/papers${qs.toString() ? `?${qs}` : ""}`,
+    );
+  },
+  getPaper: (id: string) =>
+    request<{ paper: ScholarPaper & { content?: string } }>(`/api/scholar/api/papers/${id}`),
+  getStats: () =>
+    request<{ total: number; missingPdf: number; pendingIngest: number; notIndexed: number }>(
+      "/api/scholar/api/stats",
+    ),
+  search: (body: {
+    query: string;
+    mode?: string;
+    year?: string;
+    journal?: string;
+    paper_type?: string;
+    limit?: number;
+  }) =>
+    request<{ results: ScholarPaper[]; mode: string; total: number }>("/api/scholar/api/search", {
+      method: "POST",
+      body: JSON.stringify(body),
+    }),
+  getWorkspaces: () =>
+    request<{ workspaces: ScholarWorkspaceSummary[] }>("/api/scholar/api/workspaces"),
+  getWorkspace: (name: string) =>
+    request<{ workspace: ScholarWorkspace }>(`/api/scholar/api/workspaces/${name}`),
+  createWorkspace: (name: string) =>
+    request<{ workspace: ScholarWorkspace }>("/api/scholar/api/workspaces", {
+      method: "POST",
+      body: JSON.stringify({ name }),
+    }),
+  addPaperToWorkspace: (workspaceName: string, paperId: string) =>
+    request<{ ok: boolean }>(
+      `/api/scholar/api/workspaces/${encodeURIComponent(workspaceName)}/papers`,
+      {
+        method: "POST",
+        body: JSON.stringify({ paperId }),
+      },
+    ),
+  getConfig: () =>
+    request<{
+      llm: { backend: string; model: string; base_url: string; api_key: string };
+      embed: { model: string; source: string; api_key: string };
+      ingest: { mineru_endpoint: string; mineru_api_key: string; s2_api_key: string };
+      paths: { papers_dir: string; workspace_dir: string };
+    }>("/api/scholar/api/config"),
+};
+
+export interface ScholarPaper {
+  id: string;
+  dirName: string;
+  title: string;
+  authors: string;
+  source: string;
+  year: number;
+  date?: string;
+  citations: string;
+  status: "ingested" | "indexing" | "pending" | "no-pdf";
+  hasPdf?: boolean;
+  isIndexed?: boolean;
+  abstract?: string;
+  doi?: string;
+  match?: string;
+  score?: number;
+}
+
+export interface ScholarWorkspaceSummary {
+  id: string;
+  name: string;
+  paperCount: number;
+  createdAt: string;
+}
+
+export interface ScholarWorkspace extends ScholarWorkspaceSummary {
+  papers: ScholarPaper[];
+}
 
 export const PERMISSION_MODES: readonly PermissionMode[] = [
   "default",

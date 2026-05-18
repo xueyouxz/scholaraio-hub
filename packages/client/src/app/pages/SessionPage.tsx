@@ -1,10 +1,10 @@
-import type { PermissionMode } from "@scholaraio-hub/shared";
+import type { PermissionMode, SessionOwnership } from "@scholaraio-hub/shared";
 import { Bell, Check, PenLine, X } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
-import { useParams } from "react-router-dom";
+import { useLocation, useParams } from "react-router-dom";
 import { api } from "../../core/api";
 import type { ModelInfo, ThinkingOption, UploadedFile } from "../../core/types";
-import { MessageComposer } from "../../features/session/components/MessageComposer";
+import { MessageInput } from "../../features/session/components/MessageInput";
 import { MessageList } from "../../features/session/components/MessageList";
 import { useSession } from "../../features/session/hooks/useSession";
 import {
@@ -16,6 +16,11 @@ import { usePageTitle } from "../components/NavigationLayout";
 
 export function SessionPage() {
   const { projectId = "", sessionId = "" } = useParams();
+  const location = useLocation();
+  const navState = location.state as {
+    initialOwnership?: SessionOwnership;
+    initialTitle?: string;
+  } | null;
 
   if (!projectId || !sessionId) {
     return (
@@ -30,7 +35,14 @@ export function SessionPage() {
   return (
     <SessionMetadataProvider projectId={projectId} projectPath={null} sessionId={sessionId}>
       <StreamingMarkdownProvider>
-        <SessionPageContent projectId={projectId} sessionId={sessionId} />
+        {/* key={sessionId} forces full remount on session change, resetting all streaming state */}
+        <SessionPageContent
+          key={sessionId}
+          projectId={projectId}
+          sessionId={sessionId}
+          initialOwnership={navState?.initialOwnership}
+          initialTitle={navState?.initialTitle}
+        />
       </StreamingMarkdownProvider>
     </SessionMetadataProvider>
   );
@@ -39,9 +51,13 @@ export function SessionPage() {
 function SessionPageContent({
   projectId,
   sessionId,
+  initialOwnership,
+  initialTitle,
 }: {
   projectId: string;
   sessionId: string;
+  initialOwnership?: SessionOwnership;
+  initialTitle?: string;
 }) {
   const { setTitle } = usePageTitle();
   const [message, setMessage] = useState("");
@@ -53,6 +69,10 @@ function SessionPageContent({
   const [selectedModel, setSelectedModel] = useState<string | undefined>(undefined);
   const [composerPermissionMode, setComposerPermissionMode] = useState<PermissionMode>("default");
   const [isHeld, setIsHeld] = useState(false);
+  const [scrollTrigger, setScrollTrigger] = useState(0);
+  const [pendingMessages, setPendingMessages] = useState<
+    Array<{ tempId: string; content: string; status?: string }>
+  >([]);
   const streamingContext = useStreamingMarkdownContext();
 
   const streamingCallbacks = useMemo(() => {
@@ -76,20 +96,29 @@ function SessionPageContent({
     loading,
     loadingOlder,
     error,
+    connected,
     reconcile,
     loadOlderMessages,
     setPendingInputRequest,
     permissionMode,
+    liveStatus,
+    isCompacting,
     slashCommands,
   } = useSession({
     projectId,
     sessionId,
+    initialOwnership,
     streamingMarkdownCallbacks: streamingCallbacks,
   });
 
   useEffect(() => {
     if (permissionMode) setComposerPermissionMode(permissionMode);
   }, [permissionMode]);
+
+  useEffect(() => {
+    if (!liveStatus) return;
+    setIsHeld(liveStatus === "hold");
+  }, [liveStatus]);
 
   // Load models for the session's provider
   useEffect(() => {
@@ -110,13 +139,46 @@ function SessionPageContent({
     }
   };
 
+  const handlePermissionModeChange = async (mode: PermissionMode) => {
+    setComposerPermissionMode(mode);
+    if (ownership.owner !== "self") return;
+    await api.setPermissionMode(sessionId, mode).catch(() => {});
+  };
+
+  const handleHoldChange = async (held: boolean) => {
+    setIsHeld(held);
+    if (ownership.owner !== "self") return;
+    const result = await api.setHold(sessionId, held).catch(() => null);
+    if (result) setIsHeld(result.isHeld);
+  };
+
+  const handleStop = () => {
+    if (ownership.owner !== "self") return;
+    void api
+      .abortProcess(ownership.processId)
+      .then(() => reconcile())
+      .catch(() => {});
+  };
+
   const send = async () => {
     if (!session || (!message.trim() && files.length === 0)) return;
+    const trimmed = message.trim();
+    const tempId = `pending-${Date.now()}`;
+
     setBusy(true);
     setSendError("");
+    setMessage("");
+    setFiles([]);
+    setScrollTrigger((n) => n + 1);
+    if (trimmed) setPendingMessages((prev) => [...prev, { tempId, content: trimmed }]);
+
     try {
       let attachments: UploadedFile[] = [];
       if (files.length > 0) {
+        if (trimmed)
+          setPendingMessages((prev) =>
+            prev.map((m) => (m.tempId === tempId ? { ...m, status: "Uploading…" } : m)),
+          );
         attachments = await Promise.all(
           files.map((file) => api.uploadAttachment(projectId, sessionId, file)),
         );
@@ -125,7 +187,8 @@ function SessionPageContent({
       if (ownership.owner === "self") {
         await api.queueMessage({
           sessionId,
-          message: message.trim(),
+          message: trimmed,
+          mode: composerPermissionMode,
           thinking,
           attachments,
         });
@@ -133,20 +196,30 @@ function SessionPageContent({
         await api.resumeSession({
           projectId,
           sessionId,
-          message: message.trim(),
+          message: trimmed,
+          mode: composerPermissionMode,
           thinking,
           attachments,
         });
       }
 
-      setMessage("");
-      setFiles([]);
+      setPendingMessages((prev) => prev.filter((m) => m.tempId !== tempId));
       await reconcile();
     } catch (err) {
+      setPendingMessages((prev) => prev.filter((m) => m.tempId !== tempId));
+      setMessage(trimmed);
       setSendError(err instanceof Error ? err.message : "Failed to send message");
     } finally {
       setBusy(false);
     }
+  };
+
+  const queue = async () => {
+    if (ownership.owner !== "self") {
+      await send();
+      return;
+    }
+    await send();
   };
 
   const respondToPendingInput = async (response: "approve" | "approve_accept_edits" | "deny") => {
@@ -156,7 +229,40 @@ function SessionPageContent({
     await reconcile();
   };
 
-  const title = session?.customTitle ?? session?.title ?? sessionId;
+  // Use initialTitle from navigation state as an optimistic title until session data loads.
+  const title = session?.customTitle ?? session?.title ?? initialTitle ?? sessionId;
+  const processStateLabel =
+    liveStatus === "in-turn"
+      ? "running"
+      : liveStatus === "waiting-input"
+        ? "needs input"
+        : liveStatus === "hold"
+          ? "held"
+          : ownership.owner === "external"
+            ? "external"
+            : "idle";
+
+  const statePillClass =
+    processStateLabel === "idle"
+      ? "bg-surface-container text-on-surface-variant"
+      : processStateLabel === "external"
+        ? "bg-tertiary-container/20 text-tertiary"
+        : "bg-tertiary-container/30 text-tertiary";
+  const connectionStatus =
+    ownership.owner === "self" ? (connected ? "connected" : "connecting") : "idle";
+  const placeholder =
+    ownership.owner === "external"
+      ? "This session is running elsewhere"
+      : liveStatus === "in-turn" || liveStatus === "hold"
+        ? "Queue a follow-up message"
+        : "Continue this session";
+
+  // Treat tools as still-pending (not orphaned) when the session is actively running,
+  // waiting for approval, or the SSE connection hasn't been established yet.
+  const activeToolApproval =
+    liveStatus === "in-turn" ||
+    liveStatus === "waiting-input" ||
+    (ownership.owner === "self" && !connected);
 
   useEffect(() => {
     setTitle(title);
@@ -164,57 +270,76 @@ function SessionPageContent({
   }, [title, setTitle]);
 
   return (
-    <section className="flex flex-col gap-3 min-h-[calc(100vh-6rem)]">
-      <div className="flex-1 min-h-0">
-        <div className="flex flex-col gap-3">
-          {pendingInputRequest ? (
-            <div className="rounded-[20px] border border-outline-variant/20 bg-surface-container-low p-4 flex flex-col gap-3">
-              <div className="flex items-start gap-3">
-                <div className="flex items-center justify-center w-7 h-7 rounded-lg bg-secondary-container text-primary shrink-0 mt-0.5">
-                  <Bell className="w-3.5 h-3.5" />
-                </div>
-                <div>
-                  <strong className="text-sm font-semibold">Pending Input</strong>
-                  <p className="mt-0.5 text-sm text-on-surface-variant">
-                    {pendingInputRequest.toolName ?? pendingInputRequest.prompt}
-                  </p>
-                </div>
-              </div>
-              <div className="flex flex-wrap gap-2 pl-10">
-                <button
-                  type="button"
-                  onClick={() => void respondToPendingInput("approve")}
-                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-medium bg-primary text-on-primary border-0 cursor-pointer hover:opacity-90"
-                >
-                  <Check className="w-3.5 h-3.5" />
-                  Approve
-                </button>
-                <button
-                  type="button"
-                  onClick={() => void respondToPendingInput("approve_accept_edits")}
-                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-medium bg-surface-container border border-outline-variant/20 cursor-pointer hover:bg-surface-container-high"
-                >
-                  <PenLine className="w-3.5 h-3.5" />
-                  Approve + Accept Edits
-                </button>
-                <button
-                  type="button"
-                  onClick={() => void respondToPendingInput("deny")}
-                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-medium text-error bg-error-container/30 border border-error/20 cursor-pointer hover:bg-error-container/50"
-                >
-                  <X className="w-3.5 h-3.5" />
-                  Deny
-                </button>
-              </div>
+    <section className="session-page">
+      {/* Session header */}
+      <header className="shrink-0 flex items-center justify-between h-[3.25rem] px-4 border-b border-outline-variant/10 bg-surface z-10">
+        <div className="flex items-center gap-2 min-w-0 flex-1">
+          <span className="font-sans text-sm font-medium text-on-surface truncate">{title}</span>
+        </div>
+        <div className="flex items-center gap-2 shrink-0">
+          {session?.provider ? (
+            <span className="text-[10px] font-mono text-on-surface-variant bg-surface-container px-2 py-0.5 rounded">
+              {session.provider}
+              {session.model ? ` · ${session.model}` : ""}
+            </span>
+          ) : null}
+          <span
+            className={`text-[10px] font-mono font-bold px-2 py-0.5 rounded uppercase ${statePillClass}`}
+          >
+            {processStateLabel}
+          </span>
+        </div>
+      </header>
+
+      {ownership.owner === "external" ? (
+        <div className="mx-auto w-full max-w-[830px] mt-2 px-4 py-2 rounded-lg bg-tertiary-container/20 border border-tertiary/20 text-tertiary text-xs">
+          This session is controlled elsewhere.
+        </div>
+      ) : null}
+
+      <main className="session-messages">
+        {pendingInputRequest ? (
+          <div className="max-w-[830px] mx-auto mb-3 bg-surface-container-low border border-outline-variant/15 rounded-xl p-3">
+            <div className="flex items-center gap-2 mb-3">
+              <Bell className="w-4 h-4 text-on-surface-variant shrink-0" aria-hidden="true" />
+              <span className="text-sm font-medium text-on-surface">
+                {pendingInputRequest.toolName ?? pendingInputRequest.prompt}
+              </span>
             </div>
-          ) : null}
+            <div className="flex items-center gap-2 flex-wrap">
+              <button
+                type="button"
+                onClick={() => void respondToPendingInput("approve")}
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-primary text-on-primary hover:opacity-90 transition-opacity"
+              >
+                <Check size={13} aria-hidden="true" />
+                Approve
+              </button>
+              <button
+                type="button"
+                onClick={() => void respondToPendingInput("approve_accept_edits")}
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium bg-surface-container text-on-surface hover:bg-surface-container-high transition-colors"
+              >
+                <PenLine size={13} aria-hidden="true" />
+                Approve + Accept Edits
+              </button>
+              <button
+                type="button"
+                onClick={() => void respondToPendingInput("deny")}
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium text-error hover:bg-error-container/20 transition-colors"
+              >
+                <X size={13} aria-hidden="true" />
+                Deny
+              </button>
+            </div>
+          </div>
+        ) : null}
 
-          {error ? <div className="empty text-sm text-error">{error}</div> : null}
-          {sendError ? <div className="empty text-sm text-error">{sendError}</div> : null}
-          {loading ? (
-            <div className="empty text-sm text-on-surface-variant">Loading session…</div>
-          ) : null}
+        {error ? <div className="error">{error}</div> : null}
+        {sendError ? <div className="error">{sendError}</div> : null}
+        {loading ? <div className="loading">Loading session...</div> : null}
 
+        {!loading ? (
           <MessageList
             messages={messages}
             markdownAugments={markdownAugments}
@@ -222,31 +347,46 @@ function SessionPageContent({
             loadingOlder={loadingOlder}
             onLoadOlderMessages={loadOlderMessages}
             sessionProvider={session?.provider}
+            isProcessing={ownership.owner === "self" && liveStatus === "in-turn"}
+            isCompacting={isCompacting}
+            scrollTrigger={scrollTrigger}
+            activeToolApproval={activeToolApproval}
+            pendingMessages={pendingMessages}
+          />
+        ) : null}
+      </main>
+
+      <footer className="session-input">
+        <div className={`session-connection-bar session-connection-${connectionStatus}`} />
+        <div className="session-input-inner">
+          <MessageInput
+            message={message}
+            thinking={thinking}
+            busy={busy}
+            files={files}
+            model={selectedModel}
+            models={models}
+            permissionMode={composerPermissionMode}
+            isHeld={isHeld}
+            draftKey={`session:${sessionId}`}
+            slashCommands={ownership.owner === "self" ? slashCommands : []}
+            contextUsage={session?.contextUsage}
+            onMessageChange={setMessage}
+            onThinkingChange={setThinking}
+            onFilesChange={setFiles}
+            onModelChange={(m) => void handleModelChange(m)}
+            onPermissionModeChange={(mode) => void handlePermissionModeChange(mode)}
+            onHoldChange={
+              ownership.owner === "self" ? (held) => void handleHoldChange(held) : undefined
+            }
+            onSend={send}
+            onQueue={ownership.owner === "self" && liveStatus !== "idle" ? queue : undefined}
+            onStop={handleStop}
+            isRunning={ownership.owner === "self"}
+            isThinking={liveStatus === "in-turn" || liveStatus === "hold"}
+            placeholder={placeholder}
           />
         </div>
-      </div>
-
-      <footer className="sticky bottom-0 z-20 pt-0 pb-4 bg-surface">
-        <MessageComposer
-          message={message}
-          thinking={thinking}
-          busy={busy}
-          files={files}
-          model={selectedModel}
-          models={models}
-          permissionMode={composerPermissionMode}
-          isHeld={isHeld}
-          draftKey={`session:${sessionId}`}
-          slashCommands={slashCommands}
-          contextUsage={session?.contextUsage}
-          onMessageChange={setMessage}
-          onThinkingChange={setThinking}
-          onFilesChange={setFiles}
-          onModelChange={(m) => void handleModelChange(m)}
-          onPermissionModeChange={setComposerPermissionMode}
-          onHoldChange={setIsHeld}
-          onSend={send}
-        />
       </footer>
     </section>
   );

@@ -4,6 +4,7 @@ export type RenderItem =
   | TextItem
   | ThinkingItem
   | ToolCallItem
+  | ToolGroupItem
   | UserPromptItem
   | SessionSetupItem
   | SystemItem;
@@ -42,6 +43,13 @@ export interface ToolResultData {
   content: string;
   isError: boolean;
   structured?: unknown;
+}
+
+export interface ToolGroupItem extends RenderItemBase {
+  type: "tool_group";
+  id: string;
+  toolName: string;
+  tools: ToolCallItem[];
 }
 
 export interface UserPromptItem extends RenderItemBase {

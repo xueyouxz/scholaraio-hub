@@ -8,7 +8,7 @@
     "pnpm": ">=10.27.0"
   },
   "scripts": {
-    "dev": "pnpm -r --parallel --stream --filter @scholaraio-hub/server --filter @scholaraio-hub/client dev",
+    "dev": "node scripts/dev.mjs",
     "build": "pnpm --filter @scholaraio-hub/shared build && pnpm --filter @scholaraio-hub/server build && pnpm --filter @scholaraio-hub/client build",
     "clean": "node scripts/clean.mjs",
     "lint": "biome check .",

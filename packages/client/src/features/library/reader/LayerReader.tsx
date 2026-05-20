@@ -1,14 +1,16 @@
-import { BookOpen, Calendar, FileText, Hash, Library, Link, Users } from "lucide-react";
+import { Calendar, FileText, Hash, Library, Link, Users } from "lucide-react";
 import type { PaperDetail, PaperReference, ReadingTab } from "../types";
+import { PaperMarkdown } from "./PaperMarkdown";
 
 interface Props {
   paper: PaperReference;
+  paperId: string;
   activeLayer: Exclude<ReadingTab, "pdf">;
   detail: PaperDetail | null;
   loadingDetail: boolean;
 }
 
-// ─── Sub-components ───────────────────────────────────────────────────────────
+// ─── Shared primitives ────────────────────────────────────────────────────────
 
 function MetaRow({
   icon: Icon,
@@ -35,6 +37,18 @@ function MetaRow({
   );
 }
 
+function SectionLabel({ children }: { children: React.ReactNode }) {
+  return (
+    <p className="text-[10px] font-mono uppercase tracking-widest text-on-surface-variant mb-4">
+      {children}
+    </p>
+  );
+}
+
+function Divider() {
+  return <div className="h-px bg-outline-variant/10" />;
+}
+
 function EmptyState({ message, sub }: { message: string; sub?: string }) {
   return (
     <div className="flex flex-col items-center justify-center py-16 px-8 text-center">
@@ -47,35 +61,48 @@ function EmptyState({ message, sub }: { message: string; sub?: string }) {
   );
 }
 
-function LoadingState() {
+function LoadingPulse() {
   return (
-    <div className="flex items-center justify-center py-20">
-      <span className="text-xs font-mono text-on-surface-variant animate-pulse">加载中…</span>
+    <div className="space-y-2">
+      <div className="h-3 bg-surface-container rounded-full w-3/4 animate-pulse" />
+      <div className="h-3 bg-surface-container rounded-full w-full animate-pulse" />
+      <div className="h-3 bg-surface-container rounded-full w-5/6 animate-pulse" />
     </div>
   );
 }
 
-// ─── Layer panels ─────────────────────────────────────────────────────────────
+// ─── Overview panel (L1 + L2 + L3) ───────────────────────────────────────────
 
-function L1Panel({ paper }: { paper: PaperReference }) {
+function OverviewPanel({
+  paper,
+  detail,
+  loading,
+}: {
+  paper: PaperReference;
+  detail: PaperDetail | null;
+  loading: boolean;
+}) {
+  const doi = (paper as PaperReference & { doi?: string }).doi;
+  const hasConclusion = loading || !!detail?.l3Conclusion;
+
   return (
     <div className="max-w-2xl space-y-5">
+      {/* Title */}
       <h1 className="font-serif text-xl font-bold text-on-surface leading-snug">{paper.title}</h1>
 
-      <div className="h-px bg-outline-variant/10" />
+      <Divider />
 
+      {/* Metadata */}
       <div className="space-y-4">
         <MetaRow icon={Users} label="Authors" value={paper.authors} />
         <MetaRow icon={Calendar} label="Year" value={paper.year ? String(paper.year) : undefined} />
         <MetaRow icon={Library} label="Source" value={paper.source} />
         <MetaRow icon={Hash} label="Citations" value={paper.citations} />
-        <MetaRow icon={Link} label="DOI" value={(paper as PaperReference & { doi?: string }).doi} />
+        <MetaRow icon={Link} label="DOI" value={doi} />
       </div>
 
-      <div className="h-px bg-outline-variant/10" />
-
+      {/* Status badges */}
       <div className="flex flex-wrap gap-2">
-        {/* Status badge */}
         <span
           className={[
             "text-[10px] font-mono font-bold px-2 py-0.5 rounded leading-none uppercase",
@@ -106,60 +133,66 @@ function L1Panel({ paper }: { paper: PaperReference }) {
           </span>
         ) : null}
       </div>
+
+      {/* Abstract */}
+      {paper.abstract ? (
+        <>
+          <Divider />
+          <div>
+            <SectionLabel>Abstract</SectionLabel>
+            <p className="text-sm text-on-surface leading-relaxed">{paper.abstract}</p>
+          </div>
+        </>
+      ) : null}
+
+      {/* Conclusion — shown while loading or when content exists */}
+      {hasConclusion ? (
+        <>
+          <Divider />
+          <div>
+            <SectionLabel>Conclusion</SectionLabel>
+            {loading ? (
+              <LoadingPulse />
+            ) : (
+              <p className="text-sm text-on-surface leading-relaxed whitespace-pre-wrap">
+                {detail?.l3Conclusion}
+              </p>
+            )}
+          </div>
+        </>
+      ) : null}
     </div>
   );
 }
 
-function L2Panel({ paper }: { paper: PaperReference }) {
-  if (!paper.abstract) {
-    return <EmptyState message="暂无摘要" sub="此文献的元数据中未包含摘要信息" />;
-  }
-  return (
-    <div className="max-w-2xl">
-      <p className="text-[10px] font-mono uppercase tracking-widest text-on-surface-variant mb-4">
-        Abstract
-      </p>
-      <p className="text-sm text-on-surface leading-relaxed">{paper.abstract}</p>
-    </div>
-  );
-}
-
-function L3Panel({
-  detail,
-  loading,
-}: {
-  detail: PaperDetail | null;
-  loading: boolean;
-}) {
-  if (loading) return <LoadingState />;
-  if (!detail?.l3Conclusion) {
-    return (
-      <EmptyState
-        message="结论尚未提取"
-        sub="运行 scholaraio enrich-l3 <paper_id> 提取结论段落后即可在此查看"
-      />
-    );
-  }
-  return (
-    <div className="max-w-2xl">
-      <p className="text-[10px] font-mono uppercase tracking-widest text-on-surface-variant mb-4">
-        Conclusion
-      </p>
-      <p className="text-sm text-on-surface leading-relaxed whitespace-pre-wrap">
-        {detail.l3Conclusion}
-      </p>
-    </div>
-  );
-}
+// ─── L4 full-text panel ───────────────────────────────────────────────────────
 
 function L4Panel({
   detail,
   loading,
+  paperId,
 }: {
   detail: PaperDetail | null;
   loading: boolean;
+  paperId: string;
 }) {
-  if (loading) return <LoadingState />;
+  if (loading) {
+    return (
+      <div className="max-w-3xl space-y-3">
+        <SectionLabel>Full Text</SectionLabel>
+        <div className="space-y-2">
+          {Array.from({ length: 6 }).map((_, i) => (
+            <div
+              // biome-ignore lint/suspicious/noArrayIndexKey: static skeleton
+              key={i}
+              className="h-3 bg-surface-container rounded-full animate-pulse"
+              style={{ width: `${70 + (i % 3) * 10}%` }}
+            />
+          ))}
+        </div>
+      </div>
+    );
+  }
   if (!detail?.content) {
     return (
       <EmptyState message="全文内容不可用" sub="此文献尚未完成 Markdown 转换（paper.md 不存在）" />
@@ -167,25 +200,23 @@ function L4Panel({
   }
   return (
     <div className="max-w-3xl">
-      <p className="text-[10px] font-mono uppercase tracking-widest text-on-surface-variant mb-4">
-        Full Text
-      </p>
-      <pre className="text-xs font-mono text-on-surface whitespace-pre-wrap leading-relaxed break-words">
-        {detail.content}
-      </pre>
+      <SectionLabel>Full Text</SectionLabel>
+      <PaperMarkdown content={detail.content} paperId={paperId} />
     </div>
   );
 }
 
 // ─── Main component ───────────────────────────────────────────────────────────
 
-export function LayerReader({ paper, activeLayer, detail, loadingDetail }: Props) {
+export function LayerReader({ paper, paperId, activeLayer, detail, loadingDetail }: Props) {
   return (
     <div className="flex-1 overflow-y-auto no-scrollbar px-8 py-6">
-      {activeLayer === "l1" && <L1Panel paper={paper} />}
-      {activeLayer === "l2" && <L2Panel paper={paper} />}
-      {activeLayer === "l3" && <L3Panel detail={detail} loading={loadingDetail} />}
-      {activeLayer === "l4" && <L4Panel detail={detail} loading={loadingDetail} />}
+      {activeLayer === "overview" && (
+        <OverviewPanel paper={paper} detail={detail} loading={loadingDetail} />
+      )}
+      {activeLayer === "l4" && (
+        <L4Panel detail={detail} loading={loadingDetail} paperId={paperId} />
+      )}
     </div>
   );
 }

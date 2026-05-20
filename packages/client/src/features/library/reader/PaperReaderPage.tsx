@@ -2,33 +2,17 @@ import { useCallback, useEffect, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { usePageTitle } from "../../../app/components/NavigationLayout";
 import { scholar } from "../../../core/api";
-import {
-  buildPdfUrl,
-  canNavigateToReader,
-  canReadPdf,
-  findPaperById,
-  toPaperRef,
-} from "../paperUtils";
+import { buildPdfUrl, canReadPdf, findPaperById, toPaperRef } from "../paperUtils";
 import type { PaperDetail, PaperReference, ReadingTab } from "../types";
 import { LayerReader } from "./LayerReader";
 import { PdfViewer } from "./PdfViewer";
-import { ReaderSidebar } from "./ReaderSidebar";
 
 // ─── Tab definitions ──────────────────────────────────────────────────────────
 
-interface Tab {
-  id: ReadingTab;
-  label: string;
-  /** 仅在 layer 层级下显示的短标签（chip 内）。 */
-  shortLabel: string;
-}
-
-const TABS: Tab[] = [
-  { id: "l1", label: "L1 元数据", shortLabel: "L1" },
-  { id: "l2", label: "L2 摘要", shortLabel: "L2" },
-  { id: "l3", label: "L3 结论", shortLabel: "L3" },
-  { id: "l4", label: "L4 全文", shortLabel: "L4" },
-  { id: "pdf", label: "PDF", shortLabel: "PDF" },
+const TABS: { id: ReadingTab; label: string }[] = [
+  { id: "overview", label: "概览" },
+  { id: "l4", label: "全文" },
+  { id: "pdf", label: "PDF" },
 ];
 
 // ─── Component ────────────────────────────────────────────────────────────────
@@ -42,11 +26,10 @@ export function PaperReaderPage() {
   const [loadingPapers, setLoadingPapers] = useState(true);
   const [papersError, setPapersError] = useState<string | null>(null);
 
-  const [activeTab, setActiveTab] = useState<ReadingTab>("l2");
+  const [activeTab, setActiveTab] = useState<ReadingTab>("overview");
 
   const [detail, setDetail] = useState<PaperDetail | null>(null);
   const [loadingDetail, setLoadingDetail] = useState(false);
-  const [detailFetched, setDetailFetched] = useState(false);
 
   useEffect(() => {
     setTitle("Reader");
@@ -78,36 +61,35 @@ export function PaperReaderPage() {
     };
   }, []);
 
-  // ── Reset detail when paper changes ──
+  // ── Reset state and eagerly fetch detail when paper changes ──
   useEffect(() => {
     setDetail(null);
-    setDetailFetched(false);
-    setActiveTab("l2");
-  }, []);
+    setActiveTab("overview");
 
-  // ── Lazy-fetch paper detail when L3 / L4 tab is activated ──
-  const fetchDetail = useCallback(() => {
-    if (!paperId || detailFetched || loadingDetail) return;
+    if (!paperId) return;
+    let cancelled = false;
     setLoadingDetail(true);
-    setDetailFetched(true);
+
     scholar
       .getPaper(paperId)
       .then(({ paper }) => {
-        setDetail({ content: paper.content, l3Conclusion: paper.l3Conclusion });
+        if (!cancelled) setDetail({ content: paper.content, l3Conclusion: paper.l3Conclusion });
       })
       .catch(() => {
-        setDetail(null);
+        if (!cancelled) setDetail(null);
       })
-      .finally(() => setLoadingDetail(false));
-  }, [paperId, detailFetched, loadingDetail]);
+      .finally(() => {
+        if (!cancelled) setLoadingDetail(false);
+      });
 
-  const handleTabChange = useCallback(
-    (tab: ReadingTab) => {
-      setActiveTab(tab);
-      if (tab === "l3" || tab === "l4") fetchDetail();
-    },
-    [fetchDetail],
-  );
+    return () => {
+      cancelled = true;
+    };
+  }, [paperId]);
+
+  const handleTabChange = useCallback((tab: ReadingTab) => {
+    setActiveTab(tab);
+  }, []);
 
   const currentPaper = paperId ? findPaperById(papers, paperId) : undefined;
   const hasPdfFile = currentPaper ? canReadPdf(currentPaper) : false;
@@ -136,30 +118,19 @@ export function PaperReaderPage() {
     if (!paperId || !currentPaper) {
       return (
         <div className="flex-1 flex items-center justify-center">
-          <p className="text-sm text-on-surface-variant">请从左侧列表选择一篇文献</p>
+          <p className="text-sm text-on-surface-variant">未找到该文献</p>
         </div>
       );
     }
 
     if (activeTab === "pdf") {
-      if (!hasPdfFile) {
-        return (
-          <div className="flex-1 flex items-center justify-center">
-            <div className="rounded-xl bg-surface-container-low border border-outline-variant/10 p-8 text-center max-w-sm">
-              <p className="text-sm font-semibold text-on-surface mb-1">此文献暂无 PDF 原文</p>
-              <p className="text-xs text-on-surface-variant mt-1">
-                原始 PDF 文件不存在。如已入库，可尝试重新运行 scholaraio pipeline ingest。
-              </p>
-            </div>
-          </div>
-        );
-      }
       return pdfUrl ? <PdfViewer url={pdfUrl} /> : null;
     }
 
     return (
       <LayerReader
         paper={currentPaper}
+        paperId={paperId}
         activeLayer={activeTab}
         detail={detail}
         loadingDetail={loadingDetail}
@@ -169,39 +140,48 @@ export function PaperReaderPage() {
 
   return (
     <div className="flex overflow-hidden h-[calc(100vh-3.25rem)]">
-      {/* ── Left: paper list sidebar ── */}
-      <ReaderSidebar
-        papers={papers}
-        currentPaperId={paperId ?? ""}
-        onBack={() => navigate("/library")}
-      />
-
-      {/* ── Right: tab bar + content ── */}
+      {/* ── Tab bar + content ── */}
       <div className="flex-1 min-w-0 flex flex-col overflow-hidden">
         {/* Tab bar */}
         {currentPaper || !loadingPapers ? (
           <div className="shrink-0 flex items-center gap-2 px-5 border-b border-outline-variant/15 bg-surface-container-low h-12 overflow-x-auto no-scrollbar">
+            <button
+              type="button"
+              onClick={() => navigate("/library")}
+              className="shrink-0 px-3 py-1.5 rounded-full text-xs font-medium transition-colors border cursor-pointer bg-surface-container-high text-on-surface-variant border-outline-variant/30 hover:bg-surface-container"
+            >
+              ← 返回
+            </button>
+            <div className="shrink-0 w-px h-4 bg-outline-variant/30" />
             {TABS.map((tab) => {
               const isActive = activeTab === tab.id;
-              const noPdf = tab.id === "pdf" && !hasPdfFile && !!currentPaper;
+              const isPdfDisabled = tab.id === "pdf" && !hasPdfFile && !!currentPaper;
+              const label = isPdfDisabled ? "无PDF" : tab.label;
+
+              if (isPdfDisabled) {
+                return (
+                  <span
+                    key={tab.id}
+                    className="shrink-0 px-3 py-1.5 rounded-full text-xs font-medium border border-outline-variant/10 bg-surface-container-low text-on-surface-variant/30 cursor-not-allowed select-none"
+                  >
+                    {label}
+                  </span>
+                );
+              }
+
               return (
                 <button
                   key={tab.id}
                   type="button"
                   onClick={() => handleTabChange(tab.id)}
                   className={[
-                    "shrink-0 flex items-center gap-1 px-3 py-1.5 rounded-full text-xs font-medium transition-colors border cursor-pointer",
+                    "shrink-0 px-3 py-1.5 rounded-full text-xs font-medium transition-colors border cursor-pointer",
                     isActive
                       ? "bg-primary text-on-primary border-primary"
                       : "bg-surface-container-high text-on-surface-variant border-outline-variant/30 hover:bg-surface-container",
                   ].join(" ")}
                 >
-                  {tab.label}
-                  {noPdf ? (
-                    <span className="text-[9px] font-mono font-bold bg-error-container/60 text-error px-1 py-0.5 rounded leading-none ml-0.5">
-                      无
-                    </span>
-                  ) : null}
+                  {label}
                 </button>
               );
             })}

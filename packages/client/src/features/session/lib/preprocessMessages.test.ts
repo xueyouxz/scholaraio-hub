@@ -1,9 +1,6 @@
 import { describe, expect, it } from "vitest";
-import type { SessionContentBlock, SessionMessage } from "../model";
+import type { Message } from "../types";
 import { preprocessMessages } from "./preprocessMessages";
-
-type ContentBlock = SessionContentBlock;
-type Message = SessionMessage;
 
 describe("preprocessMessages", () => {
   it("pairs tool_use with tool_result", () => {
@@ -39,16 +36,11 @@ describe("preprocessMessages", () => {
 
     expect(items).toHaveLength(1);
     expect(items[0]).toMatchObject({
-      type: "tool_group",
+      type: "tool_call",
+      id: "tool-1",
       toolName: "Read",
-      tools: [
-        {
-          id: "tool-1",
-          toolName: "Read",
-          status: "complete",
-          toolResult: { content: "file contents", isError: false },
-        },
-      ],
+      status: "complete",
+      toolResult: { content: "file contents", isError: false },
     });
   });
 
@@ -232,14 +224,13 @@ describe("preprocessMessages", () => {
     ];
 
     const items = preprocessMessages(messages);
+    const toolCalls = items.filter((item) => item.type === "tool_call");
 
-    expect(items).toHaveLength(1);
-    const group = items[0];
-    expect(group?.type).toBe("tool_group");
-    if (group?.type === "tool_group") {
-      expect(group.tools).toHaveLength(1);
-      expect(group.tools[0]?.status).toBe("complete");
-      expect(group.tools[0]?.toolResult?.content).toBe("success");
+    expect(toolCalls).toHaveLength(1);
+    const call = toolCalls[0];
+    if (call?.type === "tool_call") {
+      expect(call.status).toBe("complete");
+      expect(call.toolResult?.content).toBe("success");
     }
   });
 
@@ -277,13 +268,14 @@ describe("preprocessMessages", () => {
 
     const items = preprocessMessages(messages);
 
-    expect(items).toHaveLength(1);
-    const group = items[0];
-    expect(group?.type).toBe("tool_group");
-    if (group?.type === "tool_group") {
-      expect(group.tools).toHaveLength(2);
-      expect(group.tools[0]?.status).toBe("complete");
-      expect(group.tools[1]?.status).toBe("complete");
+    expect(items).toHaveLength(2);
+    const item0 = items[0];
+    const item1 = items[1];
+    expect(item0?.type).toBe("tool_call");
+    expect(item1?.type).toBe("tool_call");
+    if (item0?.type === "tool_call" && item1?.type === "tool_call") {
+      expect(item0.status).toBe("complete");
+      expect(item1.status).toBe("complete");
     }
   });
 
@@ -705,13 +697,9 @@ describe("preprocessMessages", () => {
 
     expect(items).toHaveLength(1);
     expect(items[0]).toMatchObject({
-      type: "tool_group",
-      tools: [
-        {
-          status: "error",
-          toolResult: { content: "Command failed", isError: true },
-        },
-      ],
+      type: "tool_call",
+      status: "error",
+      toolResult: { content: "Command failed", isError: true },
     });
   });
 
@@ -772,9 +760,8 @@ describe("preprocessMessages", () => {
 
     expect(items).toHaveLength(1);
     const item = items[0];
-    expect(item?.type).toBe("tool_group");
-    if (item?.type === "tool_group") {
-      expect(item.tools[0]?.toolResult?.structured).toEqual({
+    if (item?.type === "tool_call") {
+      expect(item.toolResult?.structured).toEqual({
         lineCount: 42,
         filePath: "/test.ts",
       });
@@ -820,225 +807,6 @@ describe("preprocessMessages", () => {
     });
   });
 
-  describe("tool group rendering items", () => {
-    function readResult(filePath: string, numLines = 10) {
-      return {
-        type: "text",
-        file: {
-          filePath,
-          content: "line\n".repeat(numLines),
-          numLines,
-          startLine: 1,
-          totalLines: numLines,
-        },
-      };
-    }
-
-    function readMessages(
-      ids: string[],
-      options: {
-        separator?: ContentBlock;
-        ptyHandoff?: boolean;
-        errorId?: string;
-      } = {},
-    ): Message[] {
-      const content: ContentBlock[] = [];
-      for (const id of ids) {
-        content.push({
-          type: "tool_use",
-          id,
-          name: "Read",
-          input: { file_path: `${id}.ts` },
-        });
-        if (options.separator && id === ids[0]) {
-          content.push(options.separator);
-        }
-      }
-
-      return [
-        {
-          id: "msg-reads",
-          role: "assistant",
-          content,
-          timestamp: "2024-01-01T00:00:00Z",
-        },
-        ...ids.map((id, index) => ({
-          id: `msg-result-${id}`,
-          role: "user" as const,
-          content: [
-            {
-              type: "tool_result" as const,
-              tool_use_id: id,
-              content: "",
-              is_error: options.errorId === id,
-            },
-          ],
-          timestamp: `2024-01-01T00:00:0${index + 1}Z`,
-          toolUseResult:
-            options.ptyHandoff && id === ids[0]
-              ? {
-                  type: "text",
-                  file: {
-                    filePath: `${id}.ts`,
-                    content: "",
-                    numLines: 0,
-                    startLine: 1,
-                    totalLines: 200,
-                  },
-                  session_id: 12345,
-                }
-              : readResult(`${id}.ts`, index + 1),
-        })),
-      ];
-    }
-
-    it("wraps a single terminal Read in a tool_group", () => {
-      const items = preprocessMessages(readMessages(["one"]));
-
-      expect(items).toHaveLength(1);
-      expect(items[0]).toMatchObject({
-        type: "tool_group",
-        id: "tool-group-Read-one",
-        toolName: "Read",
-        tools: [{ id: "one", toolName: "Read", status: "complete" }],
-      });
-    });
-
-    it("combines adjacent terminal Read calls into one tool_group", () => {
-      const items = preprocessMessages(readMessages(["one", "two"]));
-
-      expect(items).toHaveLength(1);
-      expect(items[0]).toMatchObject({
-        type: "tool_group",
-        id: "tool-group-Read-one-two",
-        toolName: "Read",
-        tools: [
-          { id: "one", toolName: "Read", status: "complete" },
-          { id: "two", toolName: "Read", status: "complete" },
-        ],
-      });
-    });
-
-    it("does not combine Read calls across visible content", () => {
-      const items = preprocessMessages(
-        readMessages(["one", "two"], {
-          separator: { type: "text", text: "Next I will read another file." },
-        }),
-      );
-
-      expect(items).toHaveLength(3);
-      expect(items[0]).toMatchObject({
-        type: "tool_group",
-        tools: [{ id: "one" }],
-      });
-      expect(items[1]).toMatchObject({ type: "text" });
-      expect(items[2]).toMatchObject({
-        type: "tool_group",
-        tools: [{ id: "two" }],
-      });
-    });
-
-    it("groups errored and PTY handoff Read calls", () => {
-      const errored = preprocessMessages(readMessages(["one"], { errorId: "one" }));
-      const pty = preprocessMessages(readMessages(["one"], { ptyHandoff: true }));
-
-      expect(errored[0]).toMatchObject({
-        type: "tool_group",
-        tools: [{ id: "one", status: "error" }],
-      });
-      expect(pty[0]).toMatchObject({
-        type: "tool_group",
-        tools: [{ id: "one", status: "complete" }],
-      });
-    });
-
-    it("combines adjacent alias-equivalent tool names by canonical name", () => {
-      const messages: Message[] = [
-        {
-          id: "msg-tools",
-          role: "assistant",
-          content: [
-            {
-              type: "tool_use",
-              id: "bash-1",
-              name: "exec_command",
-              input: { cmd: "npm test" },
-            },
-            {
-              type: "tool_use",
-              id: "bash-2",
-              name: "Bash",
-              input: { command: "pnpm typecheck" },
-            },
-          ],
-          timestamp: "2024-01-01T00:00:00Z",
-        },
-        {
-          id: "msg-result-1",
-          role: "user",
-          content: [
-            { type: "tool_result", tool_use_id: "bash-1", content: "ok" },
-            { type: "tool_result", tool_use_id: "bash-2", content: "ok" },
-          ],
-          timestamp: "2024-01-01T00:00:01Z",
-        },
-      ];
-
-      const items = preprocessMessages(messages);
-
-      expect(items).toHaveLength(1);
-      expect(items[0]).toMatchObject({
-        type: "tool_group",
-        toolName: "Bash",
-        tools: [{ id: "bash-1" }, { id: "bash-2" }],
-      });
-    });
-
-    it("does not group pending or inline tools", () => {
-      const messages: Message[] = [
-        {
-          id: "msg-tools",
-          role: "assistant",
-          content: [
-            {
-              type: "tool_use",
-              id: "pending-bash",
-              name: "Bash",
-              input: { command: "npm test" },
-            },
-            {
-              type: "tool_use",
-              id: "task-1",
-              name: "Task",
-              input: { description: "Explore", prompt: "Explore" },
-            },
-          ],
-          timestamp: "2024-01-01T00:00:00Z",
-        },
-        {
-          id: "msg-task-result",
-          role: "user",
-          content: [{ type: "tool_result", tool_use_id: "task-1", content: "done" }],
-          timestamp: "2024-01-01T00:00:01Z",
-        },
-      ];
-
-      const items = preprocessMessages(messages);
-
-      expect(items).toHaveLength(2);
-      expect(items[0]).toMatchObject({
-        type: "tool_call",
-        id: "pending-bash",
-        status: "pending",
-      });
-      expect(items[1]).toMatchObject({
-        type: "tool_call",
-        id: "task-1",
-        status: "complete",
-      });
-    });
-  });
-
   describe("orphaned tool handling", () => {
     it("marks orphaned tool_use as aborted", () => {
       const messages: Message[] = [
@@ -1062,15 +830,10 @@ describe("preprocessMessages", () => {
 
       expect(items).toHaveLength(1);
       expect(items[0]).toMatchObject({
-        type: "tool_group",
-        id: "tool-group-Bash-tool-1",
-        tools: [
-          {
-            id: "tool-1",
-            status: "aborted",
-            toolResult: undefined,
-          },
-        ],
+        type: "tool_call",
+        id: "tool-1",
+        status: "aborted",
+        toolResult: undefined,
       });
     });
 
@@ -1113,11 +876,11 @@ describe("preprocessMessages", () => {
       const items = preprocessMessages(messages);
 
       expect(items).toHaveLength(2);
-      const tool1Group = items.find((i) => i.type === "tool_group" && i.toolName === "Read");
-      const tool2Group = items.find((i) => i.type === "tool_group" && i.toolName === "Bash");
+      const tool1 = items.find((i) => i.type === "tool_call" && i.id === "tool-1");
+      const tool2 = items.find((i) => i.type === "tool_call" && i.id === "tool-2");
 
-      expect(tool1Group?.type === "tool_group" && tool1Group.tools[0]?.status).toBe("complete");
-      expect(tool2Group?.type === "tool_group" && tool2Group.tools[0]?.status).toBe("aborted");
+      expect(tool1?.type === "tool_call" && tool1.status).toBe("complete");
+      expect(tool2?.type === "tool_call" && tool2.status).toBe("aborted");
     });
 
     it("non-orphaned pending tools remain pending", () => {
@@ -1204,9 +967,9 @@ describe("preprocessMessages", () => {
 
       expect(items).toHaveLength(1);
       expect(items[0]).toMatchObject({
-        type: "tool_group",
-        id: "tool-group-Bash-tool-1",
-        tools: [{ id: "tool-1", status: "aborted" }],
+        type: "tool_call",
+        id: "tool-1",
+        status: "aborted",
       });
     });
 

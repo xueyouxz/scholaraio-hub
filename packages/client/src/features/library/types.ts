@@ -3,8 +3,8 @@ import type { LucideIcon } from "lucide-react";
 export type PaperStatus = "ingested" | "indexing" | "pending" | "no-pdf";
 export type ViewMode = "list" | "grid";
 
-/** 阅读器中的内容标签页：L1–L4 层级阅读 + PDF 原文。 */
-export type ReadingTab = "l1" | "l2" | "l3" | "l4" | "pdf";
+/** 阅读器中的内容标签页：概览（元数据+摘要+结论）、全文、PDF 原文。 */
+export type ReadingTab = "overview" | "l4" | "pdf";
 
 /** GET /api/papers/{id} 返回的富文本详情，仅在阅读器按需加载。 */
 export interface PaperDetail {

@@ -4,13 +4,16 @@ import { useEffect, useMemo, useState } from "react";
 import { useLocation, useParams } from "react-router-dom";
 import { api } from "../../core/api";
 import type { ModelInfo, ThinkingOption, UploadedFile } from "../../core/types";
+import { api as sessionApi } from "../../features/session/api/client";
 import { MessageInput } from "../../features/session/components/MessageInput";
 import { MessageList } from "../../features/session/components/MessageList";
-import { useSession } from "../../features/session/hooks/useSession";
+import { AgentContentProvider } from "../../features/session/contexts/AgentContentContext";
 import {
   StreamingMarkdownProvider,
   useStreamingMarkdownContext,
-} from "../../features/session/streaming/StreamingMarkdownContext";
+} from "../../features/session/contexts/StreamingMarkdownContext";
+import { useSession } from "../../features/session/hooks/useSession";
+import type { Message as SessionRenderMessage } from "../../features/session/types";
 import { SessionMetadataProvider } from "../../shared/contexts/SessionMetadataContext";
 import { usePageTitle } from "../components/NavigationLayout";
 
@@ -70,9 +73,6 @@ function SessionPageContent({
   const [composerPermissionMode, setComposerPermissionMode] = useState<PermissionMode>("default");
   const [isHeld, setIsHeld] = useState(false);
   const [scrollTrigger, setScrollTrigger] = useState(0);
-  const [pendingMessages, setPendingMessages] = useState<
-    Array<{ tempId: string; content: string; status?: string }>
-  >([]);
   const streamingContext = useStreamingMarkdownContext();
 
   const streamingCallbacks = useMemo(() => {
@@ -88,8 +88,15 @@ function SessionPageContent({
 
   const {
     session,
+    setSessionModel,
     messages,
-    ownership,
+    agentContent,
+    setAgentContent,
+    toolUseToAgent,
+    status: ownership,
+    processState,
+    setStatus,
+    setProcessState,
     pendingInputRequest,
     pagination,
     markdownAugments,
@@ -97,29 +104,34 @@ function SessionPageContent({
     loadingOlder,
     error,
     connected,
-    hasConnected,
-    reconcile,
+    sessionUpdatesConnected,
+    reconnectStream,
     loadOlderMessages,
-    setPendingInputRequest,
+    setPermissionMode,
+    setHold,
     permissionMode,
-    liveStatus,
+    isHeld: sessionIsHeld,
     isCompacting,
+    pendingMessages,
+    addPendingMessage,
+    removePendingMessage,
+    updatePendingMessage,
+    deferredMessages,
     slashCommands,
-  } = useSession({
+  } = useSession(
     projectId,
     sessionId,
-    initialOwnership,
-    streamingMarkdownCallbacks: streamingCallbacks,
-  });
+    initialOwnership?.owner === "self" ? initialOwnership : undefined,
+    streamingCallbacks,
+  );
 
   useEffect(() => {
     if (permissionMode) setComposerPermissionMode(permissionMode);
   }, [permissionMode]);
 
   useEffect(() => {
-    if (!liveStatus) return;
-    setIsHeld(liveStatus === "hold");
-  }, [liveStatus]);
+    setIsHeld(sessionIsHeld);
+  }, [sessionIsHeld]);
 
   // Load models for the session's provider
   useEffect(() => {
@@ -135,6 +147,7 @@ function SessionPageContent({
 
   const handleModelChange = async (model: string) => {
     setSelectedModel(model);
+    setSessionModel(model);
     if (ownership.owner === "self") {
       await api.changeModel(ownership.processId, model).catch(() => {});
     }
@@ -142,74 +155,82 @@ function SessionPageContent({
 
   const handlePermissionModeChange = async (mode: PermissionMode) => {
     setComposerPermissionMode(mode);
-    if (ownership.owner !== "self") return;
-    await api.setPermissionMode(sessionId, mode).catch(() => {});
+    await setPermissionMode(mode).catch(() => {});
   };
 
   const handleHoldChange = async (held: boolean) => {
     setIsHeld(held);
-    if (ownership.owner !== "self") return;
-    const result = await api.setHold(sessionId, held).catch(() => null);
-    if (result) setIsHeld(result.isHeld);
+    await setHold(held).catch(() => {});
   };
 
   const handleStop = () => {
     if (ownership.owner !== "self") return;
     void api
       .abortProcess(ownership.processId)
-      .then(() => reconcile())
+      .then(() => {
+        setStatus({ owner: "none" });
+        setProcessState("idle");
+      })
       .catch(() => {});
   };
 
   const send = async () => {
     if (!session || (!message.trim() && files.length === 0)) return;
     const trimmed = message.trim();
-    const tempId = `pending-${Date.now()}`;
+    const tempId = addPendingMessage(trimmed);
 
     setBusy(true);
     setSendError("");
     setMessage("");
     setFiles([]);
     setScrollTrigger((n) => n + 1);
-    if (trimmed) setPendingMessages((prev) => [...prev, { tempId, content: trimmed }]);
+    setProcessState("in-turn");
 
     try {
       let attachments: UploadedFile[] = [];
       if (files.length > 0) {
-        if (trimmed)
-          setPendingMessages((prev) =>
-            prev.map((m) => (m.tempId === tempId ? { ...m, status: "Uploading…" } : m)),
-          );
+        updatePendingMessage(tempId, { status: "Uploading…" });
         attachments = await Promise.all(
           files.map((file) => api.uploadAttachment(projectId, sessionId, file)),
         );
+        updatePendingMessage(tempId, { status: undefined });
       }
 
       if (ownership.owner === "self") {
-        await api.queueMessage({
+        const result = await sessionApi.queueMessage(
           sessionId,
-          message: trimmed,
-          mode: composerPermissionMode,
-          thinking,
+          trimmed,
+          composerPermissionMode,
           attachments,
-        });
+          tempId,
+          thinking,
+        );
+        if (result.restarted && result.processId) {
+          setStatus({ owner: "self", processId: result.processId });
+          reconnectStream();
+        }
       } else {
-        await api.resumeSession({
+        const result = await sessionApi.resumeSession(
           projectId,
           sessionId,
-          message: trimmed,
-          mode: composerPermissionMode,
-          thinking,
+          trimmed,
+          {
+            mode: composerPermissionMode,
+            thinking,
+            model: session.model ?? selectedModel,
+            provider: session.provider,
+            executor: session.executor,
+          },
           attachments,
-        });
+          tempId,
+        );
+        setStatus({ owner: "self", processId: result.processId });
       }
-
-      setPendingMessages((prev) => prev.filter((m) => m.tempId !== tempId));
-      await reconcile();
     } catch (err) {
-      setPendingMessages((prev) => prev.filter((m) => m.tempId !== tempId));
+      removePendingMessage(tempId);
       setMessage(trimmed);
       setSendError(err instanceof Error ? err.message : "Failed to send message");
+      setProcessState("idle");
     } finally {
       setBusy(false);
     }
@@ -220,24 +241,56 @@ function SessionPageContent({
       await send();
       return;
     }
-    await send();
+    if (!message.trim() && files.length === 0) return;
+    const trimmed = message.trim();
+    const tempId = addPendingMessage(trimmed);
+    setBusy(true);
+    setSendError("");
+    setMessage("");
+    setFiles([]);
+    setScrollTrigger((n) => n + 1);
+    try {
+      let attachments: UploadedFile[] = [];
+      if (files.length > 0) {
+        updatePendingMessage(tempId, { status: "Uploading…" });
+        attachments = await Promise.all(
+          files.map((file) => api.uploadAttachment(projectId, sessionId, file)),
+        );
+        updatePendingMessage(tempId, { status: undefined });
+      }
+      await sessionApi.queueMessage(
+        sessionId,
+        trimmed,
+        composerPermissionMode,
+        attachments,
+        tempId,
+        thinking,
+        true,
+      );
+      removePendingMessage(tempId);
+    } catch (err) {
+      removePendingMessage(tempId);
+      setMessage(trimmed);
+      setSendError(err instanceof Error ? err.message : "Failed to queue message");
+    } finally {
+      setBusy(false);
+    }
   };
 
   const respondToPendingInput = async (response: "approve" | "approve_accept_edits" | "deny") => {
     if (!pendingInputRequest) return;
     await api.respondToInput(sessionId, pendingInputRequest.id, response);
-    setPendingInputRequest(null);
-    await reconcile();
+    setProcessState("in-turn");
   };
 
   // Use initialTitle from navigation state as an optimistic title until session data loads.
   const title = session?.customTitle ?? session?.title ?? initialTitle ?? sessionId;
   const processStateLabel =
-    liveStatus === "in-turn"
+    processState === "in-turn"
       ? "running"
-      : liveStatus === "waiting-input"
+      : processState === "waiting-input"
         ? "needs input"
-        : liveStatus === "hold"
+        : processState === "hold"
           ? "held"
           : ownership.owner === "external"
             ? "external"
@@ -254,7 +307,7 @@ function SessionPageContent({
   const placeholder =
     ownership.owner === "external"
       ? "This session is running elsewhere"
-      : liveStatus === "in-turn" || liveStatus === "hold"
+      : processState === "in-turn" || processState === "hold"
         ? "Queue a follow-up message"
         : "Continue this session";
 
@@ -262,9 +315,9 @@ function SessionPageContent({
   // waiting for approval, or the SSE connection hasn't been established yet for the
   // first time. Once SSE has connected and completed, orphaned tools show as aborted.
   const activeToolApproval =
-    liveStatus === "in-turn" ||
-    liveStatus === "waiting-input" ||
-    (ownership.owner === "self" && !connected && !hasConnected);
+    processState === "in-turn" ||
+    processState === "waiting-input" ||
+    (ownership.owner === "self" && !sessionUpdatesConnected);
 
   useEffect(() => {
     setTitle(title);
@@ -337,24 +390,37 @@ function SessionPageContent({
           </div>
         ) : null}
 
-        {error ? <div className="error">{error}</div> : null}
+        {error ? <div className="error">{error.message}</div> : null}
         {sendError ? <div className="error">{sendError}</div> : null}
         {loading ? <div className="loading">Loading session...</div> : null}
 
         {!loading ? (
-          <MessageList
-            messages={messages}
-            markdownAugments={markdownAugments}
-            pagination={pagination}
-            loadingOlder={loadingOlder}
-            onLoadOlderMessages={loadOlderMessages}
-            sessionProvider={session?.provider}
-            isProcessing={ownership.owner === "self" && liveStatus === "in-turn"}
-            isCompacting={isCompacting}
-            scrollTrigger={scrollTrigger}
-            activeToolApproval={activeToolApproval}
-            pendingMessages={pendingMessages}
-          />
+          <AgentContentProvider
+            agentContent={agentContent}
+            setAgentContent={setAgentContent}
+            toolUseToAgent={toolUseToAgent}
+            projectId={projectId}
+            sessionId={sessionId}
+          >
+            <MessageList
+              messages={messages as SessionRenderMessage[]}
+              markdownAugments={markdownAugments}
+              provider={session?.provider}
+              isStreaming={ownership.owner === "self" && processState === "in-turn"}
+              isProcessing={ownership.owner === "self" && processState === "in-turn"}
+              isCompacting={isCompacting}
+              scrollTrigger={scrollTrigger}
+              activeToolApproval={activeToolApproval}
+              hasOlderMessages={pagination?.hasOlderMessages ?? false}
+              loadingOlder={loadingOlder}
+              onLoadOlderMessages={loadOlderMessages}
+              pendingMessages={pendingMessages}
+              deferredMessages={deferredMessages}
+              onCancelDeferred={(tempId) => {
+                void sessionApi.cancelDeferredMessage(sessionId, tempId);
+              }}
+            />
+          </AgentContentProvider>
         ) : null}
       </main>
 
@@ -371,7 +437,9 @@ function SessionPageContent({
             permissionMode={composerPermissionMode}
             isHeld={isHeld}
             draftKey={`session:${sessionId}`}
-            slashCommands={ownership.owner === "self" ? slashCommands : []}
+            slashCommands={
+              ownership.owner === "self" ? slashCommands.map((name) => ({ name })) : []
+            }
             contextUsage={session?.contextUsage}
             onMessageChange={setMessage}
             onThinkingChange={setThinking}
@@ -382,10 +450,10 @@ function SessionPageContent({
               ownership.owner === "self" ? (held) => void handleHoldChange(held) : undefined
             }
             onSend={send}
-            onQueue={ownership.owner === "self" && liveStatus !== "idle" ? queue : undefined}
+            onQueue={ownership.owner === "self" && processState !== "idle" ? queue : undefined}
             onStop={handleStop}
             isRunning={ownership.owner === "self"}
-            isThinking={liveStatus === "in-turn" || liveStatus === "hold"}
+            isThinking={processState === "in-turn" || processState === "hold"}
             placeholder={placeholder}
           />
         </div>

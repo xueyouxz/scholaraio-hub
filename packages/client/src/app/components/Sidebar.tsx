@@ -1,4 +1,3 @@
-import type { AppSessionSummary } from "@scholaraio-hub/shared";
 import {
   ChevronUp,
   FolderKanban,
@@ -10,9 +9,9 @@ import {
   Settings,
   User,
 } from "lucide-react";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Link, NavLink, useParams } from "react-router-dom";
-import { api } from "../../core/api";
+import { useGlobalSessions } from "../../features/session/hooks/useGlobalSessions";
 import { useProjectScope } from "./NavigationLayout";
 
 interface NavEntry {
@@ -44,20 +43,13 @@ function compactLabel(value: string) {
 export function Sidebar({ isDesktop, isCollapsed, isOpen, onToggle, onClose }: SidebarProps) {
   const { sessionId } = useParams();
   const { selectedProjectId } = useProjectScope();
-  const [sessions, setSessions] = useState<AppSessionSummary[]>([]);
   const [userMenuOpen, setUserMenuOpen] = useState(false);
   const userMenuRef = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    if (!selectedProjectId) {
-      setSessions([]);
-      return;
-    }
-    void api
-      .getProjectSessions(selectedProjectId)
-      .then((data) => setSessions(data.sessions.slice(0, 20)))
-      .catch(() => {});
-  }, [selectedProjectId]);
+  const { sessions } = useGlobalSessions({
+    projectId: selectedProjectId,
+    limit: 20,
+  });
+  const visibleSessions = selectedProjectId ? sessions : [];
 
   // Close user menu on outside click
   useEffect(() => {
@@ -194,9 +186,9 @@ export function Sidebar({ isDesktop, isCollapsed, isOpen, onToggle, onClose }: S
           <p className="px-1 mb-2 text-[10px] font-mono uppercase tracking-[0.24em] text-on-surface-variant/60">
             Recents
           </p>
-          {sessions.length > 0 ? (
+          {visibleSessions.length > 0 ? (
             <div className="space-y-1">
-              {sessions.map((session) => {
+              {visibleSessions.map((session) => {
                 const label = session.customTitle ?? session.title ?? "Untitled";
                 const isActive = session.id === sessionId;
                 return (

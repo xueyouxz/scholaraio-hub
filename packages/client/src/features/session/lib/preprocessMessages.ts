@@ -1,70 +1,57 @@
-import type { MarkdownAugment, SessionContentBlock, SessionMessage } from "../model";
-import { getMessageId } from "../model";
-import { canonicalizeToolName, isToolGroupingDisabled } from "../renderers/tools/toolMetadata";
+import type { ContentBlock, MarkdownAugment, Message } from "../types";
 import type {
   RenderItem,
   SessionSetupItem,
   SystemItem,
   ToolCallItem,
-  ToolGroupItem,
   ToolResultData,
   UserPromptItem,
 } from "../types/renderItems";
-
-type Message = SessionMessage;
-type ContentBlock = SessionContentBlock;
+import { getMessageId } from "./mergeMessages";
 
 /**
- * 表示当前会话是否存在活跃的工具审批请求。
+ * When true, indicates the session has an active tool approval request.
+ * All orphaned tools will be treated as pending (not interrupted).
  *
- * 为 true 时，缺少 tool_result 的工具调用不会被当成 interrupted/orphaned，
- * 而是继续显示为 pending。这样可以覆盖“服务端队列里有多个待审批工具”的场景：
- * 客户端通常只收到第一个审批请求，但后续工具也可能已经在服务端排队等待审批。
+ * This handles the case where multiple tools are queued for approval -
+ * only the first is sent to the client, but all are waiting in the server queue.
  */
 export type ActiveToolApproval = boolean;
 
 /**
- * 预处理阶段可注入到 RenderItem 的增强信息。
- *
- * 目前主要用于服务端预渲染 markdown。完成态 assistant 消息可能已经在服务端
- * 转成 HTML，前端在这里把 HTML 贴到对应 text item 上，避免再次解析 markdown。
+ * Augments to embed into RenderItems during preprocessing.
+ * These are pre-computed on the server for completed messages.
  */
 export interface PreprocessAugments {
-  /** 按 messageId 索引的服务端预渲染 markdown HTML。 */
+  /** Pre-rendered markdown HTML keyed by message ID */
   markdown?: Record<string, MarkdownAugment>;
-  /** 当前是否有活跃审批。存在审批时，缺少结果的 tool_use 不会被标记为 aborted。 */
+  /** Active tool approval request - if present, matching tool_use won't be marked aborted */
   activeToolApproval?: ActiveToolApproval;
 }
 
 /**
- * 把原始 SDK/JSONL 消息预处理成 UI 可以直接渲染的 RenderItem。
+ * Preprocess messages into render items, pairing tool_use with tool_result.
  *
- * 这里会完成几件核心工作：
- * - 把 assistant 的 text/thinking/tool_use block 拆成独立渲染项；
- * - 把 user 消息里的 tool_result 回填到之前的 tool_use 上；
- * - 把系统初始化提示折叠成 session_setup；
- * - 把服务端预渲染的 markdown HTML 绑定到 text item。
- *
- * 这是纯函数：相同输入会得到相同输出。组件中可以配合 useMemo 在每次渲染时安全调用。
+ * This is a pure function - given the same messages, returns the same items.
+ * Safe to call on every render (use useMemo).
  */
 export function preprocessMessages(
   messages: Message[],
   augments?: PreprocessAugments,
 ): RenderItem[] {
   const items: RenderItem[] = [];
-  const toolCallIndices = new Map<string, number>(); // tool_use_id → items 中的渲染项位置。
-  const pendingToolCalls = new Map<string, number>(); // 仍在等待 tool_result 的 tool_use 位置。
+  const toolCallIndices = new Map<string, number>(); // tool_use_id → index in items
+  const pendingToolCalls = new Map<string, number>(); // tool_use_id → index in items
 
-  // 收集服务端 DAG 过滤标记出的孤儿工具调用。
-  // 如果当前有活跃审批，则跳过孤儿判断：没有结果的工具可能只是正在审批或排队，
-  // 不能误显示为 interrupted。
+  // Collect all orphaned tool IDs from messages (set by server DAG filtering)
+  // If there's an active tool approval, skip orphan detection entirely -
+  // all tools without results are pending (either current or queued for approval)
   const orphanedToolIds = new Set<string>();
   if (!augments?.activeToolApproval) {
     for (const msg of messages) {
-      const orphans = (msg as { orphanedToolUseIds?: unknown }).orphanedToolUseIds;
-      if (Array.isArray(orphans)) {
-        for (const id of orphans) {
-          if (typeof id === "string") orphanedToolIds.add(id);
+      if (msg.orphanedToolUseIds) {
+        for (const id of msg.orphanedToolUseIds) {
+          orphanedToolIds.add(id);
         }
       }
     }
@@ -75,8 +62,7 @@ export function preprocessMessages(
   }
 
   const enrichedItems = enrichWriteStdinWithCommand(items);
-  const toolGroupedItems = collapseGroupableToolRuns(enrichedItems);
-  return collapseSessionSetupRuns(toolGroupedItems);
+  return collapseSessionSetupRuns(enrichedItems);
 }
 
 const SESSION_SETUP_PREFIXES = ["# AGENTS.md instructions", "<environment_context>"];
@@ -122,9 +108,8 @@ function collapseSessionSetupRuns(items: RenderItem[]): RenderItem[] {
       runIndex += 1;
     }
 
-    // 会话开头或恢复会话时，经常会出现连续的环境/AGENTS.md 提示。
-    // 这些属于会话设置噪声，应折叠成一个 session_setup。
-    // 但会话中途单独出现的类似文本可能是用户主动发送的内容，所以保留原样。
+    // Preserve likely user-authored single setup-like messages mid-session.
+    // Collapse any run at session start and any multi-item run (typical resume preamble).
     if (setupItems.length > 1 || index === 0) {
       const firstSetupItem = setupItems[0];
       if (!firstSetupItem) {
@@ -163,7 +148,7 @@ function processMessage(
 ): void {
   const msgId = getMessageId(msg);
 
-  // provider 或运行时错误需要显示给用户，因此转成可见的 system item。
+  // Handle provider/runtime error entries as visible system messages.
   if (msg.type === "error") {
     const errorText =
       (typeof msg.error === "string" && msg.error) ||
@@ -180,10 +165,10 @@ function processMessage(
     return;
   }
 
-  // 处理 system 消息，例如 compact_boundary、turn_aborted、status 等。
+  // Handle system entries (compact_boundary, status, etc.)
   if (msg.type === "system") {
     const subtype = (msg as { subtype?: string }).subtype ?? "unknown";
-    // compact_boundary 和 turn_aborted 对用户有意义，作为系统提示显示在消息流中。
+    // Render compact_boundary as a visible system message
     if (subtype === "compact_boundary" || subtype === "turn_aborted") {
       const systemItem: SystemItem = {
         type: "system",
@@ -199,13 +184,12 @@ function processMessage(
       };
       items.push(systemItem);
     }
-    // status 这类系统消息是瞬时状态，页面通过 isCompacting 等状态单独显示。
-    // init 等内部消息不进入消息列表，避免暴露底层协议细节。
+    // Status messages (compacting indicator) are transient - handled separately via isCompacting state
+    // Skip other system entries (init, status, etc.) - they're internal
     return;
   }
 
-  // 调试流式消息切换问题时使用。开启 window.__STREAMING_DEBUG__ 后，
-  // 可以看到 assistant 消息的 ID 和 streaming 标记。
+  // Debug logging for streaming transition issues
   if (typeof window !== "undefined" && window.__STREAMING_DEBUG__ && msg.type === "assistant") {
     console.log("[preprocessMessages] Processing assistant message:", {
       msgId,
@@ -215,18 +199,17 @@ function processMessage(
     });
   }
 
-  // 优先读取 SDK 标准结构 message.content；旧数据或部分 provider 可能把 content 放在顶层。
-  // 这里保留顶层兜底以兼容历史 JSONL。
+  // Get content from nested message object (SDK structure) first, fall back to top-level
+  // Phase 4c: prefer message.content over top-level content
   const content =
     (msg.message as { content?: string | ContentBlock[] } | undefined)?.content ?? msg.content;
 
-  // 优先使用 SDK 的 type 判断消息类型；旧数据可能只有 role，所以继续保留 role 兜底。
+  // Use type for discrimination (SDK field), fall back to role for legacy data
+  // Phase 4c: prefer type over role, but maintain backward compatibility
   const role = (msg.message as { role?: "user" | "assistant" } | undefined)?.role ?? msg.role;
   const isUserMessage = msg.type === "user" || role === "user";
-  const isSubagent = (msg as { isSubagent?: unknown }).isSubagent === true;
 
-  // 字符串 content 根据消息角色分流：
-  // user 字符串是用户输入；assistant 字符串则转成 text 渲染项。
+  // String content = user prompt (only if type is user)
   if (typeof content === "string") {
     if (isUserMessage) {
       items.push({
@@ -234,11 +217,11 @@ function processMessage(
         id: msgId,
         content,
         sourceMessages: [msg],
-        isSubagent,
+        isSubagent: msg.isSubagent,
       });
       return;
     }
-    // assistant 字符串内容转成 text item，后续由 TextBlock 渲染。
+    // Assistant message with string content - convert to text block
     if (content.trim()) {
       const messageHtml = (msg as { _html?: string })._html;
       items.push({
@@ -246,29 +229,24 @@ function processMessage(
         id: msgId,
         text: content,
         sourceMessages: [msg],
-        isSubagent,
+        isSubagent: msg.isSubagent,
         augmentHtml: messageHtml ?? augments?.markdown?.[msgId]?.html,
       });
     }
     return;
   }
 
-  // content 既不是字符串也不是数组时，说明数据形状异常；直接跳过，避免渲染崩溃。
+  // Not an array - shouldn't happen but handle gracefully
   if (!Array.isArray(content)) {
     return;
   }
 
-  const blockArray = content.filter(
-    (block): block is ContentBlock =>
-      typeof block !== "string" && block !== null && typeof block === "object",
-  );
-
-  // user 消息如果只包含 tool_result，说明它不是用户输入，而是工具结果回传。
-  const isToolResultMessage = isUserMessage && blockArray.every((b) => b.type === "tool_result");
+  // Check if this is a user message with only tool_result blocks
+  const isToolResultMessage = isUserMessage && content.every((b) => b.type === "tool_result");
 
   if (isToolResultMessage) {
-    // 把 tool_result 挂回之前记录的 pending tool_use 上。
-    for (const block of blockArray) {
+    // Attach results to pending tool calls
+    for (const block of content) {
       if (block.type === "tool_result" && block.tool_use_id) {
         attachToolResult(block, msg, items, pendingToolCalls);
       }
@@ -276,55 +254,50 @@ function processMessage(
     return;
   }
 
-  // 其它 user 消息都按真实用户输入渲染。
+  // Check if this is a real user prompt (not tool results)
   if (isUserMessage) {
     items.push({
       type: "user_prompt",
       id: msgId,
-      content: blockArray,
+      content,
       sourceMessages: [msg],
-      isSubagent,
+      isSubagent: msg.isSubagent,
     });
     return;
   }
 
-  // assistant 数组内容逐块解析。
-  // 第一遍先找到最后一个 text block，流式输出光标只放在最后一个文本块上，
-  // 避免多段文本同时显示 streaming 状态。
+  // Assistant message - process each block
+  // First pass: find the last text block index (for streaming cursor placement)
   let lastTextBlockIndex = -1;
   if (msg._isStreaming) {
-    for (let i = blockArray.length - 1; i >= 0; i--) {
-      const block = blockArray[i];
-      // Include empty text blocks when streaming — the last text block is where
-      // the waiting cursor should appear even before the first character arrives.
-      if (block?.type === "text") {
+    for (let i = content.length - 1; i >= 0; i--) {
+      const block = content[i];
+      if (block?.type === "text" && block.text?.trim()) {
         lastTextBlockIndex = i;
         break;
       }
     }
   }
 
-  for (let i = 0; i < blockArray.length; i++) {
-    const block = blockArray[i];
+  for (let i = 0; i < content.length; i++) {
+    const block = content[i];
     if (!block) continue;
 
     const blockId = `${msgId}-${i}`;
 
     if (block.type === "text") {
-      const isLastStreamingBlock = msg._isStreaming && i === lastTextBlockIndex;
-      if (block.text?.trim() || isLastStreamingBlock) {
-        // 优先使用服务端直接注入到 block 上的 _html。
-        // 如果当前是订阅事件路径，则从 markdownAugments 映射里按 messageId 兜底查找。
+      if (block.text?.trim()) {
+        // Get _html from server-injected augment, fall back to markdownAugments (for SSE path)
         const blockHtml = (block as { _html?: string })._html;
         items.push({
           type: "text",
           id: blockId,
-          text: block.text ?? "",
+          text: block.text,
           sourceMessages: [msg],
-          isSubagent,
-          // 只有最后一个文本块显示流式光标。
+          isSubagent: msg.isSubagent,
+          // Only show streaming cursor on the last text block
           isStreaming: msg._isStreaming && i === lastTextBlockIndex,
-          // 优先使用 block 内联 HTML；没有时使用订阅路径缓存的 markdown augment。
+          // Prefer inline _html from server, fall back to markdownAugments (SSE path)
           augmentHtml: blockHtml ?? augments?.markdown?.[msgId]?.html,
         });
       }
@@ -337,13 +310,13 @@ function processMessage(
           signature: undefined,
           status: "complete",
           sourceMessages: [msg],
-          isSubagent,
+          isSubagent: msg.isSubagent,
         });
       }
     } else if (block.type === "tool_use") {
       if (block.id && block.name) {
-        // 重连或恢复流时，服务端可能从不同 assistant 快照里 replay 同一个 tool_use id。
-        // UI 中每个工具调用只应该出现一次，因此按 tool id 去重并合并 sourceMessages。
+        // Stream reconnects/resume can replay the same tool_use id from a
+        // different assistant message snapshot. Keep one render item per tool id.
         const existingIndex = toolCallIndices.get(block.id);
         if (existingIndex !== undefined) {
           const existingItem = items[existingIndex];
@@ -356,8 +329,7 @@ function processMessage(
           continue;
         }
 
-        // 如果服务端标记该工具调用为 orphaned，说明进程在结果返回前结束，
-        // UI 上显示为 aborted/interrupted。
+        // Check if this tool call is orphaned (process killed before result)
         const isOrphaned = orphanedToolIds.has(block.id);
         const toolCall: ToolCallItem = {
           type: "tool_call",
@@ -367,7 +339,7 @@ function processMessage(
           toolResult: undefined,
           status: isOrphaned ? "aborted" : "pending",
           sourceMessages: [msg],
-          isSubagent,
+          isSubagent: msg.isSubagent,
         };
         const itemIndex = items.length;
         toolCallIndices.set(block.id, itemIndex);
@@ -390,16 +362,16 @@ function appendSourceMessage(item: ToolCallItem, message: Message): ToolCallItem
 }
 
 /**
- * 从文本 content block 中解析 Agent/Task 工具结果（SDK 0.2.76+）。
+ * Parse Agent tool result from text content blocks (SDK 0.2.76+).
  *
- * 新版 SDK 不再总是提供结构化 tool_use_result，而是把 agentId 和用量统计
- * 写进文本块。例如：
+ * New SDK embeds agentId and usage stats in text rather than a structured
+ * tool_use_result. Example text block:
  *   "agentId: abc123 (for resuming...)\n<usage>total_tokens: 1234\ntool_uses: 5\nduration_ms: 6789</usage>"
  *
- * 如果解析成功，返回 TaskRenderer 可识别的 TaskResult 形状；解析失败则返回 undefined。
+ * Returns a TaskResult-shaped object for the renderer, or undefined if not parseable.
  */
 export function parseAgentResultFromText(block: ContentBlock): Record<string, unknown> | undefined {
-  // tool_result 的 content 可能是字符串，也可能是 content block 数组。
+  // Content may be a string or array of content blocks
   const texts: string[] = [];
   if (typeof block.content === "string") {
     texts.push(block.content);
@@ -414,7 +386,7 @@ export function parseAgentResultFromText(block: ContentBlock): Record<string, un
 
   const displayContent = extractAgentDisplayContent(block);
 
-  // agentId 是后续加载子代理 JSONL、关联 Task 行与嵌套内容的关键字段。
+  // Extract agentId
   const agentIdMatch = fullText.match(/^agentId:\s*(\S+)/m);
   if (!agentIdMatch) return undefined;
 
@@ -426,7 +398,7 @@ export function parseAgentResultFromText(block: ContentBlock): Record<string, un
     result.content = displayContent;
   }
 
-  // 从 <usage> 块中提取 token 数、工具调用数和耗时，用于 Task 摘要展示。
+  // Extract usage stats from <usage> block
   const usageMatch = fullText.match(/<usage>([\s\S]*?)<\/usage>/);
   if (usageMatch?.[1]) {
     const usage = usageMatch[1];
@@ -490,7 +462,7 @@ function attachToolResult(
 
   const index = pendingToolCalls.get(toolUseId);
   if (index === undefined) {
-    // 找不到对应 tool_use 的孤儿结果。正常情况下不应发生，记录 warning 后跳过。
+    // Orphan result - shouldn't happen normally
     console.warn(`Tool result for unknown tool_use: ${toolUseId}`);
     return;
   }
@@ -498,13 +470,13 @@ function attachToolResult(
   const item = items[index];
   if (!item || item.type !== "tool_call") return;
 
-  // 把 tool_result 附加到已有 tool_call item 上。
-  // SDK/历史数据里结构化结果字段可能是 camelCase，也可能是 snake_case，两种都兼容。
+  // Attach result to existing tool call
+  // Handle both camelCase (toolUseResult) and snake_case (tool_use_result) from SDK
   let structured =
     resultMessage.toolUseResult ?? (resultMessage as Record<string, unknown>).tool_use_result;
 
-  // SDK 0.2.76+ 中 Agent/Task 可能没有结构化 tool_use_result。
-  // 这种情况下从文本块中解析 agentId 和用量统计。
+  // SDK 0.2.76+: Agent tool has no structured tool_use_result.
+  // Parse agentId and usage stats from the text content blocks instead.
   if (!structured && (item.toolName === "Agent" || item.toolName === "Task")) {
     structured = parseAgentResultFromText(block);
   }
@@ -515,7 +487,7 @@ function attachToolResult(
     structured,
   };
 
-  // 创建新的 ToolCallItem 对象，确保 React 能感知到结果状态更新并重新渲染。
+  // Create a new ToolCallItem to ensure React sees the change
   const updatedItem: ToolCallItem = {
     type: "tool_call",
     id: item.id,
@@ -533,89 +505,6 @@ function attachToolResult(
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return !!value && typeof value === "object" && !Array.isArray(value);
-}
-
-function isGroupableToolItem(item: RenderItem): item is ToolCallItem {
-  if (item.type !== "tool_call") {
-    return false;
-  }
-  if (item.status === "pending") {
-    return false;
-  }
-  if (isToolGroupingDisabled(item.toolName)) {
-    return false;
-  }
-  return true;
-}
-
-function dedupeSourceMessages(items: ToolCallItem[]): Message[] {
-  const seen = new Set<string>();
-  const messages: Message[] = [];
-
-  for (const item of items) {
-    for (const message of item.sourceMessages) {
-      const id = getMessageId(message);
-      if (seen.has(id)) {
-        continue;
-      }
-      seen.add(id);
-      messages.push(message);
-    }
-  }
-
-  return messages;
-}
-
-function buildToolGroup(tools: ToolCallItem[]): ToolGroupItem {
-  const first = tools[0];
-  const toolName = first ? canonicalizeToolName(first.toolName) : "Unknown";
-  return {
-    type: "tool_group",
-    id: `tool-group-${toolName}-${tools.map((tool) => tool.id).join("-")}`,
-    toolName,
-    tools,
-    sourceMessages: dedupeSourceMessages(tools),
-    isSubagent: first?.isSubagent,
-  };
-}
-
-function collapseGroupableToolRuns(items: RenderItem[]): RenderItem[] {
-  const result: RenderItem[] = [];
-  let index = 0;
-
-  while (index < items.length) {
-    const item = items[index];
-    if (!item || !isGroupableToolItem(item)) {
-      if (item) {
-        result.push(item);
-      }
-      index += 1;
-      continue;
-    }
-
-    const canonicalToolName = canonicalizeToolName(item.toolName);
-    const tools: ToolCallItem[] = [];
-    let runIndex = index;
-    while (runIndex < items.length) {
-      const runItem = items[runIndex];
-      if (!runItem || !isGroupableToolItem(runItem)) {
-        break;
-      }
-      if (canonicalizeToolName(runItem.toolName) !== canonicalToolName) {
-        break;
-      }
-      if (runItem.isSubagent !== item.isSubagent) {
-        break;
-      }
-      tools.push(runItem);
-      runIndex += 1;
-    }
-
-    result.push(buildToolGroup(tools));
-    index = runIndex;
-  }
-
-  return result;
 }
 
 function extractCommandFromInput(input: unknown): string | undefined {

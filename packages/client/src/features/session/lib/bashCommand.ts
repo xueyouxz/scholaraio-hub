@@ -69,6 +69,7 @@ function getShellLauncherPrefixLength(tokens: string[]): number {
   const second = tokens[1] || "";
   const third = tokens[2] || "";
 
+  // /usr/bin/env bash -lc "command"
   if (
     getExecutableName(first) === "env" &&
     isShellExecutable(second) &&
@@ -78,6 +79,7 @@ function getShellLauncherPrefixLength(tokens: string[]): number {
     return 3;
   }
 
+  // /bin/bash -lc "command"
   if (isShellExecutable(first) && second === "-lc" && tokens.length >= 3) {
     return 2;
   }

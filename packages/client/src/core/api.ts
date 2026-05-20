@@ -273,6 +273,7 @@ export interface ScholarPaper {
   isIndexed?: boolean;
   abstract?: string;
   doi?: string;
+  paperType?: string;
   match?: string;
   score?: number;
 }

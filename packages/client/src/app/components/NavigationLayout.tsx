@@ -189,7 +189,7 @@ export function NavigationLayout() {
               className={
                 isSessionRoute || isPaperReaderRoute
                   ? "flex-1 min-w-0 min-h-0"
-                  : "flex-1 min-w-0 p-8"
+                  : "flex-1 min-w-0 p-8 flex flex-col"
               }
             >
               <Outlet context={layoutContext} />

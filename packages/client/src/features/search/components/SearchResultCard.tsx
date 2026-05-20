@@ -1,46 +1,57 @@
 import { BookmarkPlus, User } from "lucide-react";
 import type { PaperReference } from "../../library/types";
 
-export function SearchResultCard({ paper }: { paper: PaperReference }) {
+interface Props {
+  paper: PaperReference;
+  onClick: () => void;
+  isSelected?: boolean;
+}
+
+export function SearchResultCard({ paper, onClick, isSelected }: Props) {
   return (
-    <article className="bg-surface-container-lowest rounded-xl p-6 transition-all duration-300 hover:shadow-[0_8px_24px_rgba(23,29,26,0.08)] group border border-transparent hover:border-primary/5">
-      <div className="flex justify-between items-start gap-4 mb-4">
-        <div className="flex flex-col gap-1">
-          <div className="flex items-center gap-3 mb-1">
-            <span
-              className={`text-[10px] font-mono font-bold px-2 py-0.5 rounded uppercase tracking-widest ${
-                paper.status === "ingested"
-                  ? "bg-secondary-container text-on-secondary-container"
-                  : "bg-surface-container-high text-outline"
-              }`}
-            >
-              {paper.status === "ingested" ? "已入库" : "新发现"}
-            </span>
-            <span className="text-xs font-mono text-outline">{paper.source}</span>
-          </div>
-          <h4 className="font-serif text-xl font-bold text-on-surface leading-tight group-hover:text-primary transition-colors">
+    <article
+      onClick={onClick}
+      className={`rounded-xl p-5 transition-all duration-200 cursor-pointer group border ${
+        isSelected
+          ? "bg-primary/5 border-primary/20 shadow-sm"
+          : "bg-surface-container-lowest border-outline-variant/10 hover:border-primary/10 hover:shadow-[0_4px_16px_rgba(23,29,26,0.06)]"
+      }`}
+    >
+      <div className="flex justify-between items-start gap-3 mb-2.5">
+        <div className="flex flex-col gap-0.5 min-w-0">
+          <span className="text-[10px] font-mono text-on-surface-variant/60 truncate">
+            {paper.source}
+          </span>
+          <h4
+            className={`font-serif text-base font-bold leading-snug line-clamp-2 transition-colors ${
+              isSelected ? "text-primary" : "text-on-surface group-hover:text-primary"
+            }`}
+          >
             {paper.title}
           </h4>
         </div>
         <button
           type="button"
-          className="p-2 rounded-lg text-on-surface-variant hover:bg-surface-container shrink-0 transition-colors"
+          onClick={(e) => e.stopPropagation()}
+          className="p-1.5 rounded-lg text-on-surface-variant hover:bg-surface-container shrink-0 transition-colors mt-0.5"
         >
-          <BookmarkPlus className="w-4 h-4" />
+          <BookmarkPlus className="w-3.5 h-3.5" />
         </button>
       </div>
 
-      <div className="flex flex-wrap items-center gap-3 mb-5 text-xs text-on-surface-variant">
+      <div className="flex flex-wrap items-center gap-3 mb-3 text-xs text-on-surface-variant">
         <span className="inline-flex items-center gap-1.5">
-          <User className="w-3.5 h-3.5" />
-          {paper.authors}
+          <User className="w-3 h-3 shrink-0" />
+          <span className="truncate max-w-[26ch]">{paper.authors}</span>
         </span>
-        {paper.year ? <span>{paper.year}</span> : null}
-        {paper.citations ? <span>{paper.citations} citations</span> : null}
+        {paper.year ? <span className="font-mono">{paper.year}</span> : null}
+        {paper.citations && paper.citations !== "0" ? (
+          <span className="font-mono">{paper.citations} citations</span>
+        ) : null}
       </div>
 
       {paper.abstract ? (
-        <p className="text-sm text-on-surface-variant leading-7">{paper.abstract}</p>
+        <p className="text-xs text-on-surface-variant leading-5 line-clamp-2">{paper.abstract}</p>
       ) : null}
     </article>
   );

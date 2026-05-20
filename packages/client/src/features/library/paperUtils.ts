@@ -35,6 +35,11 @@ export function buildPdfUrl(paperId: string): string {
   return `/api/scholar/api/papers/${paperId}/pdf`;
 }
 
+/** 构建文献图片的 API 访问 URL（对应 paper.md 中的 images/ 相对路径）。 */
+export function buildPaperImageUrl(paperId: string, filename: string): string {
+  return `/api/scholar/api/papers/${paperId}/images/${encodeURIComponent(filename)}`;
+}
+
 /** 判断文献是否有可读的 PDF 原文（paper.pdf 存在）。 */
 export function canReadPdf(paper: PaperReference): boolean {
   return paper.hasPdfFile === true;

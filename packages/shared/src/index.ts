@@ -1,4 +1,9 @@
-export { isIdeMetadata, stripIdeMetadata } from "./ideMetadata.js";
+export {
+  getFilename,
+  isIdeMetadata,
+  parseOpenedFiles,
+  stripIdeMetadata,
+} from "./ideMetadata.js";
 export {
   DEFAULT_PORT,
   resolveBasePort,
@@ -69,6 +74,7 @@ export type {
   AgentStatus,
   PendingInputType,
   InputRequest,
+  AppContentBlock,
 } from "./app-types.js";
 export { getModelContextWindow } from "./app-types.js";
 
@@ -101,3 +107,4 @@ export type {
   CodexSessionEntry,
 } from "./codex-schema/types.js";
 export { parseCodexSessionEntry } from "./codex-schema/session.js";
+export * from "./claude-sdk-schema/tool/ToolResultSchemas.js";

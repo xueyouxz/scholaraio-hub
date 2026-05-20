@@ -41,19 +41,13 @@
   display: none;
 }
 
-/* Text blocks do not render timeline dots or connector lines. */
+/* Text and thinking blocks - align dot with first line of text */
 .text-block.timeline-item::before {
-  display: none;
+  top: 8px;
 }
 
 .text-block.timeline-item::after {
-  display: none;
-}
-
-/* If a text block follows a timeline item, stop the previous connector before the text. */
-.assistant-turn > [data-render-type]:has(+ [data-render-type="text"]) .timeline-item::after,
-.task-nested-content > [data-render-type]:has(+ [data-render-type="text"]) .timeline-item::after {
-  display: none;
+  top: 14px; /* Adjust line start for new dot position */
 }
 
 /* Add small top padding so text aligns with tool row text */
@@ -99,23 +93,6 @@
 .tool-row.timeline-item.status-aborted::before {
   background: var(--timeline-dot-warning, #d7ba7d);
   opacity: 0.7;
-}
-
-.tool-group-block.timeline-item::before {
-  top: 7px;
-  background: var(--timeline-dot-tool);
-}
-
-.tool-group-block.timeline-item.status-error::before {
-  background: var(--timeline-dot-error);
-}
-
-.tool-group-block.timeline-item.status-aborted::before {
-  background: var(--timeline-dot-warning, #7d5700);
-}
-
-.tool-group-block.timeline-item::after {
-  top: 13px;
 }
 
 /* ==========================================================================
@@ -212,16 +189,15 @@
 /* Expand chevron */
 .expand-chevron {
   flex-shrink: 0;
-  width: 6px;
-  height: 6px;
-  border-right: 1.25px solid var(--text-dimmed, #666);
-  border-bottom: 1.25px solid var(--text-dimmed, #666);
-  transform: rotate(-45deg);
+  width: 16px;
+  text-align: center;
+  font-size: var(--font-size-xs);
+  color: var(--text-dimmed, #666);
   transition: transform 0.15s;
 }
 
 .tool-row.expanded .expand-chevron {
-  transform: rotate(45deg) translateY(-1px);
+  transform: rotate(0deg);
 }
 
 /* Collapsed preview area - shown when tool has preview but not expanded */
@@ -254,162 +230,6 @@
   color: var(--text-muted, #888);
   font-style: italic;
   font-size: var(--font-size-base);
-}
-
-/* Tool groups - compact terminal tool summaries aligned with the main timeline */
-.tool-group-block {
-  position: relative;
-  margin: 2px 0;
-}
-
-.tool-group-header {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  min-height: 20px;
-  padding: 1px 4px;
-  border: 1px solid transparent;
-  border-radius: 4px;
-  background: transparent;
-  color: var(--text-dimmed, #7a8880);
-  cursor: pointer;
-  transition: background-color 0.12s ease, border-color 0.12s ease;
-  width: 100%;
-  text-align: left;
-  line-height: 18px;
-}
-
-.tool-group-header:hover {
-  background: var(--bg-hover, #e4eae5);
-  border-color: var(--border-subtle, rgba(111, 122, 114, 0.12));
-}
-
-.tool-group-header:focus {
-  outline: 1px solid var(--focus-border, #005235);
-  outline-offset: 2px;
-}
-
-.tool-group-title {
-  flex: 0 1 auto;
-  min-width: 0;
-  font-size: var(--font-size-sm);
-  font-weight: 500;
-  color: var(--text-dimmed, #7a8880);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-.tool-group-chevron {
-  flex-shrink: 0;
-  width: 5px;
-  height: 5px;
-  border-right: 1px solid var(--text-dimmed, #7a8880);
-  border-bottom: 1px solid var(--text-dimmed, #7a8880);
-  opacity: 0.75;
-  transform: rotate(-45deg);
-  transition: transform 0.15s;
-}
-
-.tool-group-block.expanded .tool-group-chevron {
-  transform: rotate(45deg) translateY(-1px);
-}
-
-.tool-group-status {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  margin-left: auto;
-  flex-shrink: 0;
-  color: var(--text-dimmed, #7a8880);
-  font-size: var(--font-size-xs);
-}
-
-.tool-group-status span {
-  border-radius: 999px;
-  padding: 0 5px;
-  background: var(--bg-error, rgba(186, 26, 26, 0.08));
-  color: var(--error-color, #ba1a1a);
-  font-weight: 600;
-}
-
-.tool-group-list {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  margin: 3px 0 0 20px;
-  padding: 5px 0 5px 8px;
-  border-left: 1px solid var(--border-subtle, rgba(111, 122, 114, 0.12));
-  list-style: none;
-  animation: slideDown 0.15s ease-out;
-}
-
-.tool-group-item {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  min-height: 20px;
-  min-width: 0;
-  padding: 1px 5px;
-  border-radius: 5px;
-}
-
-.tool-group-item:hover {
-  background: var(--bg-hover, #e4eae5);
-}
-
-.tool-group-item-main {
-  flex: 1;
-  min-width: 0;
-}
-
-.tool-group-item-button {
-  display: inline-flex;
-  align-items: center;
-  max-width: 100%;
-  background: transparent;
-  border: none;
-  padding: 0;
-  color: var(--link-color, #005235);
-  cursor: pointer;
-  font: inherit;
-  font-size: var(--font-size-sm);
-  text-align: left;
-  text-decoration: underline;
-  text-decoration-color: transparent;
-  transition: text-decoration-color 0.15s;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-.tool-group-item-button:hover {
-  text-decoration-color: currentColor;
-}
-
-.tool-group-item-status {
-  flex-shrink: 0;
-  color: var(--error-color, #ba1a1a);
-  font-size: var(--font-size-sm);
-  font-weight: 600;
-}
-
-.tool-group-detail {
-  display: flex;
-  flex-direction: column;
-  gap: 14px;
-}
-
-.tool-group-detail-section {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-}
-
-.tool-group-detail-label {
-  color: var(--text-muted, #5e6b63);
-  font-size: var(--font-size-sm);
-  text-transform: uppercase;
 }
 
 .tool-use-expanded,

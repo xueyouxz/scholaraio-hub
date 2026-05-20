@@ -1,7 +1,10 @@
+import { toUrlProjectId } from "@scholaraio-hub/shared";
 import {
   ChevronUp,
   FolderKanban,
+  FolderOpen,
   Library,
+  Loader2,
   PanelLeftClose,
   PanelLeftOpen,
   Plus,
@@ -9,9 +12,13 @@ import {
   Settings,
   User,
 } from "lucide-react";
-import { useEffect, useRef, useState } from "react";
-import { Link, NavLink, useParams } from "react-router-dom";
-import { useGlobalSessions } from "../../features/session/hooks/useGlobalSessions";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Link, NavLink, useNavigate, useParams } from "react-router-dom";
+import { api, scholar } from "../../core/api";
+import type { ScholarWorkspaceSummary } from "../../core/api";
+import type { ProjectSummary } from "../../core/types";
+import type { GlobalSessionItem } from "../../features/session/api/client";
+import { useGroupSessions } from "../../features/session/hooks/useGroupSessions";
 import { useProjectScope } from "./NavigationLayout";
 
 interface NavEntry {
@@ -25,7 +32,6 @@ interface NavEntry {
 const NAV_ENTRIES: NavEntry[] = [
   { id: "library", label: "Library", to: "/library", icon: Library },
   { id: "search", label: "Search", to: "/search", icon: Search },
-  { id: "workspaces", label: "Workspaces", to: "/workspaces", icon: FolderKanban },
 ];
 
 interface SidebarProps {
@@ -40,16 +46,231 @@ function compactLabel(value: string) {
   return value.trim().slice(0, 1).toUpperCase() || "•";
 }
 
+function relativeTime(iso: string): string {
+  const diff = Date.now() - new Date(iso).getTime();
+  const days = Math.floor(diff / 86400000);
+  if (days < 1) return "今天";
+  if (days < 7) return `${days}天前`;
+  const weeks = Math.floor(days / 7);
+  if (weeks < 5) return `${weeks}周前`;
+  const months = Math.floor(days / 30);
+  return `${months}月前`;
+}
+
+// ─── Session item ──────────────────────────────────────────────────────────────
+
+function SessionItem({
+  session,
+  isActive,
+  onClose,
+  isDesktop,
+}: {
+  session: GlobalSessionItem;
+  isActive: boolean;
+  onClose: () => void;
+  isDesktop: boolean;
+}) {
+  const label = session.customTitle ?? session.title ?? "Untitled";
+  const isRunning = session.activity === "in-turn" || session.activity === "waiting-input";
+  return (
+    <Link
+      to={`/projects/${session.projectId}/sessions/${session.id}`}
+      onClick={!isDesktop ? onClose : undefined}
+      className={`group flex items-center justify-between w-full rounded-xl px-3 py-1.5 text-left transition-colors ${
+        isActive
+          ? "bg-surface-container text-primary"
+          : "text-on-surface hover:bg-surface-container"
+      }`}
+    >
+      <p className="line-clamp-1 text-[13px] min-w-0 flex-1">{label}</p>
+      <span className="flex items-center gap-1.5 shrink-0 ml-2">
+        {isRunning ? <span className="w-1.5 h-1.5 rounded-full bg-primary animate-pulse" /> : null}
+        <span className="text-[10px] text-on-surface-variant/60 whitespace-nowrap">
+          {relativeTime(session.updatedAt)}
+        </span>
+      </span>
+    </Link>
+  );
+}
+
+// ─── Group ─────────────────────────────────────────────────────────────────────
+
+function SidebarGroup({
+  projectId,
+  name,
+  icon: Icon,
+  sessionId,
+  isDesktop,
+  onClose,
+  onAddSession,
+  loadGroup,
+  getGroup,
+}: {
+  projectId: string;
+  name: string;
+  icon: React.ElementType;
+  sessionId: string | undefined;
+  isDesktop: boolean;
+  onClose: () => void;
+  onAddSession: (projectId: string) => void;
+  loadGroup: (projectId: string) => void;
+  getGroup: (projectId: string) => {
+    sessions: GlobalSessionItem[];
+    loading: boolean;
+    loaded: boolean;
+  };
+}) {
+  const [expanded, setExpanded] = useState(false);
+  const { sessions, loading, loaded } = getGroup(projectId);
+
+  const toggle = () => {
+    const next = !expanded;
+    setExpanded(next);
+    if (next && !loaded) {
+      loadGroup(projectId);
+    }
+  };
+
+  return (
+    <div className="mb-1">
+      <div className="flex items-center gap-1 group/header">
+        <button
+          type="button"
+          onClick={toggle}
+          className="flex items-center gap-2 flex-1 min-w-0 px-2 py-1 rounded-lg hover:bg-surface-container transition-colors text-left"
+        >
+          <Icon className="w-4 h-4 shrink-0 text-on-surface-variant" />
+          <span className="text-[12px] font-medium text-on-surface truncate">{name}</span>
+        </button>
+        <button
+          type="button"
+          title={`在 ${name} 中新建会话`}
+          onClick={() => onAddSession(projectId)}
+          className="shrink-0 p-1 rounded-lg opacity-0 group-hover/header:opacity-100 hover:bg-surface-container transition-all text-on-surface-variant hover:text-primary"
+        >
+          <Plus className="w-3.5 h-3.5" />
+        </button>
+      </div>
+
+      {expanded ? (
+        <div className="ml-5 mt-0.5 space-y-0.5">
+          {loading ? (
+            <div className="flex items-center gap-2 px-3 py-1.5 text-on-surface-variant/60">
+              <Loader2 className="w-3 h-3 animate-spin" />
+              <span className="text-[12px]">加载中…</span>
+            </div>
+          ) : sessions.length > 0 ? (
+            sessions.map((s) => (
+              <SessionItem
+                key={s.id}
+                session={s}
+                isActive={s.id === sessionId}
+                isDesktop={isDesktop}
+                onClose={onClose}
+              />
+            ))
+          ) : (
+            <p className="px-3 py-1.5 text-[12px] text-on-surface-variant/50">暂无对话</p>
+          )}
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+// ─── Section (Workspaces / Projects) ──────────────────────────────────────────
+
+function SidebarSection({
+  title,
+  count,
+  children,
+}: {
+  title: string;
+  count: number;
+  children: React.ReactNode;
+}) {
+  const [collapsed, setCollapsed] = useState(false);
+  return (
+    <div className="mb-3">
+      <button
+        type="button"
+        onClick={() => setCollapsed((v) => !v)}
+        className="w-full flex items-center justify-between px-2 py-1.5 mb-0.5 rounded-lg hover:bg-surface-container transition-colors group/section"
+      >
+        <span className="text-[10px] font-mono uppercase tracking-[0.22em] text-on-surface-variant/50 group-hover/section:text-on-surface-variant/70 transition-colors">
+          {title}
+        </span>
+        <span className="min-w-[18px] text-center text-[10px] font-mono tabular-nums leading-none px-1.5 py-0.5 rounded-md bg-surface-container text-on-surface-variant/50 group-hover/section:text-on-surface-variant/70 transition-colors">
+          {count}
+        </span>
+      </button>
+      {!collapsed ? children : null}
+    </div>
+  );
+}
+
+// ─── Sidebar ───────────────────────────────────────────────────────────────────
+
 export function Sidebar({ isDesktop, isCollapsed, isOpen, onToggle, onClose }: SidebarProps) {
   const { sessionId } = useParams();
-  const { selectedProjectId } = useProjectScope();
+  const navigate = useNavigate();
+  const { setSelectedProjectId, setSelectedProvider, selectedProvider } = useProjectScope();
   const [userMenuOpen, setUserMenuOpen] = useState(false);
   const userMenuRef = useRef<HTMLDivElement>(null);
-  const { sessions } = useGlobalSessions({
-    projectId: selectedProjectId,
-    limit: 20,
-  });
-  const visibleSessions = selectedProjectId ? sessions : [];
+
+  const [workspaces, setWorkspaces] = useState<ScholarWorkspaceSummary[]>([]);
+  const [projects, setProjects] = useState<ProjectSummary[]>([]);
+  const { loadGroup, getGroup } = useGroupSessions();
+
+  useEffect(() => {
+    scholar
+      .getWorkspaces()
+      .then((data) => setWorkspaces(data.workspaces))
+      .catch(() => {});
+    api
+      .getProjects()
+      .then((data) => setProjects(data.projects))
+      .catch(() => {});
+  }, []);
+
+  const projectsByName = useMemo(
+    () => new Map(projects.map((p) => [p.name ?? p.path.split("/").pop() ?? "", p])),
+    [projects],
+  );
+
+  const workspaceNames = useMemo(() => new Set(workspaces.map((w) => w.name)), [workspaces]);
+
+  const sortedWorkspaces = useMemo(
+    () =>
+      [...workspaces].sort((a, b) => {
+        const ta = projectsByName.get(a.name)?.lastActivity ?? a.createdAt;
+        const tb = projectsByName.get(b.name)?.lastActivity ?? b.createdAt;
+        return new Date(tb).getTime() - new Date(ta).getTime();
+      }),
+    [workspaces, projectsByName],
+  );
+
+  const sortedNonWorkspaceProjects = useMemo(
+    () =>
+      projects
+        .filter((p) => !workspaceNames.has(p.name ?? ""))
+        .sort((a, b) => {
+          const ta = a.lastActivity ?? "";
+          const tb = b.lastActivity ?? "";
+          return new Date(tb).getTime() - new Date(ta).getTime();
+        }),
+    [projects, workspaceNames],
+  );
+
+  const handleAddSession = useCallback(
+    (projectId: string) => {
+      setSelectedProjectId(projectId);
+      if (!selectedProvider) setSelectedProvider("claude");
+      navigate("/new-session");
+      if (!isDesktop) onClose();
+    },
+    [setSelectedProjectId, setSelectedProvider, selectedProvider, navigate, isDesktop, onClose],
+  );
 
   // Close user menu on outside click
   useEffect(() => {
@@ -180,40 +401,52 @@ export function Sidebar({ isDesktop, isCollapsed, isOpen, onToggle, onClose }: S
         })}
       </nav>
 
-      {/* Session list (only when expanded and project selected) */}
+      {/* Workspace + Project session groups (only when expanded) */}
       {!isCollapsed ? (
         <div className="flex-1 min-h-0 overflow-y-auto no-scrollbar pr-1 border-t border-outline-variant/10 pt-3">
-          <p className="px-1 mb-2 text-[10px] font-mono uppercase tracking-[0.24em] text-on-surface-variant/60">
-            Recents
-          </p>
-          {visibleSessions.length > 0 ? (
-            <div className="space-y-1">
-              {visibleSessions.map((session) => {
-                const label = session.customTitle ?? session.title ?? "Untitled";
-                const isActive = session.id === sessionId;
+          {sortedWorkspaces.length > 0 ? (
+            <SidebarSection title="Workspaces" count={sortedWorkspaces.length}>
+              {sortedWorkspaces.map((ws) => {
+                const projectId = toUrlProjectId(ws.path);
                 return (
-                  <Link
-                    key={session.id}
-                    to={`/projects/${session.projectId}/sessions/${session.id}`}
-                    onClick={!isDesktop ? onClose : undefined}
-                    className={`block w-full rounded-xl px-3 py-1.5 pr-9 text-left transition-colors ${
-                      isActive
-                        ? "bg-surface-container text-primary"
-                        : "text-on-surface hover:bg-surface-container"
-                    }`}
-                  >
-                    <p className="line-clamp-1 text-[13px]">{label}</p>
-                  </Link>
+                  <SidebarGroup
+                    key={ws.id}
+                    projectId={projectId}
+                    name={ws.name}
+                    icon={FolderOpen}
+                    sessionId={sessionId}
+                    isDesktop={isDesktop}
+                    onClose={onClose}
+                    onAddSession={handleAddSession}
+                    loadGroup={loadGroup}
+                    getGroup={getGroup}
+                  />
                 );
               })}
-            </div>
-          ) : (
-            <p className="px-1 text-[12px] text-on-surface-variant/60">
-              {selectedProjectId
-                ? "No sessions in this project."
-                : "Select a project in Settings to browse sessions."}
-            </p>
-          )}
+            </SidebarSection>
+          ) : null}
+
+          {sortedNonWorkspaceProjects.length > 0 ? (
+            <SidebarSection title="Projects" count={sortedNonWorkspaceProjects.length}>
+              {sortedNonWorkspaceProjects.map((p) => {
+                const name = p.name ?? p.path.split("/").pop() ?? p.id;
+                return (
+                  <SidebarGroup
+                    key={p.id}
+                    projectId={p.id}
+                    name={name}
+                    icon={FolderKanban}
+                    sessionId={sessionId}
+                    isDesktop={isDesktop}
+                    onClose={onClose}
+                    onAddSession={handleAddSession}
+                    loadGroup={loadGroup}
+                    getGroup={getGroup}
+                  />
+                );
+              })}
+            </SidebarSection>
+          ) : null}
         </div>
       ) : (
         <div className="flex-1" />
@@ -221,7 +454,6 @@ export function Sidebar({ isDesktop, isCollapsed, isOpen, onToggle, onClose }: S
 
       {/* User profile + settings popup */}
       <div className="mt-3 pt-3 border-t border-outline-variant/10 relative" ref={userMenuRef}>
-        {/* Settings popup — slides up above profile button */}
         {userMenuOpen ? (
           <div className="absolute bottom-full left-0 right-0 mb-2 bg-surface-container-lowest border border-outline-variant/20 rounded-xl shadow-xl overflow-hidden">
             <NavLink
@@ -252,7 +484,6 @@ export function Sidebar({ isDesktop, isCollapsed, isOpen, onToggle, onClose }: S
           </div>
         ) : null}
 
-        {/* User profile trigger */}
         <button
           type="button"
           onClick={() => setUserMenuOpen((v) => !v)}

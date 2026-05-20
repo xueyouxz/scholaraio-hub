@@ -330,6 +330,7 @@ export interface ScholarPaper {
 export interface ScholarWorkspaceSummary {
   id: string;
   name: string;
+  path: string;
   paperCount: number;
   createdAt: string;
 }

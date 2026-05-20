@@ -15,6 +15,7 @@ import type {
   ClaudeSDK,
   PermissionMode,
   RealClaudeSDKInterface,
+  SDKMessage,
   UserMessage,
 } from "../sdk/types.js";
 import type {
@@ -99,6 +100,7 @@ export type OnSessionSummaryCallback = (
 ) => Promise<SessionSummary | null>;
 
 export type OnSessionExecutorCallback = (sessionId: string, executor: string) => Promise<void>;
+export type OnProviderSDKMessageCallback = (provider: ProviderName, message: SDKMessage) => void;
 
 /** Delays for initial title/messageCount reconciliation after session creation */
 const INITIAL_RECONCILE_DELAYS_MS = [1000, 3000] as const;
@@ -125,6 +127,8 @@ export interface SupervisorOptions {
   onSessionSummary?: OnSessionSummaryCallback;
   /** Callback to persist executor metadata for resumed sessions */
   onSessionExecutor?: OnSessionExecutorCallback;
+  /** Callback for provider-level telemetry carried in SDK message streams */
+  onProviderSDKMessage?: OnProviderSDKMessageCallback;
 }
 
 export class Supervisor {
@@ -143,6 +147,7 @@ export class Supervisor {
   private workerQueue: WorkerQueue;
   private onSessionSummary?: OnSessionSummaryCallback;
   private onSessionExecutor?: OnSessionExecutorCallback;
+  private onProviderSDKMessage?: OnProviderSDKMessageCallback;
   private staleCheckTimer: ReturnType<typeof setInterval>;
 
   constructor(options: SupervisorOptions) {
@@ -161,6 +166,7 @@ export class Supervisor {
     });
     this.onSessionSummary = options.onSessionSummary;
     this.onSessionExecutor = options.onSessionExecutor;
+    this.onProviderSDKMessage = options.onProviderSDKMessage;
     this.staleCheckTimer = setInterval(
       () => this.terminateStaleProcesses(),
       STALE_CHECK_INTERVAL_MS,
@@ -1141,6 +1147,8 @@ export class Supervisor {
     process.subscribe((event) => {
       if (event.type === "complete") {
         this.unregisterProcess(process);
+      } else if (event.type === "message") {
+        this.onProviderSDKMessage?.(process.provider, event.message);
       } else if (event.type === "session-id-changed") {
         // Update session→process mapping when temp ID is replaced by real ID from SDK
         // This is critical for ExternalSessionTracker to correctly identify owned sessions

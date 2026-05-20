@@ -7,7 +7,7 @@
 
 import { type ChildProcess, exec, spawn } from "node:child_process";
 import { promisify } from "node:util";
-import type { ModelInfo } from "@scholaraio-hub/shared";
+import type { ModelInfo, ProviderUsageLimits } from "@scholaraio-hub/shared";
 import {
   isCodexCorrelationDebugEnabled,
   logCodexCorrelationDebug,
@@ -19,6 +19,7 @@ import {
   normalizeCodexToolInvocation,
 } from "../../codex/normalization.js";
 import { getLogger } from "../../logging/logger.js";
+import { normalizeCodexRateLimits } from "../../services/ProviderUsageLimitService.js";
 import { findCodexCliPath, whichCommand } from "../cli-detection.js";
 import { logSDKMessage } from "../messageLogger.js";
 import { MessageQueue } from "../messageQueue.js";
@@ -89,6 +90,7 @@ function withCodexTimestamp<T extends SDKMessage>(
 
 const MODEL_CACHE_TTL_MS = 60 * 60 * 1000;
 const MODEL_LIST_TIMEOUT_MS = 8000;
+const USAGE_LIMITS_TIMEOUT_MS = 8000;
 const APP_SERVER_INIT_REQUEST_ID = 1;
 const APP_SERVER_MODEL_LIST_REQUEST_ID = 2;
 const APP_SERVER_SHUTDOWN_GRACE_MS = 1500;
@@ -704,6 +706,45 @@ export class CodexProvider implements AgentProvider {
     };
 
     return models;
+  }
+
+  async getUsageLimits(): Promise<ProviderUsageLimits> {
+    const codexCommand = await this.resolveCodexCommand();
+    const appServer = new CodexAppServerClient(codexCommand, process.cwd(), this.getCodexEnv());
+
+    try {
+      await appServer.connect();
+      await appServer.request<{ userAgent: string }>("initialize", {
+        clientInfo: {
+          name: this.getCodexClientName(),
+          version: "dev",
+        },
+        capabilities: null,
+      });
+      appServer.notify("initialized");
+
+      const payload = await Promise.race([
+        appServer.request<unknown>("account/rateLimits/read"),
+        new Promise<never>((_, reject) =>
+          setTimeout(
+            () => reject(new Error("Timed out querying Codex usage limits")),
+            USAGE_LIMITS_TIMEOUT_MS,
+          ),
+        ),
+      ]);
+      const limits = normalizeCodexRateLimits(this.name, payload, "codex-app-server");
+      if (!limits) {
+        return {
+          provider: this.name,
+          available: false,
+          windows: [],
+          error: "Codex app-server did not return usage limit windows.",
+        };
+      }
+      return limits;
+    } finally {
+      appServer.close();
+    }
   }
 
   private async getModelsFromAppServer(): Promise<ModelInfo[]> {

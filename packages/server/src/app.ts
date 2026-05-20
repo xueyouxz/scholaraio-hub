@@ -19,6 +19,7 @@ import { type UploadDeps, createUploadRoutes } from "./routes/upload.js";
 import { createVersionRoutes } from "./routes/version.js";
 import type { ClaudeSDK, PermissionMode, RealClaudeSDKInterface } from "./sdk/types.js";
 import type { ModelInfoService } from "./services/ModelInfoService.js";
+import { ProviderUsageLimitService } from "./services/ProviderUsageLimitService.js";
 import type { ServerSettingsService } from "./services/ServerSettingsService.js";
 import { CodexSessionReader } from "./sessions/codex-reader.js";
 import { findSessionSummaryAcrossProviders } from "./sessions/provider-resolution.js";
@@ -45,6 +46,7 @@ export interface AppOptions {
   maxQueueSize?: number;
   serverSettingsService?: ServerSettingsService;
   modelInfoService?: ModelInfoService;
+  providerUsageLimitService?: ProviderUsageLimitService;
   enabledProviders?: string[];
   installId?: string;
   voiceInputEnabled?: boolean;
@@ -72,6 +74,8 @@ export function createApp(options: AppOptions): AppResult {
     cacheTtlMs: options.projectScanCacheTtlMs,
   });
   const codexScanner = new CodexSessionScanner();
+  const providerUsageLimitService =
+    options.providerUsageLimitService ?? new ProviderUsageLimitService();
   const readerCache = new Map<string, ISessionReader>();
   const maxReaderCacheSize = 500;
 
@@ -157,6 +161,8 @@ export function createApp(options: AppOptions): AppResult {
     idlePreemptThresholdMs: options.idlePreemptThresholdMs,
     maxQueueSize: options.maxQueueSize,
     onSessionSummary: getSessionSummary,
+    onProviderSDKMessage: (provider, message) =>
+      providerUsageLimitService.recordSDKMessage(provider, message),
   });
 
   const externalTracker = options.eventBus
@@ -260,6 +266,7 @@ export function createApp(options: AppOptions): AppResult {
     "/api/providers",
     createProvidersRoutes({
       modelInfoService: options.modelInfoService,
+      providerUsageLimitService,
       enabledProviders: options.enabledProviders ?? ["claude", "codex"],
     }),
   );

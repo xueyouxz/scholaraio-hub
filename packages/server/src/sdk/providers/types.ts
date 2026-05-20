@@ -1,5 +1,11 @@
 // Provider abstraction types for multi-provider support
-import type { ModelInfo, PermissionMode, ProviderName, SlashCommand } from "@scholaraio-hub/shared";
+import type {
+  ModelInfo,
+  PermissionMode,
+  ProviderName,
+  ProviderUsageLimits,
+  SlashCommand,
+} from "@scholaraio-hub/shared";
 import type { MessageQueue } from "../messageQueue.js";
 import type { CanUseTool, SDKMessage, UserMessage } from "../types.js";
 
@@ -146,4 +152,9 @@ export interface AgentProvider {
    * For cloud providers (Claude, Gemini), this returns a static list.
    */
   getAvailableModels(): Promise<ModelInfo[]>;
+
+  /**
+   * Get account-level usage limits for providers that expose them.
+   */
+  getUsageLimits?(): Promise<ProviderUsageLimits>;
 }

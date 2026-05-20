@@ -76,6 +76,40 @@ export interface ProviderInfo {
   supportsSlashCommands?: boolean;
 }
 
+export type ProviderUsageLimitWindowName =
+  | "fiveHour"
+  | "weekly"
+  | "weeklyOpus"
+  | "weeklySonnet"
+  | "overage"
+  | "unknown";
+
+export type ProviderUsageLimitSource =
+  | "claude-sdk-rate-limit-event"
+  | "claude-oauth-usage-api"
+  | "codex-app-server"
+  | "codex-jsonl"
+  | "unavailable";
+
+export interface ProviderUsageLimitWindow {
+  name: ProviderUsageLimitWindowName;
+  label: string;
+  usedPercent?: number;
+  resetsAt?: string;
+  resetsAtEpochSeconds?: number;
+  windowMinutes?: number;
+  status?: "allowed" | "allowed_warning" | "rejected" | "unknown";
+  source: ProviderUsageLimitSource;
+}
+
+export interface ProviderUsageLimits {
+  provider: ProviderName;
+  available: boolean;
+  updatedAt?: string;
+  windows: ProviderUsageLimitWindow[];
+  error?: string;
+}
+
 /**
  * Permission mode for tool approvals.
  * - "default": Auto-approve read-only tools (Read, Glob, Grep, etc.), ask for mutating tools

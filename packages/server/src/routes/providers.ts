@@ -2,9 +2,11 @@ import type { ProviderInfo, ProviderName } from "@scholaraio-hub/shared";
 import { Hono } from "hono";
 import { getAllProviders } from "../sdk/providers/index.js";
 import type { ModelInfoService } from "../services/ModelInfoService.js";
+import type { ProviderUsageLimitService } from "../services/ProviderUsageLimitService.js";
 
 interface ProviderRouteDeps {
   modelInfoService?: ModelInfoService;
+  providerUsageLimitService?: ProviderUsageLimitService;
   /** If non-empty, only these provider names are exposed. */
   enabledProviders?: string[];
 }
@@ -48,6 +50,21 @@ export function createProvidersRoutes(deps: ProviderRouteDeps = {}): Hono {
     }
 
     return c.json({ providers: providerInfos });
+  });
+
+  routes.get("/usage-limits", async (c) => {
+    if (!deps.providerUsageLimitService) {
+      return c.json({ usageLimits: [] });
+    }
+
+    let providers = getAllProviders();
+    if (deps.enabledProviders && deps.enabledProviders.length > 0) {
+      const enabled = new Set(deps.enabledProviders);
+      providers = providers.filter((p) => enabled.has(p.name));
+    }
+
+    const usageLimits = await deps.providerUsageLimitService.getUsageLimits(providers);
+    return c.json({ usageLimits });
   });
 
   // GET /api/providers/:name - Get specific provider status with models

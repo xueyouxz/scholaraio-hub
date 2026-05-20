@@ -1,5 +1,6 @@
-import { type ChildProcess, spawn } from "node:child_process";
+import { type ChildProcess, execFile, spawn } from "node:child_process";
 import { homedir } from "node:os";
+import { promisify } from "node:util";
 import {
   type SDKMessage as AgentSDKMessage,
   type Query,
@@ -7,7 +8,13 @@ import {
   type SpawnedProcess,
   query,
 } from "@anthropic-ai/claude-agent-sdk";
-import { type ModelInfo, type SlashCommand, getModelContextWindow } from "@scholaraio-hub/shared";
+import {
+  type ModelInfo,
+  type ProviderUsageLimits,
+  type SlashCommand,
+  getModelContextWindow,
+} from "@scholaraio-hub/shared";
+import { normalizeClaudeOAuthUsage } from "../../services/ProviderUsageLimitService.js";
 import { detectClaudeCli } from "../cli-detection.js";
 import { logSDKMessage } from "../messageLogger.js";
 import { MessageQueue } from "../messageQueue.js";
@@ -28,6 +35,11 @@ import type {
  * old time-only heuristic if the wrapper causes issues.
  */
 const USE_SPAWN_WRAPPER = true;
+const execFileAsync = promisify(execFile);
+const CLAUDE_CODE_KEYCHAIN_SERVICE = "Claude Code-credentials";
+const CLAUDE_OAUTH_USAGE_URL = "https://api.anthropic.com/api/oauth/usage";
+const CLAUDE_OAUTH_BETA_HEADER = "oauth-2025-04-20";
+const USAGE_LIMITS_TIMEOUT_MS = 8000;
 
 /** Static fallback list of Claude models (used if probe fails) */
 const CLAUDE_MODELS_FALLBACK: ModelInfo[] = [
@@ -203,6 +215,77 @@ export class ClaudeProvider implements AgentProvider {
       return CLAUDE_MODELS_FALLBACK;
     } finally {
       probePromise = null;
+    }
+  }
+
+  async getUsageLimits(): Promise<ProviderUsageLimits> {
+    const accessToken = await this.readClaudeCodeOAuthAccessToken();
+    const payload = await this.fetchClaudeOAuthUsage(accessToken);
+    const limits = normalizeClaudeOAuthUsage(this.name, payload);
+
+    if (!limits) {
+      return {
+        provider: this.name,
+        available: false,
+        windows: [],
+        error: "Claude OAuth usage API did not return usage limit windows.",
+      };
+    }
+
+    return limits;
+  }
+
+  protected async readClaudeCodeOAuthAccessToken(): Promise<string> {
+    if (process.platform !== "darwin") {
+      throw new Error("Claude OAuth usage limits require macOS Keychain credentials.");
+    }
+
+    const service = process.env.CLAUDE_CODE_KEYCHAIN_SERVICE ?? CLAUDE_CODE_KEYCHAIN_SERVICE;
+    const { stdout } = await execFileAsync(
+      "security",
+      ["find-generic-password", "-s", service, "-w"],
+      { timeout: USAGE_LIMITS_TIMEOUT_MS },
+    );
+
+    let credentials: { claudeAiOauth?: { accessToken?: unknown } };
+    try {
+      credentials = JSON.parse(stdout) as { claudeAiOauth?: { accessToken?: unknown } };
+    } catch {
+      throw new Error("Claude Code Keychain credentials were not valid JSON.");
+    }
+
+    const accessToken = credentials.claudeAiOauth?.accessToken;
+    if (typeof accessToken !== "string" || accessToken.length === 0) {
+      throw new Error(
+        "Claude Code Keychain credentials did not contain claudeAiOauth.accessToken.",
+      );
+    }
+
+    return accessToken;
+  }
+
+  protected async fetchClaudeOAuthUsage(accessToken: string): Promise<unknown> {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), USAGE_LIMITS_TIMEOUT_MS);
+
+    try {
+      const response = await fetch(process.env.CLAUDE_OAUTH_USAGE_URL ?? CLAUDE_OAUTH_USAGE_URL, {
+        headers: {
+          accept: "application/json",
+          "anthropic-beta": CLAUDE_OAUTH_BETA_HEADER,
+          authorization: `Bearer ${accessToken}`,
+          "user-agent": "scholaraio-hub-claude-usage",
+        },
+        signal: controller.signal,
+      });
+
+      if (!response.ok) {
+        throw new Error(`Claude OAuth usage API returned HTTP ${response.status}.`);
+      }
+
+      return await response.json();
+    } finally {
+      clearTimeout(timeout);
     }
   }
 

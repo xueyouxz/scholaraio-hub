@@ -14,6 +14,10 @@ export type { DerivedPorts } from "./ports.js";
 export type {
   ProviderName,
   ProviderInfo,
+  ProviderUsageLimits,
+  ProviderUsageLimitSource,
+  ProviderUsageLimitWindow,
+  ProviderUsageLimitWindowName,
   ModelInfo,
   SlashCommand,
   PermissionMode,

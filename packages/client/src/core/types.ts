@@ -7,6 +7,7 @@ import type {
   PermissionMode,
   ProviderInfo,
   ProviderName,
+  ProviderUsageLimits,
   ThinkingOption,
   UploadedFile,
 } from "@scholaraio-hub/shared";
@@ -112,6 +113,7 @@ export type {
   PermissionMode,
   ProviderInfo,
   ProviderName,
+  ProviderUsageLimits,
   ThinkingOption,
   UploadedFile,
 };

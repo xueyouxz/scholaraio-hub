@@ -5,6 +5,7 @@ import type {
   PermissionMode,
   ProviderInfo,
   ProviderName,
+  ProviderUsageLimits,
   ThinkingOption,
   UploadedFile,
 } from "@scholaraio-hub/shared";
@@ -109,6 +110,10 @@ export const api = {
     ),
   getProviders: (options?: RequestOptions) =>
     requestJson<{ providers: ProviderInfo[] }>("/api/providers", { signal: options?.signal }),
+  getProviderUsageLimits: (options?: RequestOptions) =>
+    requestJson<{ usageLimits: ProviderUsageLimits[] }>("/api/providers/usage-limits", {
+      signal: options?.signal,
+    }),
   getSettings: (options?: RequestOptions) =>
     requestJson<{ settings: ServerSettings }>("/api/settings", { signal: options?.signal }),
   updateSettings: (settings: Partial<ServerSettings>) =>
@@ -263,6 +268,10 @@ export const scholar = {
       `${SCHOLAR_API_BASE}/papers/${pathSegment(id)}`,
       { signal: options?.signal },
     ),
+  getPaperImages: (id: string, options?: RequestOptions) =>
+    requestJson<{ images: string[] }>(`${SCHOLAR_API_BASE}/papers/${pathSegment(id)}/images`, {
+      signal: options?.signal,
+    }),
   getPaperContent: (id: string, params: ScholarPaperContentParams, options?: RequestOptions) =>
     requestJson<ScholarPaperContentResponse>(
       withQuery(`${SCHOLAR_API_BASE}/papers/${pathSegment(id)}/content`, params),
@@ -325,6 +334,8 @@ export interface ScholarPaper {
   paperType?: string;
   match?: string;
   score?: number;
+  /** First image filename in the paper's images/ directory, used as cover. */
+  coverImage?: string | null;
 }
 
 export interface ScholarWorkspaceSummary {

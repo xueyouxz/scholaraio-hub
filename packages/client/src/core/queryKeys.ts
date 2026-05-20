@@ -3,12 +3,14 @@ import type { ScholarPaperContentParams, ScholarPaperListParams, ScholarSearchBo
 export const queryKeys = {
   projects: () => ["projects"] as const,
   providers: () => ["providers"] as const,
+  providerUsageLimits: () => ["providers", "usage-limits"] as const,
   settings: () => ["settings"] as const,
   version: () => ["version"] as const,
   scholar: {
     all: () => ["scholar"] as const,
     papers: (params: ScholarPaperListParams = {}) => ["scholar", "papers", params] as const,
     paper: (id: string) => ["scholar", "paper", id] as const,
+    paperImages: (id: string) => ["scholar", "paper", id, "images"] as const,
     paperContent: (id: string, params: ScholarPaperContentParams) =>
       ["scholar", "paper", id, "content", params] as const,
     stats: () => ["scholar", "stats"] as const,

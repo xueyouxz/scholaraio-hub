@@ -16,6 +16,7 @@ export function toPaperRef(p: ScholarPaper): PaperReference {
     hasPdfFile: p.hasPdfFile,
     isIndexed: p.isIndexed,
     abstract: p.abstract,
+    coverImage: p.coverImage,
   };
 }
 

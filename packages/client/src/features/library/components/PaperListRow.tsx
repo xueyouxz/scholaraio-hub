@@ -1,3 +1,4 @@
+import { buildPaperImageUrl } from "../paperUtils";
 import type { PaperReference } from "../types";
 
 interface Props {
@@ -6,34 +7,83 @@ interface Props {
   onClick?: () => void;
 }
 
+const STATUS_COLORS: Record<string, string> = {
+  ingested: "bg-primary/20 text-primary",
+  indexing: "bg-secondary/20 text-secondary",
+  pending: "bg-tertiary/20 text-tertiary",
+  "no-pdf": "bg-error/20 text-error",
+};
+
 export function PaperListRow({ paper, isSelected, onClick }: Props) {
-  const dotColor =
-    paper.status === "ingested"
-      ? "bg-primary shadow-[0_0_8px_rgba(26,107,74,0.4)]"
-      : paper.status === "pending"
-        ? "bg-tertiary"
-        : paper.status === "indexing"
-          ? "bg-secondary"
-          : "bg-error";
+  const initial = (paper.title || "?")[0]?.toUpperCase() ?? "?";
+  const avatarColor = STATUS_COLORS[paper.status] ?? "bg-surface-container text-on-surface-variant";
+  const coverUrl = paper.coverImage ? buildPaperImageUrl(paper.id, paper.coverImage) : null;
 
   return (
     <button
       type="button"
       onClick={onClick}
-      className={`w-full text-left h-[72px] flex items-center px-6 transition-colors rounded-xl group cursor-pointer border focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40 ${
+      className={`group w-full text-left flex items-stretch rounded-xl border transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40 overflow-hidden ${
         isSelected
           ? "bg-surface-container-high border-outline-variant/20 ring-1 ring-primary/20"
           : "bg-surface-container-low border-transparent hover:bg-surface-container-high"
       }`}
+      style={{ height: 152 }}
     >
-      <div className={`w-2 h-2 rounded-full mr-6 shrink-0 ${dotColor}`} />
-      <div className="flex-1 min-w-0">
-        <h3 className="font-serif text-base font-semibold text-on-surface truncate pr-4">
-          {paper.title}
-        </h3>
-        <p className="text-xs font-sans text-on-surface-variant truncate mt-0.5">
-          {paper.authors} · {paper.source} · {paper.date ?? paper.year}
-        </p>
+      {/* Cover */}
+      <div className="w-36 h-full shrink-0 overflow-hidden bg-surface-container">
+        {coverUrl ? (
+          <img src={coverUrl} alt="" loading="lazy" className="w-full h-full object-contain" />
+        ) : (
+          <div
+            className={`w-full h-full flex items-center justify-center text-2xl font-serif font-bold select-none ${avatarColor}`}
+          >
+            {initial}
+          </div>
+        )}
+      </div>
+
+      {/* Content */}
+      <div className="flex-1 min-w-0 px-4 py-3 flex flex-col justify-between">
+        <div className="min-w-0">
+          <h3 className="font-serif text-sm font-semibold text-on-surface line-clamp-2 leading-snug">
+            {paper.title}
+          </h3>
+          {paper.authors ? (
+            <p className="mt-1 text-xs text-on-surface-variant truncate">{paper.authors}</p>
+          ) : null}
+          <div className="mt-1.5 flex flex-wrap gap-1.5">
+            {paper.source ? (
+              <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-surface-container text-on-surface-variant leading-none">
+                {paper.source}
+              </span>
+            ) : null}
+            {paper.year ? (
+              <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-surface-container text-on-surface-variant leading-none">
+                {paper.date ?? paper.year}
+              </span>
+            ) : null}
+          </div>
+        </div>
+
+        {/* Hover actions */}
+        <div className="flex gap-2 mt-2 opacity-0 group-hover:opacity-100 transition-opacity duration-150">
+          {paper.abstract ? (
+            <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-primary/10 text-primary leading-none">
+              摘要
+            </span>
+          ) : null}
+          {paper.hasPdf ? (
+            <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-secondary/10 text-secondary leading-none">
+              全文
+            </span>
+          ) : null}
+          {paper.hasPdfFile ? (
+            <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-tertiary/10 text-tertiary leading-none">
+              PDF
+            </span>
+          ) : null}
+        </div>
       </div>
     </button>
   );

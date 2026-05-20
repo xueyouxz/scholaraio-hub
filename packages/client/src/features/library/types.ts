@@ -29,6 +29,7 @@ export interface PaperReference {
   hasPdfFile?: boolean;
   isIndexed?: boolean;
   abstract?: string;
+  coverImage?: string | null;
 }
 
 export interface StatCardReference {

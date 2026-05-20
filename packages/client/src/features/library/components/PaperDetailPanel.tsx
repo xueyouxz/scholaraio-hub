@@ -1,10 +1,11 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { BookOpen, ChevronDown, ChevronUp, FolderPlus, X } from "lucide-react";
+import { BookOpen, FolderPlus, X } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { scholar } from "../../../core/api";
 import { queryKeys } from "../../../core/queryKeys";
 import { StatusBadge } from "../../../shared/ui/StatusBadge";
+import { buildPaperImageUrl } from "../paperUtils";
 import type { PaperReference } from "../types";
 
 interface Props {
@@ -15,7 +16,6 @@ interface Props {
 export function PaperDetailPanel({ paper, onClose }: Props) {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
-  const [abstractOpen, setAbstractOpen] = useState(false);
   const [wsOpen, setWsOpen] = useState(false);
   const [addedTo, setAddedTo] = useState<Set<string>>(new Set());
   const wsRef = useRef<HTMLDivElement>(null);
@@ -26,6 +26,13 @@ export function PaperDetailPanel({ paper, onClose }: Props) {
     enabled: !!paper,
     select: (res) =>
       res.workspaces.map((workspace) => ({ id: workspace.id, name: workspace.name })),
+  });
+
+  const imagesQuery = useQuery({
+    queryKey: queryKeys.scholar.paperImages(paper?.id ?? ""),
+    queryFn: ({ signal }) => scholar.getPaperImages(paper?.id ?? "", { signal }),
+    enabled: !!paper,
+    select: (res) => res.images,
   });
 
   const addPaperMutation = useMutation({
@@ -41,13 +48,13 @@ export function PaperDetailPanel({ paper, onClose }: Props) {
   });
 
   const workspaces = workspacesQuery.data ?? [];
+  const images = imagesQuery.data ?? [];
   const addingTo = addPaperMutation.isPending
     ? (addPaperMutation.variables?.workspaceName ?? null)
     : null;
 
   useEffect(() => {
     if (paper === undefined) return;
-    setAbstractOpen(false);
     setWsOpen(false);
     setAddedTo(new Set());
   }, [paper]);
@@ -143,24 +150,33 @@ export function PaperDetailPanel({ paper, onClose }: Props) {
               </div>
             </div>
 
-            {/* Abstract — collapsed by default */}
+            {/* Image gallery */}
+            {images.length > 0 ? (
+              <div>
+                <p className="text-[10px] font-mono uppercase tracking-[0.2em] text-on-surface-variant/60 mb-2">
+                  图片
+                </p>
+                <div className="flex gap-2 overflow-x-auto no-scrollbar" style={{ height: 160 }}>
+                  {images.map((filename) => (
+                    <img
+                      key={filename}
+                      src={buildPaperImageUrl(paper.id, filename)}
+                      alt=""
+                      loading="lazy"
+                      className="h-full w-auto object-contain shrink-0"
+                    />
+                  ))}
+                </div>
+              </div>
+            ) : null}
+
+            {/* Abstract */}
             {paper.abstract ? (
               <div>
-                <button
-                  type="button"
-                  onClick={() => setAbstractOpen((v) => !v)}
-                  className="flex items-center gap-1.5 text-[10px] font-mono uppercase tracking-[0.2em] text-on-surface-variant/60 hover:text-on-surface-variant transition-colors border-0 bg-transparent p-0 cursor-pointer"
-                >
+                <p className="text-[10px] font-mono uppercase tracking-[0.2em] text-on-surface-variant/60 mb-2">
                   摘要
-                  {abstractOpen ? (
-                    <ChevronUp className="w-3 h-3" />
-                  ) : (
-                    <ChevronDown className="w-3 h-3" />
-                  )}
-                </button>
-                {abstractOpen ? (
-                  <p className="mt-2 text-xs text-on-surface leading-relaxed">{paper.abstract}</p>
-                ) : null}
+                </p>
+                <p className="text-xs text-on-surface leading-relaxed">{paper.abstract}</p>
               </div>
             ) : null}
           </div>

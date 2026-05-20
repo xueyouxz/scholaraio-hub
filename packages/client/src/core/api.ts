@@ -8,6 +8,7 @@ import type {
   ThinkingOption,
   UploadedFile,
 } from "@scholaraio-hub/shared";
+import { type ApiRequestOptions, pathSegment, requestJson, withQuery } from "./http";
 import type {
   CreateSessionInput,
   ProcessSummary,
@@ -21,86 +22,114 @@ import type {
 } from "./types";
 import { uploadFile } from "./upload";
 
-async function request<T>(path: string, init?: RequestInit): Promise<T> {
-  const headers = new Headers(init?.headers);
-  if (init?.body && !(init.body instanceof FormData) && !headers.has("Content-Type")) {
-    headers.set("Content-Type", "application/json");
-  }
+const SCHOLAR_API_BASE = "/api/scholar/api/v1";
 
-  const response = await fetch(path, {
-    ...init,
-    credentials: "include",
-    headers,
-  });
+export type RequestOptions = ApiRequestOptions;
 
-  const isJson = response.headers.get("content-type")?.includes("application/json");
-  const payload = isJson ? await response.json() : await response.text();
+export interface ScholarPaperListParams {
+  sort?: string;
+  year?: string;
+  limit?: number;
+  offset?: number;
+}
 
-  if (!response.ok) {
-    const message =
-      typeof payload === "object" &&
-      payload !== null &&
-      "error" in payload &&
-      typeof payload.error === "string"
-        ? payload.error
-        : response.statusText;
-    throw new Error(message || "Request failed");
-  }
+export interface ScholarSearchBody {
+  query: string;
+  mode?: string;
+  year?: string;
+  journal?: string;
+  paper_type?: string;
+  limit?: number;
+}
 
-  return payload as T;
+export interface ScholarPaperContentParams {
+  layer: 1 | 2 | 3 | 4;
+  lang?: string;
+}
+
+export interface ScholarPaperContentResponse {
+  paperId: string;
+  layer: 1 | 2 | 3 | 4;
+  content: unknown;
+}
+
+export interface ScholarStats {
+  total: number;
+  missingPdf: number;
+  pendingIngest: number;
+  notIndexed: number;
+}
+
+export interface ScholarConfig {
+  llm: { backend: string; model: string; base_url: string; api_key: string };
+  embed: { provider?: string; model: string; source: string; api_key: string };
+  ingest: { mineru_endpoint: string; mineru_api_key: string; s2_api_key: string };
+  paths: { papers_dir: string; workspace_dir: string };
 }
 
 export const api = {
-  getProjects: () => request<{ projects: ProjectSummary[] }>("/api/projects"),
+  getProjects: (options?: RequestOptions) =>
+    requestJson<{ projects: ProjectSummary[] }>("/api/projects", { signal: options?.signal }),
   addProject: (path: string) =>
-    request<{ project: ProjectSummary }>("/api/projects", {
+    requestJson<{ project: ProjectSummary }>("/api/projects", {
       method: "POST",
       body: JSON.stringify({ path }),
     }),
   getProject: (projectId: string) =>
-    request<{ project: ProjectSummary }>(`/api/projects/${projectId}`),
-  getProjectSessions: (projectId: string) =>
-    request<{ sessions: AppSessionSummary[] }>(`/api/projects/${projectId}/sessions`),
+    requestJson<{ project: ProjectSummary }>(`/api/projects/${projectId}`),
+  getProjectSessions: (projectId: string, options?: RequestOptions) =>
+    requestJson<{ sessions: AppSessionSummary[] }>(`/api/projects/${projectId}/sessions`, {
+      signal: options?.signal,
+    }),
   getSession: (
     projectId: string,
     sessionId: string,
-    options?: { beforeMessageId?: string; tailCompactions?: number },
+    options?: { beforeMessageId?: string; tailCompactions?: number } & RequestOptions,
   ) => {
     const params = new URLSearchParams();
     if (options?.beforeMessageId) params.set("beforeMessageId", options.beforeMessageId);
-    if (options?.tailCompactions) params.set("tailCompactions", String(options.tailCompactions));
+    if (options?.tailCompactions !== undefined) {
+      params.set("tailCompactions", String(options.tailCompactions));
+    }
     const qs = params.toString();
-    return request<SessionDetail>(
+    return requestJson<SessionDetail>(
       `/api/projects/${projectId}/sessions/${sessionId}${qs ? `?${qs}` : ""}`,
+      { signal: options?.signal },
     );
   },
   getProcesses: () =>
-    request<{ processes: ProcessSummary[]; terminatedProcesses?: ProcessSummary[] }>(
+    requestJson<{ processes: ProcessSummary[]; terminatedProcesses?: ProcessSummary[] }>(
       "/api/processes?includeTerminated=true",
     ),
-  getProviders: () => request<{ providers: ProviderInfo[] }>("/api/providers"),
-  getSettings: () => request<{ settings: ServerSettings }>("/api/settings"),
+  getProviders: (options?: RequestOptions) =>
+    requestJson<{ providers: ProviderInfo[] }>("/api/providers", { signal: options?.signal }),
+  getSettings: (options?: RequestOptions) =>
+    requestJson<{ settings: ServerSettings }>("/api/settings", { signal: options?.signal }),
   updateSettings: (settings: Partial<ServerSettings>) =>
-    request<{ settings: ServerSettings }>("/api/settings", {
+    requestJson<{ settings: ServerSettings }>("/api/settings", {
       method: "PUT",
       body: JSON.stringify(settings),
     }),
-  getVersion: () =>
-    request<{
+  getVersion: (options?: RequestOptions) =>
+    requestJson<{
       current: string;
       latest: string | null;
       updateAvailable: boolean;
       resumeProtocolVersion?: number;
       capabilities?: string[];
-    }>("/api/version"),
-  getFile: (projectId: string, filePath: string, highlight = true) =>
-    request<FileContentResponse>(
-      `/api/projects/${projectId}/files?path=${encodeURIComponent(filePath)}&highlight=${highlight ? "true" : "false"}`,
+    }>("/api/version", { signal: options?.signal }),
+  getFile: (projectId: string, filePath: string, highlight = true, options?: RequestOptions) =>
+    requestJson<FileContentResponse>(
+      withQuery(`/api/projects/${projectId}/files`, { path: filePath, highlight }),
+      { signal: options?.signal },
     ),
   getFileRawUrl: (projectId: string, filePath: string, download = false) =>
-    `/api/projects/${projectId}/files/raw?path=${encodeURIComponent(filePath)}${download ? "&download=true" : ""}`,
+    withQuery(`/api/projects/${projectId}/files/raw`, {
+      path: filePath,
+      download: download || null,
+    }),
   startSession: (input: StartSessionInput) =>
-    request<SessionCreationResult>(`/api/projects/${input.projectId}/sessions`, {
+    requestJson<SessionCreationResult>(`/api/projects/${input.projectId}/sessions`, {
       method: "POST",
       body: JSON.stringify({
         message: input.message,
@@ -112,12 +141,12 @@ export const api = {
       }),
     }),
   createSession: (input: CreateSessionInput) =>
-    request<SessionCreationResult>(`/api/projects/${input.projectId}/sessions/create`, {
+    requestJson<SessionCreationResult>(`/api/projects/${input.projectId}/sessions/create`, {
       method: "POST",
       body: JSON.stringify(input),
     }),
   resumeSession: (input: ResumeSessionInput) =>
-    request<SessionCreationResult>(
+    requestJson<SessionCreationResult>(
       `/api/projects/${input.projectId}/sessions/${input.sessionId}/resume`,
       {
         method: "POST",
@@ -132,7 +161,7 @@ export const api = {
       },
     ),
   queueMessage: (input: QueueMessageInput) =>
-    request<{ queued: boolean; restarted?: boolean; processId?: string }>(
+    requestJson<{ queued: boolean; restarted?: boolean; processId?: string }>(
       `/api/sessions/${input.sessionId}/messages`,
       {
         method: "POST",
@@ -150,12 +179,12 @@ export const api = {
     response: "approve" | "approve_accept_edits" | "deny",
     feedback?: string,
   ) =>
-    request<{ accepted: boolean }>(`/api/sessions/${sessionId}/input`, {
+    requestJson<{ accepted: boolean }>(`/api/sessions/${sessionId}/input`, {
       method: "POST",
       body: JSON.stringify({ requestId, response, feedback }),
     }),
   setPermissionMode: (sessionId: string, mode: PermissionMode) =>
-    request<{ permissionMode: PermissionMode; modeVersion: number }>(
+    requestJson<{ permissionMode: PermissionMode; modeVersion: number }>(
       `/api/sessions/${sessionId}/mode`,
       {
         method: "PUT",
@@ -163,7 +192,7 @@ export const api = {
       },
     ),
   setHold: (sessionId: string, hold: boolean) =>
-    request<{ isHeld: boolean; holdSince: string | null; state: string }>(
+    requestJson<{ isHeld: boolean; holdSince: string | null; state: string }>(
       `/api/sessions/${sessionId}/hold`,
       {
         method: "PUT",
@@ -171,15 +200,18 @@ export const api = {
       },
     ),
   interruptProcess: (processId: string) =>
-    request<{ interrupted: boolean; supported: boolean }>(`/api/processes/${processId}/interrupt`, {
-      method: "POST",
-    }),
+    requestJson<{ interrupted: boolean; supported: boolean }>(
+      `/api/processes/${processId}/interrupt`,
+      {
+        method: "POST",
+      },
+    ),
   abortProcess: (processId: string) =>
-    request<{ aborted: boolean }>(`/api/processes/${processId}/abort`, {
+    requestJson<{ aborted: boolean }>(`/api/processes/${processId}/abort`, {
       method: "POST",
     }),
   changeModel: (processId: string, model?: string) =>
-    request<{ success: boolean; model?: string }>(`/api/processes/${processId}/model`, {
+    requestJson<{ success: boolean; model?: string }>(`/api/processes/${processId}/model`, {
       method: "POST",
       body: JSON.stringify({ model }),
     }),
@@ -187,7 +219,7 @@ export const api = {
     sessionId: string,
     updates: { title?: string; starred?: boolean; archived?: boolean },
   ) =>
-    request(`/api/sessions/${sessionId}/metadata`, {
+    requestJson(`/api/sessions/${sessionId}/metadata`, {
       method: "PUT",
       body: JSON.stringify(updates),
     }),
@@ -200,60 +232,56 @@ export const api = {
 };
 
 export const scholar = {
-  getPapers: (params?: { sort?: string; year?: string; limit?: number; offset?: number }) => {
-    const qs = new URLSearchParams();
-    if (params?.sort) qs.set("sort", params.sort);
-    if (params?.year) qs.set("year", params.year);
-    if (params?.limit != null) qs.set("limit", String(params.limit));
-    if (params?.offset != null) qs.set("offset", String(params.offset));
-    return request<{ papers: ScholarPaper[]; total: number }>(
-      `/api/scholar/api/papers${qs.toString() ? `?${qs}` : ""}`,
-    );
-  },
-  getPaper: (id: string) =>
-    request<{ paper: ScholarPaper & { content?: string; l3Conclusion?: string } }>(
-      `/api/scholar/api/papers/${id}`,
+  getPapers: (params: ScholarPaperListParams = {}, options?: RequestOptions) =>
+    requestJson<{ papers: ScholarPaper[]; total: number }>(
+      withQuery(`${SCHOLAR_API_BASE}/papers`, params),
+      { signal: options?.signal },
     ),
-  getStats: () =>
-    request<{ total: number; missingPdf: number; pendingIngest: number; notIndexed: number }>(
-      "/api/scholar/api/stats",
+  getPaper: (id: string, options?: RequestOptions) =>
+    requestJson<{ paper: ScholarPaper & { content?: string; l3Conclusion?: string } }>(
+      `${SCHOLAR_API_BASE}/papers/${pathSegment(id)}`,
+      { signal: options?.signal },
     ),
-  search: (body: {
-    query: string;
-    mode?: string;
-    year?: string;
-    journal?: string;
-    paper_type?: string;
-    limit?: number;
-  }) =>
-    request<{ results: ScholarPaper[]; mode: string; total: number }>("/api/scholar/api/search", {
-      method: "POST",
-      body: JSON.stringify(body),
+  getPaperContent: (id: string, params: ScholarPaperContentParams, options?: RequestOptions) =>
+    requestJson<ScholarPaperContentResponse>(
+      withQuery(`${SCHOLAR_API_BASE}/papers/${pathSegment(id)}/content`, params),
+      { signal: options?.signal },
+    ),
+  getStats: (options?: RequestOptions) =>
+    requestJson<ScholarStats>(`${SCHOLAR_API_BASE}/stats`, { signal: options?.signal }),
+  search: (body: ScholarSearchBody, options?: RequestOptions) =>
+    requestJson<{ results: ScholarPaper[]; mode: string; total: number }>(
+      `${SCHOLAR_API_BASE}/search`,
+      {
+        method: "POST",
+        body: JSON.stringify(body),
+        signal: options?.signal,
+      },
+    ),
+  getWorkspaces: (options?: RequestOptions) =>
+    requestJson<{ workspaces: ScholarWorkspaceSummary[] }>(`${SCHOLAR_API_BASE}/workspaces`, {
+      signal: options?.signal,
     }),
-  getWorkspaces: () =>
-    request<{ workspaces: ScholarWorkspaceSummary[] }>("/api/scholar/api/workspaces"),
-  getWorkspace: (name: string) =>
-    request<{ workspace: ScholarWorkspace }>(`/api/scholar/api/workspaces/${name}`),
+  getWorkspace: (name: string, options?: RequestOptions) =>
+    requestJson<{ workspace: ScholarWorkspace }>(
+      `${SCHOLAR_API_BASE}/workspaces/${pathSegment(name)}`,
+      { signal: options?.signal },
+    ),
   createWorkspace: (name: string) =>
-    request<{ workspace: ScholarWorkspace }>("/api/scholar/api/workspaces", {
+    requestJson<{ workspace: ScholarWorkspace }>(`${SCHOLAR_API_BASE}/workspaces`, {
       method: "POST",
       body: JSON.stringify({ name }),
     }),
   addPaperToWorkspace: (workspaceName: string, paperId: string) =>
-    request<{ ok: boolean }>(
-      `/api/scholar/api/workspaces/${encodeURIComponent(workspaceName)}/papers`,
+    requestJson<{ ok: boolean }>(
+      `${SCHOLAR_API_BASE}/workspaces/${pathSegment(workspaceName)}/papers`,
       {
         method: "POST",
         body: JSON.stringify({ paperId }),
       },
     ),
-  getConfig: () =>
-    request<{
-      llm: { backend: string; model: string; base_url: string; api_key: string };
-      embed: { model: string; source: string; api_key: string };
-      ingest: { mineru_endpoint: string; mineru_api_key: string; s2_api_key: string };
-      paths: { papers_dir: string; workspace_dir: string };
-    }>("/api/scholar/api/config"),
+  getConfig: (options?: RequestOptions) =>
+    requestJson<ScholarConfig>(`${SCHOLAR_API_BASE}/config`, { signal: options?.signal }),
 };
 
 export interface ScholarPaper {

@@ -1,7 +1,9 @@
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { BookOpen, ChevronDown, ChevronUp, FolderPlus, X } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { scholar } from "../../../core/api";
+import { queryKeys } from "../../../core/queryKeys";
 import { StatusBadge } from "../../../shared/ui/StatusBadge";
 import type { PaperReference } from "../types";
 
@@ -12,12 +14,36 @@ interface Props {
 
 export function PaperDetailPanel({ paper, onClose }: Props) {
   const navigate = useNavigate();
+  const queryClient = useQueryClient();
   const [abstractOpen, setAbstractOpen] = useState(false);
-  const [workspaces, setWorkspaces] = useState<{ id: string; name: string }[]>([]);
   const [wsOpen, setWsOpen] = useState(false);
-  const [addingTo, setAddingTo] = useState<string | null>(null);
   const [addedTo, setAddedTo] = useState<Set<string>>(new Set());
   const wsRef = useRef<HTMLDivElement>(null);
+
+  const workspacesQuery = useQuery({
+    queryKey: queryKeys.scholar.workspaces(),
+    queryFn: ({ signal }) => scholar.getWorkspaces({ signal }),
+    enabled: !!paper,
+    select: (res) =>
+      res.workspaces.map((workspace) => ({ id: workspace.id, name: workspace.name })),
+  });
+
+  const addPaperMutation = useMutation({
+    mutationFn: ({ workspaceName, paperId }: { workspaceName: string; paperId: string }) =>
+      scholar.addPaperToWorkspace(workspaceName, paperId),
+    onSuccess: (_res, variables) => {
+      setAddedTo((prev) => new Set([...prev, variables.workspaceName]));
+      queryClient.invalidateQueries({ queryKey: queryKeys.scholar.workspaces() });
+      queryClient.invalidateQueries({
+        queryKey: queryKeys.scholar.workspace(variables.workspaceName),
+      });
+    },
+  });
+
+  const workspaces = workspacesQuery.data ?? [];
+  const addingTo = addPaperMutation.isPending
+    ? (addPaperMutation.variables?.workspaceName ?? null)
+    : null;
 
   useEffect(() => {
     if (paper === undefined) return;
@@ -25,13 +51,6 @@ export function PaperDetailPanel({ paper, onClose }: Props) {
     setWsOpen(false);
     setAddedTo(new Set());
   }, [paper]);
-
-  useEffect(() => {
-    scholar
-      .getWorkspaces()
-      .then((res) => setWorkspaces(res.workspaces))
-      .catch(() => {});
-  }, []);
 
   useEffect(() => {
     if (!wsOpen) return;
@@ -44,13 +63,8 @@ export function PaperDetailPanel({ paper, onClose }: Props) {
 
   const handleAdd = (wsName: string) => {
     if (!paper || addingTo) return;
-    setAddingTo(wsName);
     setWsOpen(false);
-    scholar
-      .addPaperToWorkspace(wsName, paper.id)
-      .then(() => setAddedTo((prev) => new Set([...prev, wsName])))
-      .catch(() => {})
-      .finally(() => setAddingTo(null));
+    addPaperMutation.mutate({ workspaceName: wsName, paperId: paper.id });
   };
 
   return (

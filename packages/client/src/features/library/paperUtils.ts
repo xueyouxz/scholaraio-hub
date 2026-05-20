@@ -32,12 +32,12 @@ export function groupByYear(papers: PaperReference[]): YearGroup[] {
 
 /** 构建文献 PDF 的 API 访问 URL。 */
 export function buildPdfUrl(paperId: string): string {
-  return `/api/scholar/api/papers/${paperId}/pdf`;
+  return `/api/scholar/api/v1/papers/${encodeURIComponent(paperId)}/pdf`;
 }
 
 /** 构建文献图片的 API 访问 URL（对应 paper.md 中的 images/ 相对路径）。 */
 export function buildPaperImageUrl(paperId: string, filename: string): string {
-  return `/api/scholar/api/papers/${paperId}/images/${encodeURIComponent(filename)}`;
+  return `/api/scholar/api/v1/papers/${encodeURIComponent(paperId)}/images/${encodeURIComponent(filename)}`;
 }
 
 /** 判断文献是否有可读的 PDF 原文（paper.pdf 存在）。 */

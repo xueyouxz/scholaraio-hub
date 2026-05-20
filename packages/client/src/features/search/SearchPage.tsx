@@ -1,8 +1,10 @@
+import { useQuery } from "@tanstack/react-query";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import { ChevronDown, Search, X } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { usePageTitle } from "../../app/components/NavigationLayout";
 import { type ScholarPaper, scholar } from "../../core/api";
+import { queryKeys } from "../../core/queryKeys";
 import { SectionLabel } from "../../shared/ui/SectionLabel";
 import { PaperDetailPanel } from "../library/components/PaperDetailPanel";
 import type { PaperReference } from "../library/types";
@@ -27,15 +29,11 @@ const SEARCH_MODES: SearchMode[] = [
   { id: "semantic", label: "语义" },
   { id: "author", label: "作者" },
 ];
+const DEFAULT_SEARCH_MODE = SEARCH_MODES[0] ?? { id: "unified", label: "综合" };
 
-// Module-level LRU cache (key = "mode:query")
-const MAX_CACHE = 10;
-const queryCache = new Map<string, ScholarPaper[]>();
-function cacheSet(key: string, value: ScholarPaper[]) {
-  if (queryCache.size >= MAX_CACHE) {
-    queryCache.delete(queryCache.keys().next().value as string);
-  }
-  queryCache.set(key, value);
+interface SubmittedSearch {
+  query: string;
+  mode: string;
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -68,9 +66,7 @@ export function SearchPage() {
   const [sortOpen, setSortOpen] = useState(false);
   const [sortIndex, setSortIndex] = useState(0);
 
-  const [rawResults, setRawResults] = useState<ScholarPaper[]>([]);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [submittedSearch, setSubmittedSearch] = useState<SubmittedSearch | null>(null);
   const [searched, setSearched] = useState(false);
 
   // ── Filter state ──
@@ -92,6 +88,27 @@ export function SearchPage() {
     return () => setTitle("");
   }, [setTitle]);
 
+  const searchBody = submittedSearch
+    ? { query: submittedSearch.query, mode: submittedSearch.mode, limit: SEARCH_LIMIT }
+    : null;
+  const searchQuery = useQuery({
+    queryKey: searchBody ? queryKeys.scholar.search(searchBody) : ["scholar", "search", "idle"],
+    queryFn: ({ signal }) => {
+      if (!searchBody) throw new Error("Missing search body");
+      return scholar.search(searchBody, { signal });
+    },
+    enabled: !!searchBody,
+  });
+
+  const rawResults: ScholarPaper[] = searchQuery.data?.results ?? [];
+  const loading = searched && searchQuery.isFetching;
+  const error =
+    searchQuery.error instanceof Error
+      ? searchQuery.error.message
+      : searchQuery.error
+        ? "检索失败，请确认 scholaraio serve 已启动"
+        : null;
+
   // ── Search ──
   const handleSearch = () => {
     const q = query.trim();
@@ -99,27 +116,8 @@ export function SearchPage() {
     setSearched(true);
     setSelectedDocTypes(new Set());
     setYearRange(null);
-    setError(null);
     setSelectedPaper(null);
-
-    const cacheKey = `${mode}:${q}`;
-    const cached = queryCache.get(cacheKey);
-    if (cached) {
-      setRawResults(cached);
-      return;
-    }
-
-    setLoading(true);
-    scholar
-      .search({ query: q, mode, limit: SEARCH_LIMIT })
-      .then((res) => {
-        cacheSet(cacheKey, res.results);
-        setRawResults(res.results);
-      })
-      .catch((e) =>
-        setError(e instanceof Error ? e.message : "检索失败，请确认 scholaraio serve 已启动"),
-      )
-      .finally(() => setLoading(false));
+    setSubmittedSearch({ query: q, mode });
   };
 
   // ── Init year range from results ──
@@ -218,11 +216,17 @@ export function SearchPage() {
       return 0;
     });
   }, [filteredResults, sortIndex]);
+  const resultScrollKey = useMemo(
+    () => sortedResults.map((paper) => paper.id).join("|"),
+    [sortedResults],
+  );
 
   // Scroll to top when results change
   useEffect(() => {
-    scrollRef.current?.scrollTo({ top: 0 });
-  }, [sortedResults]);
+    if (searched || resultScrollKey) {
+      scrollRef.current?.scrollTo({ top: 0 });
+    }
+  }, [resultScrollKey, searched]);
 
   const hintCount = useMemo(() => {
     if (filteredResults.length > 0 || !searched || loading || !rawResults.length) return null;
@@ -247,7 +251,7 @@ export function SearchPage() {
   }, [filteredResults, rawResults, yearRange, yearBounds, selectedDocTypes, searched, loading]);
 
   const showFilters = searched && !loading && rawResults.length > 0;
-  const currentMode = SEARCH_MODES.find((m) => m.id === mode) ?? SEARCH_MODES[0]!;
+  const currentMode = SEARCH_MODES.find((m) => m.id === mode) ?? DEFAULT_SEARCH_MODE;
 
   // ── Virtualizer ──
   const virtualizer = useVirtualizer({
@@ -330,7 +334,7 @@ export function SearchPage() {
                   type="button"
                   onClick={() => {
                     setQuery("");
-                    setRawResults([]);
+                    setSubmittedSearch(null);
                     setSearched(false);
                     setYearRange(null);
                     setSelectedDocTypes(new Set());

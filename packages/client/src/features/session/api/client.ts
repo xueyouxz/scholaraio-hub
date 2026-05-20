@@ -9,6 +9,8 @@ import type {
   UploadedFile,
 } from "@scholaraio-hub/shared";
 import { api as coreApi } from "../../../core/api";
+import type { RequestOptions } from "../../../core/api";
+import { requestJson } from "../../../core/http";
 import type { ProcessSummary, ProjectSummary, SessionDetail } from "../../../core/types";
 import type { PatchHunk } from "../components/renderers/tools/types";
 import type { AgentSession, Session, SessionStatus } from "../types";
@@ -81,34 +83,6 @@ const DEFAULT_STATS: GlobalSessionStats = {
   executorCounts: {},
 };
 
-async function request<T>(path: string, init?: RequestInit): Promise<T> {
-  const headers = new Headers(init?.headers);
-  if (init?.body && !(init.body instanceof FormData) && !headers.has("Content-Type")) {
-    headers.set("Content-Type", "application/json");
-  }
-
-  const response = await fetch(path, {
-    ...init,
-    credentials: "include",
-    headers,
-  });
-  const isJson = response.headers.get("content-type")?.includes("application/json");
-  const payload = isJson ? await response.json() : await response.text();
-
-  if (!response.ok) {
-    const message =
-      typeof payload === "object" &&
-      payload !== null &&
-      "error" in payload &&
-      typeof payload.error === "string"
-        ? payload.error
-        : response.statusText;
-    throw new Error(message || "Request failed");
-  }
-
-  return payload as T;
-}
-
 function toGlobalSession(
   session: AppSessionSummary,
   projects: ProjectSummary[],
@@ -135,15 +109,19 @@ function toGlobalSession(
   };
 }
 
-async function getProjectSessionsAsGlobal(params?: {
-  project?: string;
-  q?: string;
-  after?: string;
-  limit?: number;
-  includeArchived?: boolean;
-  starred?: boolean;
-}): Promise<GlobalSessionsResponse> {
-  const { projects } = await coreApi.getProjects();
+async function getProjectSessionsAsGlobal(
+  params?: {
+    project?: string;
+    q?: string;
+    after?: string;
+    limit?: number;
+    includeArchived?: boolean;
+    starred?: boolean;
+    includeStats?: boolean;
+  },
+  options?: RequestOptions,
+): Promise<GlobalSessionsResponse> {
+  const { projects } = await coreApi.getProjects(options);
   const selectedProjects = params?.project
     ? projects.filter((project) => project.id === params.project)
     : projects;
@@ -151,7 +129,7 @@ async function getProjectSessionsAsGlobal(params?: {
     await Promise.all(
       selectedProjects.map((project) =>
         coreApi
-          .getProjectSessions(project.id)
+          .getProjectSessions(project.id, options)
           .then(({ sessions }) => sessions.map((session) => toGlobalSession(session, projects)))
           .catch(() => []),
       ),
@@ -208,13 +186,13 @@ export const api = {
     }
     if (options?.beforeMessageId) params.set("beforeMessageId", options.beforeMessageId);
     const qs = params.toString();
-    return request<SessionDetail>(
+    return requestJson<SessionDetail>(
       `/api/projects/${projectId}/sessions/${sessionId}${qs ? `?${qs}` : ""}`,
     );
   },
 
   getSessionMetadata: (projectId: string, sessionId: string) =>
-    request<{
+    requestJson<{
       session: Session;
       ownership: SessionStatus;
       pendingInputRequest?: InputRequest | null;
@@ -222,10 +200,10 @@ export const api = {
     }>(`/api/projects/${projectId}/sessions/${sessionId}/metadata`),
 
   getAgentSession: (projectId: string, sessionId: string, agentId: string) =>
-    request<AgentSession>(`/api/projects/${projectId}/sessions/${sessionId}/agents/${agentId}`),
+    requestJson<AgentSession>(`/api/projects/${projectId}/sessions/${sessionId}/agents/${agentId}`),
 
   getAgentMappings: (projectId: string, sessionId: string) =>
-    request<{ mappings: Array<{ toolUseId: string; agentId: string; agentType?: string }> }>(
+    requestJson<{ mappings: Array<{ toolUseId: string; agentId: string; agentType?: string }> }>(
       `/api/projects/${projectId}/sessions/${sessionId}/agents`,
     ),
 
@@ -235,7 +213,7 @@ export const api = {
     options?: SessionOptions,
     attachments?: UploadedFile[],
   ) =>
-    request<{
+    requestJson<{
       sessionId: string;
       processId: string;
       permissionMode: PermissionMode;
@@ -254,7 +232,7 @@ export const api = {
     }),
 
   createSession: (projectId: string, options?: SessionOptions) =>
-    request<{
+    requestJson<{
       sessionId: string;
       processId: string;
       permissionMode: PermissionMode;
@@ -278,7 +256,7 @@ export const api = {
     attachments?: UploadedFile[],
     tempId?: string,
   ) =>
-    request<{
+    requestJson<{
       processId: string;
       permissionMode: PermissionMode;
       modeVersion: number;
@@ -305,7 +283,7 @@ export const api = {
     thinking?: ThinkingOption,
     deferred?: boolean,
   ) =>
-    request<{
+    requestJson<{
       queued: boolean;
       restarted?: boolean;
       processId?: string;
@@ -323,35 +301,40 @@ export const api = {
     }),
 
   cancelDeferredMessage: (sessionId: string, tempId: string) =>
-    request<{ cancelled: boolean }>(`/api/sessions/${sessionId}/deferred/${tempId}`, {
+    requestJson<{ cancelled: boolean }>(`/api/sessions/${sessionId}/deferred/${tempId}`, {
       method: "DELETE",
     }),
 
   markSessionSeen: (sessionId: string, messageId?: string) =>
-    request<{ success: boolean }>(`/api/sessions/${sessionId}/mark-seen`, {
+    requestJson<{ success: boolean }>(`/api/sessions/${sessionId}/mark-seen`, {
       method: "POST",
       body: JSON.stringify({ messageId }),
     }),
 
   markSessionUnread: (sessionId: string) =>
-    request<{ success: boolean }>(`/api/sessions/${sessionId}/mark-seen`, {
+    requestJson<{ success: boolean }>(`/api/sessions/${sessionId}/mark-seen`, {
       method: "DELETE",
     }),
 
-  getGlobalSessions: (params?: {
-    project?: string;
-    q?: string;
-    after?: string;
-    limit?: number;
-    includeArchived?: boolean;
-    starred?: boolean;
-    includeStats?: boolean;
-  }) => getProjectSessionsAsGlobal(params),
+  getGlobalSessions: (
+    params?: {
+      project?: string;
+      q?: string;
+      after?: string;
+      limit?: number;
+      includeArchived?: boolean;
+      starred?: boolean;
+      includeStats?: boolean;
+    },
+    options?: RequestOptions,
+  ) => getProjectSessionsAsGlobal(params, options),
 
-  getGlobalSessionStats: async () => ({ stats: (await getProjectSessionsAsGlobal()).stats }),
+  getGlobalSessionStats: async (options?: RequestOptions) => ({
+    stats: (await getProjectSessionsAsGlobal(undefined, options)).stats,
+  }),
 
   getProcesses: () =>
-    request<{ processes: ProcessSummary[]; terminatedProcesses?: ProcessSummary[] }>(
+    requestJson<{ processes: ProcessSummary[]; terminatedProcesses?: ProcessSummary[] }>(
       "/api/processes?includeTerminated=true",
     ),
 
@@ -362,7 +345,7 @@ export const api = {
     newString: string,
     originalFile: string,
   ) =>
-    request<{ structuredPatch: PatchHunk[]; diffHtml: string }>(
+    requestJson<{ structuredPatch: PatchHunk[]; diffHtml: string }>(
       `/api/projects/${projectId}/diff/expand`,
       {
         method: "POST",

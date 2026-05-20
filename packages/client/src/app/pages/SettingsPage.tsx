@@ -1,3 +1,4 @@
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   AlertCircle,
   ArrowDownToLine,
@@ -20,7 +21,8 @@ import {
   Wifi,
 } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
-import { api, scholar } from "../../core/api";
+import { type ScholarConfig, api, scholar } from "../../core/api";
+import { queryKeys } from "../../core/queryKeys";
 import type { ProjectSummary, ProviderInfo, ServerSettings } from "../../core/types";
 import { usePageTitle, useProjectScope } from "../components/NavigationLayout";
 
@@ -99,37 +101,18 @@ function ConfigRow({
   );
 }
 
-type ScholarConfig = {
-  llm: { backend: string; model: string; base_url: string; api_key: string };
-  embed: { model: string; source: string; api_key: string };
-  ingest: { mineru_endpoint: string; mineru_api_key: string; s2_api_key: string };
-  paths: { papers_dir: string; workspace_dir: string };
-};
-
 export function SettingsPage() {
   const { setTitle } = usePageTitle();
   const { selectedProvider, selectedProjectId, setSelectedProvider, setSelectedProjectId } =
     useProjectScope();
+  const queryClient = useQueryClient();
 
-  const [providers, setProviders] = useState<ProviderInfo[]>([]);
-  const [allProjects, setAllProjects] = useState<ProjectSummary[]>([]);
-  const [loadingProviders, setLoadingProviders] = useState(true);
-  const [loadingProjects, setLoadingProjects] = useState(false);
   const [agentOpen, setAgentOpen] = useState(false);
   const [projectOpen, setProjectOpen] = useState(false);
 
-  const [version, setVersion] = useState<{
-    current: string;
-    latest: string | null;
-    updateAvailable: boolean;
-  } | null>(null);
-  const [settings, setSettings] = useState<ServerSettings>({});
   const [instructionsDraft, setInstructionsDraft] = useState("");
-  const [savingInstructions, setSavingInstructions] = useState(false);
+  const [settingsDraftInitialized, setSettingsDraftInitialized] = useState(false);
   const [savedInstructions, setSavedInstructions] = useState(false);
-
-  const [scholarConfig, setScholarConfig] = useState<ScholarConfig | null>(null);
-  const [scholarConfigError, setScholarConfigError] = useState(false);
 
   const agentRef = useRef<HTMLDivElement>(null);
   const projectRef = useRef<HTMLDivElement>(null);
@@ -149,52 +132,65 @@ export function SettingsPage() {
     return () => document.removeEventListener("mousedown", handler);
   }, []);
 
-  useEffect(() => {
-    void api
-      .getProviders()
-      .then((d) => setProviders(d.providers))
-      .catch(() => {})
-      .finally(() => setLoadingProviders(false));
-  }, []);
+  const providersQuery = useQuery({
+    queryKey: queryKeys.providers(),
+    queryFn: ({ signal }) => api.getProviders({ signal }),
+    select: (data) => data.providers,
+  });
+
+  const projectsQuery = useQuery({
+    queryKey: queryKeys.projects(),
+    queryFn: ({ signal }) => api.getProjects({ signal }),
+    enabled: !!selectedProvider,
+    select: (data) => data.projects,
+  });
+
+  const versionQuery = useQuery({
+    queryKey: queryKeys.version(),
+    queryFn: ({ signal }) => api.getVersion({ signal }),
+  });
+
+  const settingsQuery = useQuery({
+    queryKey: queryKeys.settings(),
+    queryFn: ({ signal }) => api.getSettings({ signal }),
+  });
+
+  const scholarConfigQuery = useQuery({
+    queryKey: queryKeys.scholar.config(),
+    queryFn: ({ signal }) => scholar.getConfig({ signal }),
+    retry: false,
+  });
+
+  const updateSettingsMutation = useMutation({
+    mutationFn: (nextSettings: Partial<ServerSettings>) => api.updateSettings(nextSettings),
+    onSuccess: (updated) => {
+      queryClient.setQueryData(queryKeys.settings(), updated);
+      setSavedInstructions(true);
+      setTimeout(() => setSavedInstructions(false), 2000);
+    },
+  });
+
+  const providers: ProviderInfo[] = providersQuery.data ?? [];
+  const allProjects: ProjectSummary[] = projectsQuery.data ?? [];
+  const loadingProviders = providersQuery.isLoading;
+  const loadingProjects = !!selectedProvider && projectsQuery.isLoading;
+  const version = versionQuery.data ?? null;
+  const settings = settingsQuery.data?.settings ?? {};
+  const scholarConfig: ScholarConfig | null = scholarConfigQuery.data ?? null;
+  const scholarConfigError = !!scholarConfigQuery.error;
 
   useEffect(() => {
-    void api
-      .getVersion()
-      .then(setVersion)
-      .catch(() => {});
-  }, []);
+    if (!settingsQuery.data || settingsDraftInitialized) return;
+    setInstructionsDraft(settingsQuery.data.settings.globalInstructions ?? "");
+    setSettingsDraftInitialized(true);
+  }, [settingsDraftInitialized, settingsQuery.data]);
 
   useEffect(() => {
-    void api
-      .getSettings()
-      .then((d) => {
-        setSettings(d.settings);
-        setInstructionsDraft(d.settings.globalInstructions ?? "");
-      })
-      .catch(() => {});
-  }, []);
-
-  useEffect(() => {
-    void scholar
-      .getConfig()
-      .then(setScholarConfig)
-      .catch(() => setScholarConfigError(true));
-  }, []);
-
-  useEffect(() => {
-    if (!selectedProvider) return;
-    setLoadingProjects(true);
-    void api
-      .getProjects()
-      .then((d) => {
-        setAllProjects(d.projects);
-        if (selectedProjectId && !d.projects.some((p) => p.id === selectedProjectId)) {
-          setSelectedProjectId(null);
-        }
-      })
-      .catch(() => {})
-      .finally(() => setLoadingProjects(false));
-  }, [selectedProvider, selectedProjectId, setSelectedProjectId]);
+    if (!selectedProvider || !projectsQuery.data) return;
+    if (selectedProjectId && !projectsQuery.data.some((p) => p.id === selectedProjectId)) {
+      setSelectedProjectId(null);
+    }
+  }, [projectsQuery.data, selectedProjectId, selectedProvider, setSelectedProjectId]);
 
   const filteredProjects = selectedProvider
     ? filterProjectsByGroup(allProjects, selectedProvider)
@@ -209,23 +205,14 @@ export function SettingsPage() {
     setAgentOpen(false);
   };
 
-  const handleSaveInstructions = async () => {
-    setSavingInstructions(true);
-    try {
-      const updated = await api.updateSettings({
-        globalInstructions: instructionsDraft || undefined,
-      });
-      setSettings(updated.settings);
-      setSavedInstructions(true);
-      setTimeout(() => setSavedInstructions(false), 2000);
-    } catch {
-      /* ignore */
-    } finally {
-      setSavingInstructions(false);
-    }
+  const handleSaveInstructions = () => {
+    updateSettingsMutation.mutate({
+      globalInstructions: instructionsDraft || undefined,
+    });
   };
 
   const instructionsDirty = instructionsDraft !== (settings.globalInstructions ?? "");
+  const savingInstructions = updateSettingsMutation.isPending;
 
   return (
     <div className="max-w-3xl mx-auto pt-3 pb-6 flex flex-col gap-4">

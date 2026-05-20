@@ -1,3 +1,4 @@
+import { useQuery } from "@tanstack/react-query";
 import {
   BookOpen,
   ChevronDown,
@@ -11,6 +12,7 @@ import {
 import { useEffect, useRef, useState } from "react";
 import { usePageTitle } from "../../app/components/NavigationLayout";
 import { scholar } from "../../core/api";
+import { queryKeys } from "../../core/queryKeys";
 import { PaperDetailPanel } from "./components/PaperDetailPanel";
 import { PaperGridCard } from "./components/PaperGridCard";
 import { PaperListRow } from "./components/PaperListRow";
@@ -27,45 +29,35 @@ export function LibraryPage() {
   const [sortOpen, setSortOpen] = useState(false);
   const [sortIndex, setSortIndex] = useState(0);
 
-  const [papers, setPapers] = useState<PaperReference[]>([]);
-  const [stats, setStats] = useState({ total: 0, missingPdf: 0, pendingIngest: 0, notIndexed: 0 });
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
   const [selectedPaper, setSelectedPaper] = useState<PaperReference | null>(null);
 
   const sortRef = useRef<HTMLDivElement>(null);
+  const paperParams = { sort: SORT_KEYS[sortIndex], limit: 1000 };
+  const papersQuery = useQuery({
+    queryKey: queryKeys.scholar.papers(paperParams),
+    queryFn: ({ signal }) => scholar.getPapers(paperParams, { signal }),
+    select: (res) => res.papers.map(toPaperRef),
+  });
+  const statsQuery = useQuery({
+    queryKey: queryKeys.scholar.stats(),
+    queryFn: ({ signal }) => scholar.getStats({ signal }),
+  });
+
+  const papers = papersQuery.data ?? [];
+  const stats = statsQuery.data ?? { total: 0, missingPdf: 0, pendingIngest: 0, notIndexed: 0 };
+  const loading = papersQuery.isLoading || statsQuery.isLoading;
+  const queryError = papersQuery.error ?? statsQuery.error;
+  const error =
+    queryError instanceof Error
+      ? queryError.message
+      : queryError
+        ? "加载失败，请确认 scholaraio serve 已启动"
+        : null;
 
   useEffect(() => {
     setTitle("Library");
     return () => setTitle("");
   }, [setTitle]);
-
-  useEffect(() => {
-    let cancelled = false;
-    setLoading(true);
-    setError(null);
-
-    Promise.all([
-      scholar.getPapers({ sort: SORT_KEYS[sortIndex], limit: 1000 }),
-      scholar.getStats(),
-    ])
-      .then(([papersRes, statsRes]) => {
-        if (cancelled) return;
-        setPapers(papersRes.papers.map(toPaperRef));
-        setStats(statsRes);
-      })
-      .catch((e) => {
-        if (cancelled) return;
-        setError(e instanceof Error ? e.message : "加载失败，请确认 scholaraio serve 已启动");
-      })
-      .finally(() => {
-        if (!cancelled) setLoading(false);
-      });
-
-    return () => {
-      cancelled = true;
-    };
-  }, [sortIndex]);
 
   useEffect(() => {
     if (!sortOpen) return;

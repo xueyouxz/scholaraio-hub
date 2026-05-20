@@ -49,11 +49,13 @@ function makeScholarPaper(overrides: Partial<ScholarPaper> = {}): ScholarPaper {
 
 describe("buildPdfUrl", () => {
   it("constructs the correct API path", () => {
-    expect(buildPdfUrl("abc-123")).toBe("/api/scholar/api/papers/abc-123/pdf");
+    expect(buildPdfUrl("abc-123")).toBe("/api/scholar/api/v1/papers/abc-123/pdf");
   });
 
   it("handles IDs with special characters", () => {
-    expect(buildPdfUrl("paper/with-slash")).toBe("/api/scholar/api/papers/paper/with-slash/pdf");
+    expect(buildPdfUrl("paper/with-slash")).toBe(
+      "/api/scholar/api/v1/papers/paper%2Fwith-slash/pdf",
+    );
   });
 });
 

@@ -1,6 +1,8 @@
-import { useCallback, useEffect, useState } from "react";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useEffect, useState } from "react";
 import { usePageTitle } from "../../app/components/NavigationLayout";
 import { type ScholarPaper, type ScholarWorkspaceSummary, scholar } from "../../core/api";
+import { queryKeys } from "../../core/queryKeys";
 import type { PaperReference } from "../library/types";
 import { WorkspaceCard } from "./components/WorkspaceCard";
 import type { WorkspaceReference } from "./types";
@@ -27,75 +29,85 @@ function toWorkspaceRef(w: ScholarWorkspaceSummary): WorkspaceReference {
 
 export function WorkspacesPage() {
   const { setTitle } = usePageTitle();
+  const queryClient = useQueryClient();
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [draftName, setDraftName] = useState("");
-  const [workspaces, setWorkspaces] = useState<WorkspaceReference[]>([]);
-  const [papersByWsId, setPapersByWsId] = useState<Record<string, PaperReference[]>>({});
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-  const [creating, setCreating] = useState(false);
+  const [actionError, setActionError] = useState<string | null>(null);
 
   useEffect(() => {
     setTitle("Workspaces");
     return () => setTitle("");
   }, [setTitle]);
 
-  const load = useCallback(() => {
-    setLoading(true);
-    scholar
-      .getWorkspaces()
-      .then((res) => {
-        const ws = res.workspaces.map(toWorkspaceRef);
-        setWorkspaces(ws);
-        if (ws.length > 0) setExpandedId((prev) => prev ?? ws[0]?.id ?? null);
-      })
-      .catch((e) =>
-        setError(e instanceof Error ? e.message : "加载失败，请确认 scholaraio serve 已启动"),
-      )
-      .finally(() => setLoading(false));
-  }, []);
+  const workspacesQuery = useQuery({
+    queryKey: queryKeys.scholar.workspaces(),
+    queryFn: ({ signal }) => scholar.getWorkspaces({ signal }),
+    select: (res) => res.workspaces.map(toWorkspaceRef),
+  });
+
+  const workspaces = workspacesQuery.data ?? [];
+  const expandedWorkspace = workspaces.find((w) => w.id === expandedId) ?? null;
+
+  const workspaceQuery = useQuery({
+    queryKey: expandedWorkspace
+      ? queryKeys.scholar.workspace(expandedWorkspace.name)
+      : ["scholar", "workspace", "idle"],
+    queryFn: ({ signal }) => {
+      if (!expandedWorkspace) throw new Error("Missing workspace");
+      return scholar.getWorkspace(expandedWorkspace.name, { signal });
+    },
+    enabled: !!expandedWorkspace,
+    select: (res) => res.workspace.papers.map(toPaperRef),
+  });
+
+  const createWorkspaceMutation = useMutation({
+    mutationFn: (name: string) => scholar.createWorkspace(name),
+    onSuccess: (res) => {
+      queryClient.setQueryData<{ workspaces: ScholarWorkspaceSummary[] }>(
+        queryKeys.scholar.workspaces(),
+        (current) => ({
+          workspaces: [
+            ...(current?.workspaces.filter((workspace) => workspace.id !== res.workspace.id) ?? []),
+            res.workspace,
+          ],
+        }),
+      );
+      queryClient.setQueryData(queryKeys.scholar.workspace(res.workspace.name), res);
+      queryClient.invalidateQueries({ queryKey: queryKeys.scholar.workspaces() });
+      setExpandedId(res.workspace.id);
+      setDraftName("");
+    },
+    onError: (e) => setActionError(e instanceof Error ? e.message : "创建失败"),
+  });
 
   useEffect(() => {
-    load();
-  }, [load]);
-
-  // Lazily load papers the first time a workspace is expanded
-  useEffect(() => {
-    if (!expandedId) return;
-    if (papersByWsId[expandedId]) return; // already loaded
-
-    const ws = workspaces.find((w) => w.id === expandedId);
-    if (!ws) return;
-
-    scholar
-      .getWorkspace(ws.name)
-      .then((res) => {
-        setPapersByWsId((prev) => ({
-          ...prev,
-          [expandedId]: res.workspace.papers.map(toPaperRef),
-        }));
-      })
-      .catch(() => {
-        setPapersByWsId((prev) => ({ ...prev, [expandedId]: [] }));
-      });
-  }, [expandedId, workspaces, papersByWsId]);
+    setExpandedId((prev) => {
+      if (workspaces.length === 0) return null;
+      if (prev && workspaces.some((workspace) => workspace.id === prev)) return prev;
+      return workspaces[0]?.id ?? null;
+    });
+  }, [workspaces]);
 
   const toggle = (id: string) => setExpandedId((prev) => (prev === id ? null : id));
 
   const handleCreate = () => {
     const name = draftName.trim();
     if (!name) return;
-    setCreating(true);
-    scholar
-      .createWorkspace(name)
-      .then((res) => {
-        setWorkspaces((prev) => [...prev, toWorkspaceRef(res.workspace)]);
-        setExpandedId(res.workspace.id);
-        setDraftName("");
-      })
-      .catch((e) => setError(e instanceof Error ? e.message : "创建失败"))
-      .finally(() => setCreating(false));
+    setActionError(null);
+    createWorkspaceMutation.mutate(name);
   };
+
+  const loading = workspacesQuery.isLoading;
+  const creating = createWorkspaceMutation.isPending;
+  const queryError = workspacesQuery.error ?? workspaceQuery.error;
+  const error =
+    actionError ??
+    (queryError instanceof Error
+      ? queryError.message
+      : queryError
+        ? "加载失败，请确认 scholaraio serve 已启动"
+        : null);
+  const expandedPapers = workspaceQuery.data ?? [];
 
   return (
     <div className="max-w-5xl mx-auto space-y-6">
@@ -137,7 +149,10 @@ export function WorkspacesPage() {
             workspaces.map((workspace) => (
               <WorkspaceCard
                 key={workspace.id}
-                workspace={{ ...workspace, papers: papersByWsId[workspace.id] ?? [] }}
+                workspace={{
+                  ...workspace,
+                  papers: expandedId === workspace.id ? expandedPapers : [],
+                }}
                 expanded={expandedId === workspace.id}
                 onToggle={() => toggle(workspace.id)}
               />

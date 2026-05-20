@@ -12,6 +12,7 @@
   },
   "dependencies": {
     "@scholaraio-hub/shared": "workspace:*",
+    "@tanstack/react-query": "^5.100.11",
     "@tanstack/react-virtual": "^3.13.24",
     "katex": "^0.16.47",
     "lucide-react": "^0.511.0",

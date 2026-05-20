@@ -4,6 +4,9 @@ const PREFIX = "scholaraio-hub:draft:";
 const SAVE_DEBOUNCE_MS = 250;
 
 export interface DraftControls {
+  clearInput: () => void;
+  clearDraft: () => void;
+  restoreFromStorage: () => string | null;
   clear: () => void;
   restore: () => string | null;
 }
@@ -52,7 +55,30 @@ export function useDraftPersistence({ draftKey, value, onLoad }: Options): Draft
   }, [value]);
 
   return {
+    clearInput: () => {
+      onLoad("");
+    },
+    clearDraft: () => {
+      onLoad("");
+      try {
+        window.localStorage.removeItem(`${PREFIX}${draftKeyRef.current}`);
+      } catch {
+        // ignore
+      }
+    },
+    restoreFromStorage: () => {
+      try {
+        const stored = window.localStorage.getItem(`${PREFIX}${draftKeyRef.current}`);
+        if (stored !== null) {
+          onLoad(stored);
+        }
+        return stored;
+      } catch {
+        return null;
+      }
+    },
     clear: () => {
+      onLoad("");
       try {
         window.localStorage.removeItem(`${PREFIX}${draftKeyRef.current}`);
       } catch {

@@ -12,6 +12,13 @@ import type {
   UrlProjectId,
 } from "@scholaraio-hub/shared";
 
+export interface SessionNavState {
+  initialStatus?: { owner: "self"; processId: string };
+  initialTitle?: string;
+  initialProvider?: ProviderName;
+  initialModel?: string;
+}
+
 export type {
   AgentActivity,
   AgentStatus,

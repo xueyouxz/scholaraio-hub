@@ -1,17 +1,20 @@
-import type { ContextUsage, PermissionMode } from "@scholaraio-hub/shared";
+import type { ContextUsage, PermissionMode, UploadedFile } from "@scholaraio-hub/shared";
 import { ArrowUp, ListPlus, Loader2, Paperclip, Square, X } from "lucide-react";
 import {
   type ClipboardEvent,
   type KeyboardEvent,
+  useCallback,
   useLayoutEffect,
   useMemo,
   useRef,
   useState,
 } from "react";
 import type { ModelInfo, ThinkingOption } from "../../../core/types";
+import type { UploadProgress } from "../composer/types";
 import { useDraftPersistence } from "../hooks/useDraftPersistence";
-import { useSpeechRecognition } from "../hooks/useSpeechRecognition";
 import { MessageInputToolbar } from "./MessageInputToolbar";
+import { ModelSwitcher } from "./ModelSwitcher";
+import type { VoiceInputButtonRef } from "./VoiceInputButton";
 
 interface SlashCommand {
   name: string;
@@ -22,7 +25,8 @@ interface MessageInputProps {
   message: string;
   thinking: ThinkingOption;
   busy: boolean;
-  files: File[];
+  attachments?: UploadedFile[];
+  uploadProgress?: UploadProgress[];
   model?: string;
   models?: ModelInfo[];
   permissionMode?: PermissionMode;
@@ -30,15 +34,17 @@ interface MessageInputProps {
   draftKey?: string;
   slashCommands?: SlashCommand[];
   supportsPermissionMode?: boolean;
+  supportsThinkingToggle?: boolean;
   contextUsage?: ContextUsage;
   onMessageChange: (value: string) => void;
   onThinkingChange: (value: ThinkingOption) => void;
-  onFilesChange: (files: File[]) => void;
+  onAttachFiles?: (files: File[]) => void;
+  onRemoveAttachment?: (id: string) => void;
   onModelChange?: (model: string) => void;
   onPermissionModeChange?: (mode: PermissionMode) => void;
   onHoldChange?: (held: boolean) => void;
-  onSend: () => Promise<void>;
-  onQueue?: () => Promise<void>;
+  onSend: (message: string) => Promise<void>;
+  onQueue?: (message: string) => Promise<void>;
   onStop?: () => void;
   isRunning?: boolean;
   isThinking?: boolean;
@@ -49,7 +55,8 @@ export function MessageInput({
   message,
   thinking,
   busy,
-  files,
+  attachments = [],
+  uploadProgress = [],
   model,
   models,
   permissionMode = "default",
@@ -57,10 +64,12 @@ export function MessageInput({
   draftKey,
   slashCommands,
   supportsPermissionMode = true,
+  supportsThinkingToggle = true,
   contextUsage,
   onMessageChange,
   onThinkingChange,
-  onFilesChange,
+  onAttachFiles,
+  onRemoveAttachment,
   onModelChange,
   onPermissionModeChange,
   onHoldChange,
@@ -73,6 +82,7 @@ export function MessageInput({
 }: MessageInputProps) {
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
+  const voiceButtonRef = useRef<VoiceInputButtonRef | null>(null);
   const messageRef = useRef(message);
   messageRef.current = message;
   const [showSlashSuggestions, setShowSlashSuggestions] = useState(false);
@@ -82,15 +92,6 @@ export function MessageInput({
     draftKey: draftKey ?? "",
     value: message,
     onLoad: onMessageChange,
-  });
-
-  const speech = useSpeechRecognition({
-    onFinalTranscript: (delta) => {
-      const current = messageRef.current.trimEnd();
-      const next = current ? `${current} ${delta}` : delta;
-      onMessageChange(next);
-    },
-    onInterimTranscript: setInterimTranscript,
   });
 
   const displayValue = interimTranscript
@@ -119,12 +120,12 @@ export function MessageInput({
     if (event.key !== "Enter" || event.shiftKey || event.ctrlKey || event.nativeEvent.isComposing) {
       if (event.key === "Enter" && event.ctrlKey && !event.shiftKey && onQueue) {
         event.preventDefault();
-        void onQueue();
+        void handleSubmit(onQueue);
       }
       return;
     }
     event.preventDefault();
-    void onSend();
+    void handleSubmit(onSend);
   };
 
   const handlePaste = (event: ClipboardEvent<HTMLTextAreaElement>) => {
@@ -138,16 +139,35 @@ export function MessageInput({
     }
     if (pastedFiles.length === 0) return;
     event.preventDefault();
-    onFilesChange([...files, ...pastedFiles]);
+    onAttachFiles?.(pastedFiles);
   };
 
-  const canSend = Boolean(message.trim() || files.length > 0);
+  const finalizeMessage = useCallback(() => {
+    const pendingVoice = voiceButtonRef.current?.stopAndFinalize() ?? "";
+    const trimmedMessage = messageRef.current.trimEnd();
+    const finalMessage = pendingVoice
+      ? trimmedMessage
+        ? `${trimmedMessage} ${pendingVoice}`
+        : pendingVoice
+      : trimmedMessage;
+    setInterimTranscript("");
+    return finalMessage.trim();
+  }, []);
+
+  const handleSubmit = useCallback(
+    async (submit: (message: string) => Promise<void>) => {
+      const finalMessage = finalizeMessage();
+      if (!finalMessage && attachments.length === 0 && uploadProgress.length === 0) return;
+      await submit(finalMessage);
+      textareaRef.current?.focus();
+    },
+    [attachments.length, finalizeMessage, uploadProgress.length],
+  );
+
+  const canSend = Boolean(message.trim() || attachments.length > 0 || uploadProgress.length > 0);
   const showSlashList = Boolean(slashFilter && slashFilter.length > 0 && message.startsWith("/"));
   const showQueue = Boolean(onQueue && canSend && isRunning);
   const showStop = Boolean(onStop && isRunning && isThinking && !canSend);
-
-  const activeModelName =
-    models?.find((m) => m.id === model)?.name ?? model ?? models?.[0]?.name ?? "";
 
   return (
     <div className="relative w-full">
@@ -175,22 +195,33 @@ export function MessageInput({
         className={`bg-surface-container-low border border-outline-variant/20 rounded-xl transition-all focus-within:border-primary/30 focus-within:ring-1 focus-within:ring-primary/10 ${interimTranscript ? "ring-1 ring-error/30 border-error/30" : ""}`}
       >
         {/* Attachment chips */}
-        {files.length > 0 ? (
+        {attachments.length > 0 || uploadProgress.length > 0 ? (
           <div className="flex flex-wrap gap-2 px-4 pt-3 pb-1">
-            {files.map((file, index) => (
+            {attachments.map((file) => (
               <div
-                key={`${file.name}-${file.size}-${index}`}
+                key={file.id}
                 className="inline-flex items-center gap-1.5 max-w-[180px] px-2.5 py-1 bg-surface-container border border-outline-variant/20 rounded-lg text-xs text-on-surface-variant"
               >
-                <span className="truncate">{file.name}</span>
+                <span className="truncate" title={file.path}>
+                  {file.originalName}
+                </span>
                 <button
                   type="button"
-                  onClick={() => onFilesChange(files.filter((_, i) => i !== index))}
-                  aria-label={`Remove ${file.name}`}
+                  onClick={() => onRemoveAttachment?.(file.id)}
+                  aria-label={`Remove ${file.originalName}`}
                   className="text-on-surface-variant hover:text-error transition-colors shrink-0"
                 >
                   <X size={11} />
                 </button>
+              </div>
+            ))}
+            {uploadProgress.map((progress) => (
+              <div
+                key={progress.fileId}
+                className="inline-flex items-center gap-1.5 max-w-[180px] px-2.5 py-1 bg-surface-container border border-outline-variant/20 rounded-lg text-xs text-on-surface-variant"
+              >
+                <span className="truncate">{progress.fileName}</span>
+                <span className="font-mono text-[10px]">{progress.percent}%</span>
               </div>
             ))}
           </div>
@@ -220,14 +251,14 @@ export function MessageInput({
             <button
               type="button"
               onClick={() => fileInputRef.current?.click()}
-              disabled={busy}
+              disabled={busy || !onAttachFiles}
               title="Attach files"
               className="relative p-1.5 rounded-lg text-on-surface-variant hover:bg-surface-container hover:text-on-surface transition-colors"
             >
               <Paperclip size={15} aria-hidden="true" />
-              {files.length > 0 ? (
+              {attachments.length > 0 || uploadProgress.length > 0 ? (
                 <span className="absolute -top-1 -right-1 min-w-[14px] h-3.5 px-0.5 bg-primary text-on-primary text-[9px] font-bold rounded-full flex items-center justify-center leading-none">
-                  {files.length}
+                  {attachments.length + uploadProgress.length}
                 </span>
               ) : null}
             </button>
@@ -239,44 +270,31 @@ export function MessageInput({
               onThinkingChange={onThinkingChange}
               isHeld={isHeld}
               onHoldChange={onHoldChange}
-              voiceListening={speech.listening}
-              voiceSupported={speech.supported}
-              onToggleVoice={() => (speech.listening ? speech.stop() : speech.start())}
+              voiceButtonRef={voiceButtonRef}
+              onVoiceTranscript={(delta) => {
+                const current = messageRef.current.trimEnd();
+                onMessageChange(current ? `${current} ${delta}` : delta);
+                setInterimTranscript("");
+              }}
+              onInterimTranscript={setInterimTranscript}
+              onListeningStart={() => textareaRef.current?.focus()}
+              voiceDisabled={busy}
               contextUsage={contextUsage}
               supportsPermissionMode={supportsPermissionMode && Boolean(onPermissionModeChange)}
+              supportsThinkingToggle={supportsThinkingToggle}
             />
           </div>
 
           {/* Right: model selector + queue + send/stop */}
           <div className="flex items-center gap-2 shrink-0">
             {models && models.length > 0 && onModelChange ? (
-              <div className="relative inline-flex">
-                <button
-                  type="button"
-                  className="flex items-center gap-1 text-[11px] font-medium text-on-surface-variant px-2 py-1 rounded-lg hover:bg-surface-container hover:text-on-surface transition-colors whitespace-nowrap"
-                  tabIndex={-1}
-                >
-                  {activeModelName}
-                </button>
-                <select
-                  value={model ?? models[0]?.id}
-                  onChange={(event) => onModelChange(event.target.value)}
-                  className="absolute inset-0 opacity-0 cursor-pointer w-full h-full"
-                  aria-label="Select model"
-                >
-                  {models.map((m) => (
-                    <option key={m.id} value={m.id}>
-                      {m.name}
-                    </option>
-                  ))}
-                </select>
-              </div>
+              <ModelSwitcher model={model} models={models} onModelChange={onModelChange} />
             ) : null}
 
             {showQueue ? (
               <button
                 type="button"
-                onClick={() => void onQueue?.()}
+                onClick={() => onQueue && void handleSubmit(onQueue)}
                 disabled={busy}
                 title="Queue message"
                 aria-label="Queue message"
@@ -293,7 +311,7 @@ export function MessageInput({
                   onStop?.();
                   return;
                 }
-                void onSend();
+                void handleSubmit(onSend);
               }}
               disabled={busy || (!canSend && !showStop)}
               aria-label={showStop ? "Stop" : busy ? "Sending…" : "Send"}
@@ -318,7 +336,13 @@ export function MessageInput({
         type="file"
         multiple
         className="hidden"
-        onChange={(event) => onFilesChange(Array.from(event.target.files ?? []))}
+        onChange={(event) => {
+          const selectedFiles = Array.from(event.target.files ?? []);
+          if (selectedFiles.length > 0) {
+            onAttachFiles?.(selectedFiles);
+            event.target.value = "";
+          }
+        }}
       />
     </div>
   );

@@ -49,6 +49,7 @@ export function useSpeechRecognition({
 }: Options = {}) {
   const [supported] = useState(() => getRecognitionCtor() !== null);
   const [listening, setListening] = useState(false);
+  const [interimTranscript, setInterimTranscript] = useState("");
   const [error, setError] = useState<string | null>(null);
 
   const recognitionRef = useRef<SpeechRecognitionLike | null>(null);
@@ -93,12 +94,14 @@ export function useSpeechRecognition({
       }
 
       const trimmedInterim = interim.trim();
+      setInterimTranscript(trimmedInterim);
       onInterimRef.current?.(trimmedInterim);
 
       if (latestFinal) {
         const delta = computeDelta(latestFinal, lastFinalRef.current).trim();
         if (delta) {
           lastFinalRef.current = latestFinal;
+          setInterimTranscript("");
           onInterimRef.current?.("");
           onFinalRef.current?.(delta);
         }
@@ -120,6 +123,7 @@ export function useSpeechRecognition({
         }
       }
       setListening(false);
+      setInterimTranscript("");
       onInterimRef.current?.("");
     };
 
@@ -140,6 +144,7 @@ export function useSpeechRecognition({
       recognitionRef.current = null;
     }
     setListening(false);
+    setInterimTranscript("");
     onInterimRef.current?.("");
   }, []);
 
@@ -150,7 +155,7 @@ export function useSpeechRecognition({
     };
   }, []);
 
-  return { supported, listening, error, start, stop };
+  return { supported, listening, interimTranscript, error, start, stop };
 }
 
 /** Strip the prefix shared with the previous cumulative final transcript. */

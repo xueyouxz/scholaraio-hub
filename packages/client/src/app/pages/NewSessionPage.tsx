@@ -1,9 +1,11 @@
 import { Settings } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { api } from "../../core/api";
-import type { ModelInfo, ThinkingOption, UploadedFile } from "../../core/types";
+import type { ModelInfo, SessionCreationResult, ThinkingOption } from "../../core/types";
 import { MessageInput } from "../../features/session/components/MessageInput";
+import { useAttachmentUploads } from "../../features/session/hooks/useAttachmentUploads";
+import type { SessionNavState } from "../../features/session/types";
 import { usePageTitle, useProjectScope } from "../components/NavigationLayout";
 
 const PROMPT_SUGGESTIONS = [
@@ -19,11 +21,13 @@ export function NewSessionPage() {
   const { selectedProjectId, selectedProvider } = useProjectScope();
   const [message, setMessage] = useState("");
   const [thinking, setThinking] = useState<ThinkingOption>("auto");
-  const [files, setFiles] = useState<File[]>([]);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [models, setModels] = useState<ModelInfo[]>([]);
   const [selectedModel, setSelectedModel] = useState<string | undefined>(undefined);
+  const [createdSession, setCreatedSession] = useState<SessionCreationResult | null>(null);
+  const [supportsPermissionMode, setSupportsPermissionMode] = useState(true);
+  const [supportsThinkingToggle, setSupportsThinkingToggle] = useState(true);
 
   useEffect(() => {
     setTitle("New Chat");
@@ -38,8 +42,34 @@ export function NewSessionPage() {
         setModels(provider.models);
         setSelectedModel((prev) => prev ?? provider.models?.[0]?.id);
       }
+      setSupportsPermissionMode(provider?.supportsPermissionMode ?? true);
+      setSupportsThinkingToggle(provider?.supportsThinkingToggle ?? true);
     });
   }, [selectedProvider]);
+
+  const ensureUploadSessionId = useCallback(async () => {
+    if (createdSession) return createdSession.sessionId;
+    if (!selectedProjectId || !selectedProvider) {
+      throw new Error("Select a project and provider before uploading files");
+    }
+    const created = await api.createSession({
+      projectId: selectedProjectId,
+      provider: selectedProvider,
+      thinking,
+      model: selectedModel,
+    });
+    setCreatedSession(created);
+    return created.sessionId;
+  }, [createdSession, selectedModel, selectedProjectId, selectedProvider, thinking]);
+
+  const attachmentUploads = useAttachmentUploads({
+    projectId: selectedProjectId ?? "",
+    sessionId: createdSession?.sessionId,
+    ensureSessionId: ensureUploadSessionId,
+    onUploadError: (failure) => {
+      setError(`${failure.fileName}: ${failure.message}`);
+    },
+  });
 
   if (!selectedProjectId || !selectedProvider) {
     return (
@@ -61,34 +91,32 @@ export function NewSessionPage() {
     );
   }
 
-  const handleSend = async () => {
-    if (!message.trim() && files.length === 0) return;
+  const handleSend = async (finalMessage: string) => {
+    const trimmed = finalMessage.trim();
+    if (!trimmed && !attachmentUploads.hasAttachments) return;
     setBusy(true);
     setError("");
     try {
-      let attachments: UploadedFile[] = [];
-      if (files.length > 0) {
-        const created = await api.createSession({
-          projectId: selectedProjectId,
-          provider: selectedProvider,
-        });
-        attachments = await Promise.all(
-          files.map((file) => api.uploadAttachment(selectedProjectId, created.sessionId, file)),
-        );
+      if (attachmentUploads.hasAttachments) {
+        const sessionId = createdSession?.sessionId ?? (await ensureUploadSessionId());
+        const attachments = await attachmentUploads.waitForUploads();
+        attachmentUploads.clearAttachments();
         const resumed = await api.resumeSession({
           projectId: selectedProjectId,
-          sessionId: created.sessionId,
+          sessionId,
           provider: selectedProvider,
           thinking,
           model: selectedModel,
-          message: message.trim(),
+          message: trimmed,
           attachments,
         });
-        navigate(`/projects/${selectedProjectId}/sessions/${created.sessionId}`, {
+        navigate(`/projects/${selectedProjectId}/sessions/${sessionId}`, {
           state: {
-            initialOwnership: { owner: "self" as const, processId: resumed.processId },
-            initialTitle: message.trim(),
-          },
+            initialStatus: { owner: "self" as const, processId: resumed.processId },
+            initialTitle: trimmed,
+            initialProvider: selectedProvider,
+            initialModel: selectedModel,
+          } satisfies SessionNavState,
         });
         return;
       }
@@ -98,13 +126,15 @@ export function NewSessionPage() {
         provider: selectedProvider,
         thinking,
         model: selectedModel,
-        message: message.trim(),
+        message: trimmed,
       });
       navigate(`/projects/${selectedProjectId}/sessions/${started.sessionId}`, {
         state: {
-          initialOwnership: { owner: "self" as const, processId: started.processId },
-          initialTitle: message.trim(),
-        },
+          initialStatus: { owner: "self" as const, processId: started.processId },
+          initialTitle: trimmed,
+          initialProvider: selectedProvider,
+          initialModel: selectedModel,
+        } satisfies SessionNavState,
       });
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to start session");
@@ -145,14 +175,18 @@ export function NewSessionPage() {
           message={message}
           thinking={thinking}
           busy={busy}
-          files={files}
+          attachments={attachmentUploads.attachments}
+          uploadProgress={attachmentUploads.uploadProgress}
           model={selectedModel}
           models={models}
           onMessageChange={setMessage}
           onThinkingChange={setThinking}
-          onFilesChange={setFiles}
+          onAttachFiles={attachmentUploads.addFiles}
+          onRemoveAttachment={attachmentUploads.removeAttachment}
           onModelChange={setSelectedModel}
           onSend={handleSend}
+          supportsPermissionMode={supportsPermissionMode}
+          supportsThinkingToggle={supportsThinkingToggle}
         />
       </div>
     </div>

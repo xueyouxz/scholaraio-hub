@@ -29,6 +29,10 @@ import { type StreamingMarkdownCallbacks, useStreamingContent } from "./useStrea
 
 export type ProcessState = "idle" | "in-turn" | "waiting-input" | "hold";
 
+function isProcessState(value: unknown): value is ProcessState {
+  return value === "idle" || value === "in-turn" || value === "waiting-input" || value === "hold";
+}
+
 // Re-export types from useSessionMessages
 export type { AgentContent, AgentContentMap } from "./useSessionMessages";
 
@@ -110,6 +114,13 @@ export function useSession(
   // Deferred messages queue - messages queued server-side waiting for agent's turn to end
   const [deferredMessages, setDeferredMessages] = useState<DeferredMessage[]>([]);
 
+  useEffect(() => {
+    if (status.owner !== "none") return;
+    setProcessState("idle");
+    setPendingInputRequest(null);
+    setDeferredMessages([]);
+  }, [status.owner]);
+
   // Compacting state - true when context is being compressed
   const [isCompacting, setIsCompacting] = useState(false);
 
@@ -149,6 +160,40 @@ export function useSession(
       setModeVersion(version);
     }
   }, []);
+
+  const applyRuntimeSnapshot = useCallback(
+    (snapshot: {
+      ownership: SessionStatus & { state?: unknown };
+      pendingInputRequest?: InputRequest | null;
+    }) => {
+      setStatus(snapshot.ownership);
+
+      const serverState = snapshot.ownership.state;
+      if (snapshot.ownership.owner === "none" || serverState === "terminated") {
+        setProcessState("idle");
+        setPendingInputRequest(null);
+        setDeferredMessages([]);
+        return;
+      }
+
+      if (isProcessState(serverState)) {
+        setProcessState(serverState);
+      }
+
+      if (serverState === "waiting-input" && snapshot.pendingInputRequest) {
+        setPendingInputRequest(snapshot.pendingInputRequest);
+      } else if (serverState !== "waiting-input") {
+        setPendingInputRequest(null);
+      }
+    },
+    [],
+  );
+
+  const refreshRuntimeState = useCallback(async () => {
+    const snapshot = await api.getSessionMetadata(projectId, sessionId);
+    applyRuntimeSnapshot(snapshot);
+    return snapshot;
+  }, [applyRuntimeSnapshot, projectId, sessionId]);
 
   // Handle initial load completion from useSessionMessages
   const handleLoadComplete = useCallback(
@@ -473,6 +518,14 @@ export function useSession(
     async (event: ProcessStateEvent) => {
       if (event.sessionId !== sessionId) return;
 
+      if (event.activity === "terminated") {
+        setStatus({ owner: "none" });
+        setProcessState("idle");
+        setPendingInputRequest(null);
+        setDeferredMessages([]);
+        return;
+      }
+
       // Update process state from activity bus
       if (
         event.activity === "idle" ||
@@ -481,6 +534,10 @@ export function useSession(
         event.activity === "hold"
       ) {
         setProcessState(event.activity);
+      }
+
+      if (event.activity !== "waiting-input") {
+        setPendingInputRequest(null);
       }
 
       // If activity bus says waiting-input but we don't have the request,
@@ -511,16 +568,11 @@ export function useSession(
   const handleActivityReconnect = useCallback(async () => {
     fetchNewMessages();
     try {
-      const data = await api.getSessionMetadata(projectId, sessionId);
-      setStatus(data.ownership);
-      if (data.ownership.owner === "none") {
-        setProcessState("idle");
-        setPendingInputRequest(null);
-      }
+      await refreshRuntimeState();
     } catch {
       // Silent fail - non-critical
     }
-  }, [projectId, sessionId, fetchNewMessages]);
+  }, [fetchNewMessages, refreshRuntimeState]);
 
   useFileActivity({
     onSessionStatusChange: handleSessionStatusChange,
@@ -740,6 +792,13 @@ export function useSession(
           state: string;
           request?: InputRequest;
         };
+        if (statusData.state === "terminated") {
+          setProcessState("idle");
+          setStatus({ owner: "none" });
+          setPendingInputRequest(null);
+          setDeferredMessages([]);
+          return;
+        }
         // Track process state (in-turn, idle, waiting-input, hold)
         if (
           statusData.state === "idle" ||
@@ -794,6 +853,14 @@ export function useSession(
         const serverSessionId = connectedData.sessionId ?? connectedData.request?.sessionId;
         if (serverSessionId && serverSessionId !== sessionId) {
           setActualSessionId(serverSessionId);
+        }
+
+        if (connectedData.state === "terminated") {
+          setProcessState("idle");
+          setStatus({ owner: "none" });
+          setPendingInputRequest(null);
+          setDeferredMessages([]);
+          return;
         }
 
         // Sync process state so watching tabs see "processing" indicator
@@ -1015,5 +1082,6 @@ export function useSession(
     loadingOlder, // Whether older messages are being loaded
     loadOlderMessages, // Load next chunk of older messages
     reconnectStream, // Force session stream reconnection (e.g., after process restart)
+    refreshRuntimeState, // Reconcile ownership/activity from server metadata
   };
 }

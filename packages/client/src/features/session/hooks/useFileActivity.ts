@@ -94,10 +94,6 @@ export function useFileActivity(options: UseFileActivityOptions = {}) {
   const pausedRef = useRef(paused);
   pausedRef.current = paused;
 
-  useEffect(() => {
-    activityBus.connect();
-  }, []);
-
   // Subscribe to all events from the bus
   useEffect(() => {
     const unsubscribers: (() => void)[] = [];

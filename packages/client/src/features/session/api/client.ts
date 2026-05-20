@@ -11,7 +11,12 @@ import type {
 import { api as coreApi } from "../../../core/api";
 import type { RequestOptions } from "../../../core/api";
 import { requestJson } from "../../../core/http";
-import type { ProcessSummary, ProjectSummary, SessionDetail } from "../../../core/types";
+import type {
+  ProcessSummary,
+  ProjectSummary,
+  SessionDetail,
+  SessionMetadataDetail,
+} from "../../../core/types";
 import type { PatchHunk } from "../components/renderers/tools/types";
 import type { AgentSession, Session, SessionStatus } from "../types";
 
@@ -64,6 +69,17 @@ export interface GlobalSessionsResponse {
   hasMore: boolean;
   stats: GlobalSessionStats;
   projects: ProjectOption[];
+}
+
+export interface ProcessInfo {
+  id: string;
+  sessionId: string;
+  projectId: string;
+  state: string;
+  startedAt: string;
+  provider: ProviderName;
+  model?: string;
+  executor?: string;
 }
 
 export interface SessionOptions {
@@ -192,12 +208,12 @@ export const api = {
   },
 
   getSessionMetadata: (projectId: string, sessionId: string) =>
-    requestJson<{
-      session: Session;
-      ownership: SessionStatus;
-      pendingInputRequest?: InputRequest | null;
-      slashCommands?: Array<{ name: string; description?: string }> | null;
-    }>(`/api/projects/${projectId}/sessions/${sessionId}/metadata`),
+    requestJson<
+      Omit<SessionMetadataDetail, "session" | "ownership"> & {
+        session: Session;
+        ownership: SessionStatus & Pick<SessionMetadataDetail["ownership"], "state">;
+      }
+    >(`/api/projects/${projectId}/sessions/${sessionId}/metadata`),
 
   getAgentSession: (projectId: string, sessionId: string, agentId: string) =>
     requestJson<AgentSession>(`/api/projects/${projectId}/sessions/${sessionId}/agents/${agentId}`),
@@ -301,18 +317,19 @@ export const api = {
     }),
 
   cancelDeferredMessage: (sessionId: string, tempId: string) =>
-    requestJson<{ cancelled: boolean }>(`/api/sessions/${sessionId}/deferred/${tempId}`, {
-      method: "DELETE",
-    }),
+    requestJson<{ cancelled: boolean }>(
+      `/api/sessions/${sessionId}/deferred/${encodeURIComponent(tempId)}`,
+      { method: "DELETE" },
+    ),
 
   markSessionSeen: (sessionId: string, messageId?: string) =>
-    requestJson<{ success: boolean }>(`/api/sessions/${sessionId}/mark-seen`, {
+    requestJson<{ marked: boolean }>(`/api/sessions/${sessionId}/mark-seen`, {
       method: "POST",
       body: JSON.stringify({ messageId }),
     }),
 
   markSessionUnread: (sessionId: string) =>
-    requestJson<{ success: boolean }>(`/api/sessions/${sessionId}/mark-seen`, {
+    requestJson<{ marked: boolean }>(`/api/sessions/${sessionId}/mark-seen`, {
       method: "DELETE",
     }),
 
@@ -352,4 +369,13 @@ export const api = {
         body: JSON.stringify({ filePath, oldString, newString, originalFile }),
       },
     ),
+
+  cloneSession: (projectId: string, sessionId: string) =>
+    requestJson<{ session: AppSessionSummary }>(
+      `/api/projects/${projectId}/sessions/${sessionId}/clone`,
+      { method: "POST" },
+    ),
+
+  getProcessInfo: (sessionId: string) =>
+    requestJson<{ process: ProcessInfo | null }>(`/api/sessions/${sessionId}/process`),
 };

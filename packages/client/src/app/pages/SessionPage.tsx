@@ -1,10 +1,9 @@
-import type { PermissionMode, SessionOwnership } from "@scholaraio-hub/shared";
+import type { PermissionMode } from "@scholaraio-hub/shared";
 import { Bell, Check, PenLine, X } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { useLocation, useParams } from "react-router-dom";
 import { api } from "../../core/api";
-import type { ModelInfo, ThinkingOption, UploadedFile } from "../../core/types";
-import { api as sessionApi } from "../../features/session/api/client";
+import type { ModelInfo, ThinkingOption } from "../../core/types";
 import { MessageInput } from "../../features/session/components/MessageInput";
 import { MessageList } from "../../features/session/components/MessageList";
 import { AgentContentProvider } from "../../features/session/contexts/AgentContentContext";
@@ -12,18 +11,20 @@ import {
   StreamingMarkdownProvider,
   useStreamingMarkdownContext,
 } from "../../features/session/contexts/StreamingMarkdownContext";
+import { useAttachmentUploads } from "../../features/session/hooks/useAttachmentUploads";
+import { useEngagementTracking } from "../../features/session/hooks/useEngagementTracking";
 import { useSession } from "../../features/session/hooks/useSession";
-import type { Message as SessionRenderMessage } from "../../features/session/types";
+import type {
+  SessionNavState,
+  Message as SessionRenderMessage,
+} from "../../features/session/types";
 import { SessionMetadataProvider } from "../../shared/contexts/SessionMetadataContext";
 import { usePageTitle } from "../components/NavigationLayout";
 
 export function SessionPage() {
   const { projectId = "", sessionId = "" } = useParams();
   const location = useLocation();
-  const navState = location.state as {
-    initialOwnership?: SessionOwnership;
-    initialTitle?: string;
-  } | null;
+  const navState = location.state as SessionNavState | null;
 
   if (!projectId || !sessionId) {
     return (
@@ -43,7 +44,7 @@ export function SessionPage() {
           key={sessionId}
           projectId={projectId}
           sessionId={sessionId}
-          initialOwnership={navState?.initialOwnership}
+          initialStatus={navState?.initialStatus}
           initialTitle={navState?.initialTitle}
         />
       </StreamingMarkdownProvider>
@@ -54,24 +55,23 @@ export function SessionPage() {
 function SessionPageContent({
   projectId,
   sessionId,
-  initialOwnership,
+  initialStatus,
   initialTitle,
 }: {
   projectId: string;
   sessionId: string;
-  initialOwnership?: SessionOwnership;
+  initialStatus?: { owner: "self"; processId: string };
   initialTitle?: string;
 }) {
   const { setTitle } = usePageTitle();
   const [message, setMessage] = useState("");
   const [thinking, setThinking] = useState<ThinkingOption>("auto");
-  const [files, setFiles] = useState<File[]>([]);
   const [busy, setBusy] = useState(false);
   const [sendError, setSendError] = useState("");
   const [models, setModels] = useState<ModelInfo[]>([]);
   const [selectedModel, setSelectedModel] = useState<string | undefined>(undefined);
-  const [composerPermissionMode, setComposerPermissionMode] = useState<PermissionMode>("default");
-  const [isHeld, setIsHeld] = useState(false);
+  const [supportsPermissionMode, setSupportsPermissionMode] = useState(true);
+  const [supportsThinkingToggle, setSupportsThinkingToggle] = useState(true);
   const [scrollTrigger, setScrollTrigger] = useState(0);
   const streamingContext = useStreamingMarkdownContext();
 
@@ -118,20 +118,8 @@ function SessionPageContent({
     updatePendingMessage,
     deferredMessages,
     slashCommands,
-  } = useSession(
-    projectId,
-    sessionId,
-    initialOwnership?.owner === "self" ? initialOwnership : undefined,
-    streamingCallbacks,
-  );
-
-  useEffect(() => {
-    if (permissionMode) setComposerPermissionMode(permissionMode);
-  }, [permissionMode]);
-
-  useEffect(() => {
-    setIsHeld(sessionIsHeld);
-  }, [sessionIsHeld]);
+    refreshRuntimeState,
+  } = useSession(projectId, sessionId, initialStatus, streamingCallbacks);
 
   // Load models for the session's provider
   useEffect(() => {
@@ -142,93 +130,100 @@ function SessionPageContent({
         setModels(provider.models);
         setSelectedModel((prev) => prev ?? session.model ?? provider.models?.[0]?.id);
       }
+      setSupportsPermissionMode(provider?.supportsPermissionMode ?? true);
+      setSupportsThinkingToggle(provider?.supportsThinkingToggle ?? true);
     });
   }, [session?.provider, session?.model]);
+
+  const attachmentUploads = useAttachmentUploads({
+    projectId,
+    sessionId,
+    onUploadError: (failure) => {
+      setSendError(`${failure.fileName}: ${failure.message}`);
+    },
+  });
 
   const handleModelChange = async (model: string) => {
     setSelectedModel(model);
     setSessionModel(model);
     if (ownership.owner === "self") {
-      await api.changeModel(ownership.processId, model).catch(() => {});
+      await api.changeModel(ownership.processId, model);
     }
   };
 
   const handlePermissionModeChange = async (mode: PermissionMode) => {
-    setComposerPermissionMode(mode);
     await setPermissionMode(mode).catch(() => {});
   };
 
   const handleHoldChange = async (held: boolean) => {
-    setIsHeld(held);
     await setHold(held).catch(() => {});
   };
 
-  const handleStop = () => {
+  const handleStop = async () => {
     if (ownership.owner !== "self") return;
-    void api
-      .abortProcess(ownership.processId)
-      .then(() => {
-        setStatus({ owner: "none" });
-        setProcessState("idle");
-      })
-      .catch(() => {});
+    try {
+      await api.interruptProcess(ownership.processId);
+    } catch {
+      await api.abortProcess(ownership.processId).catch(() => {});
+      setStatus({ owner: "none" });
+      setProcessState("idle");
+    }
   };
 
-  const send = async () => {
-    if (!session || (!message.trim() && files.length === 0)) return;
-    const trimmed = message.trim();
+  const send = async (finalMessage: string) => {
+    if (!session || (!finalMessage.trim() && !attachmentUploads.hasAttachments)) return;
+    const trimmed = finalMessage.trim();
     const tempId = addPendingMessage(trimmed);
+    const attachmentSnapshot = attachmentUploads.snapshot();
 
     setBusy(true);
     setSendError("");
     setMessage("");
-    setFiles([]);
     setScrollTrigger((n) => n + 1);
     setProcessState("in-turn");
 
     try {
-      let attachments: UploadedFile[] = [];
-      if (files.length > 0) {
+      const hadPendingUploads = attachmentUploads.hasPendingUploads;
+      if (hadPendingUploads) {
         updatePendingMessage(tempId, { status: "Uploading…" });
-        attachments = await Promise.all(
-          files.map((file) => api.uploadAttachment(projectId, sessionId, file)),
-        );
+      }
+      const attachments = await attachmentUploads.waitForUploads();
+      attachmentUploads.clearAttachments();
+      if (hadPendingUploads) {
         updatePendingMessage(tempId, { status: undefined });
       }
 
       if (ownership.owner === "self") {
-        const result = await sessionApi.queueMessage(
+        const result = await api.queueMessage({
           sessionId,
-          trimmed,
-          composerPermissionMode,
+          message: trimmed,
+          mode: permissionMode ?? "default",
           attachments,
-          tempId,
           thinking,
-        );
+          tempId,
+        });
         if (result.restarted && result.processId) {
           setStatus({ owner: "self", processId: result.processId });
           reconnectStream();
         }
       } else {
-        const result = await sessionApi.resumeSession(
+        const result = await api.resumeSession({
           projectId,
           sessionId,
-          trimmed,
-          {
-            mode: composerPermissionMode,
-            thinking,
-            model: session.model ?? selectedModel,
-            provider: session.provider,
-            executor: session.executor,
-          },
+          message: trimmed,
+          mode: permissionMode ?? "default",
+          thinking,
+          model: session.model ?? selectedModel,
+          provider: session.provider,
           attachments,
           tempId,
-        );
+        });
         setStatus({ owner: "self", processId: result.processId });
       }
     } catch (err) {
       removePendingMessage(tempId);
       setMessage(trimmed);
+      attachmentUploads.restoreSnapshot(attachmentSnapshot);
       setSendError(err instanceof Error ? err.message : "Failed to send message");
       setProcessState("idle");
     } finally {
@@ -236,41 +231,43 @@ function SessionPageContent({
     }
   };
 
-  const queue = async () => {
+  const queue = async (finalMessage: string) => {
     if (ownership.owner !== "self") {
-      await send();
+      await send(finalMessage);
       return;
     }
-    if (!message.trim() && files.length === 0) return;
-    const trimmed = message.trim();
+    if (!finalMessage.trim() && !attachmentUploads.hasAttachments) return;
+    const trimmed = finalMessage.trim();
     const tempId = addPendingMessage(trimmed);
+    const attachmentSnapshot = attachmentUploads.snapshot();
     setBusy(true);
     setSendError("");
     setMessage("");
-    setFiles([]);
     setScrollTrigger((n) => n + 1);
     try {
-      let attachments: UploadedFile[] = [];
-      if (files.length > 0) {
+      const hadPendingUploads = attachmentUploads.hasPendingUploads;
+      if (hadPendingUploads) {
         updatePendingMessage(tempId, { status: "Uploading…" });
-        attachments = await Promise.all(
-          files.map((file) => api.uploadAttachment(projectId, sessionId, file)),
-        );
+      }
+      const attachments = await attachmentUploads.waitForUploads();
+      attachmentUploads.clearAttachments();
+      if (hadPendingUploads) {
         updatePendingMessage(tempId, { status: undefined });
       }
-      await sessionApi.queueMessage(
+      await api.queueMessage({
         sessionId,
-        trimmed,
-        composerPermissionMode,
+        message: trimmed,
+        mode: permissionMode ?? "default",
         attachments,
-        tempId,
         thinking,
-        true,
-      );
+        tempId,
+        deferred: true,
+      });
       removePendingMessage(tempId);
     } catch (err) {
       removePendingMessage(tempId);
       setMessage(trimmed);
+      attachmentUploads.restoreSnapshot(attachmentSnapshot);
       setSendError(err instanceof Error ? err.message : "Failed to queue message");
     } finally {
       setBusy(false);
@@ -280,21 +277,29 @@ function SessionPageContent({
   const respondToPendingInput = async (response: "approve" | "approve_accept_edits" | "deny") => {
     if (!pendingInputRequest) return;
     await api.respondToInput(sessionId, pendingInputRequest.id, response);
-    setProcessState("in-turn");
+    if (response === "deny") {
+      window.setTimeout(() => {
+        void refreshRuntimeState().catch(() => {});
+      }, 250);
+      return;
+    }
+    await refreshRuntimeState().catch(() => {});
   };
 
   // Use initialTitle from navigation state as an optimistic title until session data loads.
   const title = session?.customTitle ?? session?.title ?? initialTitle ?? sessionId;
   const processStateLabel =
-    processState === "in-turn"
-      ? "running"
-      : processState === "waiting-input"
-        ? "needs input"
-        : processState === "hold"
-          ? "held"
-          : ownership.owner === "external"
-            ? "external"
-            : "idle";
+    ownership.owner === "external"
+      ? "external"
+      : ownership.owner !== "self"
+        ? "idle"
+        : processState === "in-turn"
+          ? "running"
+          : processState === "waiting-input"
+            ? "needs input"
+            : processState === "hold"
+              ? "held"
+              : "idle";
 
   const statePillClass =
     processStateLabel === "idle"
@@ -318,6 +323,8 @@ function SessionPageContent({
     processState === "in-turn" ||
     processState === "waiting-input" ||
     (ownership.owner === "self" && !sessionUpdatesConnected);
+
+  useEngagementTracking(sessionId);
 
   useEffect(() => {
     setTitle(title);
@@ -352,20 +359,26 @@ function SessionPageContent({
         </div>
       ) : null}
 
-      <main className="session-messages">
-        {pendingInputRequest ? (
-          <div className="max-w-[830px] mx-auto mb-3 bg-surface-container-low border border-outline-variant/15 rounded-xl p-3">
-            <div className="flex items-center gap-2 mb-3">
-              <Bell className="w-4 h-4 text-on-surface-variant shrink-0" aria-hidden="true" />
-              <span className="text-sm font-medium text-on-surface">
+      {ownership.owner !== "self" && pendingInputRequest ? (
+        <div className="mx-auto w-full max-w-[830px] mt-2 px-4 py-2 rounded-lg bg-warning-container/20 text-warning text-xs">
+          This session is waiting for tool call approval. Become the owner to respond.
+        </div>
+      ) : null}
+
+      {pendingInputRequest ? (
+        <div className="tool-approval-fixed" role="presentation">
+          <div className="tool-approval-panel" role="alert" aria-live="assertive">
+            <div className="tool-approval-header">
+              <Bell className="tool-approval-icon" aria-hidden="true" />
+              <span className="tool-approval-question">
                 {pendingInputRequest.toolName ?? pendingInputRequest.prompt}
               </span>
             </div>
-            <div className="flex items-center gap-2 flex-wrap">
+            <div className="tool-approval-options">
               <button
                 type="button"
                 onClick={() => void respondToPendingInput("approve")}
-                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-primary text-on-primary hover:opacity-90 transition-opacity"
+                className="tool-approval-option primary"
               >
                 <Check size={13} aria-hidden="true" />
                 Approve
@@ -373,7 +386,7 @@ function SessionPageContent({
               <button
                 type="button"
                 onClick={() => void respondToPendingInput("approve_accept_edits")}
-                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium bg-surface-container text-on-surface hover:bg-surface-container-high transition-colors"
+                className="tool-approval-option"
               >
                 <PenLine size={13} aria-hidden="true" />
                 Approve + Accept Edits
@@ -381,15 +394,19 @@ function SessionPageContent({
               <button
                 type="button"
                 onClick={() => void respondToPendingInput("deny")}
-                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium text-error hover:bg-error-container/20 transition-colors"
+                className="tool-approval-option danger"
               >
                 <X size={13} aria-hidden="true" />
                 Deny
               </button>
             </div>
           </div>
-        ) : null}
+        </div>
+      ) : null}
 
+      <main
+        className={`session-messages${pendingInputRequest ? " session-messages-with-approval" : ""}`}
+      >
         {error ? <div className="error">{error.message}</div> : null}
         {sendError ? <div className="error">{sendError}</div> : null}
         {loading ? <div className="loading">Loading session...</div> : null}
@@ -417,7 +434,7 @@ function SessionPageContent({
               pendingMessages={pendingMessages}
               deferredMessages={deferredMessages}
               onCancelDeferred={(tempId) => {
-                void sessionApi.cancelDeferredMessage(sessionId, tempId);
+                void api.cancelDeferredMessage(sessionId, tempId);
               }}
             />
           </AgentContentProvider>
@@ -431,11 +448,12 @@ function SessionPageContent({
             message={message}
             thinking={thinking}
             busy={busy}
-            files={files}
+            attachments={attachmentUploads.attachments}
+            uploadProgress={attachmentUploads.uploadProgress}
             model={selectedModel}
             models={models}
-            permissionMode={composerPermissionMode}
-            isHeld={isHeld}
+            permissionMode={permissionMode ?? "default"}
+            isHeld={sessionIsHeld}
             draftKey={`session:${sessionId}`}
             slashCommands={
               ownership.owner === "self" ? slashCommands.map((name) => ({ name })) : []
@@ -443,7 +461,8 @@ function SessionPageContent({
             contextUsage={session?.contextUsage}
             onMessageChange={setMessage}
             onThinkingChange={setThinking}
-            onFilesChange={setFiles}
+            onAttachFiles={attachmentUploads.addFiles}
+            onRemoveAttachment={attachmentUploads.removeAttachment}
             onModelChange={(m) => void handleModelChange(m)}
             onPermissionModeChange={(mode) => void handlePermissionModeChange(mode)}
             onHoldChange={
@@ -455,6 +474,8 @@ function SessionPageContent({
             isRunning={ownership.owner === "self"}
             isThinking={processState === "in-turn" || processState === "hold"}
             placeholder={placeholder}
+            supportsPermissionMode={supportsPermissionMode}
+            supportsThinkingToggle={supportsThinkingToggle}
           />
         </div>
       </footer>

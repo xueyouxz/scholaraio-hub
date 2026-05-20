@@ -18,9 +18,10 @@ import type {
   ServerSettings,
   SessionCreationResult,
   SessionDetail,
+  SessionMetadataDetail,
   StartSessionInput,
 } from "./types";
-import { uploadFile } from "./upload";
+import { type UploadOptions, uploadFile } from "./upload";
 
 const SCHOLAR_API_BASE = "/api/scholar/api/v1";
 
@@ -97,6 +98,11 @@ export const api = {
       { signal: options?.signal },
     );
   },
+  getSessionMetadata: (projectId: string, sessionId: string, options?: RequestOptions) =>
+    requestJson<SessionMetadataDetail>(
+      `/api/projects/${projectId}/sessions/${sessionId}/metadata`,
+      { signal: options?.signal },
+    ),
   getProcesses: () =>
     requestJson<{ processes: ProcessSummary[]; terminatedProcesses?: ProcessSummary[] }>(
       "/api/processes?includeTerminated=true",
@@ -138,6 +144,7 @@ export const api = {
         thinking: input.thinking,
         provider: input.provider,
         attachments: input.attachments,
+        tempId: input.tempId,
       }),
     }),
   createSession: (input: CreateSessionInput) =>
@@ -157,11 +164,12 @@ export const api = {
           thinking: input.thinking,
           provider: input.provider,
           attachments: input.attachments,
+          tempId: input.tempId,
         }),
       },
     ),
   queueMessage: (input: QueueMessageInput) =>
-    requestJson<{ queued: boolean; restarted?: boolean; processId?: string }>(
+    requestJson<{ queued: boolean; restarted?: boolean; processId?: string; deferred?: boolean }>(
       `/api/sessions/${input.sessionId}/messages`,
       {
         method: "POST",
@@ -170,8 +178,15 @@ export const api = {
           mode: input.mode,
           thinking: input.thinking,
           attachments: input.attachments,
+          tempId: input.tempId,
+          deferred: input.deferred,
         }),
       },
+    ),
+  cancelDeferredMessage: (sessionId: string, tempId: string) =>
+    requestJson<{ cancelled: boolean }>(
+      `/api/sessions/${sessionId}/deferred/${encodeURIComponent(tempId)}`,
+      { method: "DELETE" },
     ),
   respondToInput: (
     sessionId: string,
@@ -227,8 +242,14 @@ export const api = {
     projectId: string,
     sessionId: string,
     file: File,
-    onProgress?: (uploaded: number, total: number) => void,
-  ) => uploadFile(projectId, sessionId, file, { onProgress }),
+    options?: UploadOptions | ((uploaded: number, total: number) => void),
+  ) =>
+    uploadFile(
+      projectId,
+      sessionId,
+      file,
+      typeof options === "function" ? { onProgress: options } : options,
+    ),
 };
 
 export const scholar = {

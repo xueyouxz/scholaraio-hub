@@ -57,6 +57,15 @@ export interface SessionDetail {
   };
 }
 
+export type SessionRuntimeState = "idle" | "in-turn" | "waiting-input" | "hold" | "terminated";
+
+export interface SessionMetadataDetail {
+  session: AppSession;
+  ownership: AppSession["ownership"] & { state?: SessionRuntimeState };
+  pendingInputRequest?: InputRequest | null;
+  slashCommands?: Array<{ name: string; description?: string }> | null;
+}
+
 export interface StartSessionInput {
   projectId: string;
   message: string;
@@ -65,6 +74,7 @@ export interface StartSessionInput {
   thinking?: ThinkingOption;
   provider?: ProviderName;
   attachments?: UploadedFile[];
+  tempId?: string;
 }
 
 export interface ResumeSessionInput extends StartSessionInput {
@@ -77,6 +87,8 @@ export interface QueueMessageInput {
   mode?: PermissionMode;
   thinking?: ThinkingOption;
   attachments?: UploadedFile[];
+  tempId?: string;
+  deferred?: boolean;
 }
 
 export interface CreateSessionInput {

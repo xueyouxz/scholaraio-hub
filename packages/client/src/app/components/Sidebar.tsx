@@ -5,7 +5,6 @@ import {
   FolderOpen,
   Library,
   Loader2,
-  PanelLeftClose,
   PanelLeftOpen,
   Plus,
   Search,
@@ -19,7 +18,12 @@ import type { ScholarWorkspaceSummary } from "../../core/api";
 import type { ProjectSummary } from "../../core/types";
 import type { GlobalSessionItem } from "../../features/session/api/client";
 import { useGroupSessions } from "../../features/session/hooks/useGroupSessions";
-import { useProjectScope } from "./NavigationLayout";
+import { SIDEBAR_WIDTH_MAX, SIDEBAR_WIDTH_MIN, useProjectScope } from "./NavigationLayout";
+
+const COLLAPSED_WIDTH = 60;
+
+const CLAUDE_PROVIDERS = ["claude", "claude-ollama"];
+const CODEX_PROVIDERS = ["codex", "codex-oss"];
 
 interface NavEntry {
   id: string;
@@ -40,6 +44,15 @@ interface SidebarProps {
   isOpen: boolean;
   onToggle: () => void;
   onClose: () => void;
+  /** Current expanded width — used as the drag start baseline. */
+  expandedWidth: number;
+  /**
+   * Called on every mousemove during drag.
+   * The parent writes gridTemplateColumns directly (no React re-render).
+   */
+  onDragMove: (width: number) => void;
+  /** Called once on mouseup — triggers a single React re-render to persist. */
+  onDragEnd: (finalWidth: number) => void;
 }
 
 function compactLabel(value: string) {
@@ -211,7 +224,16 @@ function SidebarSection({
 
 // ─── Sidebar ───────────────────────────────────────────────────────────────────
 
-export function Sidebar({ isDesktop, isCollapsed, isOpen, onToggle, onClose }: SidebarProps) {
+export function Sidebar({
+  isDesktop,
+  isCollapsed,
+  isOpen,
+  onToggle,
+  onClose,
+  expandedWidth,
+  onDragMove,
+  onDragEnd,
+}: SidebarProps) {
   const { sessionId } = useParams();
   const navigate = useNavigate();
   const { setSelectedProjectId, setSelectedProvider, selectedProvider } = useProjectScope();
@@ -221,6 +243,9 @@ export function Sidebar({ isDesktop, isCollapsed, isOpen, onToggle, onClose }: S
   const [workspaces, setWorkspaces] = useState<ScholarWorkspaceSummary[]>([]);
   const [projects, setProjects] = useState<ProjectSummary[]>([]);
   const { loadGroup, getGroup } = useGroupSessions();
+
+  const [projectsVisible, setProjectsVisible] = useState(true);
+  const prevProviderRef = useRef(selectedProvider);
 
   useEffect(() => {
     scholar
@@ -232,6 +257,14 @@ export function Sidebar({ isDesktop, isCollapsed, isOpen, onToggle, onClose }: S
       .then((data) => setProjects(data.projects))
       .catch(() => {});
   }, []);
+
+  useEffect(() => {
+    if (prevProviderRef.current === selectedProvider) return;
+    prevProviderRef.current = selectedProvider;
+    setProjectsVisible(false);
+    const t = setTimeout(() => setProjectsVisible(true), 160);
+    return () => clearTimeout(t);
+  }, [selectedProvider]);
 
   const projectsByName = useMemo(
     () => new Map(projects.map((p) => [p.name ?? p.path.split("/").pop() ?? "", p])),
@@ -250,17 +283,25 @@ export function Sidebar({ isDesktop, isCollapsed, isOpen, onToggle, onClose }: S
     [workspaces, projectsByName],
   );
 
-  const sortedNonWorkspaceProjects = useMemo(
-    () =>
-      projects
-        .filter((p) => !workspaceNames.has(p.name ?? ""))
-        .sort((a, b) => {
-          const ta = a.lastActivity ?? "";
-          const tb = b.lastActivity ?? "";
-          return new Date(tb).getTime() - new Date(ta).getTime();
-        }),
-    [projects, workspaceNames],
-  );
+  const sortedNonWorkspaceProjects = useMemo(() => {
+    const providerNames =
+      selectedProvider === "claude"
+        ? CLAUDE_PROVIDERS
+        : selectedProvider === "codex"
+          ? CODEX_PROVIDERS
+          : null;
+    return projects
+      .filter(
+        (p) =>
+          !workspaceNames.has(p.name ?? "") &&
+          (providerNames === null || providerNames.includes(p.provider)),
+      )
+      .sort((a, b) => {
+        const ta = a.lastActivity ?? "";
+        const tb = b.lastActivity ?? "";
+        return new Date(tb).getTime() - new Date(ta).getTime();
+      });
+  }, [projects, workspaceNames, selectedProvider]);
 
   const handleAddSession = useCallback(
     (projectId: string) => {
@@ -272,7 +313,6 @@ export function Sidebar({ isDesktop, isCollapsed, isOpen, onToggle, onClose }: S
     [setSelectedProjectId, setSelectedProvider, selectedProvider, navigate, isDesktop, onClose],
   );
 
-  // Close user menu on outside click
   useEffect(() => {
     if (!userMenuOpen) return;
     const handler = (e: MouseEvent) => {
@@ -284,43 +324,85 @@ export function Sidebar({ isDesktop, isCollapsed, isOpen, onToggle, onClose }: S
     return () => document.removeEventListener("mousedown", handler);
   }, [userMenuOpen]);
 
-  const widthClass = isCollapsed ? "w-[84px]" : "w-[248px]";
+  // ─── Resize drag handle ─────────────────────────────────────────────────────
 
-  const visibleClass = isDesktop
-    ? "translate-x-0 opacity-100"
-    : isOpen
+  const handleResizeMouseDown = useCallback(
+    (e: React.MouseEvent) => {
+      e.preventDefault();
+      const startX = e.clientX;
+      const startWidth = expandedWidth;
+      let currentWidth = startWidth;
+
+      const onMouseMove = (ev: MouseEvent) => {
+        currentWidth = Math.min(
+          Math.max(startWidth + ev.clientX - startX, SIDEBAR_WIDTH_MIN),
+          SIDEBAR_WIDTH_MAX,
+        );
+        // Direct DOM write — no React re-render, instant feedback.
+        onDragMove(currentWidth);
+      };
+
+      const onMouseUp = () => {
+        // Single React re-render to persist the final value.
+        onDragEnd(currentWidth);
+        window.removeEventListener("mousemove", onMouseMove);
+        window.removeEventListener("mouseup", onMouseUp);
+      };
+
+      window.addEventListener("mousemove", onMouseMove);
+      window.addEventListener("mouseup", onMouseUp);
+    },
+    [expandedWidth, onDragMove, onDragEnd],
+  );
+
+  // ─── Positioning ─────────────────────────────────────────────────────────────
+  //
+  // Desktop: position sticky — the sidebar lives inside the CSS Grid cell
+  //   and sticks to the top of the viewport. No explicit width needed; the
+  //   grid track controls the rendered width so sidebar + content are always
+  //   derived from the same single value.
+  //
+  // Mobile: position fixed — full-screen drawer that overlays content.
+
+  const positionClass = isDesktop ? "sticky top-0 h-screen" : "fixed left-0 top-0 h-full z-50";
+
+  const mobileVisibility = !isDesktop
+    ? isOpen
       ? "translate-x-0 opacity-100 pointer-events-auto"
-      : "-translate-x-full opacity-0 pointer-events-none";
+      : "-translate-x-full opacity-0 pointer-events-none"
+    : "";
+
+  const mobileStyle = !isDesktop
+    ? {
+        width: COLLAPSED_WIDTH * 4, // fixed drawer width on mobile
+        transition: "transform 220ms ease-in-out, opacity 220ms ease-in-out",
+      }
+    : undefined;
 
   return (
     <aside
-      className={`fixed left-0 top-0 h-full z-40 flex flex-col px-3 py-3 bg-surface-container-low border-r border-outline-variant/15 overflow-hidden transition-all duration-[220ms] ease-in-out ${widthClass} ${visibleClass}`}
+      className={`${positionClass} flex flex-col px-3 py-3 bg-surface-container-low border-r border-outline-variant/15 overflow-hidden ${mobileVisibility}`}
+      style={mobileStyle}
     >
       {/* Brand / collapse toggle */}
       <button
         type="button"
         onClick={onToggle}
         className={`mb-4 w-full rounded-[20px] transition-all duration-200 hover:bg-surface-container flex items-center ${
-          isCollapsed ? "justify-center px-0 py-2.5" : "justify-between gap-3 px-3 py-2.5"
+          isCollapsed ? "justify-center px-0 py-2.5" : "justify-start px-3 py-2.5"
         }`}
       >
-        {!isCollapsed ? (
-          <div className="min-w-0 -mt-1 text-left">
-            <h1 className="font-serif text-[1.7rem] font-bold leading-none text-primary">
+        {isCollapsed ? (
+          <span className="flex shrink-0 items-center justify-center text-on-surface-variant">
+            <PanelLeftOpen className="w-5 h-5" />
+          </span>
+        ) : (
+          <div className="min-w-0 text-left">
+            <h1 className="font-serif text-[1.25rem] font-bold leading-none text-primary">
               ScholarAIO
             </h1>
-            <p className="mt-0.5 text-[9px] uppercase tracking-[0.28em] text-on-surface-variant font-mono opacity-60">
-              The Digital Atelier
-            </p>
           </div>
-        ) : null}
-        <span className="flex shrink-0 items-center justify-center text-on-surface-variant">
-          {isCollapsed ? (
-            <PanelLeftOpen className="w-5 h-5" />
-          ) : (
-            <PanelLeftClose className="w-5 h-5" />
-          )}
-        </span>
+        )}
       </button>
 
       {/* New chat button */}
@@ -340,7 +422,7 @@ export function Sidebar({ isDesktop, isCollapsed, isOpen, onToggle, onClose }: S
           <Link
             to="/new-session"
             onClick={!isDesktop ? onClose : undefined}
-            className="flex items-center justify-center w-10 h-10 rounded-xl bg-surface-container text-on-surface hover:bg-surface-container-high transition-colors"
+            className="flex items-center justify-center w-8 h-8 rounded-xl bg-surface-container text-on-surface hover:bg-surface-container-high transition-colors"
             title="New Chat"
           >
             <Plus className="w-4 h-4" />
@@ -403,7 +485,13 @@ export function Sidebar({ isDesktop, isCollapsed, isOpen, onToggle, onClose }: S
 
       {/* Workspace + Project session groups (only when expanded) */}
       {!isCollapsed ? (
-        <div className="flex-1 min-h-0 overflow-y-auto no-scrollbar pr-1 border-t border-outline-variant/10 pt-3">
+        <div
+          className="flex-1 min-h-0 overflow-y-auto no-scrollbar pr-1 border-t border-outline-variant/10 pt-3 transition-all duration-200"
+          style={{
+            opacity: projectsVisible ? 1 : 0,
+            transform: projectsVisible ? "translateY(0)" : "translateY(4px)",
+          }}
+        >
           {sortedWorkspaces.length > 0 ? (
             <SidebarSection title="Workspaces" count={sortedWorkspaces.length}>
               {sortedWorkspaces.map((ws) => {
@@ -488,7 +576,7 @@ export function Sidebar({ isDesktop, isCollapsed, isOpen, onToggle, onClose }: S
           type="button"
           onClick={() => setUserMenuOpen((v) => !v)}
           className={`w-full rounded-[20px] bg-surface-container transition-all duration-200 hover:bg-surface-container-high ${
-            isCollapsed ? "flex justify-center p-2.5" : "flex items-center gap-3 px-3 py-3"
+            isCollapsed ? "flex justify-center py-2" : "flex items-center gap-3 px-3 py-3"
           } ${userMenuOpen ? "bg-surface-container-high" : ""}`}
         >
           <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-primary-container text-on-primary">
@@ -507,6 +595,14 @@ export function Sidebar({ isDesktop, isCollapsed, isOpen, onToggle, onClose }: S
           ) : null}
         </button>
       </div>
+
+      {/* Resize drag handle — desktop, expanded only */}
+      {isDesktop && !isCollapsed ? (
+        <div
+          className="absolute right-0 top-0 h-full w-1 cursor-col-resize hover:bg-primary/20 active:bg-primary/30 transition-colors"
+          onMouseDown={handleResizeMouseDown}
+        />
+      ) : null}
     </aside>
   );
 }

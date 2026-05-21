@@ -83,7 +83,6 @@ export class ScatterPlotController {
     this.canvas.addEventListener("click", this.onMouseClick);
     this.canvas.addEventListener("mouseleave", this.onMouseLeave);
 
-    // ResizeObserver — updates scale ranges only, no quadtree rebuild
     this.resizeObserver = new ResizeObserver((entries) => {
       const entry = entries[0];
       if (!entry) return;
@@ -160,9 +159,11 @@ export class ScatterPlotController {
     this.canvas.height = h * DPR;
     this.canvas.style.width = `${w}px`;
     this.canvas.style.height = `${h}px`;
-    // Update scale ranges only — domain stays the same, quadtree stays valid
     this.xScale = this.xScale.range([40, w - 40]);
     this.yScale = this.yScale.range([h - 40, 40]);
+    if (this.data.points.length > 0) {
+      this.qt = this.buildQuadtree(this.data.points);
+    }
     this.draw();
   }
 

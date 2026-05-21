@@ -82,6 +82,10 @@ function extractUserMessageText(sdkMessage: Record<string, unknown>): string | n
   return null;
 }
 
+function toError(error: unknown): Error {
+  return error instanceof Error ? error : new Error(String(error));
+}
+
 export function useSession(
   projectId: string,
   sessionId: string,
@@ -240,6 +244,10 @@ export function useSession(
     setError(err);
   }, []);
 
+  const handleRefreshError = useCallback((err: Error) => {
+    setError(err);
+  }, []);
+
   // Use the session messages hook for message state and stream buffering
   const {
     messages,
@@ -265,6 +273,7 @@ export function useSession(
     sessionId,
     onLoadComplete: handleLoadComplete,
     onLoadError: handleLoadError,
+    onRefreshError: handleRefreshError,
   });
 
   // Update local mode (UI selection) and sync to server if process is active
@@ -410,12 +419,15 @@ export function useSession(
                 [agentId]: agentData,
               };
             });
-          } catch {
-            // Skip agents that can't be loaded
+          } catch (error) {
+            console.warn("[useSession] failed to load pending agent session", {
+              agentId,
+              error,
+            });
           }
         }
-      } catch {
-        // Silent fail for agent mappings - not critical
+      } catch (error) {
+        console.warn("[useSession] failed to load pending agent mappings", error);
       }
     };
 
@@ -547,11 +559,18 @@ export function useSession(
           if (current) return current; // Already have it, don't fetch
 
           // Fetch pending request in background (can't return promise from setState)
-          api.getSessionMetadata(projectId, sessionId).then((result) => {
-            if (result.pendingInputRequest) {
-              setPendingInputRequest(result.pendingInputRequest);
-            }
-          });
+          api
+            .getSessionMetadata(projectId, sessionId)
+            .then((result) => {
+              if (result.pendingInputRequest) {
+                setPendingInputRequest(result.pendingInputRequest);
+              }
+            })
+            .catch((error) => {
+              const err = toError(error);
+              console.warn("[useSession] failed to refresh pending input request", err);
+              setError(err);
+            });
 
           return current; // Return unchanged for now, will update when fetch completes
         });
@@ -569,8 +588,10 @@ export function useSession(
     fetchNewMessages();
     try {
       await refreshRuntimeState();
-    } catch {
-      // Silent fail - non-critical
+    } catch (error) {
+      const err = toError(error);
+      console.warn("[useSession] failed to refresh runtime state after activity reconnect", err);
+      setError(err);
     }
   }, [fetchNewMessages, refreshRuntimeState]);
 
@@ -1015,7 +1036,8 @@ export function useSession(
         setStatus({ owner: "none" });
         setProcessState("idle");
       }
-    } catch {
+    } catch (error) {
+      console.warn("[useSession] failed to check session metadata after stream error", error);
       // If session fetch fails, assume process is dead
       setStatus({ owner: "none" });
       setProcessState("idle");

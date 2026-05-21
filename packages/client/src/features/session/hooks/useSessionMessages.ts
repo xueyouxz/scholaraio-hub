@@ -36,6 +36,8 @@ export interface SessionLoadResult {
 }
 
 /** Options for useSessionMessages */
+export type SessionRefreshOperation = "fetch-new-messages" | "load-older-messages" | "metadata";
+
 export interface UseSessionMessagesOptions {
   projectId: string;
   sessionId: string;
@@ -43,6 +45,8 @@ export interface UseSessionMessagesOptions {
   onLoadComplete?: (result: SessionLoadResult) => void;
   /** Called on load error */
   onLoadError?: (error: Error) => void;
+  /** Called when a background refresh fails after the initial load */
+  onRefreshError?: (error: Error, operation: SessionRefreshOperation) => void;
 }
 
 /** Result from useSessionMessages hook */
@@ -87,6 +91,10 @@ export interface UseSessionMessagesResult {
 
 function isCodexProvider(provider?: string): boolean {
   return provider === "codex" || provider === "codex-oss";
+}
+
+function toError(error: unknown): Error {
+  return error instanceof Error ? error : new Error(String(error));
 }
 
 function getMessageRole(message: Message): string {
@@ -140,7 +148,7 @@ function isEmptyAssistantContent(message: Message): boolean {
  * - Routing subagent messages to agentContent
  */
 export function useSessionMessages(options: UseSessionMessagesOptions): UseSessionMessagesResult {
-  const { projectId, sessionId, onLoadComplete, onLoadError } = options;
+  const { projectId, sessionId, onLoadComplete, onLoadError, onRefreshError } = options;
 
   // Core state
   const [messages, setMessages] = useState<Message[]>([]);
@@ -424,10 +432,12 @@ export function useSessionMessages(options: UseSessionMessagesOptions): UseSessi
       setSession((prev) =>
         prev ? { ...prev, ...loadedSession, messages: prev.messages } : loadedSession,
       );
-    } catch {
-      // Silent fail for incremental updates
+    } catch (error) {
+      const err = toError(error);
+      console.warn("[useSessionMessages] failed to fetch new messages", err);
+      onRefreshError?.(err, "fetch-new-messages");
     }
-  }, [projectId, sessionId, updatePersistedTimestampWatermark]);
+  }, [projectId, sessionId, updatePersistedTimestampWatermark, onRefreshError]);
 
   // Load older messages (previous chunk before the current truncation point)
   const loadOlderMessages = useCallback(async () => {
@@ -454,12 +464,14 @@ export function useSessionMessages(options: UseSessionMessagesOptions): UseSessi
           : combined;
       });
       setPagination(data.pagination);
-    } catch {
-      // Silent fail for loading older messages
+    } catch (error) {
+      const err = toError(error);
+      console.warn("[useSessionMessages] failed to load older messages", err);
+      onRefreshError?.(err, "load-older-messages");
     } finally {
       setLoadingOlder(false);
     }
-  }, [projectId, sessionId, pagination, updatePersistedTimestampWatermark]);
+  }, [projectId, sessionId, pagination, updatePersistedTimestampWatermark, onRefreshError]);
 
   // Fetch session metadata only
   const fetchSessionMetadata = useCallback(async () => {
@@ -472,10 +484,12 @@ export function useSessionMessages(options: UseSessionMessagesOptions): UseSessi
           ? { ...prev, ...loadedSession, messages: prev.messages }
           : { ...loadedSession, messages: [] },
       );
-    } catch {
-      // Silent fail for metadata updates
+    } catch (error) {
+      const err = toError(error);
+      console.warn("[useSessionMessages] failed to fetch session metadata", err);
+      onRefreshError?.(err, "metadata");
     }
-  }, [projectId, sessionId]);
+  }, [projectId, sessionId, onRefreshError]);
 
   return {
     messages,

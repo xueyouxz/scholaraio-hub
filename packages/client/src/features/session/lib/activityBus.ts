@@ -136,21 +136,29 @@ interface ActivityEventMap {
 export type ActivityEventType = keyof ActivityEventMap;
 type Listener<T> = (data: T) => void;
 
+let activityDebugStorageWarningLogged = false;
+
 function isActivityDebugEnabled(): boolean {
   if (typeof window === "undefined") return false;
   if (window.__ACTIVITY_DEBUG__ === true) return true;
   try {
     return localStorage.getItem("scholaraio-activity-debug") === "true";
-  } catch {
+  } catch (error) {
+    if (!activityDebugStorageWarningLogged) {
+      console.warn("[activityBus] failed to read debug flag from localStorage", error);
+      activityDebugStorageWarningLogged = true;
+    }
     return false;
   }
 }
 
-class ActivityBus {
+export class ActivityBus {
   private source: EventSource | null = null;
   private listeners = new Map<ActivityEventType, Set<Listener<unknown>>>();
   private hasConnected = false;
   private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
+  private sourceListenerCleanups: Array<() => void> = [];
+  private visibilityHandler: (() => void) | null = null;
   private _connected = false;
 
   get connected(): boolean {
@@ -182,43 +190,47 @@ class ActivityBus {
       }
     };
 
-    source.addEventListener("connected", handleConnected);
-    source.addEventListener("file-change", (event) => handleTypedEvent("file-change", event));
-    source.addEventListener("session-status-changed", (event) =>
+    const addSourceListener = (
+      eventType: string,
+      listener: (event: MessageEvent<string>) => void,
+    ) => {
+      const eventListener: EventListener = (event) => listener(event as MessageEvent<string>);
+      source.addEventListener(eventType, eventListener);
+      this.sourceListenerCleanups.push(() => source.removeEventListener(eventType, eventListener));
+    };
+
+    addSourceListener("connected", handleConnected);
+    addSourceListener("file-change", (event) => handleTypedEvent("file-change", event));
+    addSourceListener("session-status-changed", (event) =>
       handleTypedEvent("session-status-changed", event),
     );
-    source.addEventListener("session-created", (event) =>
-      handleTypedEvent("session-created", event),
-    );
-    source.addEventListener("session-updated", (event) =>
-      handleTypedEvent("session-updated", event),
-    );
-    source.addEventListener("session-seen", (event) => handleTypedEvent("session-seen", event));
-    source.addEventListener("process-state-changed", (event) =>
+    addSourceListener("session-created", (event) => handleTypedEvent("session-created", event));
+    addSourceListener("session-updated", (event) => handleTypedEvent("session-updated", event));
+    addSourceListener("session-seen", (event) => handleTypedEvent("session-seen", event));
+    addSourceListener("process-state-changed", (event) =>
       handleTypedEvent("process-state-changed", event),
     );
-    source.addEventListener("session-metadata-changed", (event) =>
+    addSourceListener("session-metadata-changed", (event) =>
       handleTypedEvent("session-metadata-changed", event),
     );
-    source.addEventListener("browser-tab-connected", (event) =>
+    addSourceListener("browser-tab-connected", (event) =>
       handleTypedEvent("browser-tab-connected", event),
     );
-    source.addEventListener("browser-tab-disconnected", (event) =>
+    addSourceListener("browser-tab-disconnected", (event) =>
       handleTypedEvent("browser-tab-disconnected", event),
     );
-    source.addEventListener("source-change", (event) => handleTypedEvent("source-change", event));
-    source.addEventListener("backend-reloaded", () => this.emit("backend-reloaded", undefined));
-    source.addEventListener("worker-activity-changed", (event) =>
+    addSourceListener("source-change", (event) => handleTypedEvent("source-change", event));
+    addSourceListener("backend-reloaded", () => this.emit("backend-reloaded", undefined));
+    addSourceListener("worker-activity-changed", (event) =>
       handleTypedEvent("worker-activity-changed", event),
     );
-    source.addEventListener("heartbeat", () => {
+    addSourceListener("heartbeat", () => {
       this._connected = true;
     });
 
     source.onerror = () => {
       this._connected = false;
-      this.source?.close();
-      this.source = null;
+      this.closeSource();
       if (this.reconnectTimer) return;
       this.reconnectTimer = setTimeout(() => {
         this.reconnectTimer = null;
@@ -226,12 +238,7 @@ class ActivityBus {
       }, 1000);
     };
 
-    const onVisibility = () => {
-      if (document.visibilityState === "visible" && this._connected) {
-        this.emit("refresh", undefined);
-      }
-    };
-    document.addEventListener("visibilitychange", onVisibility);
+    this.ensureVisibilityListener();
   }
 
   disconnect(): void {
@@ -239,8 +246,8 @@ class ActivityBus {
       clearTimeout(this.reconnectTimer);
       this.reconnectTimer = null;
     }
-    this.source?.close();
-    this.source = null;
+    this.closeSource();
+    this.removeVisibilityListener();
     this.hasConnected = false;
     this._connected = false;
   }
@@ -266,6 +273,34 @@ class ActivityBus {
     if (!set) return;
     for (const listener of set) {
       listener(data);
+    }
+  }
+
+  private ensureVisibilityListener(): void {
+    if (this.visibilityHandler || typeof document === "undefined") return;
+
+    this.visibilityHandler = () => {
+      if (document.visibilityState === "visible" && this._connected) {
+        this.emit("refresh", undefined);
+      }
+    };
+    document.addEventListener("visibilitychange", this.visibilityHandler);
+  }
+
+  private removeVisibilityListener(): void {
+    if (!this.visibilityHandler || typeof document === "undefined") return;
+    document.removeEventListener("visibilitychange", this.visibilityHandler);
+    this.visibilityHandler = null;
+  }
+
+  private closeSource(): void {
+    for (const cleanup of this.sourceListenerCleanups.splice(0)) {
+      cleanup();
+    }
+    if (this.source) {
+      this.source.onerror = null;
+      this.source.close();
+      this.source = null;
     }
   }
 }

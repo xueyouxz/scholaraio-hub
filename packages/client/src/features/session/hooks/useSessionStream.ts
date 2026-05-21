@@ -9,10 +9,15 @@ interface UseSessionStreamOptions {
 export function useSessionStream(sessionId: string | null, options: UseSessionStreamOptions) {
   const [connected, setConnected] = useState(false);
   const sourceRef = useRef<EventSource | null>(null);
+  const reconnectTimerRef = useRef<ReturnType<typeof window.setTimeout> | null>(null);
   const optionsRef = useRef(options);
   optionsRef.current = options;
 
   const close = useCallback(() => {
+    if (reconnectTimerRef.current) {
+      window.clearTimeout(reconnectTimerRef.current);
+      reconnectTimerRef.current = null;
+    }
     sourceRef.current?.close();
     sourceRef.current = null;
     setConnected(false);
@@ -33,7 +38,11 @@ export function useSessionStream(sessionId: string | null, options: UseSessionSt
           ...(payload as Record<string, unknown>),
           eventType,
         });
-      } catch {
+      } catch (error) {
+        console.warn("[useSessionStream] failed to parse stream event payload", {
+          eventType,
+          error,
+        });
         optionsRef.current.onMessage({ eventType });
       }
     };
@@ -77,7 +86,10 @@ export function useSessionStream(sessionId: string | null, options: UseSessionSt
 
   const reconnect = useCallback(() => {
     close();
-    window.setTimeout(connect, 50);
+    reconnectTimerRef.current = window.setTimeout(() => {
+      reconnectTimerRef.current = null;
+      connect();
+    }, 50);
   }, [close, connect]);
 
   useEffect(() => {

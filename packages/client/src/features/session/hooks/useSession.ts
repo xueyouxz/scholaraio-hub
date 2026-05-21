@@ -1,4 +1,8 @@
-import { type ProviderName, getModelContextWindow } from "@scholaraio-hub/shared";
+import {
+  type ProviderName,
+  type SlashCommand,
+  getModelContextWindow,
+} from "@scholaraio-hub/shared";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { api } from "../api/client";
 import { getMessageId } from "../lib/mergeMessages";
@@ -146,8 +150,8 @@ export function useSession(
     hasHandledConnectedEventRef.current = false;
   }, [sessionId]);
 
-  // Slash commands available for this session (from init message)
-  const [slashCommands, setSlashCommands] = useState<string[]>([]);
+  // Skill slash commands available for this session.
+  const [slashCommands, setSlashCommands] = useState<SlashCommand[]>([]);
   // Tools available for this session (from init message)
   const [sessionTools, setSessionTools] = useState<string[]>([]);
   // MCP servers available for this session (from init message)
@@ -232,9 +236,12 @@ export function useSession(
       }
       // Set slash commands from API response so the "/" button appears reliably
       // (the SSE init message that normally carries these is discarded after ~30s)
-      if (result.slashCommands?.length) {
-        setSlashCommands(result.slashCommands.map((c) => c.name));
-      }
+      setSlashCommands(
+        (result.slashCommands ?? []).map((command) => ({
+          ...command,
+          description: command.description ?? "",
+        })),
+      );
     },
     [applyServerModeUpdate],
   );
@@ -746,10 +753,19 @@ export function useSession(
         // Remove eventType from the message (it's stream envelope, not message data)
         (incoming as { eventType?: string }).eventType = undefined;
 
-        // Extract slash_commands, tools, and mcp_servers from init messages
+        // Extract skills, tools, and mcp_servers from init messages. Do not use
+        // slash_commands here; Claude may include CLI built-ins that the web UI
+        // cannot execute directly.
         if (msgType === "system" && sdkMessage.subtype === "init") {
-          if (Array.isArray(sdkMessage.slash_commands)) {
-            setSlashCommands(sdkMessage.slash_commands as string[]);
+          if (Array.isArray(sdkMessage.skills)) {
+            setSlashCommands((prev) => {
+              const descriptions = new Map(prev.map((command) => [command.name, command]));
+              return (sdkMessage.skills as string[]).map((name) => ({
+                ...descriptions.get(name),
+                name,
+                description: descriptions.get(name)?.description ?? "",
+              }));
+            });
           }
           if (Array.isArray(sdkMessage.tools)) {
             setSessionTools(sdkMessage.tools as string[]);

@@ -2,7 +2,12 @@ import { Settings } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { api } from "../../core/api";
-import type { ModelInfo, SessionCreationResult, ThinkingOption } from "../../core/types";
+import type {
+  ModelInfo,
+  SessionCreationResult,
+  SlashCommand,
+  ThinkingOption,
+} from "../../core/types";
 import { MessageInput } from "../../features/session/components/MessageInput";
 import { useAttachmentUploads } from "../../features/session/hooks/useAttachmentUploads";
 import type { SessionNavState } from "../../features/session/types";
@@ -28,6 +33,7 @@ export function NewSessionPage() {
   const [createdSession, setCreatedSession] = useState<SessionCreationResult | null>(null);
   const [supportsPermissionMode, setSupportsPermissionMode] = useState(true);
   const [supportsThinkingToggle, setSupportsThinkingToggle] = useState(true);
+  const [slashCommands, setSlashCommands] = useState<SlashCommand[]>([]);
 
   useEffect(() => {
     setTitle("New Chat");
@@ -46,6 +52,17 @@ export function NewSessionPage() {
       setSupportsThinkingToggle(provider?.supportsThinkingToggle ?? true);
     });
   }, [selectedProvider]);
+
+  useEffect(() => {
+    if (!selectedProjectId || !selectedProvider) {
+      setSlashCommands([]);
+      return;
+    }
+
+    api.getProjectSkills(selectedProjectId, selectedProvider).then(({ slashCommands }) => {
+      setSlashCommands(slashCommands);
+    });
+  }, [selectedProjectId, selectedProvider]);
 
   const ensureUploadSessionId = useCallback(async () => {
     if (createdSession) return createdSession.sessionId;
@@ -179,6 +196,7 @@ export function NewSessionPage() {
           uploadProgress={attachmentUploads.uploadProgress}
           model={selectedModel}
           models={models}
+          slashCommands={slashCommands}
           onMessageChange={setMessage}
           onThinkingChange={setThinking}
           onAttachFiles={attachmentUploads.addFiles}

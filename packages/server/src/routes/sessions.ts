@@ -3,6 +3,7 @@ import {
   type ModelOption,
   type PermissionRules,
   type ProviderName,
+  type SlashCommand,
   type ThinkingOption,
   type UploadedFile,
   type UrlProjectId,
@@ -26,6 +27,7 @@ import { type PaginationInfo, sliceAtCompactBoundaries } from "../sessions/pagin
 import { augmentPersistedSessionMessages } from "../sessions/persisted-augments.js";
 import { findSessionSummaryAcrossProviders } from "../sessions/provider-resolution.js";
 import type { ISessionReader } from "../sessions/types.js";
+import { getSkillSlashCommands } from "../skills/skillCommands.js";
 import type { ExternalSessionTracker } from "../supervisor/ExternalSessionTracker.js";
 import type { Process } from "../supervisor/Process.js";
 import type { QueueFullResponse, Supervisor } from "../supervisor/Supervisor.js";
@@ -55,6 +57,41 @@ function isCodexProviderName(
   provider: ProviderName | string | undefined,
 ): provider is "codex" | "codex-oss" {
   return provider === "codex" || provider === "codex-oss";
+}
+
+async function resolveSlashCommands(
+  process: Process | undefined,
+  projectPath: string,
+  fallbackProvider: ProviderName | string | undefined,
+): Promise<SlashCommand[]> {
+  const skillCommands = await getSkillSlashCommands(
+    projectPath,
+    process?.provider ?? fallbackProvider,
+  );
+  const skillNames = new Set(skillCommands.map((command) => command.name));
+
+  if (process?.supportsDynamicCommands) {
+    const commands = await process.supportedCommands();
+    const skillMetadata = new Map(skillCommands.map((command) => [command.name, command]));
+    const dynamicSkillCommands =
+      commands
+        ?.filter((command) => skillNames.has(command.name))
+        .map((command) => {
+          const metadata = skillMetadata.get(command.name);
+          return {
+            ...metadata,
+            ...command,
+            description: command.description || metadata?.description || "",
+            argumentHint: command.argumentHint ?? metadata?.argumentHint,
+            source: metadata?.source,
+          };
+        }) ?? [];
+    if (dynamicSkillCommands.length) {
+      return dynamicSkillCommands;
+    }
+  }
+
+  return skillCommands;
 }
 
 export interface SessionsDeps {
@@ -390,11 +427,6 @@ export function createSessionsRoutes(deps: SessionsDeps): Hono {
     const pendingInputRequest =
       process?.state.type === "waiting-input" ? process.state.request : null;
 
-    // Get available slash commands from active process
-    const slashCommands = process?.supportsDynamicCommands
-      ? await process.supportedCommands()
-      : null;
-
     // Read minimal session info from disk (just for title/timestamps, no messages)
     const metadataProvider = deps.sessionMetadataService?.getProvider(sessionId) as
       | ProviderName
@@ -415,6 +447,12 @@ export function createSessionsRoutes(deps: SessionsDeps): Hono {
     if (!sessionSummary && !process) {
       return c.json({ error: "Session not found" }, 404);
     }
+
+    const slashCommands = await resolveSlashCommands(
+      process,
+      project.path,
+      sessionSummary?.provider ?? metadataProvider ?? project.provider,
+    );
 
     // Calculate hasUnread if we have session summary
     const hasUnread =
@@ -537,12 +575,11 @@ export function createSessionsRoutes(deps: SessionsDeps): Hono {
     const pendingInputRequest =
       process?.state.type === "waiting-input" ? process.state.request : null;
 
-    // Get available slash commands from active process (for "/" button in toolbar)
-    // The init message that normally carries these gets discarded from the SSE buffer
-    // after ~30s, so we attach them to the REST response for reliable delivery.
-    const slashCommands = process?.supportsDynamicCommands
-      ? await process.supportedCommands()
-      : null;
+    const slashCommands = await resolveSlashCommands(
+      process,
+      project.path,
+      session?.provider ?? project.provider,
+    );
 
     if (!session) {
       // Session file doesn't exist yet - only valid if we own the process

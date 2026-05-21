@@ -8,6 +8,7 @@ import type {
   ProviderInfo,
   ProviderName,
   ProviderUsageLimits,
+  SlashCommand,
   ThinkingOption,
   UploadedFile,
 } from "@scholaraio-hub/shared";
@@ -142,6 +143,11 @@ export const api = {
     }),
   getProject: (projectId: string) =>
     requestJson<{ project: ProjectSummary }>(`/api/projects/${projectId}`),
+  getProjectSkills: (projectId: string, provider?: ProviderName, options?: RequestOptions) =>
+    requestJson<{ slashCommands: SlashCommand[] }>(
+      withQuery(`/api/projects/${projectId}/skills`, { provider }),
+      { signal: options?.signal },
+    ),
   getProjectSessions: (
     projectId: string,
     options?: RequestOptions & { provider?: ProviderGroupFilter },

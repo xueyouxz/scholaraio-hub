@@ -466,9 +466,7 @@ function SessionPageContent({
               permissionMode={permissionMode ?? "default"}
               isHeld={sessionIsHeld}
               draftKey={`session:${sessionId}`}
-              slashCommands={
-                ownership.owner === "self" ? slashCommands.map((name) => ({ name })) : []
-              }
+              slashCommands={slashCommands}
               contextUsage={session?.contextUsage}
               onMessageChange={setMessage}
               onThinkingChange={setThinking}

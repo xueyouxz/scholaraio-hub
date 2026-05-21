@@ -53,6 +53,8 @@ export interface SlashCommand {
   description: string;
   /** Hint for command arguments (e.g., "<file>") */
   argumentHint?: string;
+  /** Where the skill command was discovered. */
+  source?: "project" | "global";
 }
 
 /**

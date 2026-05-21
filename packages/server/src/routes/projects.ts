@@ -13,6 +13,7 @@ import {
   listSessionsAcrossProviders,
 } from "../sessions/provider-resolution.js";
 import type { ISessionReader } from "../sessions/types.js";
+import { getSkillSlashCommands } from "../skills/skillCommands.js";
 import type { ExternalSessionTracker } from "../supervisor/ExternalSessionTracker.js";
 import type { Supervisor } from "../supervisor/Supervisor.js";
 import type {
@@ -268,6 +269,24 @@ export function createProjectsRoutes(deps: ProjectsDeps): Hono {
     }
 
     return c.json({ project });
+  });
+
+  // GET /api/projects/:projectId/skills - List project/user skills available as slash commands
+  routes.get("/:projectId/skills", async (c) => {
+    const projectId = c.req.param("projectId");
+    const provider = c.req.query("provider");
+
+    if (!isUrlProjectId(projectId)) {
+      return c.json({ error: "Invalid project ID format" }, 400);
+    }
+
+    const project = await deps.scanner.getOrCreateProject(projectId);
+    if (!project) {
+      return c.json({ error: "Project not found" }, 404);
+    }
+
+    const slashCommands = await getSkillSlashCommands(project.path, provider ?? project.provider);
+    return c.json({ slashCommands });
   });
 
   // POST /api/projects - Add a project by path

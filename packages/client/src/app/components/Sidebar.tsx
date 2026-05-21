@@ -318,18 +318,13 @@ export function Sidebar({
 
   const sortedWorkspaces = useMemo(
     () =>
-      [...workspaces]
-        .filter((workspace) => {
-          const project = projectsByPath.get(workspace.path) ?? projectsByName.get(workspace.name);
-          return !project || projectSupportsProvider(project, selectedProvider);
-        })
-        .sort((a, b) => {
-          const projectA = projectsByPath.get(a.path) ?? projectsByName.get(a.name);
-          const projectB = projectsByPath.get(b.path) ?? projectsByName.get(b.name);
-          const ta = projectActivityForProvider(projectA, selectedProvider) ?? a.createdAt;
-          const tb = projectActivityForProvider(projectB, selectedProvider) ?? b.createdAt;
-          return new Date(tb).getTime() - new Date(ta).getTime();
-        }),
+      [...workspaces].sort((a, b) => {
+        const projectA = projectsByPath.get(a.path) ?? projectsByName.get(a.name);
+        const projectB = projectsByPath.get(b.path) ?? projectsByName.get(b.name);
+        const ta = projectActivityForProvider(projectA, selectedProvider) ?? a.createdAt;
+        const tb = projectActivityForProvider(projectB, selectedProvider) ?? b.createdAt;
+        return new Date(tb).getTime() - new Date(ta).getTime();
+      }),
     [workspaces, projectsByName, projectsByPath, selectedProvider],
   );
 

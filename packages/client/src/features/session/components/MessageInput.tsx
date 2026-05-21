@@ -1,9 +1,15 @@
-import type { ContextUsage, PermissionMode, UploadedFile } from "@scholaraio-hub/shared";
+import type {
+  ContextUsage,
+  PermissionMode,
+  SlashCommand,
+  UploadedFile,
+} from "@scholaraio-hub/shared";
 import { ArrowUp, ListPlus, Loader2, Paperclip, Square, X } from "lucide-react";
 import {
   type ClipboardEvent,
   type KeyboardEvent,
   useCallback,
+  useEffect,
   useLayoutEffect,
   useMemo,
   useRef,
@@ -15,11 +21,6 @@ import { useDraftPersistence } from "../hooks/useDraftPersistence";
 import { MessageInputToolbar } from "./MessageInputToolbar";
 import { ModelSwitcher } from "./ModelSwitcher";
 import type { VoiceInputButtonRef } from "./VoiceInputButton";
-
-interface SlashCommand {
-  name: string;
-  description?: string;
-}
 
 interface MessageInputProps {
   message: string;
@@ -83,9 +84,11 @@ export function MessageInput({
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
   const voiceButtonRef = useRef<VoiceInputButtonRef | null>(null);
+  const slashOptionRefs = useRef<Array<HTMLButtonElement | null>>([]);
   const messageRef = useRef(message);
   messageRef.current = message;
-  const [showSlashSuggestions, setShowSlashSuggestions] = useState(false);
+  const [slashSuggestionsDismissed, setSlashSuggestionsDismissed] = useState(false);
+  const [activeSlashIndex, setActiveSlashIndex] = useState(0);
   const [interimTranscript, setInterimTranscript] = useState("");
 
   useDraftPersistence({
@@ -93,10 +96,6 @@ export function MessageInput({
     value: message,
     onLoad: onMessageChange,
   });
-
-  const displayValue = interimTranscript
-    ? `${message}${message.trimEnd() && !message.endsWith(" ") ? " " : ""}${interimTranscript}`
-    : message;
 
   useLayoutEffect(() => {
     const el = textareaRef.current;
@@ -107,14 +106,106 @@ export function MessageInput({
 
   const slashFilter = useMemo(() => {
     if (!message.startsWith("/")) return null;
-    const query = message.slice(1).trim().toLowerCase();
+    const query = message.slice(1);
+    if (/\s/.test(query)) return null;
+    const normalizedQuery = query.toLowerCase();
     if (!slashCommands || slashCommands.length === 0) return null;
-    return slashCommands.filter((cmd) => cmd.name.toLowerCase().startsWith(query)).slice(0, 6);
+    return slashCommands.filter((cmd) => cmd.name.toLowerCase().startsWith(normalizedQuery));
   }, [message, slashCommands]);
 
+  const showSlashList = Boolean(
+    !slashSuggestionsDismissed && slashFilter && slashFilter.length > 0 && message.startsWith("/"),
+  );
+  const slashFilterSignature = slashFilter?.map((cmd) => cmd.name).join("\n") ?? "";
+
+  const selectedSlashCommand = useMemo(() => {
+    if (!slashCommands || slashCommands.length === 0) return null;
+    return (
+      [...slashCommands]
+        .sort((a, b) => b.name.length - a.name.length)
+        .find((cmd) => message === `/${cmd.name}` || message.startsWith(`/${cmd.name} `)) ?? null
+    );
+  }, [message, slashCommands]);
+  const selectedSlashToken = selectedSlashCommand ? `/${selectedSlashCommand.name}` : "";
+  const showSlashBadge = Boolean(
+    selectedSlashCommand &&
+      (message.startsWith(`${selectedSlashToken} `) ||
+        (slashSuggestionsDismissed && message === selectedSlashToken)),
+  );
+  const messageBody = showSlashBadge
+    ? message.slice(selectedSlashToken.length).replace(/^ /, "")
+    : message;
+  const textareaValue = interimTranscript
+    ? `${messageBody}${messageBody.trimEnd() && !messageBody.endsWith(" ") ? " " : ""}${interimTranscript}`
+    : messageBody;
+
+  const selectSlashCommand = useCallback(
+    (command: SlashCommand) => {
+      onMessageChange(`/${command.name} `);
+      setSlashSuggestionsDismissed(true);
+      window.requestAnimationFrame(() => textareaRef.current?.focus());
+    },
+    [onMessageChange],
+  );
+
+  useEffect(() => {
+    if (!slashFilterSignature) {
+      slashOptionRefs.current = [];
+      return;
+    }
+    setActiveSlashIndex(0);
+    slashOptionRefs.current = [];
+  }, [slashFilterSignature]);
+
+  useEffect(() => {
+    if (!showSlashList) return;
+    slashOptionRefs.current[activeSlashIndex]?.scrollIntoView({ block: "nearest" });
+  }, [activeSlashIndex, showSlashList]);
+
   const handleKeyDown = (event: KeyboardEvent<HTMLTextAreaElement>) => {
-    if (event.key === "Escape" && showSlashSuggestions) {
-      setShowSlashSuggestions(false);
+    if (event.key === "Escape" && showSlashList) {
+      setSlashSuggestionsDismissed(true);
+      return;
+    }
+    if (showSlashList && slashFilter) {
+      if (event.key === "ArrowDown") {
+        event.preventDefault();
+        setActiveSlashIndex((current) => (current + 1) % slashFilter.length);
+        return;
+      }
+      if (event.key === "ArrowUp") {
+        event.preventDefault();
+        setActiveSlashIndex((current) => (current - 1 + slashFilter.length) % slashFilter.length);
+        return;
+      }
+      if (event.key === "Home") {
+        event.preventDefault();
+        setActiveSlashIndex(0);
+        return;
+      }
+      if (event.key === "End") {
+        event.preventDefault();
+        setActiveSlashIndex(slashFilter.length - 1);
+        return;
+      }
+      if (
+        event.key === "Enter" &&
+        !event.shiftKey &&
+        !event.ctrlKey &&
+        !event.nativeEvent.isComposing
+      ) {
+        event.preventDefault();
+        const command = slashFilter[activeSlashIndex] ?? slashFilter[0];
+        if (command) {
+          selectSlashCommand(command);
+        }
+        return;
+      }
+    }
+    if (showSlashBadge && event.key === "Backspace" && messageBody.length === 0) {
+      event.preventDefault();
+      onMessageChange("");
+      setSlashSuggestionsDismissed(false);
       return;
     }
     if (event.key !== "Enter" || event.shiftKey || event.ctrlKey || event.nativeEvent.isComposing) {
@@ -165,7 +256,6 @@ export function MessageInput({
   );
 
   const canSend = Boolean(message.trim() || attachments.length > 0 || uploadProgress.length > 0);
-  const showSlashList = Boolean(slashFilter && slashFilter.length > 0 && message.startsWith("/"));
   const showQueue = Boolean(onQueue && canSend && isRunning);
   const showStop = Boolean(onStop && isRunning && isThinking && !canSend);
 
@@ -173,18 +263,26 @@ export function MessageInput({
     <div className="relative w-full">
       {/* Slash command suggestions */}
       {showSlashList && slashFilter ? (
-        <div className="mb-2 border border-outline-variant/20 rounded-xl bg-surface-container-lowest shadow-lg overflow-hidden">
-          {slashFilter.map((cmd) => (
+        <div className="absolute bottom-full left-0 z-30 mb-2 w-fit max-w-full max-h-64 overflow-y-auto border border-outline-variant/20 rounded-xl bg-surface-container-lowest shadow-lg p-1">
+          {slashFilter.map((cmd, index) => (
             <button
               key={cmd.name}
               type="button"
-              onClick={() => onMessageChange(`/${cmd.name} `)}
-              className="w-full text-left flex items-center gap-3 px-4 py-2 hover:bg-surface-container transition-colors"
+              ref={(element) => {
+                slashOptionRefs.current[index] = element;
+              }}
+              onMouseEnter={() => setActiveSlashIndex(index)}
+              onClick={() => selectSlashCommand(cmd)}
+              title={cmd.description || undefined}
+              aria-selected={index === activeSlashIndex}
+              className={`w-full min-w-max text-left flex items-center px-3 py-2 rounded-lg transition-colors ${
+                index === activeSlashIndex ? "bg-surface-container" : "bg-transparent"
+              }`}
             >
-              <span className="font-mono text-[11px] text-primary font-bold">/{cmd.name}</span>
-              {cmd.description ? (
-                <span className="text-xs text-on-surface-variant truncate">{cmd.description}</span>
-              ) : null}
+              <span className="font-mono text-[11px] text-primary font-bold whitespace-nowrap">
+                /{cmd.name}
+                {cmd.argumentHint ? ` ${cmd.argumentHint}` : ""}
+              </span>
             </button>
           ))}
         </div>
@@ -227,13 +325,30 @@ export function MessageInput({
           </div>
         ) : null}
 
+        {showSlashBadge && selectedSlashCommand ? (
+          <div className="px-4 pt-3">
+            <div
+              className="inline-flex max-w-full items-center rounded-full border border-outline-variant/20 px-2.5 py-1 font-mono text-[11px] font-bold text-primary"
+              title={selectedSlashCommand.description || undefined}
+            >
+              <span className="truncate">{selectedSlashToken}</span>
+            </div>
+          </div>
+        ) : null}
+
         {/* Textarea */}
         <textarea
           ref={textareaRef}
-          value={displayValue}
+          value={textareaValue}
           onChange={(event) => {
             setInterimTranscript("");
-            onMessageChange(event.target.value);
+            setSlashSuggestionsDismissed(false);
+            const nextValue = event.target.value;
+            onMessageChange(
+              showSlashBadge
+                ? `${selectedSlashToken}${nextValue ? ` ${nextValue}` : " "}`
+                : nextValue,
+            );
           }}
           onKeyDown={handleKeyDown}
           onPaste={handlePaste}

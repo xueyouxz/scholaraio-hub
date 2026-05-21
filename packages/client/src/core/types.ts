@@ -9,6 +9,7 @@ import type {
   ProviderInfo,
   ProviderName,
   ProviderUsageLimits,
+  SlashCommand,
   ThinkingOption,
   UploadedFile,
 } from "@scholaraio-hub/shared";
@@ -52,7 +53,7 @@ export interface SessionDetail {
   messages: AppSession["messages"];
   ownership: AppSession["ownership"];
   pendingInputRequest?: InputRequest | null;
-  slashCommands?: Array<{ name: string; description?: string }>;
+  slashCommands?: SlashCommand[];
   pagination?: {
     hasOlderMessages: boolean;
     totalMessageCount: number;
@@ -68,7 +69,7 @@ export interface SessionMetadataDetail {
   session: AppSession;
   ownership: AppSession["ownership"] & { state?: SessionRuntimeState };
   pendingInputRequest?: InputRequest | null;
-  slashCommands?: Array<{ name: string; description?: string }> | null;
+  slashCommands?: SlashCommand[] | null;
 }
 
 export interface StartSessionInput {
@@ -125,6 +126,7 @@ export type {
   ProviderInfo,
   ProviderName,
   ProviderUsageLimits,
+  SlashCommand,
   ThinkingOption,
   UploadedFile,
 };

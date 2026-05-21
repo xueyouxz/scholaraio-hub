@@ -608,7 +608,7 @@ export class CodexProvider implements AgentProvider {
   readonly displayName = "Codex";
   readonly supportsPermissionMode = true;
   readonly supportsThinkingToggle = true;
-  readonly supportsSlashCommands = false;
+  readonly supportsSlashCommands = true;
 
   private readonly config: CodexProviderConfig;
   private modelCache: { models: ModelInfo[]; expiresAt: number } | null = null;

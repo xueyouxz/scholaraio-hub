@@ -1,7 +1,11 @@
-import { useEffect, useRef } from "react";
+import { forwardRef, useEffect, useImperativeHandle, useRef } from "react";
 import type { ScholarProjectionPoint } from "../../../../core/api";
 import type { TopicColorMap } from "../../types";
 import { type ScatterMode, ScatterPlotController } from "./ScatterPlotController";
+
+export interface ScatterPlotRef {
+  resetZoom: () => void;
+}
 
 interface Props {
   points: ScholarProjectionPoint[];
@@ -13,45 +17,48 @@ interface Props {
   onLassoSelect?: (ids: Set<string>) => void;
 }
 
-export function ScatterPlot({
-  points,
-  activeIds,
-  selectedId,
-  topicColors,
-  mode,
-  onPointClick,
-  onLassoSelect,
-}: Props) {
-  const containerRef = useRef<HTMLDivElement>(null);
-  const controllerRef = useRef<ScatterPlotController | null>(null);
+export const ScatterPlot = forwardRef<ScatterPlotRef, Props>(
+  ({ points, activeIds, selectedId, topicColors, mode, onPointClick, onLassoSelect }, ref) => {
+    const containerRef = useRef<HTMLDivElement>(null);
+    const controllerRef = useRef<ScatterPlotController | null>(null);
 
-  // Keep callback refs current without triggering controller recreation
-  const onPointClickRef = useRef(onPointClick);
-  onPointClickRef.current = onPointClick;
-  const onLassoSelectRef = useRef(onLassoSelect);
-  onLassoSelectRef.current = onLassoSelect;
+    useImperativeHandle(ref, () => ({
+      resetZoom: () => controllerRef.current?.resetZoom(),
+    }));
 
-  // Create controller once — stable wrappers read from refs so callbacks never stale
-  useEffect(() => {
-    if (!containerRef.current) return;
-    const ctrl = new ScatterPlotController(containerRef.current, (id) =>
-      onPointClickRef.current(id),
-    );
-    ctrl.setOnLassoSelect((ids) => onLassoSelectRef.current?.(ids));
-    controllerRef.current = ctrl;
-    return () => {
-      ctrl.destroy();
-      controllerRef.current = null;
-    };
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+    // Keep callback refs current without triggering controller recreation
+    const onPointClickRef = useRef(onPointClick);
+    onPointClickRef.current = onPointClick;
+    const onLassoSelectRef = useRef(onLassoSelect);
+    onLassoSelectRef.current = onLassoSelect;
 
-  useEffect(() => {
-    controllerRef.current?.setMode(mode);
-  }, [mode]);
+    // Create controller once — stable wrappers read from refs so callbacks never stale
+    useEffect(() => {
+      if (!containerRef.current) return;
+      const ctrl = new ScatterPlotController(containerRef.current, (id) =>
+        onPointClickRef.current(id),
+      );
+      ctrl.setOnLassoSelect((ids) => onLassoSelectRef.current?.(ids));
+      controllerRef.current = ctrl;
+      return () => {
+        ctrl.destroy();
+        controllerRef.current = null;
+      };
+    }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
-  useEffect(() => {
-    controllerRef.current?.update({ points, activeIds, selectedId, topicColors });
-  }, [points, activeIds, selectedId, topicColors]);
+    useEffect(() => {
+      controllerRef.current?.setMode(mode);
+    }, [mode]);
 
-  return <div ref={containerRef} className="w-full h-full" />;
-}
+    useEffect(() => {
+      controllerRef.current?.update({
+        points,
+        activeIds,
+        selectedId,
+        topicColors,
+      });
+    }, [points, activeIds, selectedId, topicColors]);
+
+    return <div ref={containerRef} className="w-full h-full" />;
+  },
+);

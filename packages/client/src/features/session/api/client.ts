@@ -9,7 +9,7 @@ import type {
   UploadedFile,
 } from "@scholaraio-hub/shared";
 import { api as coreApi } from "../../../core/api";
-import type { RequestOptions } from "../../../core/api";
+import type { ProviderGroupFilter, RequestOptions } from "../../../core/api";
 import { requestJson } from "../../../core/http";
 import type {
   ProcessSummary,
@@ -90,6 +90,10 @@ export interface SessionOptions {
   executor?: string;
 }
 
+function providerNamesForGroup(provider: ProviderGroupFilter): ProviderName[] {
+  return provider === "claude" ? ["claude", "claude-ollama"] : ["codex", "codex-oss"];
+}
+
 const DEFAULT_STATS: GlobalSessionStats = {
   totalCount: 0,
   unreadCount: 0,
@@ -134,6 +138,7 @@ async function getProjectSessionsAsGlobal(
     includeArchived?: boolean;
     starred?: boolean;
     includeStats?: boolean;
+    provider?: ProviderGroupFilter;
   },
   options?: RequestOptions,
 ): Promise<GlobalSessionsResponse> {
@@ -145,7 +150,7 @@ async function getProjectSessionsAsGlobal(
     await Promise.all(
       selectedProjects.map((project) =>
         coreApi
-          .getProjectSessions(project.id, options)
+          .getProjectSessions(project.id, { ...options, provider: params?.provider })
           .then(({ sessions }) => sessions.map((session) => toGlobalSession(session, projects)))
           .catch(() => []),
       ),
@@ -153,7 +158,9 @@ async function getProjectSessionsAsGlobal(
   ).flat();
 
   const query = params?.q?.trim().toLowerCase();
+  const providerNames = params?.provider ? providerNamesForGroup(params.provider) : null;
   const filtered = allSessions
+    .filter((session) => (providerNames ? providerNames.includes(session.provider) : true))
     .filter((session) => (params?.includeArchived ? true : !session.isArchived))
     .filter((session) => (params?.starred ? session.isStarred : true))
     .filter((session) => {
@@ -342,6 +349,7 @@ export const api = {
       includeArchived?: boolean;
       starred?: boolean;
       includeStats?: boolean;
+      provider?: ProviderGroupFilter;
     },
     options?: RequestOptions,
   ) => getProjectSessionsAsGlobal(params, options),

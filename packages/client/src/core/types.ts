@@ -22,6 +22,9 @@ export interface ProjectSummary {
   activeOwnedCount: number;
   activeExternalCount: number;
   lastActivity?: string | null;
+  availableProviders?: string[];
+  providerSessionCounts?: Record<string, number | undefined>;
+  providerLastActivity?: Record<string, string | null | undefined>;
 }
 
 export interface ProcessSummary {

@@ -8,7 +8,10 @@ import type { CodexSessionScanner } from "../projects/codex-scanner.js";
 import { canonicalizeProjectPath, isAbsolutePath } from "../projects/paths.js";
 import type { ProjectScanner } from "../projects/scanner.js";
 import type { CodexSessionReader } from "../sessions/codex-reader.js";
-import { listSessionsAcrossProviders } from "../sessions/provider-resolution.js";
+import {
+  type ProviderGroup,
+  listSessionsAcrossProviders,
+} from "../sessions/provider-resolution.js";
 import type { ISessionReader } from "../sessions/types.js";
 import type { ExternalSessionTracker } from "../supervisor/ExternalSessionTracker.js";
 import type { Supervisor } from "../supervisor/Supervisor.js";
@@ -85,16 +88,33 @@ async function getProjectActivityCounts(
 export function createProjectsRoutes(deps: ProjectsDeps): Hono {
   const routes = new Hono();
 
+  function parseProviderGroup(value: string | undefined): ProviderGroup | null | undefined {
+    if (!value) return undefined;
+    if (value === "claude" || value === "codex") return value;
+    return null;
+  }
+
+  function providerMatchesGroup(provider: string | undefined, group: ProviderGroup): boolean {
+    if (group === "claude") return provider === "claude" || provider === "claude-ollama";
+    return provider === "codex" || provider === "codex-oss";
+  }
+
   /**
    * Get owned sessions for a project that might not be in the file list yet.
    * New sessions may not have user/assistant messages written to disk yet.
    */
-  function getOwnedSessionsForProject(projectId: string): Map<string, SessionSummary> {
+  function getOwnedSessionsForProject(
+    projectId: string,
+    providerGroup?: ProviderGroup,
+  ): Map<string, SessionSummary> {
     const ownedSessions = new Map<string, SessionSummary>();
     if (!deps.supervisor) return ownedSessions;
 
     for (const process of deps.supervisor.getAllProcesses()) {
-      if (process.projectId === projectId) {
+      if (
+        process.projectId === projectId &&
+        (!providerGroup || providerMatchesGroup(process.provider, providerGroup))
+      ) {
         const now = new Date().toISOString();
         ownedSessions.set(process.sessionId, {
           id: process.sessionId,
@@ -126,8 +146,9 @@ export function createProjectsRoutes(deps: ProjectsDeps): Hono {
   function addMissingOwnedSessions(
     sessions: SessionSummary[],
     projectId: string,
+    providerGroup?: ProviderGroup,
   ): SessionSummary[] {
-    const ownedSessions = getOwnedSessionsForProject(projectId);
+    const ownedSessions = getOwnedSessionsForProject(projectId, providerGroup);
     if (ownedSessions.size === 0) return sessions;
 
     // Check which owned sessions are already in the list
@@ -299,6 +320,10 @@ export function createProjectsRoutes(deps: ProjectsDeps): Hono {
   // GET /api/projects/:projectId/sessions - List sessions
   routes.get("/:projectId/sessions", async (c) => {
     const projectId = c.req.param("projectId");
+    const providerGroup = parseProviderGroup(c.req.query("provider"));
+    if (providerGroup === null) {
+      return c.json({ error: "Invalid provider filter" }, 400);
+    }
 
     // Validate projectId format at API boundary
     if (!isUrlProjectId(projectId)) {
@@ -311,15 +336,20 @@ export function createProjectsRoutes(deps: ProjectsDeps): Hono {
       return c.json({ error: "Project not found" }, 404);
     }
 
-    let sessions = await listSessionsAcrossProviders(project, {
-      readerFactory: deps.readerFactory,
-      sessionIndexService: deps.sessionIndexService,
-      codexSessionsDir: deps.codexSessionsDir,
-      codexReaderFactory: deps.codexReaderFactory,
-    });
+    let sessions = await listSessionsAcrossProviders(
+      project,
+      {
+        readerFactory: deps.readerFactory,
+        sessionIndexService: deps.sessionIndexService,
+        codexSessionsDir: deps.codexSessionsDir,
+        codexReaderFactory: deps.codexReaderFactory,
+      },
+      undefined,
+      { providerGroup },
+    );
 
     // Add missing owned sessions (new sessions that don't have user/assistant messages yet)
-    sessions = addMissingOwnedSessions(sessions, projectId);
+    sessions = addMissingOwnedSessions(sessions, projectId, providerGroup);
 
     return c.json({ sessions: enrichSessions(sessions) });
   });

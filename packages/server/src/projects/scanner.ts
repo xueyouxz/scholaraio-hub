@@ -190,6 +190,25 @@ export class ProjectScanner {
     }
 
     // Helper to add a Claude project, merging cross-machine duplicates
+    const recordProviderActivity = (
+      project: Project,
+      provider: ProviderName,
+      sessionCount: number,
+      lastActivity: string | null,
+    ) => {
+      const providers = new Set(project.availableProviders ?? [project.provider]);
+      providers.add(provider);
+      project.availableProviders = Array.from(providers);
+      project.providerSessionCounts = {
+        ...project.providerSessionCounts,
+        [provider]: (project.providerSessionCounts?.[provider] ?? 0) + sessionCount,
+      };
+      project.providerLastActivity = {
+        ...project.providerLastActivity,
+        [provider]: lastActivity,
+      };
+    };
+
     const addOrMerge = (
       rawProjectPath: string,
       sessionDir: string,
@@ -215,6 +234,7 @@ export class ProjectScanner {
         if (lastActivity && (!existing.lastActivity || lastActivity > existing.lastActivity)) {
           existing.lastActivity = lastActivity;
         }
+        recordProviderActivity(existing, "claude", sessionCount, lastActivity);
 
         // Prefer the local path for session creation.
         // Remote executor sessions (rsynced) may store a foreign cwd
@@ -244,6 +264,9 @@ export class ProjectScanner {
           activeExternalCount: 0, // populated by route
           lastActivity,
           provider: "claude",
+          availableProviders: ["claude"],
+          providerSessionCounts: { claude: sessionCount },
+          providerLastActivity: { claude: lastActivity },
         });
       }
     };
@@ -285,14 +308,37 @@ export class ProjectScanner {
       const codexProjects = await this.codexScanner.listProjects();
       for (const codexProject of codexProjects) {
         const projectPath = canonicalizeProjectPath(codexProject.path);
-        // Skip if we've already seen this path from Claude
-        if (seenPaths.has(projectPath)) continue;
+        const normalized = normalizeProjectPathForDedup(projectPath);
+        const existingIdx = normalizedIndex.get(normalized);
+        if (existingIdx !== undefined) {
+          const existing = projects[existingIdx];
+          if (!existing) continue;
+          seenPaths.add(projectPath);
+          existing.sessionCount += codexProject.sessionCount;
+          if (
+            codexProject.lastActivity &&
+            (!existing.lastActivity || codexProject.lastActivity > existing.lastActivity)
+          ) {
+            existing.lastActivity = codexProject.lastActivity;
+          }
+          recordProviderActivity(
+            existing,
+            codexProject.provider,
+            codexProject.sessionCount,
+            codexProject.lastActivity,
+          );
+          continue;
+        }
         seenPaths.add(projectPath);
+        normalizedIndex.set(normalized, projects.length);
         projects.push({
           ...codexProject,
           id: encodeProjectId(projectPath),
           path: projectPath,
           name: basename(projectPath),
+          availableProviders: [codexProject.provider],
+          providerSessionCounts: { [codexProject.provider]: codexProject.sessionCount },
+          providerLastActivity: { [codexProject.provider]: codexProject.lastActivity },
         });
       }
     }
@@ -326,6 +372,9 @@ export class ProjectScanner {
           activeExternalCount: 0,
           lastActivity: metadata.addedAt,
           provider: "claude",
+          availableProviders: ["claude"],
+          providerSessionCounts: { claude: 0 },
+          providerLastActivity: { claude: metadata.addedAt },
         });
       }
     }
@@ -345,6 +394,9 @@ export class ProjectScanner {
         activeExternalCount: 0,
         lastActivity: null,
         provider: "claude",
+        availableProviders: ["claude"],
+        providerSessionCounts: { claude: 0 },
+        providerLastActivity: { claude: null },
       });
     }
 

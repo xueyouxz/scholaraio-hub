@@ -6,7 +6,7 @@ import { CodexSessionReader } from "./codex-reader.js";
 import { ClaudeSessionReader } from "./reader.js";
 import type { ISessionReader } from "./types.js";
 
-type ProviderGroup = "claude" | "codex";
+export type ProviderGroup = "claude" | "codex";
 
 export interface ProviderProjectCatalog {
   codexPaths: Set<string>;
@@ -17,6 +17,10 @@ export interface ProviderResolutionDeps {
   sessionIndexService?: ISessionIndexService;
   codexSessionsDir?: string;
   codexReaderFactory?: (projectPath: string) => CodexSessionReader;
+}
+
+export interface ListSessionsOptions {
+  providerGroup?: ProviderGroup;
 }
 
 export interface SessionSource {
@@ -46,6 +50,10 @@ function mayHaveCodexSessions(project: Project, catalog?: ProviderProjectCatalog
 }
 
 function createClaudeSource(project: Project, deps: ProviderResolutionDeps): SessionSource {
+  if (normalizeProviderGroup(project.provider) !== "claude") {
+    throw new Error(`Cannot create Claude source for ${project.provider} project`);
+  }
+
   return {
     provider: project.provider,
     reader: deps.readerFactory(project),
@@ -76,6 +84,7 @@ function buildCandidateGroups(
   project: Project,
   preferredProvider: ProviderName | string | undefined,
   catalog?: ProviderProjectCatalog,
+  preferredOnly = false,
 ): ProviderGroup[] {
   const groups: ProviderGroup[] = [];
   const pushGroup = (group: ProviderGroup | null) => {
@@ -87,6 +96,10 @@ function buildCandidateGroups(
   const projectGroup = normalizeProviderGroup(project.provider);
 
   pushGroup(preferredGroup);
+  if (preferredGroup && preferredOnly) {
+    return groups;
+  }
+
   pushGroup(projectGroup);
 
   if (mayHaveCodexSessions(project, catalog)) {
@@ -104,6 +117,7 @@ function getSourceForGroup(
 ): SessionSource | null {
   switch (group) {
     case "claude":
+      if (normalizeProviderGroup(project.provider) !== "claude") return null;
       return createClaudeSource(project, deps);
     case "codex":
       return createCodexSource(project, deps);
@@ -115,9 +129,10 @@ function getSessionSources(
   deps: ProviderResolutionDeps,
   preferredProvider?: ProviderName | string,
   catalog?: ProviderProjectCatalog,
+  preferredOnly = false,
 ): SessionSource[] {
   const sources: SessionSource[] = [];
-  for (const group of buildCandidateGroups(project, preferredProvider, catalog)) {
+  for (const group of buildCandidateGroups(project, preferredProvider, catalog, preferredOnly)) {
     const source = getSourceForGroup(project, deps, group, catalog);
     if (!source) continue;
     if (
@@ -166,11 +181,12 @@ export async function listSessionsAcrossProviders(
   project: Project,
   deps: ProviderResolutionDeps,
   catalog?: ProviderProjectCatalog,
+  options: ListSessionsOptions = {},
 ): Promise<SessionSummary[]> {
   const sessions: SessionSummary[] = [];
   const seenSessionIds = new Set<string>();
 
-  for (const source of getSessionSources(project, deps, undefined, catalog)) {
+  for (const source of getSessionSources(project, deps, options.providerGroup, catalog, true)) {
     const sourceSessions = await listSessionsForSource(project, source, deps);
     for (const session of sourceSessions) {
       if (seenSessionIds.has(session.id)) continue;

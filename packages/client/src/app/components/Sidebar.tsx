@@ -14,6 +14,7 @@ import {
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link, NavLink, useNavigate, useParams } from "react-router-dom";
 import { api, scholar } from "../../core/api";
+import type { ProviderGroupFilter } from "../../core/api";
 import type { ScholarWorkspaceSummary } from "../../core/api";
 import type { ProjectSummary } from "../../core/types";
 import type { GlobalSessionItem } from "../../features/session/api/client";
@@ -24,6 +25,36 @@ const COLLAPSED_WIDTH = 60;
 
 const CLAUDE_PROVIDERS = ["claude", "claude-ollama"];
 const CODEX_PROVIDERS = ["codex", "codex-oss"];
+
+function providerNamesForGroup(provider: ProviderGroupFilter | null): string[] | null {
+  if (provider === "claude") return CLAUDE_PROVIDERS;
+  if (provider === "codex") return CODEX_PROVIDERS;
+  return null;
+}
+
+function projectSupportsProvider(project: ProjectSummary, provider: ProviderGroupFilter | null) {
+  const providerNames = providerNamesForGroup(provider);
+  if (!providerNames) return true;
+  return providerNames.some(
+    (name) => project.provider === name || project.availableProviders?.includes(name),
+  );
+}
+
+function projectActivityForProvider(
+  project: ProjectSummary | undefined,
+  provider: ProviderGroupFilter | null,
+) {
+  if (!project) return null;
+  const providerNames = providerNamesForGroup(provider);
+  if (!providerNames) return project.lastActivity ?? null;
+  return (
+    providerNames
+      .map((name) => project.providerLastActivity?.[name])
+      .filter((value): value is string => typeof value === "string" && value.length > 0)
+      .sort()
+      .at(-1) ?? null
+  );
+}
 
 interface NavEntry {
   id: string;
@@ -116,6 +147,7 @@ function SidebarGroup({
   isDesktop,
   onClose,
   onAddSession,
+  provider,
   loadGroup,
   getGroup,
 }: {
@@ -126,21 +158,31 @@ function SidebarGroup({
   isDesktop: boolean;
   onClose: () => void;
   onAddSession: (projectId: string) => void;
-  loadGroup: (projectId: string) => void;
-  getGroup: (projectId: string) => {
+  provider: ProviderGroupFilter | null;
+  loadGroup: (projectId: string, provider?: ProviderGroupFilter | null) => void;
+  getGroup: (
+    projectId: string,
+    provider?: ProviderGroupFilter | null,
+  ) => {
     sessions: GlobalSessionItem[];
     loading: boolean;
     loaded: boolean;
   };
 }) {
   const [expanded, setExpanded] = useState(false);
-  const { sessions, loading, loaded } = getGroup(projectId);
+  const { sessions, loading, loaded } = getGroup(projectId, provider);
+
+  useEffect(() => {
+    if (expanded && !loaded && !loading) {
+      loadGroup(projectId, provider);
+    }
+  }, [expanded, loaded, loading, loadGroup, projectId, provider]);
 
   const toggle = () => {
     const next = !expanded;
     setExpanded(next);
     if (next && !loaded) {
-      loadGroup(projectId);
+      loadGroup(projectId, provider);
     }
   };
 
@@ -270,35 +312,35 @@ export function Sidebar({
     () => new Map(projects.map((p) => [p.name ?? p.path.split("/").pop() ?? "", p])),
     [projects],
   );
+  const projectsByPath = useMemo(() => new Map(projects.map((p) => [p.path, p])), [projects]);
 
   const workspaceNames = useMemo(() => new Set(workspaces.map((w) => w.name)), [workspaces]);
 
   const sortedWorkspaces = useMemo(
     () =>
-      [...workspaces].sort((a, b) => {
-        const ta = projectsByName.get(a.name)?.lastActivity ?? a.createdAt;
-        const tb = projectsByName.get(b.name)?.lastActivity ?? b.createdAt;
-        return new Date(tb).getTime() - new Date(ta).getTime();
-      }),
-    [workspaces, projectsByName],
+      [...workspaces]
+        .filter((workspace) => {
+          const project = projectsByPath.get(workspace.path) ?? projectsByName.get(workspace.name);
+          return !project || projectSupportsProvider(project, selectedProvider);
+        })
+        .sort((a, b) => {
+          const projectA = projectsByPath.get(a.path) ?? projectsByName.get(a.name);
+          const projectB = projectsByPath.get(b.path) ?? projectsByName.get(b.name);
+          const ta = projectActivityForProvider(projectA, selectedProvider) ?? a.createdAt;
+          const tb = projectActivityForProvider(projectB, selectedProvider) ?? b.createdAt;
+          return new Date(tb).getTime() - new Date(ta).getTime();
+        }),
+    [workspaces, projectsByName, projectsByPath, selectedProvider],
   );
 
   const sortedNonWorkspaceProjects = useMemo(() => {
-    const providerNames =
-      selectedProvider === "claude"
-        ? CLAUDE_PROVIDERS
-        : selectedProvider === "codex"
-          ? CODEX_PROVIDERS
-          : null;
     return projects
       .filter(
-        (p) =>
-          !workspaceNames.has(p.name ?? "") &&
-          (providerNames === null || providerNames.includes(p.provider)),
+        (p) => !workspaceNames.has(p.name ?? "") && projectSupportsProvider(p, selectedProvider),
       )
       .sort((a, b) => {
-        const ta = a.lastActivity ?? "";
-        const tb = b.lastActivity ?? "";
+        const ta = projectActivityForProvider(a, selectedProvider) ?? "";
+        const tb = projectActivityForProvider(b, selectedProvider) ?? "";
         return new Date(tb).getTime() - new Date(ta).getTime();
       });
   }, [projects, workspaceNames, selectedProvider]);
@@ -506,6 +548,7 @@ export function Sidebar({
                     isDesktop={isDesktop}
                     onClose={onClose}
                     onAddSession={handleAddSession}
+                    provider={selectedProvider}
                     loadGroup={loadGroup}
                     getGroup={getGroup}
                   />
@@ -528,6 +571,7 @@ export function Sidebar({
                     isDesktop={isDesktop}
                     onClose={onClose}
                     onAddSession={handleAddSession}
+                    provider={selectedProvider}
                     loadGroup={loadGroup}
                     getGroup={getGroup}
                   />

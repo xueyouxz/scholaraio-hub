@@ -61,6 +61,9 @@ export interface Project {
   activeExternalCount: number; // sessions controlled by external processes
   lastActivity: string | null; // ISO timestamp of most recent session update
   provider: ProviderName; // which provider's sessions are in this project
+  availableProviders?: ProviderName[]; // providers that have sessions for this project path
+  providerSessionCounts?: Partial<Record<ProviderName, number>>;
+  providerLastActivity?: Partial<Record<ProviderName, string | null>>;
 }
 
 // Session ownership - who controls the session

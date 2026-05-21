@@ -121,4 +121,15 @@ describe("core api session mutations", () => {
       executor: "remote-main",
     });
   });
+
+  it("passes provider filter when listing project sessions", async () => {
+    mockJsonResponse({ sessions: [] });
+
+    await api.getProjectSessions("project-1", { provider: "codex" });
+
+    expect(fetch).toHaveBeenCalledWith(
+      "/api/projects/project-1/sessions?provider=codex",
+      expect.objectContaining({ signal: undefined }),
+    );
+  });
 });

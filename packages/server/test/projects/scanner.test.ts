@@ -93,6 +93,38 @@ describe("ProjectScanner cache", () => {
     expect(refreshed).toHaveLength(2);
   });
 
+  it("retains provider metadata when Claude and Codex sessions share a project path", async () => {
+    const projectsDir = join(tmpdir(), `project-scanner-${randomUUID()}`);
+    const codexDir = join(tmpdir(), `codex-scanner-${randomUUID()}`);
+    tempDirs.push(projectsDir, codexDir);
+
+    const projectPath = "/home/user/mixed-project";
+    await createClaudeProject(projectsDir, "localhost", projectPath, "claude-sess");
+    const codexDateDir = join(codexDir, "2026", "05", "21");
+    await mkdir(codexDateDir, { recursive: true });
+    await writeFile(
+      join(codexDateDir, "rollout-codex-sess.jsonl"),
+      `{"type":"session_meta","payload":{"id":"codex-sess","cwd":"${projectPath}","timestamp":"2026-05-21T00:00:00.000Z","model_provider":"openai"}}\n`,
+    );
+
+    const scanner = new ProjectScanner({
+      projectsDir,
+      codexSessionsDir: codexDir,
+      enableCodex: true,
+      cacheTtlMs: 0,
+    });
+
+    const projects = await scanner.listProjects();
+    expect(projects).toHaveLength(1);
+    expect(projects[0].path).toBe(projectPath);
+    expect(projects[0].provider).toBe("claude");
+    expect(projects[0].availableProviders).toEqual(expect.arrayContaining(["claude", "codex"]));
+    expect(projects[0].providerSessionCounts).toMatchObject({
+      claude: 1,
+      codex: 1,
+    });
+  });
+
   it("coalesces concurrent scans into one in-flight refresh", async () => {
     const projectsDir = join(tmpdir(), `project-scanner-${randomUUID()}`);
     tempDirs.push(projectsDir);

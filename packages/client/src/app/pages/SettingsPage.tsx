@@ -412,11 +412,11 @@ function EditableField({
     if (isApiKey && !input) {
       setEditing(false);
       return;
-    } // empty key = no-op
+    }
     if (!isApiKey && input === value) {
       setEditing(false);
       return;
-    } // no change
+    }
     setSaveStatus("saving");
     setEditing(false);
     try {
@@ -438,20 +438,19 @@ function EditableField({
   const maskedSuffix = isApiKey && value ? `…${value.slice(-4)}` : undefined;
   const displayValue = isApiKey ? (value ? `已配置（${maskedSuffix}）` : "—") : value || "—";
   const isEmpty = !value;
+  const isEditable = !!onSave && !disabled;
 
   return (
-    <div className="flex items-start justify-between px-4 py-2.5 gap-6 group">
+    <div className="flex items-start justify-between px-4 py-2.5 gap-4 group">
       <div className="min-w-0 flex-1">
         <p className="text-[13px] font-medium text-on-surface">{label}</p>
         <p className="text-[11px] text-on-surface-variant/55 mt-0.5">{description}</p>
       </div>
-      <div className="shrink-0 flex items-center gap-1.5 mt-0.5 min-w-0">
-        {saveStatus === "ok" && (
-          <span className="text-[10px] text-primary font-mono shrink-0">✓</span>
-        )}
+      <div className="shrink-0 flex items-center gap-2 mt-0.5 min-w-0">
+        {saveStatus === "ok" && <CheckCircle2 className="w-3 h-3 text-primary shrink-0" />}
         {saveStatus === "err" && (
-          <span className="text-[10px] text-error font-mono shrink-0 cursor-help" title={errMsg}>
-            ✗
+          <span title={errMsg}>
+            <XCircle className="w-3 h-3 text-error shrink-0 cursor-help" />
           </span>
         )}
         {editing ? (
@@ -466,21 +465,34 @@ function EditableField({
               if (e.key === "Escape") cancel();
             }}
             placeholder={isApiKey && maskedSuffix ? `已配置（${maskedSuffix}）` : ""}
-            className="text-[11px] font-mono bg-surface-container border border-primary/30 rounded px-2 py-0.5 w-44 focus:outline-none focus:border-primary/60 text-on-surface"
+            className="text-[12px] font-mono bg-surface-container border border-outline-variant/20 rounded-lg px-2.5 py-1.5 w-52 focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary/30 text-on-surface transition-shadow"
           />
         ) : (
           <button
             type="button"
             onClick={startEdit}
-            disabled={!onSave || disabled}
-            className={`text-[11px] font-mono truncate max-w-[180px] text-right transition-colors ${
-              isEmpty && !isApiKey ? "text-on-surface-variant/30 italic" : "text-on-surface/75"
-            } ${onSave && !disabled ? "hover:text-primary cursor-text" : "cursor-default"}`}
+            disabled={!isEditable}
+            className={`group/val flex items-center gap-1.5 rounded-lg px-2 py-1 -mr-2 transition-colors ${
+              isEditable ? "hover:bg-surface-container cursor-text" : "cursor-default"
+            }`}
           >
-            {saveStatus === "saving" ? (
-              <Loader2 className="w-3 h-3 animate-spin text-on-surface-variant/40 inline" />
-            ) : (
-              displayValue
+            <span
+              className={`text-[11px] font-mono truncate max-w-[180px] text-right transition-colors ${
+                isEmpty && !isApiKey
+                  ? "text-on-surface-variant/30 italic"
+                  : isEditable
+                    ? "text-on-surface/70 group-hover/val:text-primary"
+                    : "text-on-surface/70"
+              }`}
+            >
+              {saveStatus === "saving" ? (
+                <Loader2 className="w-3 h-3 animate-spin text-on-surface-variant/40 inline" />
+              ) : (
+                displayValue
+              )}
+            </span>
+            {isEditable && (
+              <ChevronRight className="w-3 h-3 text-primary/0 group-hover/val:text-primary/50 transition-colors shrink-0" />
             )}
           </button>
         )}
@@ -526,30 +538,32 @@ function BooleanToggleField({
   }
 
   return (
-    <div className="flex items-start justify-between px-4 py-2.5 gap-6">
+    <div className="flex items-start justify-between px-4 py-2.5 gap-4 group hover:bg-surface-container/40 transition-colors">
       <div className="min-w-0 flex-1">
         <p className="text-[13px] font-medium text-on-surface">{label}</p>
         <p className="text-[11px] text-on-surface-variant/55 mt-0.5">{description}</p>
       </div>
-      <div className="flex items-center gap-1.5 mt-0.5 shrink-0">
-        {saveStatus === "ok" && <span className="text-[10px] text-primary font-mono">✓</span>}
-        <button
-          type="button"
-          disabled={saving || !onToggle}
-          onClick={toggle}
-          className={`relative inline-flex h-4 w-7 items-center rounded-full transition-colors ${
-            value ? "bg-primary" : "bg-on-surface-variant/25"
-          } ${onToggle ? "cursor-pointer" : "cursor-default"}`}
-        >
-          <span
-            className={`inline-block h-3 w-3 transform rounded-full bg-white shadow transition-transform ${
-              value ? "translate-x-3.5" : "translate-x-0.5"
-            }`}
-          />
-        </button>
-        <span className="text-[10px] font-mono text-on-surface-variant/50">
-          {value ? "开" : "关"}
-        </span>
+      <div className="flex items-center gap-2 mt-0.5 shrink-0">
+        {saveStatus === "ok" && <CheckCircle2 className="w-3 h-3 text-primary" />}
+        <div className="flex items-center gap-1.5">
+          <button
+            type="button"
+            disabled={saving || !onToggle}
+            onClick={toggle}
+            className={`relative inline-flex h-4 w-7 items-center rounded-full transition-colors ${
+              value ? "bg-primary" : "bg-on-surface-variant/25"
+            } ${onToggle ? "cursor-pointer" : "cursor-default"}`}
+          >
+            <span
+              className={`inline-block h-3 w-3 transform rounded-full bg-white shadow transition-transform ${
+                value ? "translate-x-3.5" : "translate-x-0.5"
+              }`}
+            />
+          </button>
+          <span className="text-[10px] font-mono text-on-surface-variant/50 w-4 select-none">
+            {value ? "开" : "关"}
+          </span>
+        </div>
       </div>
     </div>
   );
@@ -596,9 +610,31 @@ function ProviderBadgeButton({
 
 function SubSectionLabel({ label }: { label: string }) {
   return (
-    <p className="text-[10px] font-mono uppercase tracking-[0.18em] text-on-surface-variant/40 px-4 pt-3 pb-1">
+    <p className="text-[10px] font-mono uppercase tracking-[0.18em] text-on-surface-variant/55 px-4 pt-3 pb-1">
       {label}
     </p>
+  );
+}
+
+function FieldGroup({
+  label,
+  statusDot,
+  children,
+}: {
+  label: string;
+  statusDot?: React.ReactNode;
+  children: React.ReactNode;
+}) {
+  return (
+    <div className="mx-4 mb-3 rounded-xl border border-outline-variant/10 bg-surface-container-lowest overflow-hidden">
+      <div className="flex items-center justify-between px-3 py-2 border-b border-outline-variant/10 bg-surface-container/30">
+        <p className="text-[10px] font-mono uppercase tracking-[0.18em] text-on-surface-variant/55">
+          {label}
+        </p>
+        {statusDot}
+      </div>
+      <div className="divide-y divide-outline-variant/8">{children}</div>
+    </div>
   );
 }
 
@@ -820,14 +856,14 @@ function PathField({
   }
 
   return (
-    <div className="flex items-start justify-between px-4 py-2.5 gap-6">
+    <div className="flex items-start justify-between px-4 py-2.5 gap-4 group">
       <div className="min-w-0 flex-1">
         <p className="text-[13px] font-medium text-on-surface">{label}</p>
         <p className="text-[11px] text-on-surface-variant/55 mt-0.5">{description}</p>
       </div>
-      <div className="shrink-0 flex items-center gap-1.5 mt-0.5">
-        {saveStatus === "ok" && <span className="text-[10px] text-primary font-mono">✓</span>}
-        {saveStatus === "err" && <span className="text-[10px] text-error font-mono">✗</span>}
+      <div className="shrink-0 flex items-center gap-2 mt-0.5">
+        {saveStatus === "ok" && <CheckCircle2 className="w-3 h-3 text-primary shrink-0" />}
+        {saveStatus === "err" && <XCircle className="w-3 h-3 text-error shrink-0" />}
         <span className="text-[11px] font-mono text-on-surface/70 truncate max-w-[140px] text-right">
           {value || "—"}
         </span>
@@ -835,7 +871,7 @@ function PathField({
           <button
             type="button"
             onClick={() => setBrowserOpen(true)}
-            className="text-[10px] text-on-surface-variant/45 hover:text-primary transition-colors font-mono border border-outline-variant/20 rounded px-1.5 py-0.5 hover:border-primary/30"
+            className="flex items-center gap-1 text-[11px] font-mono text-on-surface-variant/55 hover:text-primary bg-surface-container hover:bg-surface-container-high border border-outline-variant/15 rounded-lg px-2 py-1 transition-colors shrink-0"
           >
             浏览
           </button>
@@ -1035,87 +1071,90 @@ function IngestSection({
       summary={cfg.ingest.pdf_preferred_parser}
       defaultOpen
     >
-      <EditableField
-        label="PDF Parser"
-        description="首选 PDF 解析器（mineru / docling / pymupdf）"
-        value={cfg.ingest.pdf_preferred_parser}
-        onSave={(v) => patch({ ingest: { pdf_preferred_parser: v } })}
-      />
-
-      <div className="flex items-center justify-between px-4 pt-3 pb-0.5">
-        <p className="text-[10px] font-mono uppercase tracking-[0.18em] text-on-surface-variant/40">
-          MinerU Local（优先）
-        </p>
-        <StatusDot status={hcLocal.status} onClick={hcLocal.toggleDetail} />
+      <div className="px-4 pt-1 pb-2">
+        <EditableField
+          label="PDF Parser"
+          description="首选 PDF 解析器（mineru / docling / pymupdf）"
+          value={cfg.ingest.pdf_preferred_parser}
+          onSave={(v) => patch({ ingest: { pdf_preferred_parser: v } })}
+        />
       </div>
-      {hcLocal.detailOpen && (
-        <HealthDetailPanel levels={hcLocal.levels} onRecheck={hcLocal.recheck} />
-      )}
-      <EditableField
-        label="Endpoint"
-        description="本地 MinerU 服务地址"
-        value={cfg.ingest.mineru_endpoint}
-        onSave={async (v) => {
-          await patch({ ingest: { mineru_endpoint: v } });
-          hcLocal.triggerDebounced();
-        }}
-      />
 
-      <div className="flex items-center justify-between px-4 pt-3 pb-0.5">
-        <p className="text-[10px] font-mono uppercase tracking-[0.18em] text-on-surface-variant/40">
-          MinerU Cloud（备用）
-        </p>
-        <StatusDot status={hcCloud.status} onClick={hcCloud.toggleDetail} />
-      </div>
-      {hcCloud.detailOpen && (
-        <HealthDetailPanel levels={hcCloud.levels} onRecheck={hcCloud.recheck} />
-      )}
-      <EditableField
-        label="Cloud URL"
-        description="MinerU 云端 API 基础地址"
-        value={cfg.ingest.mineru_cloud_url}
-        onSave={async (v) => {
-          await patch({ ingest: { mineru_cloud_url: v } });
-          hcCloud.triggerDebounced();
-        }}
-      />
-      <EditableField
-        label="API Key"
-        description="MinerU 云端访问凭证（提交空值不修改）"
-        value={cfg.ingest.mineru_api_key}
-        isApiKey
-        onSave={async (v) => {
-          await patch({ ingest: { mineru_api_key: v } });
-          hcCloud.triggerDebounced();
-        }}
-      />
-
-      <SubSectionLabel label="Semantic Scholar" />
-      <EditableField
-        label="S2 API Key"
-        description="有 key 可大幅提升限速（提交空值不修改）"
-        value={cfg.ingest.s2_api_key}
-        isApiKey
-        onSave={(v) => patch({ ingest: { s2_api_key: v } })}
-      />
-
-      <button
-        type="button"
-        onClick={() => setAdvancedOpen((v) => !v)}
-        className="w-full flex items-center gap-1.5 px-4 py-2 hover:bg-surface-container/50 transition-colors text-left mt-1"
+      <FieldGroup
+        label="MinerU Local（优先）"
+        statusDot={<StatusDot status={hcLocal.status} onClick={hcLocal.toggleDetail} />}
       >
-        {advancedOpen ? (
-          <ChevronDown className="w-3 h-3 text-on-surface-variant/35 shrink-0" />
-        ) : (
-          <ChevronRight className="w-3 h-3 text-on-surface-variant/35 shrink-0" />
+        {hcLocal.detailOpen && (
+          <HealthDetailPanel levels={hcLocal.levels} onRecheck={hcLocal.recheck} />
         )}
-        <span className="text-[10px] font-mono uppercase tracking-[0.18em] text-on-surface-variant/40">
-          高级选项
-        </span>
-      </button>
+        <EditableField
+          label="Endpoint"
+          description="本地 MinerU 服务地址"
+          value={cfg.ingest.mineru_endpoint}
+          onSave={async (v) => {
+            await patch({ ingest: { mineru_endpoint: v } });
+            hcLocal.triggerDebounced();
+          }}
+        />
+      </FieldGroup>
+
+      <FieldGroup
+        label="MinerU Cloud（备用）"
+        statusDot={<StatusDot status={hcCloud.status} onClick={hcCloud.toggleDetail} />}
+      >
+        {hcCloud.detailOpen && (
+          <HealthDetailPanel levels={hcCloud.levels} onRecheck={hcCloud.recheck} />
+        )}
+        <EditableField
+          label="Cloud URL"
+          description="MinerU 云端 API 基础地址"
+          value={cfg.ingest.mineru_cloud_url}
+          onSave={async (v) => {
+            await patch({ ingest: { mineru_cloud_url: v } });
+            hcCloud.triggerDebounced();
+          }}
+        />
+        <EditableField
+          label="API Key"
+          description="MinerU 云端访问凭证（提交空值不修改）"
+          value={cfg.ingest.mineru_api_key}
+          isApiKey
+          onSave={async (v) => {
+            await patch({ ingest: { mineru_api_key: v } });
+            hcCloud.triggerDebounced();
+          }}
+        />
+      </FieldGroup>
+
+      <FieldGroup label="Semantic Scholar">
+        <EditableField
+          label="S2 API Key"
+          description="有 key 可大幅提升限速（提交空值不修改）"
+          value={cfg.ingest.s2_api_key}
+          isApiKey
+          onSave={(v) => patch({ ingest: { s2_api_key: v } })}
+        />
+      </FieldGroup>
+
+      <div className="px-4 pb-2 mt-1">
+        <button
+          type="button"
+          onClick={() => setAdvancedOpen((v) => !v)}
+          className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg hover:bg-surface-container transition-colors text-left"
+        >
+          {advancedOpen ? (
+            <ChevronDown className="w-3 h-3 text-on-surface-variant/50 shrink-0" />
+          ) : (
+            <ChevronRight className="w-3 h-3 text-on-surface-variant/50 shrink-0" />
+          )}
+          <span className="text-[10px] font-mono uppercase tracking-[0.18em] text-on-surface-variant/55">
+            高级选项
+          </span>
+        </button>
+      </div>
 
       {advancedOpen && (
-        <>
+        <FieldGroup label="高级选项">
           <EditableField
             label="OCR Language"
             description="MinerU OCR 识别语言（ch / en / latin 等）"
@@ -1150,7 +1189,7 @@ function IngestSection({
               patch({ ingest: { mineru_enable_table: !cfg.ingest.mineru_enable_table } })
             }
           />
-        </>
+        </FieldGroup>
       )}
     </CollapsibleSection>
   );

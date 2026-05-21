@@ -1,23 +1,32 @@
-import { useQuery } from "@tanstack/react-query";
-import { Lasso, X, ZoomIn } from "lucide-react";
-import { useCallback, useMemo, useState } from "react";
-import { scholar } from "../../../core/api";
-import { queryKeys } from "../../../core/queryKeys";
+import { Lasso, RotateCcw, ZoomIn } from "lucide-react";
+import { useCallback, useMemo, useRef, useState } from "react";
+import type { ScholarProjection, ScholarTopicsOverview } from "../../../core/api";
 import { useJobMutation } from "../hooks/useJobMutation";
-import type { PaperReference } from "../types";
-import { buildTopicColors } from "../utils/topicColors";
+import type { PaperReference, TopicColorMap } from "../types";
 import { PaperDetailPanel } from "./PaperDetailPanel";
-import { TopicBubbleBar } from "./TopicBubbleBar";
-import { ScatterPlot } from "./charts/ScatterPlot";
+import { TopicBarChart } from "./TopicBubbleBar";
+import { ScatterPlot, type ScatterPlotRef } from "./charts/ScatterPlot";
 import type { ScatterMode } from "./charts/ScatterPlotController";
 
 interface Props {
   papers: PaperReference[];
   yearRange: [number, number] | null;
+  topicsOverview?: ScholarTopicsOverview;
+  projection?: ScholarProjection;
+  topicColors: TopicColorMap;
+  activeTopicIds: number[];
+  onTopicSelect: (ids: number[]) => void;
 }
 
-export function LibraryAnalyticsPanel({ papers, yearRange }: Props) {
-  const [activeTopicId, setActiveTopicId] = useState<number | null>(null);
+export function LibraryAnalyticsPanel({
+  papers,
+  yearRange,
+  topicsOverview,
+  projection,
+  topicColors,
+  activeTopicIds,
+  onTopicSelect,
+}: Props) {
   const [selectedPaperId, setSelectedPaperId] = useState<string | null>(null);
   const [scatterMode, setScatterMode] = useState<ScatterMode>("none");
   const [lassoFills, setLassoFills] = useState<Map<
@@ -25,31 +34,19 @@ export function LibraryAnalyticsPanel({ papers, yearRange }: Props) {
     { ratio: number; count: number }
   > | null>(null);
 
-  const topicsQuery = useQuery({
-    queryKey: queryKeys.scholar.topics(),
-    queryFn: ({ signal }) => scholar.getTopics({ signal }),
-    staleTime: 30_000,
-  });
-
-  const projectionQuery = useQuery({
-    queryKey: queryKeys.scholar.projection(),
-    queryFn: ({ signal }) => scholar.getProjection({ signal }),
-    staleTime: 30_000,
-  });
-
   const topicsJob = useJobMutation("topics");
   const projectJob = useJobMutation("project");
 
-  const topics = topicsQuery.data?.topics ?? [];
-  const topicsBuilt = topicsQuery.data?.built ?? false;
-  const projectionBuilt = projectionQuery.data?.built ?? false;
-  const projectionPoints = projectionQuery.data?.points ?? [];
+  const scatterPlotRef = useRef<ScatterPlotRef>(null);
 
-  const topicColors = useMemo(() => buildTopicColors(topics.map((t) => t.id)), [topics]);
+  const topics = topicsOverview?.topics ?? [];
+  const topicsBuilt = topicsOverview?.built ?? false;
+  const projectionBuilt = projection?.built ?? false;
+  const projectionPoints = projection?.points ?? [];
 
   const activeIds = useMemo<Set<string> | null>(() => {
     const hasYear = yearRange !== null;
-    const hasTopic = activeTopicId !== null;
+    const hasTopic = activeTopicIds.length > 0;
 
     if (!hasYear && !hasTopic) return null;
 
@@ -63,13 +60,13 @@ export function LibraryAnalyticsPanel({ papers, yearRange }: Props) {
 
     if (hasTopic) {
       const byTopic = new Set(
-        projectionPoints.filter((pt) => pt.topicId === activeTopicId).map((pt) => pt.id),
+        projectionPoints.filter((pt) => activeTopicIds.includes(pt.topicId)).map((pt) => pt.id),
       );
       ids = ids ? new Set([...ids].filter((id) => byTopic.has(id))) : byTopic;
     }
 
     return ids ?? new Set();
-  }, [yearRange, activeTopicId, papers, projectionPoints]);
+  }, [yearRange, activeTopicIds, papers, projectionPoints]);
 
   const selectedPaper = useMemo(
     () => (selectedPaperId ? (papers.find((p) => p.id === selectedPaperId) ?? null) : null),
@@ -99,27 +96,29 @@ export function LibraryAnalyticsPanel({ papers, yearRange }: Props) {
 
   const toggleMode = (m: ScatterMode) => setScatterMode((prev) => (prev === m ? "none" : m));
 
-  const clearLasso = () => {
+  const resetState = () => {
     setLassoFills(null);
     setScatterMode("none");
+    scatterPlotRef.current?.resetZoom();
   };
 
   return (
-    <div className="flex flex-col flex-1 min-h-0 gap-3">
-      <TopicBubbleBar
+    <div className="flex flex-col flex-1 min-h-0 gap-2">
+      <TopicBarChart
         built={topicsBuilt}
         topics={topics}
         topicColors={topicColors}
-        activeTopicId={activeTopicId}
+        activeTopicIds={activeTopicIds}
         lassoFills={lassoFills}
-        onTopicClick={setActiveTopicId}
+        onTopicSelect={onTopicSelect}
         onBuildRequest={topicsJob.submit}
       />
 
-      <div className="relative flex-1 min-h-0 w-full max-w-[720px] mx-auto bg-surface-container-low border border-outline-variant/10 rounded-xl overflow-hidden">
+      <div className="relative flex-1 min-h-0 w-full bg-surface-container-low border border-outline-variant/10 rounded-lg overflow-hidden">
         {projectionBuilt ? (
           <>
             <ScatterPlot
+              ref={scatterPlotRef}
               points={projectionPoints}
               activeIds={activeIds}
               selectedId={selectedPaperId}
@@ -129,7 +128,7 @@ export function LibraryAnalyticsPanel({ papers, yearRange }: Props) {
               onLassoSelect={handleLassoSelect}
             />
             {/* Toolbar overlay — top-right inside the canvas */}
-            <div className="absolute top-2 right-2 flex items-center gap-0.5 bg-surface-container-low/80 backdrop-blur-sm rounded-lg p-0.5 border border-outline-variant/10">
+            <div className="absolute top-2 right-2 flex items-center gap-0.5 p-0.5">
               <button
                 type="button"
                 onClick={() => toggleMode("zoom")}
@@ -144,15 +143,14 @@ export function LibraryAnalyticsPanel({ papers, yearRange }: Props) {
               >
                 <Lasso className="w-3.5 h-3.5" />
               </button>
-              {lassoFills && (
-                <button
-                  type="button"
-                  onClick={clearLasso}
-                  className="p-1.5 rounded-md text-on-surface-variant hover:bg-surface-container-high transition-colors"
-                >
-                  <X className="w-3.5 h-3.5" />
-                </button>
-              )}
+              <button
+                type="button"
+                onClick={resetState}
+                className="p-1.5 rounded-md text-on-surface-variant hover:bg-surface-container-high transition-colors"
+                title="重置"
+              >
+                <RotateCcw className="w-3.5 h-3.5" />
+              </button>
             </div>
           </>
         ) : (

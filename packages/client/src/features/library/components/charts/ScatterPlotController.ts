@@ -96,6 +96,10 @@ export class ScatterPlotController {
       this.resize(Math.floor(rect.width), Math.floor(rect.height));
   }
 
+  resetZoom(): void {
+    select(this.canvas).transition().duration(250).call(this.zoomBehavior.transform, zoomIdentity);
+  }
+
   setMode(mode: ScatterMode): void {
     this.mode = mode;
     this.lassoPath = [];
@@ -290,8 +294,10 @@ export class ScatterPlotController {
       ctx.fillStyle = frozen ? "rgba(0,82,53,0.05)" : "rgba(0,82,53,0.08)";
       const [lx0, ly0] = path[0] as [number, number];
       ctx.beginPath();
-      ctx.moveTo(lx0 * DPR, ly0 * DPR);
-      for (const [lx, ly] of path.slice(1) as [number, number][]) ctx.lineTo(lx * DPR, ly * DPR);
+      ctx.moveTo(t.applyX(lx0) * DPR, t.applyY(ly0) * DPR);
+      for (const [lx, ly] of path.slice(1) as [number, number][]) {
+        ctx.lineTo(t.applyX(lx) * DPR, t.applyY(ly) * DPR);
+      }
       ctx.closePath();
       ctx.fill();
       ctx.stroke();
@@ -324,12 +330,11 @@ export class ScatterPlotController {
   }
 
   private getPointsInLasso(): Set<string> {
-    const t = this.transform;
     const selected = new Set<string>();
     for (const pt of this.data.points) {
-      const cx = t.applyX(this.xScale(pt.x));
-      const cy = t.applyY(this.yScale(pt.y));
-      if (this.pointInPolygon(cx, cy, this.lassoPath)) selected.add(pt.id);
+      const ux = this.xScale(pt.x);
+      const uy = this.yScale(pt.y);
+      if (this.pointInPolygon(ux, uy, this.lassoPath)) selected.add(pt.id);
     }
     return selected;
   }
@@ -341,7 +346,9 @@ export class ScatterPlotController {
     // Clear previous frozen selection when starting a new lasso
     this.frozenLassoPath = [];
     this.lassoSelectedIds = null;
-    this.lassoPath = [[e.clientX - rect.left, e.clientY - rect.top]];
+    const mx = e.clientX - rect.left;
+    const my = e.clientY - rect.top;
+    this.lassoPath = [[this.transform.invertX(mx), this.transform.invertY(my)]];
   };
 
   private onMouseUp = (): void => {
@@ -364,7 +371,7 @@ export class ScatterPlotController {
 
     if (this.mode === "lasso") {
       if (this.isLassoing) {
-        this.lassoPath.push([mx, my]);
+        this.lassoPath.push([this.transform.invertX(mx), this.transform.invertY(my)]);
         this.draw();
       }
       return;

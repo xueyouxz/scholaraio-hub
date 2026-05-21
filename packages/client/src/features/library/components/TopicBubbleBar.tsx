@@ -1,7 +1,11 @@
+import { scaleSqrt } from "d3";
 import { Layers } from "lucide-react";
-import { useState } from "react";
+import { useMemo } from "react";
 import type { ScholarTopic } from "../../../core/api";
+import { useChartSize } from "../hooks/useChartSize";
 import type { TopicColorMap } from "../types";
+import { buildGlobalTopicCloud, buildTopicCloud } from "../utils/topicCloud";
+import { TopicWordCloud } from "./TopicWordCloud";
 
 interface LassoData {
   ratio: number;
@@ -12,31 +16,53 @@ interface Props {
   built: boolean;
   topics: ScholarTopic[];
   topicColors: TopicColorMap;
-  activeTopicId: number | null;
+  activeTopicIds: number[];
   lassoFills?: Map<number, LassoData> | null;
-  onTopicClick: (id: number | null) => void;
+  onTopicSelect: (ids: number[]) => void;
   onBuildRequest?: () => void;
 }
 
-const MIN_R = 6;
-const MAX_R = 20;
+const CONTAINER_H = 120;
+const MARGIN = { top: 12, right: 6, bottom: 6, left: 6 };
+const BAR_GAP = 2;
 
-export function TopicBubbleBar({
+export function TopicBarChart({
   built,
   topics,
   topicColors,
-  activeTopicId,
+  activeTopicIds,
   lassoFills,
-  onTopicClick,
+  onTopicSelect,
   onBuildRequest,
 }: Props) {
-  const [tooltip, setTooltip] = useState<{ id: number; x: number; y: number } | null>(null);
+  const { ref: barRef, width: svgW, height: svgH } = useChartSize(200, CONTAINER_H);
+
+  const visibleTopics = useMemo(() => topics.filter((t) => t.id !== -1), [topics]);
+  const maxCount = Math.max(...visibleTopics.map((t) => t.paperCount), 1);
+
+  // For cloud words, if 1 topic is selected, show it. If 2 are selected, maybe combine them or show global if none?
+  const cloudWords = useMemo(
+    () =>
+      activeTopicIds.length > 0
+        ? activeTopicIds.flatMap((id) => {
+            const t = visibleTopics.find((v) => v.id === id);
+            return t ? buildTopicCloud(t, topicColors) : [];
+          })
+        : buildGlobalTopicCloud(visibleTopics, topicColors),
+    [activeTopicIds, visibleTopics, topicColors],
+  );
+
+  const innerW = Math.max(svgW - MARGIN.left - MARGIN.right, 0);
+  const innerH = Math.max(svgH - MARGIN.top - MARGIN.bottom, 0);
+  const barCount = visibleTopics.length;
+  const barWidth = barCount > 0 ? Math.max((innerW - BAR_GAP * (barCount - 1)) / barCount, 3) : 3;
+  const yScale = scaleSqrt().domain([0, maxCount]).range([0, innerH]);
 
   if (!built) {
     return (
       <div
-        className="shrink-0 bg-surface-container-low border border-outline-variant/10 rounded-xl flex items-center justify-center gap-3 px-6"
-        style={{ height: 70 }}
+        className="shrink-0 bg-surface-container-low border border-outline-variant/10 rounded-lg flex items-center justify-center gap-3 px-5"
+        style={{ height: CONTAINER_H }}
       >
         <Layers className="w-4 h-4 text-on-surface-variant" />
         <span className="text-xs text-on-surface-variant font-mono">主题模型尚未构建</span>
@@ -53,155 +79,111 @@ export function TopicBubbleBar({
     );
   }
 
-  const maxCount = Math.max(...topics.map((t) => t.paperCount), 1);
-
-  const getRadius = (count: number) => MIN_R + (count / maxCount) * (MAX_R - MIN_R);
-
-  const hoveredTopic = tooltip ? topics.find((t) => t.id === tooltip.id) : null;
-
   return (
-    <>
-      <div
-        className="shrink-0 bg-surface-container-low border border-outline-variant/10 rounded-xl overflow-x-auto no-scrollbar"
-        style={{ height: 70 }}
-      >
-        <div
-          className="flex items-center justify-center gap-3.5 px-4 min-w-full"
-          style={{ height: 70 }}
-        >
-          {activeTopicId !== null && (
-            <div className="flex flex-col items-center shrink-0" style={{ height: 56 }}>
-              <div style={{ height: MAX_R * 2, display: "flex", alignItems: "center" }}>
-                <button
-                  type="button"
-                  onClick={() => onTopicClick(null)}
-                  className="text-[10px] font-mono text-on-surface-variant hover:text-primary transition-colors"
-                >
-                  清除
-                </button>
-              </div>
-              <div style={{ height: 16 }} />
-            </div>
-          )}
-          {topics.map((topic) => {
-            const r = getRadius(topic.paperCount);
-            const color = topicColors.get(topic.id) ?? "#22c55e";
-            const isActive = activeTopicId === topic.id;
-            const isHovered = tooltip?.id === topic.id;
-            const isDimmed = activeTopicId !== null && !isActive;
+    <div
+      className="shrink-0 bg-surface-container-low border border-outline-variant/10 rounded-lg flex overflow-hidden"
+      style={{ height: CONTAINER_H }}
+    >
+      <div ref={barRef} className="w-[62%] min-w-[240px] max-w-[420px] shrink-0">
+        <svg width={svgW} height={svgH} aria-labelledby="topic-bar-chart-title">
+          <title id="topic-bar-chart-title">主题分布</title>
+          <g transform={`translate(${MARGIN.left},${MARGIN.top})`}>
+            {visibleTopics.map((topic, i) => {
+              const color = topicColors.get(topic.id) ?? "#22c55e";
+              const hasSelection = activeTopicIds.length > 0;
+              const isActive = activeTopicIds.includes(topic.id);
+              const isDimmed = hasSelection && !isActive;
+              const hasLasso = lassoFills != null;
+              const lassoData = hasLasso ? (lassoFills.get(topic.id) ?? null) : null;
 
-            const lassoData = lassoFills ? (lassoFills.get(topic.id) ?? null) : null;
-            const hasLasso = lassoFills !== null && lassoFills !== undefined;
-            const isGrayed = hasLasso && lassoData === null;
+              const bh = Math.max(yScale(topic.paperCount), 2);
+              const x = i * (barWidth + BAR_GAP);
+              const y = innerH - bh;
 
-            return (
-              // Fixed-height wrapper: MAX_R*2 circle zone + 16px label zone = 56px
-              // items-center on the row aligns all wrappers by their mid-point → circle centers align
-              <div
-                key={topic.id}
-                className="flex flex-col items-center shrink-0"
-                style={{ height: MAX_R * 2 + 16 }}
-              >
-                {/* Circle zone — fixed height MAX_R*2, circle centered inside */}
-                <div
-                  style={{
-                    height: MAX_R * 2,
-                    display: "flex",
-                    alignItems: "center",
-                    justifyContent: "center",
-                  }}
-                >
-                  <button
-                    type="button"
-                    onClick={() => onTopicClick(isActive ? null : topic.id)}
-                    onMouseEnter={(e) => {
-                      const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
-                      setTooltip({
-                        id: topic.id,
-                        x: rect.left + rect.width / 2,
-                        y: rect.bottom + 6,
-                      });
+              const lassoFillH =
+                lassoData && topic.paperCount > 0
+                  ? Math.min(Math.max(yScale(lassoData.count), 1), bh)
+                  : 0;
+
+              return (
+                <g key={topic.id}>
+                  <rect
+                    x={x}
+                    y={y}
+                    width={barWidth}
+                    height={bh}
+                    rx={1}
+                    fill={hasLasso && !lassoData ? "#94a3b8" : color}
+                    opacity={isDimmed ? 0.18 : hasLasso ? 0.2 : isActive ? 1 : 0.7}
+                    className="cursor-pointer transition-opacity duration-150"
+                    role="button"
+                    tabIndex={0}
+                    aria-label={`选择主题 T${topic.id}`}
+                    onClick={() => {
+                      if (isActive) {
+                        onTopicSelect(activeTopicIds.filter((id) => id !== topic.id));
+                      } else {
+                        onTopicSelect(
+                          activeTopicIds.length < 2 ? [...activeTopicIds, topic.id] : [topic.id],
+                        );
+                      }
                     }}
-                    onMouseLeave={() => setTooltip(null)}
-                    className="transition-transform duration-150 hover:scale-110"
-                    style={{
-                      width: r * 2,
-                      height: r * 2,
-                      position: "relative",
-                      overflow: "hidden",
-                      borderRadius: "50%",
-                      opacity: isDimmed ? 0.25 : 1,
-                      outline: isActive ? `2px solid ${color}` : "none",
-                      outlineOffset: 2,
-                      flexShrink: 0,
+                    onKeyDown={(event) => {
+                      if (event.key !== "Enter" && event.key !== " ") return;
+                      event.preventDefault();
+                      if (isActive) {
+                        onTopicSelect(activeTopicIds.filter((id) => id !== topic.id));
+                      } else {
+                        onTopicSelect(
+                          activeTopicIds.length < 2 ? [...activeTopicIds, topic.id] : [topic.id],
+                        );
+                      }
                     }}
-                  >
-                    <span
-                      style={{
-                        position: "absolute",
-                        inset: 0,
-                        backgroundColor: isGrayed ? "#bfc9c0" : color,
-                        opacity: hasLasso ? 0.2 : isHovered ? 1 : 0.72,
-                        transition: "background-color 0.2s, opacity 0.2s",
-                      }}
+                  />
+                  {lassoData && lassoFillH > 0 && (
+                    <rect
+                      x={x}
+                      y={innerH - lassoFillH}
+                      width={barWidth}
+                      height={lassoFillH}
+                      rx={1}
+                      fill={color}
+                      opacity={0.9}
+                      className="pointer-events-none"
                     />
-                    {lassoData && (
-                      <span
-                        style={{
-                          position: "absolute",
-                          bottom: 0,
-                          left: 0,
-                          right: 0,
-                          height: `${lassoData.ratio * 100}%`,
-                          backgroundColor: color,
-                          transition: "height 0.3s ease",
-                        }}
-                      />
-                    )}
-                  </button>
-                </div>
-                {/* Label zone — fixed 16px, invisible when no lasso to preserve layout */}
-                <div
-                  style={{
-                    height: 16,
-                    display: "flex",
-                    alignItems: "flex-start",
-                    justifyContent: "center",
-                    paddingTop: 2,
-                  }}
-                >
-                  <span
-                    className="text-[9px] font-mono font-bold leading-none text-on-surface-variant"
-                    style={{ visibility: lassoData ? "visible" : "hidden" }}
-                  >
-                    {lassoData?.count ?? 0}
-                  </span>
-                </div>
-              </div>
-            );
-          })}
-        </div>
+                  )}
+                  {lassoData && (
+                    <text
+                      x={x + barWidth / 2}
+                      y={Math.max(y - 2, 8)}
+                      textAnchor="middle"
+                      fontSize={8}
+                      className="fill-on-surface-variant font-mono pointer-events-none"
+                    >
+                      {lassoData.count}
+                    </text>
+                  )}
+                  {isActive && !lassoData && (
+                    <text
+                      x={x + barWidth / 2}
+                      y={Math.max(y - 5, 9)}
+                      textAnchor="middle"
+                      fontSize={9}
+                      className="fill-on-surface font-mono font-bold pointer-events-none"
+                    >
+                      {topic.paperCount}
+                    </text>
+                  )}
+                </g>
+              );
+            })}
+          </g>
+        </svg>
       </div>
 
-      {hoveredTopic && tooltip && (
-        <div
-          className="pointer-events-none fixed z-50 bg-surface-container-high border border-outline-variant/20 rounded-lg px-2 py-1 text-[11px] text-on-surface shadow-md"
-          style={{
-            left: tooltip.x,
-            top: tooltip.y,
-            transform: "translateX(-50%)",
-            maxWidth: 260,
-            whiteSpace: "nowrap",
-            overflow: "hidden",
-            textOverflow: "ellipsis",
-          }}
-        >
-          {hoveredTopic.keywords.slice(0, 5).join(", ")}
-          <span className="ml-1.5 text-on-surface-variant font-mono">
-            ·{hoveredTopic.paperCount}
-          </span>
-        </div>
-      )}
-    </>
+      {/* <div className="flex-1 min-w-0 border-l border-outline-variant/10 flex items-center px-3 py-2">
+        <TopicWordCloud words={cloudWords} />
+      </div> */}
+    </div>
   );
 }

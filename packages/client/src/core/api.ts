@@ -29,6 +29,7 @@ import { type UploadOptions, uploadFile } from "./upload";
 const SCHOLAR_API_BASE = "/api/scholar/api/v1";
 
 export type RequestOptions = ApiRequestOptions;
+export type ProviderGroupFilter = "claude" | "codex";
 
 export interface ScholarPaperListParams {
   sort?: string;
@@ -141,10 +142,16 @@ export const api = {
     }),
   getProject: (projectId: string) =>
     requestJson<{ project: ProjectSummary }>(`/api/projects/${projectId}`),
-  getProjectSessions: (projectId: string, options?: RequestOptions) =>
-    requestJson<{ sessions: AppSessionSummary[] }>(`/api/projects/${projectId}/sessions`, {
-      signal: options?.signal,
-    }),
+  getProjectSessions: (
+    projectId: string,
+    options?: RequestOptions & { provider?: ProviderGroupFilter },
+  ) =>
+    requestJson<{ sessions: AppSessionSummary[] }>(
+      withQuery(`/api/projects/${projectId}/sessions`, { provider: options?.provider }),
+      {
+        signal: options?.signal,
+      },
+    ),
   getSession: (
     projectId: string,
     sessionId: string,
@@ -379,6 +386,13 @@ export const scholar = {
     requestJson<ScholarTopicsOverview>(`${SCHOLAR_API_BASE}/analytics/topics`, {
       signal: options?.signal,
     }),
+  getTopicSimilarity: (params: { top_n?: number } = {}, options?: RequestOptions) =>
+    requestJson<ScholarTopicSimilarity>(
+      withQuery(`${SCHOLAR_API_BASE}/analytics/topic-similarity`, params),
+      {
+        signal: options?.signal,
+      },
+    ),
   getProjection: (options?: RequestOptions) =>
     requestJson<ScholarProjection>(`${SCHOLAR_API_BASE}/analytics/projection`, {
       signal: options?.signal,
@@ -438,6 +452,14 @@ export interface ScholarTopicsOverview {
   built: boolean;
   topicCount?: number;
   topics: ScholarTopic[];
+  computedAt?: string;
+}
+
+export interface ScholarTopicSimilarity {
+  built: boolean;
+  topicCount?: number;
+  topics: ScholarTopic[];
+  matrix: number[][];
   computedAt?: string;
 }
 

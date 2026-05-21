@@ -185,6 +185,7 @@ export function NavigationLayout() {
 
   const isSessionRoute = /^\/projects\/[^/]+\/sessions\/[^/]+/.test(location.pathname);
   const isPaperReaderRoute = /^\/library\/.+/.test(location.pathname);
+  const isLibraryRoute = location.pathname === "/library";
   const isSearchRoute = location.pathname === "/search";
   const isFullscreenRoute = isSessionRoute || isPaperReaderRoute || isSearchRoute;
 
@@ -252,7 +253,9 @@ export function NavigationLayout() {
               className={
                 isFullscreenRoute
                   ? "flex-1 min-w-0 min-h-0 flex flex-col"
-                  : "flex-1 min-w-0 px-6 py-8 flex flex-col"
+                  : isLibraryRoute
+                    ? "flex-1 min-w-0 px-6 pt-4 pb-6 flex flex-col"
+                    : "flex-1 min-w-0 px-6 py-8 flex flex-col"
               }
             >
               <Outlet context={layoutContext} />

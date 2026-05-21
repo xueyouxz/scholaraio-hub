@@ -20,7 +20,7 @@ function createProject(): Project {
   };
 }
 
-function createSummary(): SessionSummary {
+function createSummary(overrides: Partial<SessionSummary> = {}): SessionSummary {
   return {
     id: "sess-1",
     projectId: "proj-1" as UrlProjectId,
@@ -31,6 +31,7 @@ function createSummary(): SessionSummary {
     messageCount: 1,
     ownership: { owner: "none" },
     provider: "codex",
+    ...overrides,
   };
 }
 
@@ -67,5 +68,66 @@ describe("Projects Routes", () => {
       title: "Codex project session",
       provider: "codex",
     });
+  });
+
+  it("filters project sessions by provider when requested", async () => {
+    const project = createProject();
+    const claudeSummary = createSummary({
+      id: "claude-session",
+      title: "Claude project session",
+      fullTitle: "Claude project session",
+      provider: "claude",
+    });
+    const codexSummary = createSummary({
+      id: "codex-session",
+      title: "Codex project session",
+      fullTitle: "Codex project session",
+      provider: "codex",
+    });
+    const claudeReader = {
+      listSessions: vi.fn(async () => [claudeSummary]),
+    } as unknown as ISessionReader;
+    const codexReader = {
+      listSessions: vi.fn(async () => [codexSummary]),
+    } as unknown as ISessionReader;
+
+    const routes = createProjectsRoutes({
+      scanner: {
+        getOrCreateProject: vi.fn(async () => project),
+      } as unknown as ProjectScanner,
+      readerFactory: vi.fn(() => claudeReader),
+      codexSessionsDir: "/tmp/codex-sessions",
+      codexReaderFactory: vi.fn(() => codexReader as unknown as CodexSessionReader),
+    });
+
+    const claudeResponse = await routes.request("/proj-1/sessions?provider=claude");
+    expect(claudeResponse.status).toBe(200);
+    const claudeJson = await claudeResponse.json();
+    expect(claudeJson.sessions).toHaveLength(1);
+    expect(claudeJson.sessions[0]).toMatchObject({
+      id: "claude-session",
+      provider: "claude",
+    });
+
+    const codexResponse = await routes.request("/proj-1/sessions?provider=codex");
+    expect(codexResponse.status).toBe(200);
+    const codexJson = await codexResponse.json();
+    expect(codexJson.sessions).toHaveLength(1);
+    expect(codexJson.sessions[0]).toMatchObject({
+      id: "codex-session",
+      provider: "codex",
+    });
+  });
+
+  it("rejects unknown provider filters", async () => {
+    const routes = createProjectsRoutes({
+      scanner: {
+        getOrCreateProject: vi.fn(async () => createProject()),
+      } as unknown as ProjectScanner,
+      readerFactory: vi.fn(),
+    });
+
+    const response = await routes.request("/proj-1/sessions?provider=gemini");
+    expect(response.status).toBe(400);
   });
 });

@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import type { ProviderGroupFilter } from "../../../core/api";
 import {
   type GlobalSessionItem,
   type GlobalSessionStats,
@@ -24,6 +25,7 @@ export interface UseGlobalSessionsOptions {
   includeArchived?: boolean;
   starred?: boolean;
   includeStats?: boolean;
+  provider?: ProviderGroupFilter;
 }
 
 /** Default stats when no data loaded */
@@ -36,8 +38,27 @@ const DEFAULT_STATS: GlobalSessionStats = {
   executorCounts: {},
 };
 
+function sessionMatchesProvider(
+  session: { provider: GlobalSessionItem["provider"] },
+  provider?: ProviderGroupFilter,
+): boolean {
+  if (!provider) return true;
+  if (provider === "claude") {
+    return session.provider === "claude" || session.provider === "claude-ollama";
+  }
+  return session.provider === "codex" || session.provider === "codex-oss";
+}
+
 export function useGlobalSessions(options: UseGlobalSessionsOptions = {}) {
-  const { projectId, searchQuery, limit, includeArchived, starred, includeStats = false } = options;
+  const {
+    projectId,
+    searchQuery,
+    limit,
+    includeArchived,
+    starred,
+    includeStats = false,
+    provider,
+  } = options;
   const [sessions, setSessions] = useState<GlobalSessionItem[]>([]);
   const [stats, setStats] = useState<GlobalSessionStats>(DEFAULT_STATS);
   const [projects, setProjects] = useState<ProjectOption[]>([]);
@@ -59,6 +80,7 @@ export function useGlobalSessions(options: UseGlobalSessionsOptions = {}) {
     includeArchived?: boolean;
     starred?: boolean;
     includeStats?: boolean;
+    provider?: ProviderGroupFilter;
   }>({});
 
   const fetch = useCallback(async () => {
@@ -68,7 +90,8 @@ export function useGlobalSessions(options: UseGlobalSessionsOptions = {}) {
       lastFetchOptionsRef.current.searchQuery !== searchQuery ||
       lastFetchOptionsRef.current.includeArchived !== includeArchived ||
       lastFetchOptionsRef.current.starred !== starred ||
-      lastFetchOptionsRef.current.includeStats !== includeStats;
+      lastFetchOptionsRef.current.includeStats !== includeStats ||
+      lastFetchOptionsRef.current.provider !== provider;
 
     if (optionsChanged) {
       hasInitialLoadRef.current = false;
@@ -81,6 +104,7 @@ export function useGlobalSessions(options: UseGlobalSessionsOptions = {}) {
       includeArchived,
       starred,
       includeStats,
+      provider,
     };
 
     // Only show loading state on initial load
@@ -97,6 +121,7 @@ export function useGlobalSessions(options: UseGlobalSessionsOptions = {}) {
         includeArchived,
         starred,
         includeStats: false,
+        provider,
       });
       const statsPromise = includeStats && !projectId ? api.getGlobalSessionStats() : null;
 
@@ -135,7 +160,7 @@ export function useGlobalSessions(options: UseGlobalSessionsOptions = {}) {
     } finally {
       setLoading(false);
     }
-  }, [projectId, searchQuery, limit, includeArchived, starred, includeStats]);
+  }, [projectId, searchQuery, limit, includeArchived, starred, includeStats, provider]);
 
   // Load more sessions (pagination)
   const loadMore = useCallback(async () => {
@@ -153,6 +178,7 @@ export function useGlobalSessions(options: UseGlobalSessionsOptions = {}) {
         includeArchived,
         starred,
         includeStats: false,
+        provider,
       });
 
       setSessions((prev) => {
@@ -166,7 +192,7 @@ export function useGlobalSessions(options: UseGlobalSessionsOptions = {}) {
     } catch (err) {
       setError(err instanceof Error ? err : new Error(String(err)));
     }
-  }, [hasMore, sessions, projectId, searchQuery, limit, includeArchived, starred]);
+  }, [hasMore, sessions, projectId, searchQuery, limit, includeArchived, starred, provider]);
 
   // Debounced refetch
   const debouncedRefetch = useCallback(() => {
@@ -226,6 +252,8 @@ export function useGlobalSessions(options: UseGlobalSessionsOptions = {}) {
       // If we have a project filter, only add sessions from that project
       if (projectId && event.session.projectId !== projectId) return;
 
+      if (!sessionMatchesProvider(event.session, provider)) return;
+
       // If we have a starred filter, only add starred sessions
       if (starred && !event.session.isStarred) return;
 
@@ -267,7 +295,7 @@ export function useGlobalSessions(options: UseGlobalSessionsOptions = {}) {
         return [globalSession, ...prev];
       });
     },
-    [projectId, searchQuery, starred, debouncedRefetch],
+    [projectId, searchQuery, starred, debouncedRefetch, provider],
   );
 
   // Handle session metadata changes

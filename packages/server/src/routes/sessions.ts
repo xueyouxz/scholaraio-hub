@@ -84,6 +84,10 @@ interface StartSessionBody {
   model?: ModelOption;
   thinking?: ThinkingOption;
   provider?: ProviderName;
+  /** Optional remote executor identifier */
+  executor?: string;
+  /** Environment variables for remote executor sessions */
+  remoteEnv?: Record<string, string>;
   /** Client-generated temp ID for optimistic UI tracking */
   tempId?: string;
   /** Permission rules for tool filtering (deny/allow patterns) */
@@ -95,6 +99,10 @@ interface CreateSessionBody {
   model?: ModelOption;
   thinking?: ThinkingOption;
   provider?: ProviderName;
+  /** Optional remote executor identifier */
+  executor?: string;
+  /** Environment variables for remote executor sessions */
+  remoteEnv?: Record<string, string>;
   /** Permission rules for tool filtering (deny/allow patterns) */
   permissions?: PermissionRules;
 }
@@ -723,6 +731,8 @@ export function createSessionsRoutes(deps: SessionsDeps): Hono {
       providerName: body.provider,
       globalInstructions,
       permissions: body.permissions,
+      executor: body.executor,
+      remoteEnv: body.remoteEnv,
     });
 
     // Check if queue is full
@@ -791,6 +801,8 @@ export function createSessionsRoutes(deps: SessionsDeps): Hono {
       providerName: body.provider,
       globalInstructions,
       permissions: body.permissions,
+      executor: body.executor,
+      remoteEnv: body.remoteEnv,
     });
 
     // Check if queue is full
@@ -902,6 +914,8 @@ export function createSessionsRoutes(deps: SessionsDeps): Hono {
         providerName,
         globalInstructions,
         permissions: body.permissions,
+        executor: body.executor,
+        remoteEnv: body.remoteEnv,
       },
     );
 
@@ -982,7 +996,14 @@ export function createSessionsRoutes(deps: SessionsDeps): Hono {
       process.projectPath,
       userMessage,
       body.mode,
-      { thinking, effort, globalInstructions: queueGlobalInstructions },
+      {
+        thinking,
+        effort,
+        providerName: process.provider,
+        globalInstructions: queueGlobalInstructions,
+        executor: process.executor,
+        remoteEnv: process.remoteEnv,
+      },
     );
 
     if (!result.success) {

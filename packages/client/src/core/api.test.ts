@@ -72,6 +72,9 @@ describe("core api session mutations", () => {
       model: "sonnet",
       thinking: "on:medium",
       provider: "claude",
+      executor: "remote-main",
+      remoteEnv: { WORKSPACE_ID: "workspace-1" },
+      permissions: { allow: ["Bash(pnpm test)"], deny: ["Bash(curl *)"] },
       attachments: [attachment],
       tempId: "temp-2",
     });
@@ -86,8 +89,36 @@ describe("core api session mutations", () => {
       model: "sonnet",
       thinking: "on:medium",
       provider: "claude",
+      executor: "remote-main",
+      remoteEnv: { WORKSPACE_ID: "workspace-1" },
+      permissions: { allow: ["Bash(pnpm test)"], deny: ["Bash(curl *)"] },
       attachments: [attachment],
       tempId: "temp-2",
+    });
+  });
+
+  it("does not leak path params into create session request bodies", async () => {
+    mockJsonResponse({ sessionId: "session-1", processId: "process-1" });
+
+    await api.createSession({
+      projectId: "project-1",
+      mode: "plan",
+      model: "sonnet",
+      thinking: "auto",
+      provider: "claude",
+      executor: "remote-main",
+    });
+
+    expect(fetch).toHaveBeenCalledWith(
+      "/api/projects/project-1/sessions/create",
+      expect.objectContaining({ method: "POST" }),
+    );
+    expect(lastRequestBody()).toEqual({
+      mode: "plan",
+      model: "sonnet",
+      thinking: "auto",
+      provider: "claude",
+      executor: "remote-main",
     });
   });
 });

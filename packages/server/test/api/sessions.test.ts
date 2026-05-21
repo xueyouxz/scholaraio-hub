@@ -107,6 +107,30 @@ describe("Sessions API", () => {
       expect(json.processId).toBeDefined();
     });
 
+    it("passes remote execution options to the started process", async () => {
+      mockSdk.addScenario(createMockScenario("new-session", "Hello!"));
+      const { app, supervisor } = createApp({ sdk: mockSdk, projectsDir: testDir });
+
+      const res = await app.request(`/api/projects/${projectId}/sessions`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "X-Yep-Anywhere": "true",
+        },
+        body: JSON.stringify({
+          message: "hello",
+          executor: "remote-main",
+          remoteEnv: { WORKSPACE_ID: "workspace-1" },
+        }),
+      });
+
+      expect(res.status).toBe(200);
+      const json = await res.json();
+      const process = supervisor.getProcessForSession(json.sessionId);
+      expect(process?.executor).toBe("remote-main");
+      expect(process?.remoteEnv).toEqual({ WORKSPACE_ID: "workspace-1" });
+    });
+
     it("accepts permission mode parameter", async () => {
       mockSdk.addScenario(createMockScenario("new-session", "Hello!"));
       const { app } = createApp({ sdk: mockSdk, projectsDir: testDir });

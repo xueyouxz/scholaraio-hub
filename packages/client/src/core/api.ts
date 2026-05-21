@@ -3,6 +3,7 @@ import type {
   FileContentResponse,
   NewSessionDefaults,
   PermissionMode,
+  PermissionRules,
   ProviderInfo,
   ProviderName,
   ProviderUsageLimits,
@@ -89,6 +90,34 @@ export interface ScholarConfig {
 
 type DeepPartial<T> = { [K in keyof T]?: T[K] extends object ? DeepPartial<T[K]> : T[K] };
 
+interface SessionLaunchBodyInput {
+  message?: string;
+  mode?: PermissionMode;
+  model?: string;
+  thinking?: ThinkingOption;
+  provider?: ProviderName;
+  executor?: string;
+  remoteEnv?: Record<string, string>;
+  permissions?: PermissionRules;
+  attachments?: UploadedFile[];
+  tempId?: string;
+}
+
+function toSessionLaunchBody(input: SessionLaunchBodyInput): SessionLaunchBodyInput {
+  return {
+    message: input.message,
+    mode: input.mode,
+    model: input.model,
+    thinking: input.thinking,
+    provider: input.provider,
+    executor: input.executor,
+    remoteEnv: input.remoteEnv,
+    permissions: input.permissions,
+    attachments: input.attachments,
+    tempId: input.tempId,
+  };
+}
+
 export interface HealthLevel {
   level: 1 | 2 | 3;
   label: string;
@@ -174,35 +203,19 @@ export const api = {
   startSession: (input: StartSessionInput) =>
     requestJson<SessionCreationResult>(`/api/projects/${input.projectId}/sessions`, {
       method: "POST",
-      body: JSON.stringify({
-        message: input.message,
-        mode: input.mode,
-        model: input.model,
-        thinking: input.thinking,
-        provider: input.provider,
-        attachments: input.attachments,
-        tempId: input.tempId,
-      }),
+      body: JSON.stringify(toSessionLaunchBody(input)),
     }),
   createSession: (input: CreateSessionInput) =>
     requestJson<SessionCreationResult>(`/api/projects/${input.projectId}/sessions/create`, {
       method: "POST",
-      body: JSON.stringify(input),
+      body: JSON.stringify(toSessionLaunchBody(input)),
     }),
   resumeSession: (input: ResumeSessionInput) =>
     requestJson<SessionCreationResult>(
       `/api/projects/${input.projectId}/sessions/${input.sessionId}/resume`,
       {
         method: "POST",
-        body: JSON.stringify({
-          message: input.message,
-          mode: input.mode,
-          model: input.model,
-          thinking: input.thinking,
-          provider: input.provider,
-          attachments: input.attachments,
-          tempId: input.tempId,
-        }),
+        body: JSON.stringify(toSessionLaunchBody(input)),
       },
     ),
   queueMessage: (input: QueueMessageInput) =>

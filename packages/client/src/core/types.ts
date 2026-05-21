@@ -5,6 +5,7 @@ import type {
   ModelInfo,
   NewSessionDefaults,
   PermissionMode,
+  PermissionRules,
   ProviderInfo,
   ProviderName,
   ProviderUsageLimits,
@@ -74,6 +75,9 @@ export interface StartSessionInput {
   model?: string;
   thinking?: ThinkingOption;
   provider?: ProviderName;
+  executor?: string;
+  remoteEnv?: Record<string, string>;
+  permissions?: PermissionRules;
   attachments?: UploadedFile[];
   tempId?: string;
 }
@@ -98,6 +102,9 @@ export interface CreateSessionInput {
   model?: string;
   thinking?: ThinkingOption;
   provider?: ProviderName;
+  executor?: string;
+  remoteEnv?: Record<string, string>;
+  permissions?: PermissionRules;
 }
 
 export interface SessionCreationResult {
@@ -111,6 +118,7 @@ export type {
   AppSessionSummary,
   ModelInfo,
   PermissionMode,
+  PermissionRules,
   ProviderInfo,
   ProviderName,
   ProviderUsageLimits,

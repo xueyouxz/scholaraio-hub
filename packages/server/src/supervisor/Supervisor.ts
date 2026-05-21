@@ -221,7 +221,14 @@ export class Supervisor {
     }
 
     // Fall back to legacy mock SDK
-    return this.startLegacySession(projectPath, projectId, message, undefined, permissionMode);
+    return this.startLegacySession(
+      projectPath,
+      projectId,
+      message,
+      undefined,
+      permissionMode,
+      modelSettings,
+    );
   }
 
   /**
@@ -357,6 +364,8 @@ export class Supervisor {
       thinking: modelSettings?.thinking,
       effort: modelSettings?.effort,
       permissions: modelSettings?.permissions,
+      executor: modelSettings?.executor,
+      remoteEnv: modelSettings?.remoteEnv,
     };
 
     const process = new Process(iterator, options);
@@ -458,6 +467,8 @@ export class Supervisor {
       thinking: modelSettings?.thinking,
       effort: modelSettings?.effort,
       permissions: modelSettings?.permissions,
+      executor: modelSettings?.executor,
+      remoteEnv: modelSettings?.remoteEnv,
     };
 
     const process = new Process(iterator, options);
@@ -556,6 +567,8 @@ export class Supervisor {
       thinking: modelSettings?.thinking,
       effort: modelSettings?.effort,
       permissions: modelSettings?.permissions,
+      executor: modelSettings?.executor,
+      remoteEnv: modelSettings?.remoteEnv,
     };
 
     const process = new Process(iterator, options);
@@ -655,6 +668,8 @@ export class Supervisor {
       thinking: modelSettings?.thinking,
       effort: modelSettings?.effort,
       permissions: modelSettings?.permissions,
+      executor: modelSettings?.executor,
+      remoteEnv: modelSettings?.remoteEnv,
     };
 
     const process = new Process(iterator, options);
@@ -682,6 +697,7 @@ export class Supervisor {
     message: UserMessage,
     resumeSessionId?: string,
     permissionMode?: PermissionMode,
+    modelSettings?: ModelSettings,
   ): Process {
     // sdk is guaranteed to exist here (checked in startSession)
     if (!this.sdk) {
@@ -704,6 +720,12 @@ export class Supervisor {
       idleTimeoutMs: this.idleTimeoutMs,
       permissionMode: effectiveMode,
       provider: "claude", // Legacy mock SDK simulates Claude
+      model: modelSettings?.model,
+      thinking: modelSettings?.thinking,
+      effort: modelSettings?.effort,
+      permissions: modelSettings?.permissions,
+      executor: modelSettings?.executor,
+      remoteEnv: modelSettings?.remoteEnv,
     };
 
     const process = new Process(iterator, options);
@@ -871,7 +893,14 @@ export class Supervisor {
     }
 
     // Fall back to legacy mock SDK
-    return this.startLegacySession(projectPath, projectId, message, sessionId, permissionMode);
+    return this.startLegacySession(
+      projectPath,
+      projectId,
+      message,
+      sessionId,
+      permissionMode,
+      modelSettings,
+    );
   }
 
   getProcess(processId: string): Process | undefined {
@@ -1684,6 +1713,7 @@ export class Supervisor {
       message,
       resumeSessionId,
       permissionMode,
+      modelSettings,
     );
   }
 

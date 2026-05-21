@@ -1,9 +1,14 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { createScholarRoutes, normalizeScholarProxyPath } from "../../src/routes/scholar.js";
+import {
+  SCHOLAR_PROXY_TIMEOUT_MS,
+  createScholarRoutes,
+  normalizeScholarProxyPath,
+} from "../../src/routes/scholar.js";
 
 describe("Scholar routes", () => {
   afterEach(() => {
     vi.unstubAllGlobals();
+    vi.useRealTimers();
   });
 
   it("maps legacy /api paths to ScholarAIO /api/v1", async () => {
@@ -50,6 +55,45 @@ describe("Scholar routes", () => {
         body: JSON.stringify({ query: "turbulence" }),
       }),
     );
+  });
+
+  it("returns 503 when the upstream ScholarAIO API is unavailable", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => {
+        throw new Error("connect ECONNREFUSED");
+      }),
+    );
+    const routes = createScholarRoutes({ scholarAioApiUrl: "http://127.0.0.1:8765" });
+
+    const response = await routes.request("/api/scholar/api/health");
+
+    expect(response.status).toBe(503);
+    await expect(response.json()).resolves.toEqual({
+      error: "ScholarAIO API unavailable. Run: scholaraio serve",
+    });
+  });
+
+  it("returns 504 when the upstream ScholarAIO API times out", async () => {
+    vi.useFakeTimers();
+    const fetchMock = vi.fn((_url: string, init?: RequestInit) => {
+      return new Promise<Response>((_resolve, reject) => {
+        init?.signal?.addEventListener("abort", () => {
+          reject(new DOMException("The operation was aborted", "AbortError"));
+        });
+      });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    const routes = createScholarRoutes({ scholarAioApiUrl: "http://127.0.0.1:8765" });
+
+    const responsePromise = routes.request("/api/scholar/api/health");
+    await vi.advanceTimersByTimeAsync(SCHOLAR_PROXY_TIMEOUT_MS);
+    const response = await responsePromise;
+
+    expect(response.status).toBe(504);
+    await expect(response.json()).resolves.toEqual({
+      error: "ScholarAIO API request timed out",
+    });
   });
 
   it("normalizes route paths without requiring a Hono context", () => {

@@ -150,4 +150,67 @@ describe("Processes Routes", () => {
     );
     expect(vi.mocked(claudeReader.getSessionSummary)).not.toHaveBeenCalled();
   });
+
+  it("returns 400 for invalid model switch request bodies", async () => {
+    const setModel = vi.fn(async () => true);
+    const routes = createProcessesRoutes({
+      supervisor: {
+        getProcess: vi.fn(() => ({ setModel })),
+      } as unknown as Supervisor,
+      scanner: {} as unknown as ProjectScanner,
+      readerFactory: vi.fn(() => ({}) as unknown as ISessionReader),
+    });
+
+    const response = await routes.request("/proc-1/model", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: "not-json",
+    });
+
+    expect(response.status).toBe(400);
+    await expect(response.json()).resolves.toEqual({ error: "Invalid JSON body" });
+    expect(setModel).not.toHaveBeenCalled();
+  });
+
+  it("returns 500 when dynamic model listing throws", async () => {
+    const routes = createProcessesRoutes({
+      supervisor: {
+        getProcess: vi.fn(() => ({
+          supportedModels: vi.fn(async () => {
+            throw new Error("transport closed");
+          }),
+        })),
+      } as unknown as Supervisor,
+      scanner: {} as unknown as ProjectScanner,
+      readerFactory: vi.fn(() => ({}) as unknown as ISessionReader),
+    });
+
+    const response = await routes.request("/proc-1/models");
+
+    expect(response.status).toBe(500);
+    await expect(response.json()).resolves.toEqual({
+      error: "Failed to fetch models for this process",
+    });
+  });
+
+  it("returns 500 when dynamic slash command listing throws", async () => {
+    const routes = createProcessesRoutes({
+      supervisor: {
+        getProcess: vi.fn(() => ({
+          supportedCommands: vi.fn(async () => {
+            throw new Error("transport closed");
+          }),
+        })),
+      } as unknown as Supervisor,
+      scanner: {} as unknown as ProjectScanner,
+      readerFactory: vi.fn(() => ({}) as unknown as ISessionReader),
+    });
+
+    const response = await routes.request("/proc-1/commands");
+
+    expect(response.status).toBe(500);
+    await expect(response.json()).resolves.toEqual({
+      error: "Failed to fetch commands for this process",
+    });
+  });
 });

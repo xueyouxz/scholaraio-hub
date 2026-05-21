@@ -1,6 +1,7 @@
 import { type UrlProjectId, getSessionDisplayTitle } from "@scholaraio-hub/shared";
 import { Hono } from "hono";
 import type { SessionIndexService } from "../indexes/index.js";
+import { getLogger } from "../logging/logger.js";
 import type { SessionMetadataService } from "../metadata/SessionMetadataService.js";
 import type { ProjectScanner } from "../projects/scanner.js";
 import type { ISessionReader } from "../sessions/types.js";
@@ -79,8 +80,17 @@ async function enrichProcessInfo(process: ProcessInfo, deps: ProcessesDeps): Pro
     }
 
     return enriched;
-  } catch {
-    // Ignore errors - just return process without enrichment
+  } catch (error) {
+    getLogger().warn(
+      {
+        event: "process_enrichment_failed",
+        processId: process.id,
+        sessionId: process.sessionId,
+        projectId: process.projectId,
+        error,
+      },
+      "Failed to enrich process info",
+    );
   }
   return process;
 }
@@ -153,7 +163,17 @@ export function createProcessesRoutes(deps: ProcessesDeps): Hono {
       return c.json({ error: "Process not found" }, 404);
     }
 
-    const models = await process.supportedModels();
+    let models: Awaited<ReturnType<typeof process.supportedModels>>;
+    try {
+      models = await process.supportedModels();
+    } catch (error) {
+      getLogger().warn(
+        { event: "process_models_failed", processId, error },
+        "Failed to fetch process models",
+      );
+      return c.json({ error: "Failed to fetch models for this process" }, 500);
+    }
+
     if (models === null) {
       // Process doesn't support dynamic model listing
       return c.json({ error: "Dynamic model listing not supported for this process" }, 400);
@@ -172,7 +192,17 @@ export function createProcessesRoutes(deps: ProcessesDeps): Hono {
       return c.json({ error: "Process not found" }, 404);
     }
 
-    const commands = await process.supportedCommands();
+    let commands: Awaited<ReturnType<typeof process.supportedCommands>>;
+    try {
+      commands = await process.supportedCommands();
+    } catch (error) {
+      getLogger().warn(
+        { event: "process_commands_failed", processId, error },
+        "Failed to fetch process commands",
+      );
+      return c.json({ error: "Failed to fetch commands for this process" }, 500);
+    }
+
     if (commands === null) {
       // Process doesn't support dynamic command listing
       return c.json({ error: "Dynamic command listing not supported for this process" }, 400);
@@ -191,7 +221,17 @@ export function createProcessesRoutes(deps: ProcessesDeps): Hono {
       return c.json({ error: "Process not found" }, 404);
     }
 
-    const body = await c.req.json<{ model?: string }>();
+    let body: { model?: string };
+    try {
+      body = await c.req.json<{ model?: string }>();
+    } catch (error) {
+      getLogger().warn(
+        { event: "process_model_body_invalid", processId, error },
+        "Invalid process model request body",
+      );
+      return c.json({ error: "Invalid JSON body" }, 400);
+    }
+
     const success = await process.setModel(body.model);
 
     if (!success) {

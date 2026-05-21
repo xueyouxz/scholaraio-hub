@@ -27,6 +27,28 @@ export type {
   PendingInputType,
 } from "@scholaraio-hub/shared";
 
+/**
+ * Model, provider, and execution settings for a session launch.
+ */
+export interface ModelSettings {
+  /** Model to use (e.g., "sonnet", "opus", "haiku"). undefined = use CLI default */
+  model?: string;
+  /** Thinking configuration. undefined = thinking disabled */
+  thinking?: ThinkingConfig;
+  /** Effort level for response quality. undefined = SDK default */
+  effort?: EffortLevel;
+  /** Provider to use for this session. undefined = use default provider */
+  providerName?: ProviderName;
+  /** Global instructions to append to system prompt */
+  globalInstructions?: string;
+  /** Permission rules for tool filtering */
+  permissions?: PermissionRules;
+  /** Remote executor identifier for remote runs */
+  executor?: string;
+  /** Additional environment variables for remote execution */
+  remoteEnv?: Record<string, string>;
+}
+
 // Project discovery
 export interface Project {
   id: UrlProjectId; // base64url encoded path

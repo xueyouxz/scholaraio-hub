@@ -2,9 +2,10 @@ import { randomUUID } from "node:crypto";
 import type { UrlProjectId } from "@scholaraio-hub/shared";
 import type { PermissionMode, UserMessage } from "../sdk/types.js";
 import type { EventBus } from "../watcher/EventBus.js";
+import type { ModelSettings } from "./types.js";
 
 /** Type of queued request */
-export type QueuedRequestType = "new-session" | "resume-session";
+export type QueuedRequestType = "new-session" | "create-session" | "resume-session";
 
 /** Result when a queued request is processed */
 export type QueuedRequestResult =
@@ -18,8 +19,9 @@ export interface QueuedRequest {
   projectPath: string;
   projectId: UrlProjectId;
   sessionId?: string; // For resume-session requests
-  message: UserMessage;
+  message?: UserMessage;
   permissionMode?: PermissionMode;
+  modelSettings?: ModelSettings;
   queuedAt: Date;
   /** Resolver to call when request is processed or cancelled */
   resolve: (result: QueuedRequestResult) => void;
@@ -86,8 +88,9 @@ export class WorkerQueue {
     projectPath: string;
     projectId: UrlProjectId;
     sessionId?: string;
-    message: UserMessage;
+    message?: UserMessage;
     permissionMode?: PermissionMode;
+    modelSettings?: ModelSettings;
   }): EnqueueResult {
     // Check queue size limit
     if (this.maxQueueSize > 0 && this.queue.length >= this.maxQueueSize) {
@@ -110,6 +113,7 @@ export class WorkerQueue {
       sessionId: params.sessionId,
       message: params.message,
       permissionMode: params.permissionMode,
+      modelSettings: params.modelSettings,
       queuedAt: new Date(),
       resolve: resolvePromise,
     };

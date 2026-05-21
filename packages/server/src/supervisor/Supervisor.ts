@@ -1,10 +1,7 @@
 import { randomUUID } from "node:crypto";
 import {
-  type EffortLevel,
-  type PermissionRules,
   type ProviderName,
   SESSION_TITLE_MAX_LENGTH,
-  type ThinkingConfig,
   type UrlProjectId,
 } from "@scholaraio-hub/shared";
 import type { AgentActivity, PendingInputType } from "@scholaraio-hub/shared";
@@ -38,6 +35,7 @@ import {
 } from "./WorkerQueue.js";
 import {
   DEFAULT_IDLE_PREEMPT_THRESHOLD_MS,
+  type ModelSettings,
   type ProcessInfo,
   type ProcessOptions,
   type SessionOwnership,
@@ -63,28 +61,6 @@ function getStaleInTurnThresholdMs(provider: ProviderName): number {
   return provider === "codex" || provider === "codex-oss"
     ? CODEX_STALE_IN_TURN_THRESHOLD_MS
     : DEFAULT_STALE_IN_TURN_THRESHOLD_MS;
-}
-
-/**
- * Model and thinking settings for a session.
- */
-export interface ModelSettings {
-  /** Model to use (e.g., "sonnet", "opus", "haiku"). undefined = use CLI default */
-  model?: string;
-  /** Thinking configuration. undefined = thinking disabled */
-  thinking?: ThinkingConfig;
-  /** Effort level for response quality. undefined = SDK default */
-  effort?: EffortLevel;
-  /** Provider to use for this session. undefined = use default (Claude) */
-  providerName?: ProviderName;
-  /** Global instructions to append to system prompt (from server settings) */
-  globalInstructions?: string;
-  /** Permission rules for tool filtering (deny/allow patterns) */
-  permissions?: PermissionRules;
-  /** Remote executor identifier for remote runs */
-  executor?: string;
-  /** Additional environment variables for remote execution */
-  remoteEnv?: Record<string, string>;
 }
 
 /** Error response when queue is full */
@@ -201,6 +177,7 @@ export class Supervisor {
           projectId,
           message,
           permissionMode,
+          modelSettings,
         });
         if (isQueueFullError(result)) {
           return result;
@@ -267,13 +244,12 @@ export class Supervisor {
         await this.preemptWorker(preemptable);
         // Fall through to create session normally
       } else {
-        // Queue the request - use empty message placeholder
         const result = this.workerQueue.enqueue({
-          type: "new-session",
+          type: "create-session",
           projectPath,
           projectId,
-          message: { text: "" }, // Placeholder, will be replaced when first message sent
           permissionMode,
+          modelSettings,
         });
         if (isQueueFullError(result)) {
           return result;
@@ -851,6 +827,7 @@ export class Supervisor {
           sessionId,
           message,
           permissionMode,
+          modelSettings,
         });
         if (isQueueFullError(result)) {
           return result;
@@ -1600,22 +1577,41 @@ export class Supervisor {
       try {
         let process: Process;
 
-        if (request.type === "new-session") {
+        if (request.type === "create-session") {
+          const result = await this.createSessionInternal(
+            request.projectPath,
+            request.projectId,
+            request.permissionMode,
+            request.modelSettings,
+          );
+          process = result;
+        } else if (request.type === "new-session") {
+          if (!request.message) {
+            throw new Error("Queued new session is missing an initial message");
+          }
           const result = await this.startSessionInternal(
             request.projectPath,
             request.projectId,
             request.message,
             undefined,
             request.permissionMode,
+            request.modelSettings,
           );
           process = result;
         } else {
+          if (!request.message) {
+            throw new Error("Queued resume session is missing a message");
+          }
+          if (!request.sessionId) {
+            throw new Error("Queued resume session is missing a session ID");
+          }
           const result = await this.startSessionInternal(
             request.projectPath,
             request.projectId,
             request.message,
             request.sessionId,
             request.permissionMode,
+            request.modelSettings,
           );
           process = result;
         }
@@ -1650,15 +1646,22 @@ export class Supervisor {
     message: UserMessage,
     resumeSessionId?: string,
     permissionMode?: PermissionMode,
+    modelSettings?: ModelSettings,
   ): Promise<Process> {
+    const provider = modelSettings?.providerName
+      ? getProvider(modelSettings.providerName)
+      : this.provider;
+
     // Use provider if available (preferred)
-    if (this.provider) {
+    if (provider) {
       return this.startProviderSession(
         projectPath,
         projectId,
         message,
         resumeSessionId,
         permissionMode,
+        modelSettings,
+        provider,
       );
     }
 
@@ -1670,6 +1673,7 @@ export class Supervisor {
         message,
         resumeSessionId,
         permissionMode,
+        modelSettings,
       );
     }
 
@@ -1681,6 +1685,37 @@ export class Supervisor {
       resumeSessionId,
       permissionMode,
     );
+  }
+
+  /**
+   * Internal create-only session start that always starts immediately.
+   * Used by queue processing.
+   */
+  private async createSessionInternal(
+    projectPath: string,
+    projectId: UrlProjectId,
+    permissionMode?: PermissionMode,
+    modelSettings?: ModelSettings,
+  ): Promise<Process> {
+    const provider = modelSettings?.providerName
+      ? getProvider(modelSettings.providerName)
+      : this.provider;
+
+    if (provider) {
+      return this.createProviderSession(
+        projectPath,
+        projectId,
+        permissionMode,
+        modelSettings,
+        provider,
+      );
+    }
+
+    if (this.realSdk) {
+      return this.createRealSession(projectPath, projectId, permissionMode, modelSettings);
+    }
+
+    throw new Error("createSession requires provider or real SDK - legacy mock SDK not supported");
   }
 
   // ============ Public Queue Methods ============

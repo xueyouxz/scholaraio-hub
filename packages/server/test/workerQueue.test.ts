@@ -84,6 +84,33 @@ describe("WorkerQueue", () => {
       const result = await promise;
       expect(result).toEqual({ status: "started", processId: "proc-123" });
     });
+
+    it("should preserve launch settings and create-only requests", () => {
+      queue.enqueue({
+        type: "create-session",
+        projectPath: "/test/project",
+        projectId: TEST_PROJECT_ID,
+        permissionMode: "plan",
+        modelSettings: {
+          model: "opus",
+          thinking: { type: "adaptive" },
+          effort: "high",
+          executor: "remote-runner",
+        },
+      });
+
+      const request = queue.dequeue();
+
+      expect(request?.type).toBe("create-session");
+      expect(request?.message).toBeUndefined();
+      expect(request?.permissionMode).toBe("plan");
+      expect(request?.modelSettings).toMatchObject({
+        model: "opus",
+        thinking: { type: "adaptive" },
+        effort: "high",
+        executor: "remote-runner",
+      });
+    });
   });
 
   describe("dequeue", () => {
@@ -109,8 +136,8 @@ describe("WorkerQueue", () => {
       const first = queue.dequeue();
       const second = queue.dequeue();
 
-      expect(first?.message.text).toBe("First");
-      expect(second?.message.text).toBe("Second");
+      expect(first?.message?.text).toBe("First");
+      expect(second?.message?.text).toBe("Second");
     });
 
     it("should emit position updates for remaining items", () => {
@@ -348,7 +375,7 @@ describe("WorkerQueue", () => {
       });
 
       const peeked = queue.peek();
-      expect(peeked?.message.text).toBe("First");
+      expect(peeked?.message?.text).toBe("First");
       expect(queue.length).toBe(1); // Still in queue
     });
   });
@@ -385,7 +412,7 @@ describe("WorkerQueue", () => {
       expect(position).toBe(1);
 
       const dequeued = queueWithoutBus.dequeue();
-      expect(dequeued?.message.text).toBe("Hello");
+      expect(dequeued?.message?.text).toBe("Hello");
     });
   });
 });

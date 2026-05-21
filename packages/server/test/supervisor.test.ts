@@ -1,10 +1,43 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { MessageQueue } from "../src/sdk/messageQueue.js";
 import { MockClaudeSDK, createMockScenario } from "../src/sdk/mock.js";
-import type { RealClaudeSDKInterface } from "../src/sdk/types.js";
+import type { RealClaudeSDKInterface, StartSessionOptions } from "../src/sdk/types.js";
 import { Supervisor } from "../src/supervisor/Supervisor.js";
 import type { SessionSummary } from "../src/supervisor/types.js";
 import { type BusEvent, EventBus } from "../src/watcher/EventBus.js";
+
+function createCapturingRealSdk(startCalls: StartSessionOptions[]): RealClaudeSDKInterface {
+  let nextSession = 1;
+
+  return {
+    startSession: vi.fn(async (options) => {
+      startCalls.push(options);
+      const sessionId = `queued-real-${nextSession}`;
+      nextSession += 1;
+      let aborted = false;
+
+      async function* iterator() {
+        yield {
+          type: "system",
+          subtype: "init",
+          session_id: sessionId,
+        } as const;
+
+        while (!aborted) {
+          await new Promise((resolve) => setTimeout(resolve, 10));
+        }
+      }
+
+      return {
+        iterator: iterator(),
+        queue: new MessageQueue(),
+        abort: () => {
+          aborted = true;
+        },
+      };
+    }),
+  };
+}
 
 describe("Supervisor", () => {
   let mockSdk: MockClaudeSDK;
@@ -96,6 +129,138 @@ describe("Supervisor", () => {
       });
 
       expect(process1.id).not.toBe(process2.id);
+    });
+  });
+
+  describe("capacity queue launch options", () => {
+    it("preserves model settings for queued new sessions", async () => {
+      const startCalls: StartSessionOptions[] = [];
+      const realSdk = createCapturingRealSdk(startCalls);
+      const supervisorWithQueue = new Supervisor({
+        realSdk,
+        maxWorkers: 1,
+        idleTimeoutMs: 60_000,
+      });
+
+      const active = await supervisorWithQueue.startSession("/tmp/test", { text: "first" });
+      expect("queued" in active).toBe(false);
+      expect("error" in active).toBe(false);
+
+      const queued = await supervisorWithQueue.startSession(
+        "/tmp/test",
+        { text: "second" },
+        "plan",
+        {
+          model: "opus",
+          thinking: { type: "adaptive" },
+          effort: "high",
+          globalInstructions: "Prefer concise answers.",
+          executor: "remote-runner",
+          remoteEnv: { REGION: "test-region" },
+        },
+      );
+
+      expect("queued" in queued && queued.queued).toBe(true);
+      if ("queued" in active || "error" in active)
+        throw new Error("active session was not started");
+      await supervisorWithQueue.abortProcess(active.id);
+
+      await vi.waitFor(() => expect(startCalls).toHaveLength(2));
+      expect(startCalls[1]).toMatchObject({
+        cwd: "/tmp/test",
+        initialMessage: { text: "second" },
+        permissionMode: "plan",
+        model: "opus",
+        thinking: { type: "adaptive" },
+        effort: "high",
+        globalInstructions: "Prefer concise answers.",
+        executor: "remote-runner",
+        remoteEnv: { REGION: "test-region" },
+      });
+
+      const startedQueuedProcess = supervisorWithQueue.getAllProcesses()[0];
+      if (startedQueuedProcess) await supervisorWithQueue.abortProcess(startedQueuedProcess.id);
+    });
+
+    it("preserves model settings and resume id for queued resumes", async () => {
+      const startCalls: StartSessionOptions[] = [];
+      const realSdk = createCapturingRealSdk(startCalls);
+      const supervisorWithQueue = new Supervisor({
+        realSdk,
+        maxWorkers: 1,
+        idleTimeoutMs: 60_000,
+      });
+
+      const active = await supervisorWithQueue.startSession("/tmp/test", { text: "first" });
+      if ("queued" in active || "error" in active)
+        throw new Error("active session was not started");
+
+      const queued = await supervisorWithQueue.resumeSession(
+        "resume-target",
+        "/tmp/test",
+        { text: "continue" },
+        "acceptEdits",
+        {
+          model: "sonnet",
+          thinking: { type: "disabled" },
+          effort: "medium",
+          executor: "resume-executor",
+        },
+      );
+
+      expect("queued" in queued && queued.queued).toBe(true);
+      await supervisorWithQueue.abortProcess(active.id);
+
+      await vi.waitFor(() => expect(startCalls).toHaveLength(2));
+      expect(startCalls[1]).toMatchObject({
+        cwd: "/tmp/test",
+        initialMessage: { text: "continue" },
+        resumeSessionId: "resume-target",
+        permissionMode: "acceptEdits",
+        model: "sonnet",
+        thinking: { type: "disabled" },
+        effort: "medium",
+        executor: "resume-executor",
+      });
+
+      const startedQueuedProcess = supervisorWithQueue.getAllProcesses()[0];
+      if (startedQueuedProcess) await supervisorWithQueue.abortProcess(startedQueuedProcess.id);
+    });
+
+    it("preserves create-only semantics for queued session creation", async () => {
+      const startCalls: StartSessionOptions[] = [];
+      const realSdk = createCapturingRealSdk(startCalls);
+      const supervisorWithQueue = new Supervisor({
+        realSdk,
+        maxWorkers: 1,
+        idleTimeoutMs: 60_000,
+      });
+
+      const active = await supervisorWithQueue.startSession("/tmp/test", { text: "first" });
+      if ("queued" in active || "error" in active)
+        throw new Error("active session was not started");
+
+      const queued = await supervisorWithQueue.createSession("/tmp/test", "plan", {
+        model: "haiku",
+        thinking: { type: "adaptive" },
+        effort: "low",
+      });
+
+      expect("queued" in queued && queued.queued).toBe(true);
+      await supervisorWithQueue.abortProcess(active.id);
+
+      await vi.waitFor(() => expect(startCalls).toHaveLength(2));
+      expect(startCalls[1]).toMatchObject({
+        cwd: "/tmp/test",
+        permissionMode: "plan",
+        model: "haiku",
+        thinking: { type: "adaptive" },
+        effort: "low",
+      });
+      expect(startCalls[1]?.initialMessage).toBeUndefined();
+
+      const startedQueuedProcess = supervisorWithQueue.getAllProcesses()[0];
+      if (startedQueuedProcess) await supervisorWithQueue.abortProcess(startedQueuedProcess.id);
     });
   });
 

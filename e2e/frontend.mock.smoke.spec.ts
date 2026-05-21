@@ -38,6 +38,7 @@ test.beforeEach(async ({ page }) => {
           processId: "proc-1",
           permissionMode: "default",
           modeVersion: 0,
+          state: "waiting-input",
         },
       },
       messages: [
@@ -59,6 +60,7 @@ test.beforeEach(async ({ page }) => {
         processId: "proc-1",
         permissionMode: "default",
         modeVersion: 0,
+        state: "waiting-input",
       },
       pendingInputRequest: {
         id: "input-1",
@@ -276,6 +278,20 @@ test.beforeEach(async ({ page }) => {
       return;
     }
 
+    if (
+      pathname === "/api/projects/proj-1/sessions/sess-existing/metadata" &&
+      request.method() === "GET"
+    ) {
+      await route.fulfill({
+        json: {
+          session: state.sessionDetail.session,
+          ownership: state.sessionDetail.ownership,
+          pendingInputRequest: state.sessionDetail.pendingInputRequest,
+        },
+      });
+      return;
+    }
+
     if (pathname === "/api/projects/proj-1/sessions/sess-created" && request.method() === "GET") {
       await route.fulfill({ json: state.createdSessionDetail });
       return;
@@ -301,6 +317,7 @@ test.beforeEach(async ({ page }) => {
 
     if (pathname === "/api/sessions/sess-existing/input" && request.method() === "POST") {
       state.sessionDetail.pendingInputRequest = null;
+      state.sessionDetail.ownership.state = "idle";
       await route.fulfill({ json: { accepted: true } });
       return;
     }
@@ -349,16 +366,13 @@ test("renders the first-stage workbench shell and excludes unsupported navigatio
 }) => {
   await page.goto("/");
 
-  await expect(page.getByRole("heading", { name: "ScholarAIO Hub" })).toBeVisible();
-  await expect(page.getByText("The Digital Atelier")).toBeVisible();
-  await expect(
-    page.getByText("Local workbench for sessions, projects, and processes."),
-  ).toBeVisible();
-  await expect(page.getByRole("link", { name: "Projects", exact: true })).toBeVisible();
-  await expect(page.getByRole("link", { name: "Sessions", exact: true })).toBeVisible();
-  await expect(page.getByRole("link", { name: "Agents", exact: true })).toBeVisible();
-  await expect(page.getByRole("link", { name: "New Session", exact: true })).toBeVisible();
-  await expect(page.getByRole("link", { name: "Settings", exact: true })).toBeVisible();
+  await expect(page).toHaveURL(/\/projects$/);
+  await expect(page.getByRole("heading", { name: "ScholarAIO" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Projects" })).toBeVisible();
+  await expect(page.getByRole("link", { name: "Library", exact: true })).toBeVisible();
+  await expect(page.getByRole("link", { name: "Search", exact: true })).toBeVisible();
+  await expect(page.getByRole("link", { name: "New Chat", exact: true })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Projects 1" })).toBeVisible();
   await expect(page.getByText("Inbox")).toHaveCount(0);
   await expect(page.getByText("Activity")).toHaveCount(0);
   await expect(page.getByText("Remote")).toHaveCount(0);
@@ -371,70 +385,45 @@ test("covers the client shell against mocked API contracts", async ({ page }) =>
   await expect(page.getByRole("heading", { name: "Projects" })).toBeVisible();
   await expect(page.getByText("/workspace/alpha")).toBeVisible();
   await page.getByPlaceholder("/absolute/path/to/project").fill("/workspace/new-project");
-  await page.getByRole("button", { name: "Add Project" }).click();
+  await page.getByRole("button", { name: "Add", exact: true }).click();
   await expect(page.getByText("/workspace/new-project")).toBeVisible();
 
-  await page
-    .getByRole("link", { name: "Alpha Project /workspace/alpha 2 sessions 1 active" })
-    .click();
-  await expect(page).toHaveURL(/\/sessions\?project=proj-1$/);
-  await expect(page.getByRole("heading", { name: "Sessions" })).toBeVisible();
-  await expect(
-    page.getByRole("link", { name: /Historical provider session Claude Ollama/ }).first(),
-  ).toBeVisible();
-
-  await page
-    .getByRole("link", { name: /Historical provider session/ })
-    .first()
-    .click();
+  await page.goto("/projects/proj-1/sessions/sess-existing");
   await expect(page).toHaveURL(/\/projects\/proj-1\/sessions\/sess-existing$/);
-  await expect(page.getByRole("heading", { name: "Historical provider session" })).toBeVisible();
-  await expect(page.getByText("Session Workspace")).toBeVisible();
-  await expect(page.getByText("Pending Input")).toBeVisible();
+  await expect(page.getByText("Historical provider session").first()).toBeVisible();
   await expect(page.getByText("Summarize the repo state.")).toBeVisible();
   await expect(page.getByText("Repo state summary here.")).toBeVisible();
   await expect(page.getByRole("button", { name: "Approve", exact: true })).toBeVisible();
-  await expect(page.getByRole("button", { name: "Interrupt" })).toBeVisible();
+  const approvalBox = await page.locator(".tool-approval-fixed").boundingBox();
+  const sessionPageBox = await page.locator(".session-page").boundingBox();
+  if (!approvalBox || !sessionPageBox) {
+    throw new Error("Tool approval panel and session page should be visible");
+  }
+  const approvalCenter = approvalBox.x + approvalBox.width / 2;
+  const sessionPageCenter = sessionPageBox.x + sessionPageBox.width / 2;
+  expect(Math.abs(approvalCenter - sessionPageCenter)).toBeLessThanOrEqual(1);
   await page.getByRole("button", { name: "Approve", exact: true }).click();
-  await expect(page.getByText("Pending Input")).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Approve", exact: true })).toHaveCount(0);
   await expect(page.getByRole("button", { name: "Load older messages" })).toBeVisible();
-  await page.getByRole("button", { name: "Interrupt" }).click();
 
-  await page.getByRole("link", { name: "Agents" }).click();
+  await page.goto("/agents");
   await expect(page.getByRole("heading", { name: "Agents" })).toBeVisible();
-  await expect(page.getByText("waiting")).toBeVisible();
-
-  await page.getByRole("link", { name: "Settings" }).click();
-  await expect(page.getByRole("heading", { name: "Settings" })).toBeVisible();
-  await page
-    .getByPlaceholder("Global instructions for new sessions")
-    .fill("Stay concise and grounded.");
-  await page.getByRole("button", { name: "Save" }).click();
-  await expect(page.getByText("Settings saved.")).toBeVisible();
+  await expect(page.getByText("Historical provider session")).toBeVisible();
+  await expect(page.getByText("running")).toBeVisible();
 
   await page.goto("/projects/proj-1/file?path=README.md");
   await expect(page.getByText("README.md")).toBeVisible();
   await expect(page.getByText("Hello from file view.")).toBeVisible();
 
-  await page.goto("/new-session?projectId=proj-1");
-  await expect(page.getByRole("heading", { name: "New Session" })).toBeVisible();
-  const providerSelect = page.locator("select").nth(1);
-  await expect(providerSelect).toHaveValue("claude");
-  await expect(providerSelect.locator("option")).toHaveCount(2);
-  await page.locator('input[type="file"]').setInputFiles({
-    name: "notes.txt",
-    mimeType: "text/plain",
-    buffer: Buffer.from("notes"),
+  await page.evaluate(() => {
+    localStorage.setItem("selectedProjectId", "proj-1");
+    localStorage.setItem("selectedProvider", "claude");
   });
-  await expect(page.getByText("1 attachments selected")).toBeVisible();
-  await page.goto("/new-session?projectId=proj-1");
-  await expect(page.getByRole("heading", { name: "New Session" })).toBeVisible();
-  await providerSelect.selectOption("codex");
-  await page.locator("select").nth(2).selectOption("gpt-5.4-mini");
-  await page.locator("select").nth(3).selectOption("plan");
+  await page.goto("/new-session");
+  await expect(page.getByRole("heading", { name: "New Chat" })).toBeVisible();
+  await expect(page.getByText("有什么我可以帮你的？")).toBeVisible();
   await page.locator("textarea").fill("Start a migration plan.");
-  await page.getByRole("button", { name: "Start Session" }).click();
+  await page.getByRole("button", { name: "Send" }).click();
   await expect(page).toHaveURL(/\/projects\/proj-1\/sessions\/sess-created$/);
-  await expect(page.getByRole("heading", { name: "Created session" })).toBeVisible();
   await expect(page.getByText("Start a migration plan.")).toBeVisible();
 });

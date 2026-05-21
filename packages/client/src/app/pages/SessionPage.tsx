@@ -1,11 +1,12 @@
 import type { PermissionMode } from "@scholaraio-hub/shared";
-import { Bell, Check, PenLine, X } from "lucide-react";
+import { Bell, Check, FolderTree, PenLine, X } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { useLocation, useParams } from "react-router-dom";
 import { api } from "../../core/api";
 import type { ModelInfo, ThinkingOption } from "../../core/types";
 import { MessageInput } from "../../features/session/components/MessageInput";
 import { MessageList } from "../../features/session/components/MessageList";
+import { ResizableProjectFilesPanel } from "../../features/session/components/ProjectFilesPanel";
 import { AgentContentProvider } from "../../features/session/contexts/AgentContentContext";
 import {
   StreamingMarkdownProvider,
@@ -64,6 +65,7 @@ function SessionPageContent({
   initialTitle?: string;
 }) {
   const { setTitle } = usePageTitle();
+  const [filesOpen, setFilesOpen] = useState(false);
   const [message, setMessage] = useState("");
   const [thinking, setThinking] = useState<ThinkingOption>("auto");
   const [busy, setBusy] = useState(false);
@@ -332,153 +334,166 @@ function SessionPageContent({
   }, [title, setTitle]);
 
   return (
-    <section className="session-page">
-      {/* Session header */}
-      <header className="shrink-0 flex items-center justify-between h-[3.25rem] px-4 border-b border-outline-variant/10 bg-surface z-10">
-        <div className="flex items-center gap-2 min-w-0 flex-1">
-          <span className="font-sans text-sm font-medium text-on-surface truncate">{title}</span>
-        </div>
-        <div className="flex items-center gap-2 shrink-0">
-          {session?.provider ? (
-            <span className="text-[10px] font-mono text-on-surface-variant bg-surface-container px-2 py-0.5 rounded">
-              {session.provider}
-              {session.model ? ` · ${session.model}` : ""}
-            </span>
-          ) : null}
-          <span
-            className={`text-[10px] font-mono font-bold px-2 py-0.5 rounded uppercase ${statePillClass}`}
-          >
-            {processStateLabel}
-          </span>
-        </div>
-      </header>
-
-      {ownership.owner === "external" ? (
-        <div className="mx-auto w-full max-w-[830px] mt-2 px-4 py-2 rounded-lg bg-tertiary-container/20 border border-tertiary/20 text-tertiary text-xs">
-          This session is controlled elsewhere.
-        </div>
-      ) : null}
-
-      {ownership.owner !== "self" && pendingInputRequest ? (
-        <div className="mx-auto w-full max-w-[830px] mt-2 px-4 py-2 rounded-lg bg-warning-container/20 text-warning text-xs">
-          This session is waiting for tool call approval. Become the owner to respond.
-        </div>
-      ) : null}
-
-      {pendingInputRequest ? (
-        <div className="tool-approval-fixed" role="presentation">
-          <div className="tool-approval-panel" role="alert" aria-live="assertive">
-            <div className="tool-approval-header">
-              <Bell className="tool-approval-icon" aria-hidden="true" />
-              <span className="tool-approval-question">
-                {pendingInputRequest.toolName ?? pendingInputRequest.prompt}
+    <div className="flex h-full min-h-0 overflow-hidden">
+      <section className="session-page flex-1 min-w-0">
+        {/* Session header */}
+        <header className="shrink-0 flex items-center justify-between h-[3.25rem] px-4 border-b border-outline-variant/10 bg-surface z-10">
+          <div className="flex items-center gap-2 min-w-0 flex-1">
+            <span className="font-sans text-sm font-medium text-on-surface truncate">{title}</span>
+          </div>
+          <div className="flex items-center gap-2 shrink-0">
+            {session?.provider ? (
+              <span className="text-[10px] font-mono text-on-surface-variant bg-surface-container px-2 py-0.5 rounded">
+                {session.provider}
+                {session.model ? ` · ${session.model}` : ""}
               </span>
-            </div>
-            <div className="tool-approval-options">
-              <button
-                type="button"
-                onClick={() => void respondToPendingInput("approve")}
-                className="tool-approval-option primary"
-              >
-                <Check size={13} aria-hidden="true" />
-                Approve
-              </button>
-              <button
-                type="button"
-                onClick={() => void respondToPendingInput("approve_accept_edits")}
-                className="tool-approval-option"
-              >
-                <PenLine size={13} aria-hidden="true" />
-                Approve + Accept Edits
-              </button>
-              <button
-                type="button"
-                onClick={() => void respondToPendingInput("deny")}
-                className="tool-approval-option danger"
-              >
-                <X size={13} aria-hidden="true" />
-                Deny
-              </button>
+            ) : null}
+            <span
+              className={`text-[10px] font-mono font-bold px-2 py-0.5 rounded uppercase ${statePillClass}`}
+            >
+              {processStateLabel}
+            </span>
+            <button
+              type="button"
+              onClick={() => setFilesOpen((v) => !v)}
+              title="Project files"
+              className={`p-1 rounded transition-colors ${filesOpen ? "text-primary bg-primary/10" : "text-on-surface-variant hover:text-on-surface hover:bg-surface-container"}`}
+            >
+              <FolderTree size={15} />
+            </button>
+          </div>
+        </header>
+
+        {ownership.owner === "external" ? (
+          <div className="mx-auto w-full max-w-[830px] mt-2 px-4 py-2 rounded-lg bg-tertiary-container/20 border border-tertiary/20 text-tertiary text-xs">
+            This session is controlled elsewhere.
+          </div>
+        ) : null}
+
+        {ownership.owner !== "self" && pendingInputRequest ? (
+          <div className="mx-auto w-full max-w-[830px] mt-2 px-4 py-2 rounded-lg bg-warning-container/20 text-warning text-xs">
+            This session is waiting for tool call approval. Become the owner to respond.
+          </div>
+        ) : null}
+
+        {pendingInputRequest ? (
+          <div className="tool-approval-fixed" role="presentation">
+            <div className="tool-approval-panel" role="alert" aria-live="assertive">
+              <div className="tool-approval-header">
+                <Bell className="tool-approval-icon" aria-hidden="true" />
+                <span className="tool-approval-question">
+                  {pendingInputRequest.toolName ?? pendingInputRequest.prompt}
+                </span>
+              </div>
+              <div className="tool-approval-options">
+                <button
+                  type="button"
+                  onClick={() => void respondToPendingInput("approve")}
+                  className="tool-approval-option primary"
+                >
+                  <Check size={13} aria-hidden="true" />
+                  Approve
+                </button>
+                <button
+                  type="button"
+                  onClick={() => void respondToPendingInput("approve_accept_edits")}
+                  className="tool-approval-option"
+                >
+                  <PenLine size={13} aria-hidden="true" />
+                  Approve + Accept Edits
+                </button>
+                <button
+                  type="button"
+                  onClick={() => void respondToPendingInput("deny")}
+                  className="tool-approval-option danger"
+                >
+                  <X size={13} aria-hidden="true" />
+                  Deny
+                </button>
+              </div>
             </div>
           </div>
-        </div>
-      ) : null}
-
-      <main
-        className={`session-messages${pendingInputRequest ? " session-messages-with-approval" : ""}`}
-      >
-        {error ? <div className="error">{error.message}</div> : null}
-        {sendError ? <div className="error">{sendError}</div> : null}
-        {loading ? <div className="loading">Loading session...</div> : null}
-
-        {!loading ? (
-          <AgentContentProvider
-            agentContent={agentContent}
-            setAgentContent={setAgentContent}
-            toolUseToAgent={toolUseToAgent}
-            projectId={projectId}
-            sessionId={sessionId}
-          >
-            <MessageList
-              messages={messages as SessionRenderMessage[]}
-              markdownAugments={markdownAugments}
-              provider={session?.provider}
-              isStreaming={ownership.owner === "self" && processState === "in-turn"}
-              isProcessing={ownership.owner === "self" && processState === "in-turn"}
-              isCompacting={isCompacting}
-              scrollTrigger={scrollTrigger}
-              activeToolApproval={activeToolApproval}
-              hasOlderMessages={pagination?.hasOlderMessages ?? false}
-              loadingOlder={loadingOlder}
-              onLoadOlderMessages={loadOlderMessages}
-              pendingMessages={pendingMessages}
-              deferredMessages={deferredMessages}
-              onCancelDeferred={(tempId) => {
-                void api.cancelDeferredMessage(sessionId, tempId);
-              }}
-            />
-          </AgentContentProvider>
         ) : null}
-      </main>
 
-      <footer className="session-input">
-        <div className={`session-connection-bar session-connection-${connectionStatus}`} />
-        <div className="session-input-inner">
-          <MessageInput
-            message={message}
-            thinking={thinking}
-            busy={busy}
-            attachments={attachmentUploads.attachments}
-            uploadProgress={attachmentUploads.uploadProgress}
-            model={selectedModel}
-            models={models}
-            permissionMode={permissionMode ?? "default"}
-            isHeld={sessionIsHeld}
-            draftKey={`session:${sessionId}`}
-            slashCommands={
-              ownership.owner === "self" ? slashCommands.map((name) => ({ name })) : []
-            }
-            contextUsage={session?.contextUsage}
-            onMessageChange={setMessage}
-            onThinkingChange={setThinking}
-            onAttachFiles={attachmentUploads.addFiles}
-            onRemoveAttachment={attachmentUploads.removeAttachment}
-            onModelChange={(m) => void handleModelChange(m)}
-            onPermissionModeChange={(mode) => void handlePermissionModeChange(mode)}
-            onHoldChange={
-              ownership.owner === "self" ? (held) => void handleHoldChange(held) : undefined
-            }
-            onSend={send}
-            onQueue={ownership.owner === "self" && processState !== "idle" ? queue : undefined}
-            onStop={handleStop}
-            isRunning={ownership.owner === "self"}
-            isThinking={processState === "in-turn" || processState === "hold"}
-            placeholder={placeholder}
-            supportsPermissionMode={supportsPermissionMode}
-            supportsThinkingToggle={supportsThinkingToggle}
-          />
-        </div>
-      </footer>
-    </section>
+        <main
+          className={`session-messages${pendingInputRequest ? " session-messages-with-approval" : ""}`}
+        >
+          {error ? <div className="error">{error.message}</div> : null}
+          {sendError ? <div className="error">{sendError}</div> : null}
+          {loading ? <div className="loading">Loading session...</div> : null}
+
+          {!loading ? (
+            <AgentContentProvider
+              agentContent={agentContent}
+              setAgentContent={setAgentContent}
+              toolUseToAgent={toolUseToAgent}
+              projectId={projectId}
+              sessionId={sessionId}
+            >
+              <MessageList
+                messages={messages as SessionRenderMessage[]}
+                markdownAugments={markdownAugments}
+                provider={session?.provider}
+                isStreaming={ownership.owner === "self" && processState === "in-turn"}
+                isProcessing={ownership.owner === "self" && processState === "in-turn"}
+                isCompacting={isCompacting}
+                scrollTrigger={scrollTrigger}
+                activeToolApproval={activeToolApproval}
+                hasOlderMessages={pagination?.hasOlderMessages ?? false}
+                loadingOlder={loadingOlder}
+                onLoadOlderMessages={loadOlderMessages}
+                pendingMessages={pendingMessages}
+                deferredMessages={deferredMessages}
+                onCancelDeferred={(tempId) => {
+                  void api.cancelDeferredMessage(sessionId, tempId);
+                }}
+              />
+            </AgentContentProvider>
+          ) : null}
+        </main>
+
+        <footer className="session-input">
+          <div className={`session-connection-bar session-connection-${connectionStatus}`} />
+          <div className="session-input-inner">
+            <MessageInput
+              message={message}
+              thinking={thinking}
+              busy={busy}
+              attachments={attachmentUploads.attachments}
+              uploadProgress={attachmentUploads.uploadProgress}
+              model={selectedModel}
+              models={models}
+              permissionMode={permissionMode ?? "default"}
+              isHeld={sessionIsHeld}
+              draftKey={`session:${sessionId}`}
+              slashCommands={
+                ownership.owner === "self" ? slashCommands.map((name) => ({ name })) : []
+              }
+              contextUsage={session?.contextUsage}
+              onMessageChange={setMessage}
+              onThinkingChange={setThinking}
+              onAttachFiles={attachmentUploads.addFiles}
+              onRemoveAttachment={attachmentUploads.removeAttachment}
+              onModelChange={(m) => void handleModelChange(m)}
+              onPermissionModeChange={(mode) => void handlePermissionModeChange(mode)}
+              onHoldChange={
+                ownership.owner === "self" ? (held) => void handleHoldChange(held) : undefined
+              }
+              onSend={send}
+              onQueue={ownership.owner === "self" && processState !== "idle" ? queue : undefined}
+              onStop={handleStop}
+              isRunning={ownership.owner === "self"}
+              isThinking={processState === "in-turn" || processState === "hold"}
+              placeholder={placeholder}
+              supportsPermissionMode={supportsPermissionMode}
+              supportsThinkingToggle={supportsThinkingToggle}
+            />
+          </div>
+        </footer>
+      </section>
+      {filesOpen && (
+        <ResizableProjectFilesPanel projectId={projectId} onClose={() => setFilesOpen(false)} />
+      )}
+    </div>
   );
 }

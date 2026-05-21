@@ -4,6 +4,7 @@ import type {
   NewSessionDefaults,
   PermissionMode,
   PermissionRules,
+  ProjectFsBrowseResponse,
   ProviderInfo,
   ProviderName,
   ProviderUsageLimits,
@@ -190,6 +191,11 @@ export const api = {
       resumeProtocolVersion?: number;
       capabilities?: string[];
     }>("/api/version", { signal: options?.signal }),
+  browseProjectFs: (projectId: string, path = "", options?: RequestOptions) =>
+    requestJson<ProjectFsBrowseResponse>(
+      withQuery(`/api/projects/${projectId}/fs/browse`, { path: path || null }),
+      { signal: options?.signal },
+    ),
   getFile: (projectId: string, filePath: string, highlight = true, options?: RequestOptions) =>
     requestJson<FileContentResponse>(
       withQuery(`/api/projects/${projectId}/files`, { path: filePath, highlight }),

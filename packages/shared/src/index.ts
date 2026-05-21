@@ -28,6 +28,8 @@ export type {
   EffortLevel,
   FileMetadata,
   FileContentResponse,
+  ProjectFsEntry,
+  ProjectFsBrowseResponse,
   PatchHunk,
   EditAugment,
   PermissionRules,

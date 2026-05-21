@@ -1,10 +1,12 @@
 import type { Stats } from "node:fs";
-import { readFile, stat } from "node:fs/promises";
+import { readFile, readdir, stat } from "node:fs/promises";
 import { extname, normalize, resolve, sep } from "node:path";
 import {
   type FileContentResponse,
   type FileMetadata,
   type PatchHunk,
+  type ProjectFsBrowseResponse,
+  type ProjectFsEntry,
   isUrlProjectId,
 } from "@scholaraio-hub/shared";
 import { Hono } from "hono";
@@ -544,6 +546,63 @@ export function createFilesRoutes(deps: FilesDeps): Hono {
       structuredPatch: augment.structuredPatch as PatchHunk[],
       diffHtml: augment.diffHtml,
     });
+  });
+
+  /**
+   * GET /api/projects/:projectId/fs/browse
+   * List immediate children of a directory within the project root.
+   * Query params:
+   *   - path: relative path from project root (default: "" = root)
+   */
+  routes.get("/:projectId/fs/browse", async (c) => {
+    const projectId = c.req.param("projectId");
+    const relativePath = c.req.query("path") ?? "";
+
+    if (!isUrlProjectId(projectId)) {
+      return c.json({ error: "Invalid project ID format" }, 400);
+    }
+
+    if (relativePath.includes("..")) {
+      return c.json({ error: "Path traversal not allowed" }, 400);
+    }
+
+    const project = await deps.scanner.getProject(projectId);
+    if (!project) {
+      return c.json({ error: "Project not found" }, 404);
+    }
+
+    const projectRoot = resolve(project.path);
+    const targetPath = relativePath ? resolve(projectRoot, normalize(relativePath)) : projectRoot;
+
+    if (!targetPath.startsWith(`${projectRoot}${sep}`) && targetPath !== projectRoot) {
+      return c.json({ error: "Path escapes project root" }, 400);
+    }
+
+    let names: string[];
+    try {
+      names = await readdir(targetPath);
+    } catch {
+      return c.json({ error: "Directory not readable" }, 403);
+    }
+
+    const entries: ProjectFsEntry[] = [];
+    await Promise.all(
+      names.map(async (name) => {
+        try {
+          const entryStat = await stat(`${targetPath}${sep}${name}`);
+          entries.push({ name, isDir: entryStat.isDirectory(), isDotfile: name.startsWith(".") });
+        } catch {
+          // skip unreadable entries
+        }
+      }),
+    );
+
+    entries.sort((a, b) => {
+      if (a.isDir !== b.isDir) return a.isDir ? -1 : 1;
+      return a.name.localeCompare(b.name);
+    });
+
+    return c.json({ path: relativePath, entries } satisfies ProjectFsBrowseResponse);
   });
 
   return routes;

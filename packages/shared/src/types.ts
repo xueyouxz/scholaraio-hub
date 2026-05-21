@@ -240,6 +240,25 @@ export interface FileMetadata {
 }
 
 /**
+ * An entry in a project filesystem browse response.
+ */
+export interface ProjectFsEntry {
+  name: string;
+  isDir: boolean;
+  /** True for files/dirs whose name starts with "." */
+  isDotfile: boolean;
+}
+
+/**
+ * Response from GET /api/projects/:projectId/fs/browse
+ */
+export interface ProjectFsBrowseResponse {
+  /** Relative path from project root that was listed */
+  path: string;
+  entries: ProjectFsEntry[];
+}
+
+/**
  * Response from the file content API.
  */
 export interface FileContentResponse {

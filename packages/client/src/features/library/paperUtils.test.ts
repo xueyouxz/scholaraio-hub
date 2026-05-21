@@ -1,7 +1,11 @@
 import { describe, expect, it } from "vitest";
 import type { ScholarPaper } from "../../core/api";
 import {
+  abbreviateSource,
   buildPdfUrl,
+  buildSourceDist,
+  buildTypeDist,
+  buildYearCounts,
   canNavigateToReader,
   canReadLayers,
   canReadPdf,
@@ -234,5 +238,97 @@ describe("groupByYear", () => {
     expect(groups).toHaveLength(1);
     expect(groups[0].year).toBe(2024);
     expect(groups[0].papers).toHaveLength(1);
+  });
+});
+
+// ─── abbreviateSource ────────────────────────────────────────────────────────
+
+describe("abbreviateSource", () => {
+  it("abbreviates known journals", () => {
+    expect(abbreviateSource("IEEE Transactions on Visualization and Computer Graphics")).toBe(
+      "IEEE TVCG",
+    );
+    expect(abbreviateSource("Neural Information Processing Systems")).toBe("NeurIPS");
+    expect(abbreviateSource("International Conference on Learning Representations")).toBe("ICLR");
+  });
+
+  it("returns the source unchanged when not in the map", () => {
+    expect(abbreviateSource("Unknown Journal")).toBe("Unknown Journal");
+    expect(abbreviateSource("Nature")).toBe("Nature");
+  });
+});
+
+// ─── buildYearCounts ─────────────────────────────────────────────────────────
+
+describe("buildYearCounts", () => {
+  it("counts papers by year in ascending order", () => {
+    const papers = [
+      makePaper({ year: 2022 }),
+      makePaper({ year: 2021 }),
+      makePaper({ year: 2022 }),
+    ];
+    const result = buildYearCounts(papers);
+    expect(result.map((r) => r.year)).toEqual([2021, 2022]);
+    expect(result.find((r) => r.year === 2022)?.count).toBe(2);
+  });
+
+  it("excludes years <= 1900", () => {
+    const papers = [makePaper({ year: 0 }), makePaper({ year: 2023 })];
+    const result = buildYearCounts(papers);
+    expect(result).toHaveLength(1);
+    expect(result[0].year).toBe(2023);
+  });
+
+  it("returns empty array for empty input", () => {
+    expect(buildYearCounts([])).toEqual([]);
+  });
+});
+
+// ─── buildTypeDist ───────────────────────────────────────────────────────────
+
+describe("buildTypeDist", () => {
+  it("groups unknown paperType into other", () => {
+    const papers = [makePaper({ id: "a" }), makePaper({ id: "b" })];
+    const result = buildTypeDist(papers);
+    expect(result.some((r) => r.label === "other")).toBe(true);
+  });
+
+  it("handles empty array", () => {
+    expect(buildTypeDist([])).toEqual([]);
+  });
+
+  it("computes ratio correctly", () => {
+    const papers: PaperReference[] = [
+      { ...makePaper({ id: "a" }), paperType: "journal" } as PaperReference & { paperType: string },
+      { ...makePaper({ id: "b" }), paperType: "journal" } as PaperReference & { paperType: string },
+      { ...makePaper({ id: "c" }), paperType: "conference" } as PaperReference & {
+        paperType: string;
+      },
+    ];
+    const result = buildTypeDist(papers);
+    const journal = result.find((r) => r.label === "期刊论文");
+    expect(journal?.ratio).toBeCloseTo(2 / 3, 5);
+  });
+});
+
+// ─── buildSourceDist ─────────────────────────────────────────────────────────
+
+describe("buildSourceDist", () => {
+  it("excludes empty sources", () => {
+    const papers = [makePaper({ source: "" }), makePaper({ source: "Nature" })];
+    const result = buildSourceDist(papers);
+    expect(result.every((r) => r.label !== "")).toBe(true);
+    expect(result.some((r) => r.label === "Nature")).toBe(true);
+  });
+
+  it("returns at most 6 bars", () => {
+    const papers = Array.from({ length: 10 }, (_, i) =>
+      makePaper({ id: String(i), source: `Journal ${i}` }),
+    );
+    expect(buildSourceDist(papers).length).toBeLessThanOrEqual(6);
+  });
+
+  it("returns empty array for empty input", () => {
+    expect(buildSourceDist([])).toEqual([]);
   });
 });

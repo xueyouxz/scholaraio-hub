@@ -7,6 +7,7 @@ import type { NotificationService } from "./notifications/index.js";
 import { CODEX_SESSIONS_DIR, CodexSessionScanner } from "./projects/codex-scanner.js";
 import { ProjectScanner } from "./projects/scanner.js";
 import { createFilesRoutes } from "./routes/files.js";
+import { createFsRoutes } from "./routes/fs.js";
 import { health } from "./routes/health.js";
 import { createProcessesRoutes } from "./routes/processes.js";
 import { createProjectsRoutes } from "./routes/projects.js";
@@ -297,6 +298,8 @@ export function createApp(options: AppOptions): AppResult {
       scholarAioApiUrl: options.scholarAioApiUrl ?? "http://127.0.0.1:8765",
     }),
   );
+
+  app.route("/hub/fs", createFsRoutes());
 
   if (options.frontendDistPath) {
     app.route("/", createStaticRoutes({ distPath: options.frontendDistPath }));

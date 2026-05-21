@@ -3,6 +3,7 @@ dist/
 temp/
 test-results/
 .playwright/
+.env.local
 
 # TypeScript incremental build cache
 *.tsbuildinfo

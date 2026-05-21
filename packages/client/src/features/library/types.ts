@@ -1,6 +1,7 @@
 import type { LucideIcon } from "lucide-react";
 
 export type PaperStatus = "ingested" | "indexing" | "pending" | "no-pdf";
+export type TopicColorMap = Map<number, string>;
 export type ViewMode = "list" | "grid";
 
 /** 阅读器中的内容标签页：概览（元数据+摘要+结论）、全文、PDF 原文。 */
@@ -30,6 +31,7 @@ export interface PaperReference {
   isIndexed?: boolean;
   abstract?: string;
   coverImage?: string | null;
+  paperType?: string;
 }
 
 export interface StatCardReference {
@@ -38,9 +40,16 @@ export interface StatCardReference {
   badge: string;
   icon: LucideIcon;
   tone: "primary" | "secondary" | "tertiary" | "error";
+  miniChart?: MiniChartBar[];
 }
 
 export interface YearGroup {
   year: number;
   papers: PaperReference[];
+}
+
+export interface MiniChartBar {
+  label: string;
+  count: number;
+  ratio: number;
 }

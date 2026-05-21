@@ -48,6 +48,10 @@ export default defineConfig(({ mode }) => {
           target: `http://${host}:${ports.app}`,
           changeOrigin: false,
         },
+        "/hub": {
+          target: `http://${host}:${ports.app}`,
+          changeOrigin: false,
+        },
         "/health": {
           target: `http://${host}:${ports.app}`,
           changeOrigin: false,

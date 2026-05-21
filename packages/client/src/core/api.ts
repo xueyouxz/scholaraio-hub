@@ -64,9 +64,41 @@ export interface ScholarStats {
 
 export interface ScholarConfig {
   llm: { backend: string; model: string; base_url: string; api_key: string };
-  embed: { provider?: string; model: string; source: string; api_key: string };
-  ingest: { mineru_endpoint: string; mineru_api_key: string; s2_api_key: string };
+  embed: {
+    provider: string;
+    model: string;
+    source: string;
+    cache_dir: string;
+    api_base: string;
+    api_key: string;
+  };
+  ingest: {
+    pdf_preferred_parser: string;
+    mineru_endpoint: string;
+    mineru_api_key: string;
+    mineru_cloud_url: string;
+    s2_api_key: string;
+    mineru_lang: string;
+    mineru_parse_method: string;
+    abstract_llm_mode: string;
+    mineru_enable_formula: boolean;
+    mineru_enable_table: boolean;
+  };
   paths: { papers_dir: string; workspace_dir: string };
+}
+
+type DeepPartial<T> = { [K in keyof T]?: T[K] extends object ? DeepPartial<T[K]> : T[K] };
+
+export interface HealthLevel {
+  level: 1 | 2 | 3;
+  label: string;
+  status: "ok" | "fail" | "skip";
+  detail?: string;
+}
+
+export interface HealthCheckResult {
+  scope: string;
+  levels: HealthLevel[];
 }
 
 export const api = {
@@ -312,6 +344,32 @@ export const scholar = {
     ),
   getConfig: (options?: RequestOptions) =>
     requestJson<ScholarConfig>(`${SCHOLAR_API_BASE}/config`, { signal: options?.signal }),
+  patchConfig: (patch: DeepPartial<ScholarConfig>, options?: RequestOptions) =>
+    requestJson<ScholarConfig>(`${SCHOLAR_API_BASE}/config`, {
+      method: "PATCH",
+      body: JSON.stringify(patch),
+      signal: options?.signal,
+    }),
+  healthCheck: (scope: string, options?: RequestOptions) =>
+    requestJson<HealthCheckResult>(`${SCHOLAR_API_BASE}/health/check`, {
+      method: "POST",
+      body: JSON.stringify({ scope }),
+      signal: options?.signal,
+    }),
+  getTopics: (options?: RequestOptions) =>
+    requestJson<ScholarTopicsOverview>(`${SCHOLAR_API_BASE}/analytics/topics`, {
+      signal: options?.signal,
+    }),
+  getProjection: (options?: RequestOptions) =>
+    requestJson<ScholarProjection>(`${SCHOLAR_API_BASE}/analytics/projection`, {
+      signal: options?.signal,
+    }),
+  submitJob: (body: { kind: string; [key: string]: unknown }) =>
+    requestJson<{ id: string; kind: string; status: string }>(`${SCHOLAR_API_BASE}/jobs`, {
+      method: "POST",
+      body: JSON.stringify(body),
+    }),
+  getJobStream: () => new EventSource(`${SCHOLAR_API_BASE}/jobs/stream`),
 };
 
 export interface ScholarPaper {
@@ -349,6 +407,51 @@ export interface ScholarWorkspaceSummary {
 export interface ScholarWorkspace extends ScholarWorkspaceSummary {
   papers: ScholarPaper[];
 }
+
+export interface ScholarTopic {
+  id: number;
+  keywords: string[];
+  paperCount: number;
+  name: string;
+}
+
+export interface ScholarTopicsOverview {
+  built: boolean;
+  topicCount?: number;
+  topics: ScholarTopic[];
+  computedAt?: string;
+}
+
+export interface ScholarProjectionPoint {
+  id: string;
+  x: number;
+  y: number;
+  topicId: number;
+  year: number;
+  title: string;
+}
+
+export interface ScholarProjection {
+  built: boolean;
+  stale: boolean;
+  vectorCount?: number;
+  currentVectorCount?: number;
+  computedAt?: string;
+  points: ScholarProjectionPoint[];
+}
+
+export interface FsEntry {
+  name: string;
+  isDir: boolean;
+}
+
+export interface FsBrowseResponse {
+  path: string;
+  entries: FsEntry[];
+}
+
+export const browseFsDirectory = (path: string, options?: RequestOptions) =>
+  requestJson<FsBrowseResponse>(withQuery("/hub/fs/browse", { path }), { signal: options?.signal });
 
 export const PERMISSION_MODES: readonly PermissionMode[] = [
   "default",

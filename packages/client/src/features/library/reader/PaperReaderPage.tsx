@@ -148,7 +148,7 @@ export function PaperReaderPage() {
           <div className="shrink-0 flex items-center gap-2 px-5 border-b border-outline-variant/15 bg-surface-container-low h-12 overflow-x-auto no-scrollbar">
             <button
               type="button"
-              onClick={() => navigate("/library")}
+              onClick={() => navigate(-1)}
               className="shrink-0 px-3 py-1.5 rounded-full text-xs font-medium transition-colors border cursor-pointer bg-surface-container-high text-on-surface-variant border-outline-variant/30 hover:bg-surface-container"
             >
               ← 返回

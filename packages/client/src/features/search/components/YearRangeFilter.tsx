@@ -1,4 +1,4 @@
-import { useEffect, useRef } from "react";
+import { useCallback, useEffect, useRef } from "react";
 
 export interface YearBin {
   year: number;
@@ -28,23 +28,28 @@ export function YearRangeFilter({ bins, minYear, maxYear, value, onChange }: Pro
   const maxCount = Math.max(...bins.map((b) => b.count), 1);
   const currentYear = new Date().getFullYear();
 
-  const clampYear = (y: number) => Math.max(minYear, Math.min(maxYear, y));
+  const clampYear = useCallback(
+    (y: number) => Math.max(minYear, Math.min(maxYear, y)),
+    [minYear, maxYear],
+  );
   const yearToFrac = (y: number) => (y - minYear) / totalYears;
 
-  const fracToYear = (frac: number) =>
-    clampYear(Math.round(minYear + Math.max(0, Math.min(1, frac)) * totalYears));
+  const fracToYear = useCallback(
+    (frac: number) => clampYear(Math.round(minYear + Math.max(0, Math.min(1, frac)) * totalYears)),
+    [clampYear, minYear, totalYears],
+  );
 
-  const getHistFrac = (clientX: number) => {
+  const getHistFrac = useCallback((clientX: number) => {
     const rect = histRef.current?.getBoundingClientRect();
     if (!rect || rect.width === 0) return 0;
     return (clientX - rect.left) / rect.width;
-  };
+  }, []);
 
-  const getTrackFrac = (clientX: number) => {
+  const getTrackFrac = useCallback((clientX: number) => {
     const rect = trackRef.current?.getBoundingClientRect();
     if (!rect || rect.width === 0) return 0;
     return (clientX - rect.left) / rect.width;
-  };
+  }, []);
 
   const handleHistMouseDown = (e: React.MouseEvent<SVGSVGElement>) => {
     e.preventDefault();
@@ -85,7 +90,7 @@ export function YearRangeFilter({ bins, minYear, maxYear, value, onChange }: Pro
       document.removeEventListener("mousemove", onMove);
       document.removeEventListener("mouseup", onUp);
     };
-  }, [onChange, minYear, maxYear]);
+  }, [fracToYear, getHistFrac, getTrackFrac, onChange]);
 
   const quickTags: { label: string; range: [number, number] }[] = [
     { label: "全部", range: [minYear, maxYear] },
@@ -113,6 +118,7 @@ export function YearRangeFilter({ bins, minYear, maxYear, value, onChange }: Pro
         onMouseDown={handleHistMouseDown}
         style={{ display: "block" }}
       >
+        <title>年份分布</title>
         {bins.map((bin, i) => {
           const x = (i / bins.length) * 100;
           const barH = Math.max(2, (bin.count / maxCount) * HIST_H);

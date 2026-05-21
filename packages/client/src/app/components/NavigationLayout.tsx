@@ -185,6 +185,8 @@ export function NavigationLayout() {
 
   const isSessionRoute = /^\/projects\/[^/]+\/sessions\/[^/]+/.test(location.pathname);
   const isPaperReaderRoute = /^\/library\/.+/.test(location.pathname);
+  const isSearchRoute = location.pathname === "/search";
+  const isFullscreenRoute = isSessionRoute || isPaperReaderRoute || isSearchRoute;
 
   return (
     <ProjectScopeContext value={projectScopeContext}>
@@ -233,7 +235,9 @@ export function NavigationLayout() {
           />
 
           {/* Main content — no margin/padding needed; grid track handles spacing */}
-          <div className="flex flex-col min-w-0 min-h-screen">
+          <div
+            className={`flex flex-col min-w-0 ${isFullscreenRoute ? "h-screen overflow-hidden" : "min-h-screen"}`}
+          >
             {!isSessionRoute ? (
               <header className="sticky top-0 z-30 flex items-center h-[3.25rem] px-6 bg-surface border-b border-outline-variant/10">
                 {pageTitle ? (
@@ -246,8 +250,8 @@ export function NavigationLayout() {
 
             <main
               className={
-                isSessionRoute || isPaperReaderRoute
-                  ? "flex-1 min-w-0 min-h-0"
+                isFullscreenRoute
+                  ? "flex-1 min-w-0 min-h-0 flex flex-col"
                   : "flex-1 min-w-0 px-6 py-8 flex flex-col"
               }
             >

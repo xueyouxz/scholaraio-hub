@@ -18,5 +18,7 @@ export const queryKeys = {
     workspaces: () => ["scholar", "workspaces"] as const,
     workspace: (name: string) => ["scholar", "workspace", name] as const,
     config: () => ["scholar", "config"] as const,
+    topics: () => ["scholar", "analytics", "topics"] as const,
+    projection: () => ["scholar", "analytics", "projection"] as const,
   },
 };

@@ -1,4 +1,4 @@
-import { spawn } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -53,7 +53,16 @@ function spawnChild(cmd, args, label, opts = {}) {
   return child;
 }
 
-spawnChild("scholaraio", ["serve"], "scholaraio", { env: scholarEnv });
+const isWindows = process.platform === "win32";
+const whichCmd = isWindows ? "where" : "which";
+const hasScholaraio = spawnSync(whichCmd, ["scholaraio"], { stdio: "ignore" }).status === 0;
+
+if (hasScholaraio) {
+  spawnChild("scholaraio", ["serve"], "scholaraio", { env: scholarEnv });
+} else {
+  console.log("[scholaraio] not installed — /api/scholar/* routes will be unavailable.");
+  console.log("[scholaraio] see: https://github.com/ZimoLiao/scholaraio");
+}
 
 const hub = spawnChild(
   "pnpm",

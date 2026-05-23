@@ -1,7 +1,5 @@
+import { Suspense, lazy } from "react";
 import { BrowserRouter, Navigate, Route, Routes } from "react-router-dom";
-import { LibraryPage } from "../features/library/LibraryPage";
-import { PaperReaderPage } from "../features/library/reader/PaperReaderPage";
-import { SearchPage } from "../features/search/SearchPage";
 import { NavigationLayout } from "./components/NavigationLayout";
 import { AgentsPage } from "./pages/AgentsPage";
 import { FilePage } from "./pages/FilePage";
@@ -9,6 +7,26 @@ import { NewSessionPage } from "./pages/NewSessionPage";
 import { ProjectsPage } from "./pages/ProjectsPage";
 import { SessionPage } from "./pages/SessionPage";
 import { SettingsPage } from "./pages/SettingsPage";
+
+const LibraryPage = lazy(() =>
+  import("../features/library/LibraryPage").then((m) => ({ default: m.LibraryPage })),
+);
+const PaperReaderPage = lazy(() =>
+  import("../features/library/reader/PaperReaderPage").then((m) => ({
+    default: m.PaperReaderPage,
+  })),
+);
+const SearchPage = lazy(() =>
+  import("../features/search/SearchPage").then((m) => ({ default: m.SearchPage })),
+);
+
+function PageFallback() {
+  return (
+    <div className="flex-1 flex items-center justify-center">
+      <span className="text-xs font-mono text-on-surface-variant animate-pulse">加载中…</span>
+    </div>
+  );
+}
 
 export function App() {
   return (
@@ -20,10 +38,31 @@ export function App() {
           <Route path="/agents" element={<AgentsPage />} />
           <Route path="/new-session" element={<NewSessionPage />} />
           <Route path="/settings" element={<SettingsPage />} />
-          <Route path="/library" element={<LibraryPage />} />
-          <Route path="/library/:paperId" element={<PaperReaderPage />} />
-          <Route path="/search" element={<SearchPage />} />
           <Route path="/projects/:projectId/sessions/:sessionId" element={<SessionPage />} />
+          <Route
+            path="/library"
+            element={
+              <Suspense fallback={<PageFallback />}>
+                <LibraryPage />
+              </Suspense>
+            }
+          />
+          <Route
+            path="/library/:paperId"
+            element={
+              <Suspense fallback={<PageFallback />}>
+                <PaperReaderPage />
+              </Suspense>
+            }
+          />
+          <Route
+            path="/search"
+            element={
+              <Suspense fallback={<PageFallback />}>
+                <SearchPage />
+              </Suspense>
+            }
+          />
         </Route>
         <Route path="/projects/:projectId/file" element={<FilePage />} />
       </Routes>

@@ -1,4 +1,3 @@
-import { Lasso, RotateCcw, ZoomIn } from "lucide-react";
 import { useCallback, useMemo, useRef, useState } from "react";
 import type { ScholarProjection, ScholarTopicsOverview } from "../../../core/api";
 import { useJobMutation } from "../hooks/useJobMutation";
@@ -6,7 +5,6 @@ import type { PaperReference, TopicColorMap } from "../types";
 import { PaperDetailPanel } from "./PaperDetailPanel";
 import { TopicBarChart } from "./TopicBubbleBar";
 import { ScatterPlot, type ScatterPlotRef } from "./charts/ScatterPlot";
-import type { ScatterMode } from "./charts/ScatterPlotController";
 
 interface Props {
   papers: PaperReference[];
@@ -28,7 +26,6 @@ export function LibraryAnalyticsPanel({
   onTopicSelect,
 }: Props) {
   const [selectedPaperId, setSelectedPaperId] = useState<string | null>(null);
-  const [scatterMode, setScatterMode] = useState<ScatterMode>("none");
   const [lassoFills, setLassoFills] = useState<Map<
     number,
     { ratio: number; count: number }
@@ -94,14 +91,6 @@ export function LibraryAnalyticsPanel({
     [projectionPoints],
   );
 
-  const toggleMode = (m: ScatterMode) => setScatterMode((prev) => (prev === m ? "none" : m));
-
-  const resetState = () => {
-    setLassoFills(null);
-    setScatterMode("none");
-    scatterPlotRef.current?.resetZoom();
-  };
-
   return (
     <div className="flex flex-col flex-1 min-h-0 gap-2">
       <TopicBarChart
@@ -116,43 +105,16 @@ export function LibraryAnalyticsPanel({
 
       <div className="relative flex-1 min-h-0 w-full bg-surface-container-low border border-outline-variant/10 rounded-lg overflow-hidden">
         {projectionBuilt ? (
-          <>
-            <ScatterPlot
-              ref={scatterPlotRef}
-              points={projectionPoints}
-              activeIds={activeIds}
-              selectedId={selectedPaperId}
-              topicColors={topicColors}
-              mode={scatterMode}
-              onPointClick={(id) => setSelectedPaperId((prev) => (prev === id ? null : id))}
-              onLassoSelect={handleLassoSelect}
-            />
-            {/* Toolbar overlay — top-right inside the canvas */}
-            <div className="absolute top-2 right-2 flex items-center gap-0.5 p-0.5">
-              <button
-                type="button"
-                onClick={() => toggleMode("zoom")}
-                className={`p-1.5 rounded-md transition-colors ${scatterMode === "zoom" ? "bg-primary/15 text-primary" : "text-on-surface-variant hover:bg-surface-container-high"}`}
-              >
-                <ZoomIn className="w-3.5 h-3.5" />
-              </button>
-              <button
-                type="button"
-                onClick={() => toggleMode("lasso")}
-                className={`p-1.5 rounded-md transition-colors ${scatterMode === "lasso" ? "bg-primary/15 text-primary" : "text-on-surface-variant hover:bg-surface-container-high"}`}
-              >
-                <Lasso className="w-3.5 h-3.5" />
-              </button>
-              <button
-                type="button"
-                onClick={resetState}
-                className="p-1.5 rounded-md text-on-surface-variant hover:bg-surface-container-high transition-colors"
-                title="重置"
-              >
-                <RotateCcw className="w-3.5 h-3.5" />
-              </button>
-            </div>
-          </>
+          <ScatterPlot
+            ref={scatterPlotRef}
+            points={projectionPoints}
+            activeIds={activeIds}
+            selectedId={selectedPaperId}
+            topicColors={topicColors}
+            onPointClick={(id) => setSelectedPaperId((prev) => (prev === id ? null : id))}
+            onLassoSelect={handleLassoSelect}
+            onReset={() => setLassoFills(null)}
+          />
         ) : (
           <div className="w-full h-full flex flex-col items-center justify-center gap-3 p-6 text-center">
             <div className="text-xs font-medium text-on-surface">散点图尚未生成</div>

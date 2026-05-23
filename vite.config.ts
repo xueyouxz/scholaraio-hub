@@ -34,11 +34,17 @@ export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, __dirname, "");
   const host = env.HOST || "127.0.0.1";
   const ports = resolveDerivedPorts({ ...process.env, ...env });
+  const isDev = mode === "development";
 
   return {
     root: path.resolve(__dirname, "packages/client"),
     envDir: __dirname,
     plugins: [tailwindcss(), react()],
+    resolve: {
+      alias: {
+        "@": path.resolve(__dirname, "packages/client/src"),
+      },
+    },
     server: {
       host,
       port: ports.client,
@@ -66,7 +72,27 @@ export default defineConfig(({ mode }) => {
     build: {
       outDir: path.resolve(__dirname, "packages/client/dist"),
       emptyOutDir: true,
-      sourcemap: true,
+      sourcemap: isDev ? true : process.env.SOURCEMAP === "true" ? "hidden" : false,
+      target: "es2022",
+      chunkSizeWarningLimit: 600,
+      rollupOptions: {
+        output: {
+          manualChunks: {
+            "vendor-react": ["react", "react-dom", "react-router-dom"],
+            "vendor-query": ["@tanstack/react-query"],
+            "vendor-pdf": ["react-pdf", "pdfjs-dist"],
+            "vendor-viz": ["d3"],
+            "vendor-md": [
+              "react-markdown",
+              "remark-gfm",
+              "remark-math",
+              "rehype-katex",
+              "rehype-raw",
+              "katex",
+            ],
+          },
+        },
+      },
     },
     define: {
       __APP_VERSION__: JSON.stringify(resolveAppVersion()),

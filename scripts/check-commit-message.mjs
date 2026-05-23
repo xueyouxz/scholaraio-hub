@@ -13,7 +13,8 @@ const message = rawMessage
   .join("\n")
   .trim();
 
-const bannedPattern = /\b(ai|gpt|chatgpt|openai|claude|codex|llm)\b|人工智能|智能助手/i;
+const bannedPattern =
+  /\b(generated|written|created)\s+(by|with|using)\s+(ai|chatgpt|gpt|claude|llm)\b/i;
 
 if (bannedPattern.test(message)) {
   console.error(

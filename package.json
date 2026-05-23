@@ -1,5 +1,6 @@
 {
   "name": "scholaraio-hub-workspace",
+  "version": "0.1.0",
   "private": true,
   "type": "module",
   "packageManager": "pnpm@10.27.0",
@@ -14,7 +15,7 @@
     "lint": "biome check .",
     "lint:fix": "biome check --write .",
     "typecheck": "pnpm --filter @scholaraio-hub/shared build && pnpm --filter @scholaraio-hub/server typecheck && pnpm --filter @scholaraio-hub/client typecheck",
-    "test": "pnpm --filter @scholaraio-hub/shared test && pnpm --filter @scholaraio-hub/server test",
+    "test": "pnpm --filter @scholaraio-hub/shared test && pnpm --filter @scholaraio-hub/server test && pnpm --filter @scholaraio-hub/client test",
     "test:e2e": "pnpm --filter @scholaraio-hub/client build && playwright test",
     "audit:prod": "pnpm audit --prod",
     "prepare": "husky",

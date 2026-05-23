@@ -1,3 +1,55 @@
+# scholaraio-hub
+
+A desktop-class web UI for managing [Claude Code](https://github.com/anthropics/claude-code) and [OpenAI Codex](https://github.com/openai/codex) sessions — browse history, view diffs, read research papers, and explore library analytics, all from a single interface running on your local machine.
+
+## Screenshots
+
+> _Screenshots and demo GIF coming soon._
+
+## Quick Start
+
+**Option 1 — npx (no install)**
+
+```bash
+npx scholaraio-hub
+# Open http://localhost:3400
+```
+
+**Option 2 — Docker**
+
+```bash
+docker run --rm -p 3400:3400 \
+  -v "${HOME}/.claude:/root/.claude:ro" \
+  ghcr.io/xueyouxz/scholaraio-hub:latest
+```
+
+**Option 3 — Docker Compose (recommended for persistent data)**
+
+```bash
+curl -O https://raw.githubusercontent.com/xueyouxz/scholaraio-hub/main/docker-compose.yml
+docker compose up
+# Open http://localhost:3400
+```
+
+## Features
+
+- **Session management** — browse, search, and replay Claude Code and Codex sessions
+- **Library** — PDF reader for research papers with full-text search
+- **Analytics** — D3-powered scatter plots, heatmaps, and histograms over your paper library
+- **Provider filters** — toggle between Claude and Codex providers, filter by topic
+- **File browser** — inspect project files directly within a session view
+- **Remote access** — optional relay server with self-signed HTTPS
+
+## Dependencies
+
+| Tool | Required | Purpose |
+|------|----------|---------|
+| [claude CLI](https://github.com/anthropics/claude-code) | Recommended | Session source for Claude Code |
+| [codex CLI](https://github.com/openai/codex) | Optional | Session source for OpenAI Codex |
+| [scholaraio](https://github.com/ZimoLiao/scholaraio) | Optional | Scholar gateway for `/api/scholar/*` routes |
+
+---
+
 # scholaraio-hub 使用指南
 
 本仓库是一个基于 `pnpm workspace` 的 monorepo，核心包统一放在 `packages/` 目录下：
@@ -321,3 +373,17 @@ LOG_PRETTY=true
 如果需要了解服务端实现细节，可以继续看：
 
 - `packages/server/README.md`
+
+## 致谢
+
+本项目基于 [ScholarAIO](https://github.com/ZimoLiao/scholaraio) 进行二次开发，感谢原作者的开源工作。
+
+```bibtex
+@software{scholaraio,
+  author  = {Liao, Zi-Mo},
+  title   = {ScholarAIO: AI-Native Research Terminal},
+  year    = {2026},
+  url     = {https://github.com/ZimoLiao/scholaraio},
+  license = {MIT}
+}
+```

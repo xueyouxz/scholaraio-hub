@@ -1,0 +1,15 @@
+services:
+  hub:
+    image: ghcr.io/xueyouxz/scholaraio-hub:latest
+    ports:
+      - "3400:3400"
+    environment:
+      HOST: 0.0.0.0
+      NODE_ENV: production
+    volumes:
+      - "${HOME}/.claude:/root/.claude:ro"
+      - hub-data:/root/.scholaraio-hub
+    restart: unless-stopped
+
+volumes:
+  hub-data:

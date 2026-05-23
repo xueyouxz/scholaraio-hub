@@ -10,6 +10,6 @@
       "@scholaraio-hub/shared/*": ["../../packages/shared/dist/*"]
     }
   },
-  "include": ["src/**/*.ts"],
-  "exclude": ["node_modules", "dist", "test"]
+  "include": ["src/**/*.ts", "test/**/*.ts"],
+  "exclude": ["node_modules", "dist"]
 }

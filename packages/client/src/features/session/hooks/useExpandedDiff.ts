@@ -1,7 +1,7 @@
 import { useCallback, useState } from "react";
+import { useSessionMetadata } from "../../../shared/contexts/SessionMetadataContext";
 import { api } from "../api/client";
 import type { PatchHunk } from "../components/renderers/tools/types";
-import { useSessionMetadata } from "../contexts/SessionMetadataContext";
 
 interface ExpandedDiffResult {
   structuredPatch: PatchHunk[];

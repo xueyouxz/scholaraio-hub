@@ -83,10 +83,7 @@ export function StreamingMarkdownProvider({ children }: StreamingMarkdownProvide
     return () => {
       // Only unregister if this is still the current handler
       if (handlersRef.current === handlers) {
-        if (
-          typeof window !== "undefined" &&
-          (window as unknown as { __STREAMING_DEBUG__?: boolean }).__STREAMING_DEBUG__
-        ) {
+        if (typeof window !== "undefined" && window.__STREAMING_DEBUG__) {
           console.log("%c[CONTEXT] Handler unregistered", "color: #FF5722");
         }
         handlersRef.current = null;

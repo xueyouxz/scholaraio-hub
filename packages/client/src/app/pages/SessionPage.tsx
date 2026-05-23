@@ -1,11 +1,11 @@
 import type { PermissionMode } from "@scholaraio-hub/shared";
 import { Bell, Check, FolderTree, PenLine, X } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useLocation, useParams } from "react-router-dom";
 import { api } from "../../core/api";
 import type { ModelInfo, ThinkingOption } from "../../core/types";
 import { MessageInput } from "../../features/session/components/MessageInput";
-import { MessageList } from "../../features/session/components/MessageList";
+import { MessageList, type MessageListHandle } from "../../features/session/components/MessageList";
 import { ResizableProjectFilesPanel } from "../../features/session/components/ProjectFilesPanel";
 import { AgentContentProvider } from "../../features/session/contexts/AgentContentContext";
 import {
@@ -74,7 +74,7 @@ function SessionPageContent({
   const [selectedModel, setSelectedModel] = useState<string | undefined>(undefined);
   const [supportsPermissionMode, setSupportsPermissionMode] = useState(true);
   const [supportsThinkingToggle, setSupportsThinkingToggle] = useState(true);
-  const [scrollTrigger, setScrollTrigger] = useState(0);
+  const messageListRef = useRef<MessageListHandle>(null);
   const streamingContext = useStreamingMarkdownContext();
 
   const streamingCallbacks = useMemo(() => {
@@ -181,7 +181,7 @@ function SessionPageContent({
     setBusy(true);
     setSendError("");
     setMessage("");
-    setScrollTrigger((n) => n + 1);
+    messageListRef.current?.scrollToBottom();
     setProcessState("in-turn");
 
     try {
@@ -245,7 +245,7 @@ function SessionPageContent({
     setBusy(true);
     setSendError("");
     setMessage("");
-    setScrollTrigger((n) => n + 1);
+    messageListRef.current?.scrollToBottom();
     try {
       const hadPendingUploads = attachmentUploads.hasPendingUploads;
       if (hadPendingUploads) {
@@ -431,13 +431,13 @@ function SessionPageContent({
               sessionId={sessionId}
             >
               <MessageList
+                ref={messageListRef}
                 messages={messages as SessionRenderMessage[]}
                 markdownAugments={markdownAugments}
                 provider={session?.provider}
                 isStreaming={ownership.owner === "self" && processState === "in-turn"}
                 isProcessing={ownership.owner === "self" && processState === "in-turn"}
                 isCompacting={isCompacting}
-                scrollTrigger={scrollTrigger}
                 activeToolApproval={activeToolApproval}
                 hasOlderMessages={pagination?.hasOlderMessages ?? false}
                 loadingOlder={loadingOlder}

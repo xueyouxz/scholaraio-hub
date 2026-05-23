@@ -257,7 +257,11 @@ export function MessageInput({
 
   const canSend = Boolean(message.trim() || attachments.length > 0 || uploadProgress.length > 0);
   const showQueue = Boolean(onQueue && canSend && isRunning);
-  const showStop = Boolean(onStop && isRunning && isThinking && !canSend);
+  // Show stop whenever a process is actively running — users must be able to interrupt
+  // even while drafting the next message. When the user has input, Queue is shown as the
+  // primary action and Stop appears as a secondary control.
+  const showStop = Boolean(onStop && isRunning && isThinking);
+  const stopAsSecondary = showStop && canSend;
 
   return (
     <div className="relative w-full">
@@ -406,6 +410,18 @@ export function MessageInput({
               <ModelSwitcher model={model} models={models} onModelChange={onModelChange} />
             ) : null}
 
+            {stopAsSecondary ? (
+              <button
+                type="button"
+                onClick={() => onStop?.()}
+                title="Stop"
+                aria-label="Stop"
+                className="p-1.5 rounded-lg bg-surface-container text-error hover:bg-error/10 transition-colors"
+              >
+                <Square size={11} aria-hidden="true" />
+              </button>
+            ) : null}
+
             {showQueue ? (
               <button
                 type="button"
@@ -422,21 +438,23 @@ export function MessageInput({
             <button
               type="button"
               onClick={() => {
-                if (showStop) {
+                if (showStop && !canSend) {
                   onStop?.();
                   return;
                 }
                 void handleSubmit(onSend);
               }}
               disabled={busy || (!canSend && !showStop)}
-              aria-label={showStop ? "Stop" : busy ? "Sending…" : "Send"}
+              aria-label={showStop && !canSend ? "Stop" : busy ? "Sending…" : "Send"}
               className={`w-8 h-8 flex items-center justify-center rounded-lg transition-all disabled:opacity-40 ${
-                showStop ? "bg-error text-on-error" : "signature-gradient text-on-primary shadow-sm"
+                showStop && !canSend
+                  ? "bg-error text-on-error"
+                  : "signature-gradient text-on-primary shadow-sm"
               }`}
             >
               {busy ? (
                 <Loader2 size={15} className="animate-spin" aria-hidden="true" />
-              ) : showStop ? (
+              ) : showStop && !canSend ? (
                 <Square size={11} aria-hidden="true" />
               ) : (
                 <ArrowUp size={15} aria-hidden="true" />

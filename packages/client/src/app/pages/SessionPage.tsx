@@ -146,10 +146,18 @@ function SessionPageContent({
   });
 
   const handleModelChange = async (model: string) => {
+    const previousSelected = selectedModel;
+    const previousSessionModel = session?.model;
     setSelectedModel(model);
     setSessionModel(model);
-    if (ownership.owner === "self") {
+    if (ownership.owner !== "self") return;
+    try {
       await api.changeModel(ownership.processId, model);
+    } catch (err) {
+      // Roll back optimistic UI on server failure so the switcher reflects reality.
+      setSelectedModel(previousSelected);
+      if (previousSessionModel) setSessionModel(previousSessionModel);
+      throw err;
     }
   };
 

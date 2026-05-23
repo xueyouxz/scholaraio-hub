@@ -1,12 +1,6 @@
 import { useCallback, useRef, useState } from "react";
 
-// Debug logging - enable via window.__STREAMING_DEBUG__ = true
-declare global {
-  interface Window {
-    __STREAMING_DEBUG__?: boolean;
-  }
-}
-
+// Debug logging — enable via window.__STREAMING_DEBUG__ = true (declared in src/global.d.ts)
 function debugLog(
   category: "augment" | "pending" | "event" | "dom",
   message: string,

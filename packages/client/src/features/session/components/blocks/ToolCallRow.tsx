@@ -49,14 +49,20 @@ export const ToolCallRow = memo(function ToolCallRow({
     if (status !== "complete") {
       return null;
     }
+    const ctx: RenderContext = {
+      isStreaming: false,
+      theme: "dark",
+      toolUseId: id,
+      provider: sessionProvider,
+    };
     return toolRegistry.renderInteractiveSummary(
       toolName,
       toolInput,
       structuredResult,
       toolResult?.isError ?? false,
-      renderContext,
+      ctx,
     );
-  }, [status, toolName, toolInput, structuredResult, toolResult, renderContext]);
+  }, [status, toolName, toolInput, structuredResult, toolResult, id, sessionProvider]);
 
   const hasInteractiveSummary =
     interactiveSummaryContent !== null &&

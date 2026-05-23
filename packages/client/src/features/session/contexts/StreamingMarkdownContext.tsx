@@ -74,10 +74,7 @@ export function StreamingMarkdownProvider({ children }: StreamingMarkdownProvide
   const currentMessageIdRef = useRef<string | null>(null);
 
   const registerStreamingHandler = useCallback((handlers: StreamingHandlers): (() => void) => {
-    if (
-      typeof window !== "undefined" &&
-      (window as unknown as { __STREAMING_DEBUG__?: boolean }).__STREAMING_DEBUG__
-    ) {
+    if (typeof window !== "undefined" && window.__STREAMING_DEBUG__) {
       console.log("%c[CONTEXT] Handler registered", "color: #2196F3", {
         hadPreviousHandler: !!handlersRef.current,
       });
@@ -102,10 +99,7 @@ export function StreamingMarkdownProvider({ children }: StreamingMarkdownProvide
   }, []);
 
   const dispatchAugment = useCallback((augment: AugmentEvent) => {
-    if (
-      typeof window !== "undefined" &&
-      (window as unknown as { __STREAMING_DEBUG__?: boolean }).__STREAMING_DEBUG__
-    ) {
+    if (typeof window !== "undefined" && window.__STREAMING_DEBUG__) {
       console.log("%c[CONTEXT] dispatchAugment called", "color: #4CAF50", {
         hasHandler: !!handlersRef.current,
         augment: { blockIndex: augment.blockIndex, type: augment.type },
@@ -115,10 +109,7 @@ export function StreamingMarkdownProvider({ children }: StreamingMarkdownProvide
   }, []);
 
   const dispatchPending = useCallback((pending: PendingEvent) => {
-    if (
-      typeof window !== "undefined" &&
-      (window as unknown as { __STREAMING_DEBUG__?: boolean }).__STREAMING_DEBUG__
-    ) {
+    if (typeof window !== "undefined" && window.__STREAMING_DEBUG__) {
       console.log("%c[CONTEXT] dispatchPending called", "color: #FF9800", {
         hasHandler: !!handlersRef.current,
         htmlLength: pending.html.length,

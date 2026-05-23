@@ -1,4 +1,5 @@
 import { toUrlProjectId } from "@scholaraio-hub/shared";
+import { useQuery } from "@tanstack/react-query";
 import {
   ChevronUp,
   FolderKanban,
@@ -15,7 +16,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link, NavLink, useNavigate, useParams } from "react-router-dom";
 import { api, scholar } from "../../core/api";
 import type { ProviderGroupFilter } from "../../core/api";
-import type { ScholarWorkspaceSummary } from "../../core/api";
+import { queryKeys } from "../../core/queryKeys";
 import type { ProjectSummary } from "../../core/types";
 import type { GlobalSessionItem } from "../../features/session/api/client";
 import { useGroupSessions } from "../../features/session/hooks/useGroupSessions";
@@ -282,23 +283,24 @@ export function Sidebar({
   const [userMenuOpen, setUserMenuOpen] = useState(false);
   const userMenuRef = useRef<HTMLDivElement>(null);
 
-  const [workspaces, setWorkspaces] = useState<ScholarWorkspaceSummary[]>([]);
-  const [projects, setProjects] = useState<ProjectSummary[]>([]);
+  const workspacesQuery = useQuery({
+    queryKey: queryKeys.scholar.workspaces(),
+    queryFn: ({ signal }) => scholar.getWorkspaces({ signal }),
+    select: (data) => data.workspaces,
+    staleTime: 5 * 60_000,
+  });
+  const projectsQuery = useQuery({
+    queryKey: queryKeys.projects(),
+    queryFn: ({ signal }) => api.getProjects({ signal }),
+    select: (data) => data.projects,
+    staleTime: 5 * 60_000,
+  });
+  const workspaces = workspacesQuery.data ?? [];
+  const projects: ProjectSummary[] = projectsQuery.data ?? [];
   const { loadGroup, getGroup } = useGroupSessions();
 
   const [projectsVisible, setProjectsVisible] = useState(true);
   const prevProviderRef = useRef(selectedProvider);
-
-  useEffect(() => {
-    scholar
-      .getWorkspaces()
-      .then((data) => setWorkspaces(data.workspaces))
-      .catch(() => {});
-    api
-      .getProjects()
-      .then((data) => setProjects(data.projects))
-      .catch(() => {});
-  }, []);
 
   useEffect(() => {
     if (prevProviderRef.current === selectedProvider) return;

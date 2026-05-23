@@ -4,8 +4,8 @@ import { useNavigate, useParams } from "react-router-dom";
 import { usePageTitle } from "../../../app/components/NavigationLayout";
 import { scholar } from "../../../core/api";
 import { queryKeys } from "../../../core/queryKeys";
-import { buildPdfUrl, canReadPdf, findPaperById, toPaperRef } from "../paperUtils";
-import type { PaperDetail, PaperReference, ReadingTab } from "../types";
+import { buildPdfUrl, canReadPdf, toPaperRef } from "../paperUtils";
+import type { PaperDetail, ReadingTab } from "../types";
 import { LayerReader } from "./LayerReader";
 import { PdfViewer } from "./PdfViewer";
 
@@ -16,7 +16,6 @@ const TABS: { id: ReadingTab; label: string }[] = [
   { id: "l4", label: "全文" },
   { id: "pdf", label: "PDF" },
 ];
-const PAPER_LIST_PARAMS = { sort: "year_desc", limit: 1000 };
 const L3_CONTENT_PARAMS = { layer: 3 } as const;
 const L4_CONTENT_PARAMS = { layer: 4 } as const;
 
@@ -44,12 +43,19 @@ export function PaperReaderPage() {
     }
   }, [paperId]);
 
-  const papersQuery = useQuery({
-    queryKey: queryKeys.scholar.papers(PAPER_LIST_PARAMS),
-    queryFn: ({ signal }) => scholar.getPapers(PAPER_LIST_PARAMS, { signal }),
-    select: (res) => res.papers.map(toPaperRef),
+  // Single-paper fetch: avoid pulling the whole library just to resolve one id.
+  const paperQuery = useQuery({
+    queryKey: paperId ? queryKeys.scholar.paper(paperId) : ["scholar", "paper", "idle"],
+    queryFn: ({ signal }) => {
+      if (!paperId) throw new Error("Missing paper id");
+      return scholar.getPaper(paperId, { signal });
+    },
+    enabled: !!paperId,
+    staleTime: 5 * 60_000,
   });
 
+  // Layer content is keyed by paperId+layer and is immutable once produced —
+  // keep it fresh forever in this session.
   const l3Query = useQuery({
     queryKey: paperId
       ? queryKeys.scholar.paperContent(paperId, L3_CONTENT_PARAMS)
@@ -59,6 +65,7 @@ export function PaperReaderPage() {
       return scholar.getPaperContent(paperId, L3_CONTENT_PARAMS, { signal });
     },
     enabled: !!paperId && activeTab === "overview",
+    staleTime: Number.POSITIVE_INFINITY,
   });
 
   const l4Query = useQuery({
@@ -70,21 +77,21 @@ export function PaperReaderPage() {
       return scholar.getPaperContent(paperId, L4_CONTENT_PARAMS, { signal });
     },
     enabled: !!paperId && activeTab === "l4",
+    staleTime: Number.POSITIVE_INFINITY,
   });
 
   const handleTabChange = (tab: ReadingTab) => {
     setActiveTab(tab);
   };
 
-  const papers: PaperReference[] = papersQuery.data ?? [];
-  const loadingPapers = papersQuery.isLoading;
+  const loadingPapers = paperQuery.isLoading;
   const papersError =
-    papersQuery.error instanceof Error
-      ? papersQuery.error.message
-      : papersQuery.error
+    paperQuery.error instanceof Error
+      ? paperQuery.error.message
+      : paperQuery.error
         ? "加载失败，请确认 scholaraio serve 已启动"
         : null;
-  const currentPaper = paperId ? findPaperById(papers, paperId) : undefined;
+  const currentPaper = paperQuery.data?.paper ? toPaperRef(paperQuery.data.paper) : undefined;
   const hasPdfFile = currentPaper ? canReadPdf(currentPaper) : false;
   const pdfUrl = paperId ? buildPdfUrl(paperId) : null;
   const detail: PaperDetail | null =

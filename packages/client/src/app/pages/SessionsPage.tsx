@@ -1,47 +1,42 @@
-import { useEffect, useMemo, useState } from "react";
+import { useQuery } from "@tanstack/react-query";
+import { useEffect, useMemo } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import { api, providerLabel } from "../../core/api";
-import type { AppSessionSummary, ProjectSummary } from "../../core/types";
+import { queryKeys } from "../../core/queryKeys";
 
 export function SessionsPage() {
   const [params, setParams] = useSearchParams();
-  const [projects, setProjects] = useState<ProjectSummary[]>([]);
-  const [sessions, setSessions] = useState<AppSessionSummary[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState("");
-
   const projectId = params.get("project") ?? "";
 
-  useEffect(() => {
-    void (async () => {
-      try {
-        const projectData = await api.getProjects();
-        setProjects(projectData.projects);
-        const effectiveProjectId = projectId || projectData.projects[0]?.id || "";
-        if (!projectId && effectiveProjectId) {
-          setParams({ project: effectiveProjectId }, { replace: true });
-        }
-      } catch (err) {
-        setError(err instanceof Error ? err.message : "Failed to load projects");
-      }
-    })();
-  }, [projectId, setParams]);
+  const projectsQuery = useQuery({
+    queryKey: queryKeys.projects(),
+    queryFn: ({ signal }) => api.getProjects({ signal }),
+    select: (data) => data.projects,
+  });
+
+  const projects = projectsQuery.data ?? [];
 
   useEffect(() => {
-    if (!projectId) return;
-    void (async () => {
-      setLoading(true);
-      setError("");
-      try {
-        const data = await api.getProjectSessions(projectId);
-        setSessions(data.sessions);
-      } catch (err) {
-        setError(err instanceof Error ? err.message : "Failed to load sessions");
-      } finally {
-        setLoading(false);
-      }
-    })();
-  }, [projectId]);
+    if (projectId) return;
+    const fallback = projects[0]?.id;
+    if (fallback) {
+      setParams({ project: fallback }, { replace: true });
+    }
+  }, [projectId, projects, setParams]);
+
+  const sessionsQuery = useQuery({
+    queryKey: queryKeys.projectSessions(projectId),
+    queryFn: ({ signal }) => api.getProjectSessions(projectId, { signal }),
+    select: (data) => data.sessions,
+    enabled: !!projectId,
+  });
+
+  const sessions = sessionsQuery.data ?? [];
+  const loading = !!projectId && sessionsQuery.isLoading;
+  const error =
+    (projectsQuery.error instanceof Error && projectsQuery.error.message) ||
+    (sessionsQuery.error instanceof Error && sessionsQuery.error.message) ||
+    (projectsQuery.error || sessionsQuery.error ? "Failed to load sessions" : "");
 
   const selectedProject = useMemo(
     () => projects.find((project) => project.id === projectId) ?? null,

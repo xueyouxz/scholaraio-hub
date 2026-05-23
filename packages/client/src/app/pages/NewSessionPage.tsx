@@ -1,13 +1,10 @@
+import { useQuery } from "@tanstack/react-query";
 import { Settings } from "lucide-react";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { api } from "../../core/api";
-import type {
-  ModelInfo,
-  SessionCreationResult,
-  SlashCommand,
-  ThinkingOption,
-} from "../../core/types";
+import { queryKeys } from "../../core/queryKeys";
+import type { SessionCreationResult, ThinkingOption } from "../../core/types";
 import { MessageInput } from "../../features/session/components/MessageInput";
 import { useAttachmentUploads } from "../../features/session/hooks/useAttachmentUploads";
 import type { SessionNavState } from "../../features/session/types";
@@ -28,41 +25,47 @@ export function NewSessionPage() {
   const [thinking, setThinking] = useState<ThinkingOption>("auto");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
-  const [models, setModels] = useState<ModelInfo[]>([]);
   const [selectedModel, setSelectedModel] = useState<string | undefined>(undefined);
   const [createdSession, setCreatedSession] = useState<SessionCreationResult | null>(null);
-  const [supportsPermissionMode, setSupportsPermissionMode] = useState(true);
-  const [supportsThinkingToggle, setSupportsThinkingToggle] = useState(true);
-  const [slashCommands, setSlashCommands] = useState<SlashCommand[]>([]);
 
   useEffect(() => {
     setTitle("New Chat");
     return () => setTitle("");
   }, [setTitle]);
 
-  useEffect(() => {
-    if (!selectedProvider) return;
-    api.getProviders().then((data) => {
-      const provider = data.providers.find((p) => p.name === selectedProvider);
-      if (provider?.models && provider.models.length > 0) {
-        setModels(provider.models);
-        setSelectedModel((prev) => prev ?? provider.models?.[0]?.id);
-      }
-      setSupportsPermissionMode(provider?.supportsPermissionMode ?? true);
-      setSupportsThinkingToggle(provider?.supportsThinkingToggle ?? true);
-    });
-  }, [selectedProvider]);
+  const providersQuery = useQuery({
+    queryKey: queryKeys.providers(),
+    queryFn: ({ signal }) => api.getProviders({ signal }),
+    select: (data) => data.providers,
+    staleTime: 5 * 60_000,
+  });
+
+  const provider = useMemo(
+    () => providersQuery.data?.find((p) => p.name === selectedProvider),
+    [providersQuery.data, selectedProvider],
+  );
+  const models = provider?.models ?? [];
+  const supportsPermissionMode = provider?.supportsPermissionMode ?? true;
+  const supportsThinkingToggle = provider?.supportsThinkingToggle ?? true;
 
   useEffect(() => {
-    if (!selectedProjectId || !selectedProvider) {
-      setSlashCommands([]);
-      return;
+    if (models.length > 0) {
+      setSelectedModel((prev) => prev ?? models[0]?.id);
     }
+  }, [models]);
 
-    api.getProjectSkills(selectedProjectId, selectedProvider).then(({ slashCommands }) => {
-      setSlashCommands(slashCommands);
-    });
-  }, [selectedProjectId, selectedProvider]);
+  const skillsQuery = useQuery({
+    queryKey: queryKeys.projectSkills(selectedProjectId ?? "", selectedProvider ?? null),
+    queryFn: ({ signal }) => {
+      if (!selectedProjectId || !selectedProvider) {
+        throw new Error("Missing project or provider");
+      }
+      return api.getProjectSkills(selectedProjectId, selectedProvider, { signal });
+    },
+    enabled: !!selectedProjectId && !!selectedProvider,
+    select: (data) => data.slashCommands,
+  });
+  const slashCommands = skillsQuery.data ?? [];
 
   const ensureUploadSessionId = useCallback(async () => {
     if (createdSession) return createdSession.sessionId;

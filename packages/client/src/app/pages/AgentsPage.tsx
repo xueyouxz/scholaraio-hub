@@ -1,22 +1,22 @@
-import { useEffect, useState } from "react";
+import { useQuery } from "@tanstack/react-query";
 import { Link } from "react-router-dom";
 import { api, providerLabel } from "../../core/api";
-import type { ProcessSummary } from "../../core/types";
+import { queryKeys } from "../../core/queryKeys";
 
 export function AgentsPage() {
-  const [processes, setProcesses] = useState<ProcessSummary[]>([]);
-  const [error, setError] = useState("");
+  const processesQuery = useQuery({
+    queryKey: queryKeys.processes(),
+    queryFn: () => api.getProcesses(),
+    select: (data) => [...(data.processes ?? []), ...(data.terminatedProcesses ?? [])],
+  });
 
-  useEffect(() => {
-    void (async () => {
-      try {
-        const data = await api.getProcesses();
-        setProcesses([...(data.processes ?? []), ...(data.terminatedProcesses ?? [])]);
-      } catch (err) {
-        setError(err instanceof Error ? err.message : "Failed to load processes");
-      }
-    })();
-  }, []);
+  const processes = processesQuery.data ?? [];
+  const error =
+    processesQuery.error instanceof Error
+      ? processesQuery.error.message
+      : processesQuery.error
+        ? "Failed to load processes"
+        : "";
 
   return (
     <section className="panel">

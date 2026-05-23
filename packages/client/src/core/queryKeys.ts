@@ -1,7 +1,17 @@
-import type { ScholarPaperContentParams, ScholarPaperListParams, ScholarSearchBody } from "./api";
+import type {
+  ProviderGroupFilter,
+  ScholarPaperContentParams,
+  ScholarPaperListParams,
+  ScholarSearchBody,
+} from "./api";
 
 export const queryKeys = {
   projects: () => ["projects"] as const,
+  projectSessions: (projectId: string, provider?: ProviderGroupFilter | null) =>
+    ["projects", projectId, "sessions", provider ?? "all"] as const,
+  projectSkills: (projectId: string, provider?: string | null) =>
+    ["projects", projectId, "skills", provider ?? "default"] as const,
+  processes: () => ["processes"] as const,
   providers: () => ["providers"] as const,
   providerUsageLimits: () => ["providers", "usage-limits"] as const,
   settings: () => ["settings"] as const,
@@ -14,7 +24,20 @@ export const queryKeys = {
     paperContent: (id: string, params: ScholarPaperContentParams) =>
       ["scholar", "paper", id, "content", params] as const,
     stats: () => ["scholar", "stats"] as const,
-    search: (body: ScholarSearchBody) => ["scholar", "search", body] as const,
+    // `limit` is omitted from the cache key: changing page size should not
+    // invalidate an existing result. Mode/year/journal/paper_type stay in the key.
+    search: (body: ScholarSearchBody) =>
+      [
+        "scholar",
+        "search",
+        {
+          query: body.query,
+          mode: body.mode,
+          year: body.year,
+          journal: body.journal,
+          paper_type: body.paper_type,
+        },
+      ] as const,
     workspaces: () => ["scholar", "workspaces"] as const,
     workspace: (name: string) => ["scholar", "workspace", name] as const,
     config: () => ["scholar", "config"] as const,

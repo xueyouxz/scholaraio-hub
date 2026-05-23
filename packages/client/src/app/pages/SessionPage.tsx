@@ -1,9 +1,11 @@
 import type { PermissionMode } from "@scholaraio-hub/shared";
+import { useQuery } from "@tanstack/react-query";
 import { Bell, Check, FolderTree, PenLine, X } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useLocation, useParams } from "react-router-dom";
 import { api } from "../../core/api";
-import type { ModelInfo, ThinkingOption } from "../../core/types";
+import { queryKeys } from "../../core/queryKeys";
+import type { ThinkingOption } from "../../core/types";
 import { MessageInput } from "../../features/session/components/MessageInput";
 import { MessageList, type MessageListHandle } from "../../features/session/components/MessageList";
 import { ResizableProjectFilesPanel } from "../../features/session/components/ProjectFilesPanel";
@@ -70,10 +72,7 @@ function SessionPageContent({
   const [thinking, setThinking] = useState<ThinkingOption>("auto");
   const [busy, setBusy] = useState(false);
   const [sendError, setSendError] = useState("");
-  const [models, setModels] = useState<ModelInfo[]>([]);
   const [selectedModel, setSelectedModel] = useState<string | undefined>(undefined);
-  const [supportsPermissionMode, setSupportsPermissionMode] = useState(true);
-  const [supportsThinkingToggle, setSupportsThinkingToggle] = useState(true);
   const messageListRef = useRef<MessageListHandle>(null);
   const streamingContext = useStreamingMarkdownContext();
 
@@ -123,19 +122,24 @@ function SessionPageContent({
     refreshRuntimeState,
   } = useSession(projectId, sessionId, initialStatus, streamingCallbacks);
 
-  // Load models for the session's provider
+  const providersQuery = useQuery({
+    queryKey: queryKeys.providers(),
+    queryFn: ({ signal }) => api.getProviders({ signal }),
+    select: (data) => data.providers,
+    staleTime: 5 * 60_000,
+  });
+  const provider = useMemo(
+    () => providersQuery.data?.find((p) => p.name === session?.provider),
+    [providersQuery.data, session?.provider],
+  );
+  const models = provider?.models ?? [];
+  const supportsPermissionMode = provider?.supportsPermissionMode ?? true;
+  const supportsThinkingToggle = provider?.supportsThinkingToggle ?? true;
+
   useEffect(() => {
-    if (!session?.provider) return;
-    api.getProviders().then((data) => {
-      const provider = data.providers.find((p) => p.name === session.provider);
-      if (provider?.models && provider.models.length > 0) {
-        setModels(provider.models);
-        setSelectedModel((prev) => prev ?? session.model ?? provider.models?.[0]?.id);
-      }
-      setSupportsPermissionMode(provider?.supportsPermissionMode ?? true);
-      setSupportsThinkingToggle(provider?.supportsThinkingToggle ?? true);
-    });
-  }, [session?.provider, session?.model]);
+    if (models.length === 0) return;
+    setSelectedModel((prev) => prev ?? session?.model ?? models[0]?.id);
+  }, [models, session?.model]);
 
   const attachmentUploads = useAttachmentUploads({
     projectId,

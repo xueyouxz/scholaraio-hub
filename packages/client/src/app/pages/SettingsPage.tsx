@@ -1235,17 +1235,20 @@ export function SettingsPage() {
     queryKey: queryKeys.providers(),
     queryFn: ({ signal }) => api.getProviders({ signal }),
     select: (data) => data.providers,
+    staleTime: 5 * 60_000,
   });
   const scholarConfigQuery = useQuery({
     queryKey: queryKeys.scholar.config(),
     queryFn: ({ signal }) => scholar.getConfig({ signal }),
     retry: false,
+    staleTime: 5 * 60_000,
   });
   const usageLimitsQuery = useQuery({
     queryKey: queryKeys.providerUsageLimits(),
     queryFn: ({ signal }) => api.getProviderUsageLimits({ signal }),
     select: (data) => data.usageLimits,
     refetchInterval: 60_000,
+    refetchIntervalInBackground: false,
   });
 
   const patchMutation = usePatchConfig();

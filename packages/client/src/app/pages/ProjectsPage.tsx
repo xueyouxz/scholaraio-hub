@@ -1,48 +1,54 @@
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { FolderOpen, FolderPlus, MessageSquare, RefreshCw, Zap } from "lucide-react";
-import { useCallback, useEffect, useState } from "react";
+import { useEffect, useState } from "react";
 import { api } from "../../core/api";
-import type { ProjectSummary } from "../../core/types";
+import { queryKeys } from "../../core/queryKeys";
 import { usePageTitle } from "../components/NavigationLayout";
 
 export function ProjectsPage() {
   const { setTitle } = usePageTitle();
-  const [projects, setProjects] = useState<ProjectSummary[]>([]);
+  const queryClient = useQueryClient();
   const [path, setPath] = useState("");
-  const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
 
-  const load = useCallback(async () => {
-    setLoading(true);
-    setError("");
-    try {
-      const data = await api.getProjects();
-      setProjects(data.projects);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to load projects");
-    } finally {
-      setLoading(false);
-    }
-  }, []);
+  const projectsQuery = useQuery({
+    queryKey: queryKeys.projects(),
+    queryFn: ({ signal }) => api.getProjects({ signal }),
+    select: (data) => data.projects,
+  });
 
-  useEffect(() => {
-    void load();
-  }, [load]);
+  const addProject = useMutation({
+    mutationFn: (newPath: string) => api.addProject(newPath),
+    onSuccess: () => {
+      setPath("");
+      queryClient.invalidateQueries({ queryKey: queryKeys.projects() });
+    },
+    onError: (err) => {
+      setError(err instanceof Error ? err.message : "Failed to add project");
+    },
+  });
 
   useEffect(() => {
     setTitle("Projects");
     return () => setTitle("");
   }, [setTitle]);
 
-  const addProject = async (event: React.FormEvent) => {
+  const projects = projectsQuery.data ?? [];
+  const loading = projectsQuery.isLoading || projectsQuery.isFetching;
+  const loadError =
+    projectsQuery.error instanceof Error
+      ? projectsQuery.error.message
+      : projectsQuery.error
+        ? "Failed to load projects"
+        : "";
+  const displayError = error || loadError;
+
+  const handleSubmit = (event: React.FormEvent) => {
     event.preventDefault();
-    if (!path.trim()) return;
-    try {
-      await api.addProject(path.trim());
-      setPath("");
-      await load();
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to add project");
-    }
+    const trimmed = path.trim();
+    if (!trimmed) return;
+    setError("");
+    addProject.mutate(trimmed);
   };
 
   return (
@@ -60,7 +66,7 @@ export function ProjectsPage() {
             </p>
           </div>
         </div>
-        <form onSubmit={addProject} className="flex gap-3">
+        <form onSubmit={handleSubmit} className="flex gap-3">
           <input
             value={path}
             onChange={(event) => setPath(event.target.value)}
@@ -69,21 +75,22 @@ export function ProjectsPage() {
           />
           <button
             type="submit"
-            className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-primary text-on-primary text-sm font-medium border-0 cursor-pointer hover:opacity-90 transition-opacity shrink-0"
+            disabled={addProject.isPending}
+            className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-primary text-on-primary text-sm font-medium border-0 cursor-pointer hover:opacity-90 transition-opacity shrink-0 disabled:opacity-50"
           >
             <FolderPlus className="w-4 h-4" />
             Add
           </button>
           <button
             type="button"
-            onClick={() => void load()}
+            onClick={() => projectsQuery.refetch()}
             title="Refresh"
             className="flex items-center justify-center w-10 h-10 rounded-xl bg-surface-container border border-outline-variant/15 text-on-surface-variant border-0 cursor-pointer hover:bg-surface-container-high transition-colors shrink-0"
           >
             <RefreshCw className={`w-4 h-4 ${loading ? "animate-spin" : ""}`} />
           </button>
         </form>
-        {error ? <p className="mt-3 text-sm text-error">{error}</p> : null}
+        {displayError ? <p className="mt-3 text-sm text-error">{displayError}</p> : null}
       </div>
 
       {/* Project list */}

@@ -9,8 +9,6 @@ import { UserPromptBlock } from "./blocks/UserPromptBlock";
 interface Props {
   item: RenderItem;
   isStreaming: boolean;
-  thinkingExpanded: boolean;
-  toggleThinkingExpanded: () => void;
   sessionProvider?: string;
 }
 
@@ -66,7 +64,6 @@ function buildDebugSnapshot(
   item: RenderItem,
   props: {
     isStreaming: boolean;
-    thinkingExpanded: boolean;
     sessionProvider?: string;
   },
 ) {
@@ -81,7 +78,6 @@ function buildDebugSnapshot(
     uiContext: {
       sessionProvider: props.sessionProvider ?? "unknown",
       sessionIsStreaming: props.isStreaming,
-      thinkingExpanded: props.thinkingExpanded,
     },
     itemContext:
       item.type === "tool_call"
@@ -121,8 +117,6 @@ function buildDebugSnapshot(
 export const RenderItemComponent = memo(function RenderItemComponent({
   item,
   isStreaming,
-  thinkingExpanded,
-  toggleThinkingExpanded,
   sessionProvider,
 }: Props) {
   const handleClick = useCallback(
@@ -141,13 +135,12 @@ export const RenderItemComponent = memo(function RenderItemComponent({
           "[DEBUG] Render snapshot",
           buildDebugSnapshot(item, {
             isStreaming,
-            thinkingExpanded,
             sessionProvider,
           }),
         );
       }
     },
-    [item, isStreaming, thinkingExpanded, sessionProvider],
+    [item, isStreaming, sessionProvider],
   );
 
   const renderContent = () => {
@@ -162,14 +155,7 @@ export const RenderItemComponent = memo(function RenderItemComponent({
         );
 
       case "thinking":
-        return (
-          <ThinkingBlock
-            thinking={item.thinking}
-            status={item.status}
-            isExpanded={thinkingExpanded}
-            onToggle={toggleThinkingExpanded}
-          />
-        );
+        return <ThinkingBlock thinking={item.thinking} status={item.status} />;
 
       case "tool_call":
         return (

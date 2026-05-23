@@ -127,23 +127,12 @@ function TaskNestedContent({
   messages: Message[];
   isStreaming: boolean;
 }) {
-  const [thinkingExpanded, setThinkingExpanded] = useState(false);
-  const toggleThinkingExpanded = useCallback(() => {
-    setThinkingExpanded((prev) => !prev);
-  }, []);
-
   const renderItems = useMemo(() => preprocessMessages(messages), [messages]);
 
   return (
     <div className="task-nested-content">
       {renderItems.map((item) => (
-        <RenderItemComponent
-          key={item.id}
-          item={item}
-          isStreaming={isStreaming}
-          thinkingExpanded={thinkingExpanded}
-          toggleThinkingExpanded={toggleThinkingExpanded}
-        />
+        <RenderItemComponent key={item.id} item={item} isStreaming={isStreaming} />
       ))}
     </div>
   );

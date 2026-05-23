@@ -1,7 +1,5 @@
 import type { ClaudeSessionEntry } from "../claude-sdk-schema/types.js";
 import type { CodexSessionEntry } from "../codex-schema/types.js";
-import type { GeminiSessionFile } from "../gemini-schema/session.js";
-import type { OpenCodeSessionContent } from "../opencode-schema/session.js";
 
 /**
  * Claude session file content - array of JSONL entries.
@@ -20,6 +18,4 @@ export type UnifiedSession =
   | { provider: "claude"; session: ClaudeSessionFile }
   | { provider: "claude-ollama"; session: ClaudeSessionFile }
   | { provider: "codex"; session: CodexSessionContent }
-  | { provider: "codex-oss"; session: CodexSessionContent }
-  | { provider: "gemini"; session: GeminiSessionFile }
-  | { provider: "opencode"; session: OpenCodeSessionContent };
+  | { provider: "codex-oss"; session: CodexSessionContent };

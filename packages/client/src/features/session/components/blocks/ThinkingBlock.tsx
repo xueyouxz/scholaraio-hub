@@ -1,18 +1,18 @@
-import { memo } from "react";
+import { memo, useState } from "react";
 
 interface Props {
   thinking: string;
   status: "streaming" | "complete";
-  isExpanded: boolean;
-  onToggle: () => void;
+  /** 初始展开状态，默认 false */
+  defaultExpanded?: boolean;
 }
 
 export const ThinkingBlock = memo(function ThinkingBlock({
   thinking,
   status,
-  isExpanded,
-  onToggle,
+  defaultExpanded = false,
 }: Props) {
+  const [isExpanded, setIsExpanded] = useState(defaultExpanded);
   const isStreaming = status === "streaming";
   const className = [
     "thinking-block",
@@ -28,8 +28,9 @@ export const ThinkingBlock = memo(function ThinkingBlock({
       className={className}
       open={isExpanded}
       onToggle={(e) => {
-        if (e.currentTarget.open !== isExpanded) {
-          onToggle();
+        const next = e.currentTarget.open;
+        if (next !== isExpanded) {
+          setIsExpanded(next);
         }
       }}
     >

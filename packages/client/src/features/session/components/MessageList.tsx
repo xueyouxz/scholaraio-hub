@@ -1,4 +1,4 @@
-import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { memo, useCallback, useEffect, useMemo, useRef } from "react";
 import { type ActiveToolApproval, preprocessMessages } from "../lib/preprocessMessages";
 import type { MarkdownAugment, Message } from "../types";
 import type { RenderItem } from "../types/renderItems";
@@ -102,7 +102,6 @@ export const MessageList = memo(function MessageList({
   const isProgrammaticScrollRef = useRef(false);
   const lastHeightRef = useRef(0);
   const followUpScrollRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const [thinkingExpanded, setThinkingExpanded] = useState(false);
 
   // Scroll to bottom, marking it as programmatic so scroll handler ignores it
   const scrollToBottom = useCallback((container: HTMLElement) => {
@@ -142,10 +141,6 @@ export const MessageList = memo(function MessageList({
     [messages, markdownAugments, activeToolApproval],
   );
   const turnGroups = useMemo(() => groupItemsIntoTurns(renderItems), [renderItems]);
-
-  const toggleThinkingExpanded = useCallback(() => {
-    setThinkingExpanded((prev) => !prev);
-  }, []);
 
   // Load older messages with scroll position preservation
   const handleLoadOlder = useCallback(() => {
@@ -287,8 +282,6 @@ export const MessageList = memo(function MessageList({
               key={item.id}
               item={item}
               isStreaming={isStreaming}
-              thinkingExpanded={thinkingExpanded}
-              toggleThinkingExpanded={toggleThinkingExpanded}
               sessionProvider={provider}
             />
           );
@@ -303,8 +296,6 @@ export const MessageList = memo(function MessageList({
                 key={item.id}
                 item={item}
                 isStreaming={isStreaming}
-                thinkingExpanded={thinkingExpanded}
-                toggleThinkingExpanded={toggleThinkingExpanded}
                 sessionProvider={provider}
               />
             ))}

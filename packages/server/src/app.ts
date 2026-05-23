@@ -13,6 +13,7 @@ import { createProcessesRoutes } from "./routes/processes.js";
 import { createProjectsRoutes } from "./routes/projects.js";
 import { createProvidersRoutes } from "./routes/providers.js";
 import { createScholarRoutes } from "./routes/scholar.js";
+import { createGlobalSessionsRoute } from "./routes/sessions-global.js";
 import { createSessionsRoutes } from "./routes/sessions.js";
 import { createSettingsRoutes } from "./routes/settings.js";
 import { createStreamsRoutes } from "./routes/streams.js";
@@ -208,6 +209,21 @@ export function createApp(options: AppOptions): AppResult {
     "/api/projects",
     createFilesRoutes({
       scanner,
+    }),
+  );
+
+  app.route(
+    "/api/sessions",
+    createGlobalSessionsRoute({
+      scanner,
+      readerFactory,
+      supervisor,
+      externalTracker,
+      notificationService: options.notificationService,
+      sessionMetadataService: options.sessionMetadataService,
+      sessionIndexService: options.sessionIndexService,
+      codexSessionsDir: CODEX_SESSIONS_DIR,
+      codexReaderFactory,
     }),
   );
 

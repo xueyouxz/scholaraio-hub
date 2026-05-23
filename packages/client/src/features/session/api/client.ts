@@ -11,12 +11,7 @@ import type {
 import { api as coreApi } from "../../../core/api";
 import type { ProviderGroupFilter, RequestOptions } from "../../../core/api";
 import { requestJson } from "../../../core/http";
-import type {
-  ProcessSummary,
-  ProjectSummary,
-  SessionDetail,
-  SessionMetadataDetail,
-} from "../../../core/types";
+import type { ProcessSummary, SessionDetail, SessionMetadataDetail } from "../../../core/types";
 import type { PatchHunk } from "../components/renderers/tools/types";
 import type { AgentSession, Session, SessionStatus } from "../types";
 
@@ -90,10 +85,6 @@ export interface SessionOptions {
   executor?: string;
 }
 
-function providerNamesForGroup(provider: ProviderGroupFilter): ProviderName[] {
-  return provider === "claude" ? ["claude", "claude-ollama"] : ["codex", "codex-oss"];
-}
-
 const DEFAULT_STATS: GlobalSessionStats = {
   totalCount: 0,
   unreadCount: 0,
@@ -103,33 +94,7 @@ const DEFAULT_STATS: GlobalSessionStats = {
   executorCounts: {},
 };
 
-function toGlobalSession(
-  session: AppSessionSummary,
-  projects: ProjectSummary[],
-): GlobalSessionItem {
-  const project = projects.find((item) => item.id === session.projectId);
-  return {
-    id: session.id,
-    title: session.title,
-    createdAt: session.createdAt,
-    updatedAt: session.updatedAt,
-    messageCount: session.messageCount,
-    provider: session.provider,
-    projectId: session.projectId,
-    projectName: project?.name ?? project?.path ?? session.projectId,
-    ownership: session.ownership,
-    pendingInputType: session.pendingInputType,
-    activity: session.activity,
-    hasUnread: session.hasUnread,
-    customTitle: session.customTitle,
-    isArchived: session.isArchived,
-    isStarred: session.isStarred,
-    executor: session.executor,
-    model: session.model,
-  };
-}
-
-async function getProjectSessionsAsGlobal(
+async function fetchGlobalSessions(
   params?: {
     project?: string;
     q?: string;
@@ -142,54 +107,53 @@ async function getProjectSessionsAsGlobal(
   },
   options?: RequestOptions,
 ): Promise<GlobalSessionsResponse> {
-  const { projects } = await coreApi.getProjects(options);
-  const selectedProjects = params?.project
-    ? projects.filter((project) => project.id === params.project)
-    : projects;
-  const allSessions = (
-    await Promise.all(
-      selectedProjects.map((project) =>
-        coreApi
-          .getProjectSessions(project.id, { ...options, provider: params?.provider })
-          .then(({ sessions }) => sessions.map((session) => toGlobalSession(session, projects)))
-          .catch(() => []),
-      ),
-    )
-  ).flat();
+  const qs = new URLSearchParams();
+  if (params?.project) qs.set("project", params.project);
+  if (params?.q) qs.set("q", params.q);
+  if (params?.after) qs.set("after", params.after);
+  if (params?.limit !== undefined) qs.set("limit", String(params.limit));
+  if (params?.includeArchived) qs.set("includeArchived", "1");
+  if (params?.starred) qs.set("starred", "1");
+  if (params?.provider) qs.set("provider", params.provider);
+  const suffix = qs.toString();
+  const data = await requestJson<{
+    sessions: AppSessionSummary[];
+    hasMore: boolean;
+    stats: GlobalSessionStats;
+    projects: ProjectOption[];
+  }>(`/api/sessions${suffix ? `?${suffix}` : ""}`, { signal: options?.signal });
 
-  const query = params?.q?.trim().toLowerCase();
-  const providerNames = params?.provider ? providerNamesForGroup(params.provider) : null;
-  const filtered = allSessions
-    .filter((session) => (providerNames ? providerNames.includes(session.provider) : true))
-    .filter((session) => (params?.includeArchived ? true : !session.isArchived))
-    .filter((session) => (params?.starred ? session.isStarred : true))
-    .filter((session) => {
-      if (!query) return true;
-      const title = session.customTitle ?? session.title ?? "";
-      return (
-        title.toLowerCase().includes(query) || session.projectName.toLowerCase().includes(query)
-      );
-    })
-    .sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime());
-
-  const afterIndex = params?.after
-    ? filtered.findIndex((session) => session.updatedAt === params.after)
-    : -1;
-  const start = afterIndex >= 0 ? afterIndex + 1 : 0;
-  const limit = params?.limit ?? 50;
-  const page = filtered.slice(start, start + limit);
+  // Server already enriches sessions, but its rows are SessionSummary-shaped
+  // (with extra projectName attached). Map to GlobalSessionItem.
+  const projectsById = new Map(data.projects.map((p) => [p.id, p.name]));
+  const sessions: GlobalSessionItem[] = data.sessions.map((session) => {
+    const withName = session as AppSessionSummary & { projectName?: string };
+    return {
+      id: session.id,
+      title: session.title,
+      createdAt: session.createdAt,
+      updatedAt: session.updatedAt,
+      messageCount: session.messageCount,
+      provider: session.provider,
+      projectId: session.projectId,
+      projectName: withName.projectName ?? projectsById.get(session.projectId) ?? session.projectId,
+      ownership: session.ownership,
+      pendingInputType: session.pendingInputType,
+      activity: session.activity,
+      hasUnread: session.hasUnread,
+      customTitle: session.customTitle,
+      isArchived: session.isArchived,
+      isStarred: session.isStarred,
+      executor: session.executor,
+      model: session.model,
+    };
+  });
 
   return {
-    sessions: page,
-    hasMore: start + limit < filtered.length,
-    stats: {
-      ...DEFAULT_STATS,
-      totalCount: filtered.length,
-      unreadCount: filtered.filter((session) => session.hasUnread).length,
-      starredCount: filtered.filter((session) => session.isStarred).length,
-      archivedCount: allSessions.filter((session) => session.isArchived).length,
-    },
-    projects: projects.map((project) => ({ id: project.id, name: project.name ?? project.path })),
+    sessions,
+    hasMore: data.hasMore,
+    stats: { ...DEFAULT_STATS, ...data.stats },
+    projects: data.projects,
   };
 }
 
@@ -352,10 +316,10 @@ export const api = {
       provider?: ProviderGroupFilter;
     },
     options?: RequestOptions,
-  ) => getProjectSessionsAsGlobal(params, options),
+  ) => fetchGlobalSessions(params, options),
 
   getGlobalSessionStats: async (options?: RequestOptions) => ({
-    stats: (await getProjectSessionsAsGlobal(undefined, options)).stats,
+    stats: (await fetchGlobalSessions(undefined, options)).stats,
   }),
 
   getProcesses: () =>

@@ -9,6 +9,10 @@ import { canonicalizeProjectPath, isAbsolutePath } from "../projects/paths.js";
 import type { ProjectScanner } from "../projects/scanner.js";
 import type { CodexSessionReader } from "../sessions/codex-reader.js";
 import {
+  addMissingOwnedSessions as addMissingOwnedSessionsShared,
+  enrichSessions as enrichSessionsShared,
+} from "../sessions/enrichment.js";
+import {
   type ProviderGroup,
   listSessionsAcrossProviders,
 } from "../sessions/provider-resolution.js";
@@ -16,12 +20,7 @@ import type { ISessionReader } from "../sessions/types.js";
 import { getSkillSlashCommands } from "../skills/skillCommands.js";
 import type { ExternalSessionTracker } from "../supervisor/ExternalSessionTracker.js";
 import type { Supervisor } from "../supervisor/Supervisor.js";
-import type {
-  AgentActivity,
-  PendingInputType,
-  Project,
-  SessionSummary,
-} from "../supervisor/types.js";
+import type { Project, SessionSummary } from "../supervisor/types.js";
 
 export interface ProjectsDeps {
   scanner: ProjectScanner;
@@ -86,146 +85,24 @@ async function getProjectActivityCounts(
   return counts;
 }
 
+function parseProviderGroup(value: string | undefined): ProviderGroup | null | undefined {
+  if (!value) return undefined;
+  if (value === "claude" || value === "codex") return value;
+  return null;
+}
+
 export function createProjectsRoutes(deps: ProjectsDeps): Hono {
   const routes = new Hono();
 
-  function parseProviderGroup(value: string | undefined): ProviderGroup | null | undefined {
-    if (!value) return undefined;
-    if (value === "claude" || value === "codex") return value;
-    return null;
-  }
-
-  function providerMatchesGroup(provider: string | undefined, group: ProviderGroup): boolean {
-    if (group === "claude") return provider === "claude" || provider === "claude-ollama";
-    return provider === "codex" || provider === "codex-oss";
-  }
-
-  /**
-   * Get owned sessions for a project that might not be in the file list yet.
-   * New sessions may not have user/assistant messages written to disk yet.
-   */
-  function getOwnedSessionsForProject(
-    projectId: string,
-    providerGroup?: ProviderGroup,
-  ): Map<string, SessionSummary> {
-    const ownedSessions = new Map<string, SessionSummary>();
-    if (!deps.supervisor) return ownedSessions;
-
-    for (const process of deps.supervisor.getAllProcesses()) {
-      if (
-        process.projectId === projectId &&
-        (!providerGroup || providerMatchesGroup(process.provider, providerGroup))
-      ) {
-        const now = new Date().toISOString();
-        ownedSessions.set(process.sessionId, {
-          id: process.sessionId,
-          projectId: process.projectId,
-          title: null, // Title will be populated once file has content
-          fullTitle: null,
-          createdAt: process.startedAt.toISOString(),
-          updatedAt: now,
-          messageCount: 0,
-          ownership: {
-            owner: "self",
-            processId: process.id,
-            permissionMode: process.permissionMode,
-            modeVersion: process.modeVersion,
-          },
-          provider: process.provider,
-        });
-      }
-    }
-
-    return ownedSessions;
-  }
-
-  /**
-   * Add missing owned sessions to the session list.
-   * Newly created sessions may not have user/assistant messages written yet,
-   * but we should still show them in the list if we own the process.
-   */
-  function addMissingOwnedSessions(
+  const addMissingOwnedSessions = (
     sessions: SessionSummary[],
     projectId: string,
     providerGroup?: ProviderGroup,
-  ): SessionSummary[] {
-    const ownedSessions = getOwnedSessionsForProject(projectId, providerGroup);
-    if (ownedSessions.size === 0) return sessions;
+  ): SessionSummary[] =>
+    addMissingOwnedSessionsShared(deps.supervisor, sessions, projectId, providerGroup);
 
-    // Check which owned sessions are already in the list
-    const existingIds = new Set(sessions.map((s) => s.id));
-
-    // Add missing owned sessions at the beginning (they're new)
-    const missingSessions: SessionSummary[] = [];
-    for (const [sessionId, summary] of ownedSessions) {
-      if (!existingIds.has(sessionId)) {
-        missingSessions.push(summary);
-      }
-    }
-
-    return [...missingSessions, ...sessions];
-  }
-
-  // Helper to enrich sessions with real status, notification state, and metadata
-  function enrichSessions(sessions: SessionSummary[]): SessionSummary[] {
-    return sessions.map((session) => {
-      const process = deps.supervisor?.getProcessForSession(session.id);
-      const isExternal = deps.externalTracker?.isExternal(session.id) ?? false;
-
-      // Enrich with ownership
-      const ownership = process
-        ? {
-            owner: "self" as const,
-            processId: process.id,
-            permissionMode: process.permissionMode,
-            modeVersion: process.modeVersion,
-          }
-        : isExternal
-          ? { owner: "external" as const }
-          : session.ownership;
-
-      // Enrich with notification data and agent activity
-      let pendingInputType: PendingInputType | undefined;
-      let activity: AgentActivity | undefined;
-      if (process) {
-        const pendingRequest = process.getPendingInputRequest();
-        if (pendingRequest) {
-          pendingInputType =
-            pendingRequest.type === "tool-approval" ? "tool-approval" : "user-question";
-        }
-        // Get the current agent activity (in-turn/waiting-input/idle)
-        const state = process.state.type;
-        if (state === "in-turn" || state === "waiting-input") {
-          activity = state;
-        }
-      }
-
-      // Get last seen and unread status
-      const lastSeenEntry = deps.notificationService?.getLastSeen(session.id);
-      const lastSeenAt = lastSeenEntry?.timestamp;
-      const hasUnread = deps.notificationService
-        ? deps.notificationService.hasUnread(session.id, session.updatedAt)
-        : undefined;
-
-      // Get session metadata (custom title, archived, starred)
-      const metadata = deps.sessionMetadataService?.getMetadata(session.id);
-      const customTitle = metadata?.customTitle;
-      const isArchived = metadata?.isArchived;
-      const isStarred = metadata?.isStarred;
-
-      return {
-        ...session,
-        ownership,
-        pendingInputType,
-        activity,
-        lastSeenAt,
-        hasUnread,
-        customTitle,
-        isArchived,
-        isStarred,
-      };
-    });
-  }
+  const enrichSessions = (sessions: SessionSummary[]): SessionSummary[] =>
+    enrichSessionsShared(deps, sessions);
 
   // GET /api/projects - List all projects
   routes.get("/", async (c) => {

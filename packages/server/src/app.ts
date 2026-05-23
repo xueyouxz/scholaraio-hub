@@ -1,5 +1,6 @@
 import type { HttpBindings } from "@hono/node-server";
 import { Hono } from "hono";
+import { etag } from "hono/etag";
 import { createStaticRoutes } from "./frontend/static.js";
 import type { SessionIndexService } from "./indexes/index.js";
 import type { ProjectMetadataService, SessionMetadataService } from "./metadata/index.js";
@@ -179,6 +180,19 @@ export function createApp(options: AppOptions): AppResult {
 
   app.use("/health/*", (c, next) => next());
   app.route("/health", health);
+
+  // Apply ETag/304 negotiation to read-mostly JSON aggregate endpoints.
+  // SSE/stream and SDK message routes are excluded because their responses
+  // are not body-stable (or are streaming).
+  const etagMw = etag();
+  app.use("/api/version", etagMw);
+  app.use("/api/projects", etagMw);
+  app.use("/api/projects/:projectId", etagMw);
+  app.use("/api/projects/:projectId/sessions", etagMw);
+  app.use("/api/sessions", etagMw);
+  app.use("/api/processes", etagMw);
+  app.use("/api/providers", etagMw);
+  app.use("/api/providers/usage-limits", etagMw);
 
   app.route(
     "/api/version",

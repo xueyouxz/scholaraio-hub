@@ -35,8 +35,13 @@ export function createScholarRoutes({ scholarAioApiUrl }: { scholarAioApiUrl: st
     const headers = new Headers();
     const accept = c.req.header("accept");
     const contentType = c.req.header("content-type");
+    const ifNoneMatch = c.req.header("if-none-match");
+    const ifModifiedSince = c.req.header("if-modified-since");
     if (accept) headers.set("accept", accept);
     if (contentType) headers.set("content-type", contentType);
+    // Forward conditional headers so upstream can answer 304.
+    if (ifNoneMatch) headers.set("if-none-match", ifNoneMatch);
+    if (ifModifiedSince) headers.set("if-modified-since", ifModifiedSince);
 
     const init: RequestInit = {
       method: c.req.method,
@@ -68,10 +73,22 @@ export function createScholarRoutes({ scholarAioApiUrl }: { scholarAioApiUrl: st
       clearTimeout(timeout);
     }
 
-    return new Response(res.body, {
-      status: res.status,
-      headers: { "content-type": res.headers.get("content-type") ?? "application/json" },
-    });
+    // Forward cache-related headers from upstream to client so the browser
+    // and React Query can use the freshness signals (ETag/Last-Modified) and
+    // immutable PDFs/images can be served from disk cache on revisit.
+    const outHeaders: Record<string, string> = {
+      "content-type": res.headers.get("content-type") ?? "application/json",
+    };
+    const passthrough = ["etag", "last-modified", "cache-control", "vary", "content-length"];
+    for (const name of passthrough) {
+      const value = res.headers.get(name);
+      if (value) outHeaders[name] = value;
+    }
+    // 304 has no body; preserve as-is.
+    if (res.status === 304) {
+      return new Response(null, { status: 304, headers: outHeaders });
+    }
+    return new Response(res.body, { status: res.status, headers: outHeaders });
   });
 
   return app;

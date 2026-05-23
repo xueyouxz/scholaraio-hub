@@ -35,17 +35,45 @@ interface AgentContentProviderProps {
   sessionId: string;
 }
 
+function mergeAgentMessages(
+  existing: AgentContent | undefined,
+  jsonlMessages: Message[],
+  serverStatus: AgentContent["status"],
+): AgentContent {
+  const existingMessages = existing?.messages ?? [];
+  // Dedupe by message ID — JSONL is canonical; keep SSE-only messages
+  const messageMap = new Map<string, Message>();
+  for (const m of jsonlMessages) {
+    messageMap.set(getMessageId(m), m);
+  }
+  for (const m of existingMessages) {
+    const id = getMessageId(m);
+    if (!messageMap.has(id)) {
+      messageMap.set(id, m);
+    }
+  }
+  // Keep "running" status from SSE if it is currently running
+  const status = existing?.status === "running" ? "running" : serverStatus;
+  return {
+    messages: Array.from(messageMap.values()),
+    status,
+  };
+}
+
 export function AgentContentProvider({
   children,
   agentContent,
   setAgentContent,
   toolUseToAgent,
   projectId,
-  sessionId,
+  sessionId: _sessionId,
 }: AgentContentProviderProps) {
-  const [loadingAgents, setLoadingAgents] = useState<Set<string>>(new Set());
-  // Track which agents have had their JSONL loaded (separate from SSE content)
-  const loadedAgentsRef = useRef<Set<string>>(new Set());
+  // Inflight promise dedup: same agentId concurrently requested → same promise
+  const inflightRef = useRef<Map<string, Promise<AgentContent>>>(new Map());
+  // Agents whose JSONL has already been loaded (won't re-fetch)
+  const loadedRef = useRef<Set<string>>(new Set());
+  // Version bumped on inflight start/end so isLoading() can re-evaluate
+  const [loadingVersion, setLoadingVersion] = useState(0);
 
   const loadAgentContent = useCallback(
     async (
@@ -53,89 +81,50 @@ export function AgentContentProvider({
       loadSessionId: string,
       agentId: string,
     ): Promise<AgentContent> => {
-      // Check if JSONL has already been loaded for this agent
-      if (loadedAgentsRef.current.has(agentId)) {
-        return agentContent[agentId] ?? { messages: [], status: "pending" };
-      }
-
-      // Check if already loading
-      if (loadingAgents.has(agentId)) {
-        // Wait for existing load to complete
-        return new Promise((resolve) => {
-          const checkInterval = setInterval(() => {
-            if (loadedAgentsRef.current.has(agentId)) {
-              clearInterval(checkInterval);
-              resolve(agentContent[agentId] ?? { messages: [], status: "pending" });
-            }
-          }, 100);
-          // Timeout after 30 seconds
-          setTimeout(() => {
-            clearInterval(checkInterval);
-            resolve({ messages: [], status: "pending" });
-          }, 30000);
+      // Already loaded: read latest value from setter (avoids stale closure)
+      if (loadedRef.current.has(agentId)) {
+        return new Promise<AgentContent>((resolve) => {
+          setAgentContent((prev) => {
+            resolve(prev[agentId] ?? { messages: [], status: "pending" });
+            return prev;
+          });
         });
       }
 
-      // Start loading
-      setLoadingAgents((prev) => new Set(prev).add(agentId));
+      // Inflight: reuse the same Promise
+      const existing = inflightRef.current.get(agentId);
+      if (existing) return existing;
 
-      try {
-        const data = await api.getAgentSession(loadProjectId, loadSessionId, agentId);
+      setLoadingVersion((v) => v + 1);
+      const promise = (async (): Promise<AgentContent> => {
+        try {
+          const data = await api.getAgentSession(loadProjectId, loadSessionId, agentId);
+          loadedRef.current.add(agentId);
+          let merged: AgentContent = { messages: data.messages, status: data.status };
+          setAgentContent((prev) => {
+            merged = mergeAgentMessages(prev[agentId], data.messages, data.status);
+            return { ...prev, [agentId]: merged };
+          });
+          return merged;
+        } catch (error) {
+          console.error(`Failed to load agent content for ${agentId}:`, error);
+          return { messages: [], status: "failed" };
+        } finally {
+          inflightRef.current.delete(agentId);
+          setLoadingVersion((v) => v + 1);
+        }
+      })();
 
-        // Mark as loaded before merging
-        loadedAgentsRef.current.add(agentId);
-
-        // Merge JSONL messages with any existing SSE content
-        // SSE may have captured messages that arrived after page load
-        setAgentContent((prev) => {
-          const existing = prev[agentId];
-          const existingMessages = existing?.messages ?? [];
-          const jsonlMessages = data.messages;
-
-          // Dedupe by message ID - prefer JSONL as canonical, add SSE-only messages
-          const messageMap = new Map<string, Message>();
-          for (const m of jsonlMessages) {
-            messageMap.set(getMessageId(m), m);
-          }
-          // Add any SSE messages not in JSONL (e.g., arrived after JSONL was read)
-          for (const m of existingMessages) {
-            const id = getMessageId(m);
-            if (!messageMap.has(id)) {
-              messageMap.set(id, m);
-            }
-          }
-
-          // Use status from server (inferred from JSONL) unless SSE shows running
-          const status = existing?.status === "running" ? "running" : data.status;
-
-          return {
-            ...prev,
-            [agentId]: {
-              messages: Array.from(messageMap.values()),
-              status,
-            },
-          };
-        });
-
-        return {
-          messages: data.messages,
-          status: data.status,
-        };
-      } catch (error) {
-        console.error(`Failed to load agent content for ${agentId}:`, error);
-        return { messages: [], status: "failed" };
-      } finally {
-        setLoadingAgents((prev) => {
-          const next = new Set(prev);
-          next.delete(agentId);
-          return next;
-        });
-      }
+      inflightRef.current.set(agentId, promise);
+      return promise;
     },
-    [agentContent, loadingAgents, setAgentContent],
+    [setAgentContent],
   );
 
-  const isLoading = useCallback((agentId: string) => loadingAgents.has(agentId), [loadingAgents]);
+  // Recreated each render so that loadingVersion-driven re-renders propagate to consumers.
+  // The body reads the live inflight Map; loadingVersion's only role is to trigger re-render.
+  void loadingVersion;
+  const isLoading = (agentId: string) => inflightRef.current.has(agentId);
 
   const value: AgentContentContextValue = {
     agentContent,
@@ -164,7 +153,11 @@ export function useAgentContent() {
  * Hook to get agent content for a specific agentId.
  * Returns null if context is not available (graceful degradation).
  */
-export function useAgentContentOptional(agentId: string | undefined): {
+export function useAgentContentOptional(
+  agentId: string | undefined,
+  sessionId?: string,
+  projectId?: string,
+): {
   content: AgentContent | undefined;
   isLoading: boolean;
   load: () => Promise<void>;
@@ -178,8 +171,8 @@ export function useAgentContentOptional(agentId: string | undefined): {
     content: context.agentContent[agentId],
     isLoading: context.isLoading(agentId),
     load: async () => {
-      // Note: projectId and sessionId are captured from provider
-      // This is a simplified interface for components
+      if (!projectId || !sessionId) return;
+      await context.loadAgentContent(projectId, sessionId, agentId);
     },
   };
 }

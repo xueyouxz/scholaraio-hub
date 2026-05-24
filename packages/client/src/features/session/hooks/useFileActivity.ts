@@ -172,15 +172,14 @@ export function useFileActivity(options: UseFileActivityOptions = {}) {
     };
   }, []);
 
-  // Sync connected state with bus (for initial render and disconnects)
+  // Sync local connected state with the bus. The bus only emits "reconnect"
+  // on re-connection (not initial), and there is no "disconnect" event, so we
+  // poll. Cheap (one boolean read per second) and matches the template.
   useEffect(() => {
-    const checkConnection = () => {
+    const interval = window.setInterval(() => {
       setConnected(activityBus.connected);
-    };
-
-    // Check periodically since we don't have a disconnect event
-    const interval = setInterval(checkConnection, 1000);
-    return () => clearInterval(interval);
+    }, 1000);
+    return () => window.clearInterval(interval);
   }, []);
 
   const clearEvents = useCallback(() => {

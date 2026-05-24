@@ -76,7 +76,7 @@ export const PaperMarkdown = memo(function PaperMarkdown({ content, paperId }: P
   return (
     <ReactMarkdown
       remarkPlugins={[remarkGfm, remarkMath]}
-      rehypePlugins={[rehypeRaw, rehypeKatex]}
+      rehypePlugins={[rehypeRaw, [rehypeKatex, { strict: false, throwOnError: false }]]}
       components={{
         h1: ({ children }) => (
           <h1 className="font-serif text-xl font-bold text-on-surface leading-snug mt-8 mb-3 first:mt-0">

@@ -1,6 +1,7 @@
 import { useQuery } from "@tanstack/react-query";
 import { ChevronDown, LayoutGrid, LayoutList, Search, SortAsc, X } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
+import { useSearchParams } from "react-router-dom";
 import { usePageTitle } from "../../app/components/NavigationLayout";
 import { type ScholarPaper, scholar } from "../../core/api";
 import { queryKeys } from "../../core/queryKeys";
@@ -79,12 +80,19 @@ export function SearchPage() {
   const browseLoading = browseQuery.isLoading;
   const browsePapers = browseQuery.data ?? [];
 
-  // ── Search state ──
-  const [query, setQuery] = useState("");
-  const [mode, setMode] = useState("unified");
+  // ── Search state (persisted in URL so back-navigation restores results) ──
+  const [searchParams, setSearchParams] = useSearchParams();
+  const urlQuery = searchParams.get("q") ?? "";
+  const urlMode = searchParams.get("mode") ?? "unified";
+  const urlSearched = searchParams.get("s") === "1";
+
+  const [query, setQuery] = useState(urlQuery);
+  const [mode, setMode] = useState(urlMode);
   const [modeOpen, setModeOpen] = useState(false);
-  const [submittedSearch, setSubmittedSearch] = useState<SubmittedSearch | null>(null);
-  const [searched, setSearched] = useState(false);
+  const [submittedSearch, setSubmittedSearch] = useState<SubmittedSearch | null>(
+    urlSearched && urlQuery ? { query: urlQuery, mode: urlMode } : null,
+  );
+  const [searched, setSearched] = useState(urlSearched && !!urlQuery);
   const modeRef = useRef<HTMLDivElement>(null);
 
   // ── Paper drawer ──
@@ -105,6 +113,7 @@ export function SearchPage() {
       return scholar.search(searchBody, { signal });
     },
     enabled: !!searchBody,
+    staleTime: Number.POSITIVE_INFINITY,
   });
 
   const rawResults: ScholarPaper[] = searchQuery.data?.results ?? [];
@@ -122,6 +131,7 @@ export function SearchPage() {
     setSearched(true);
     setSelectedPaper(null);
     setSubmittedSearch({ query: q, mode });
+    setSearchParams({ q, mode, s: "1" }, { replace: true });
   };
 
   // ── Close dropdowns on outside click ──
@@ -200,6 +210,16 @@ export function SearchPage() {
                         onClick={() => {
                           setMode(m.id);
                           setModeOpen(false);
+                          if (searched) {
+                            setSearchParams(
+                              (prev) => {
+                                const next = new URLSearchParams(prev);
+                                next.set("mode", m.id);
+                                return next;
+                              },
+                              { replace: true },
+                            );
+                          }
                         }}
                         className={`w-full text-left px-3 py-1.5 text-xs rounded-lg transition-colors font-mono font-bold ${
                           m.id === mode
@@ -232,6 +252,7 @@ export function SearchPage() {
                     setSubmittedSearch(null);
                     setSearched(false);
                     setSelectedPaper(null);
+                    setSearchParams({}, { replace: true });
                   }}
                   className="mr-3 p-1 rounded-lg text-on-surface-variant hover:text-on-surface hover:bg-surface-container transition-colors"
                 >

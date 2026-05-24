@@ -2,7 +2,7 @@ import type { PermissionMode } from "@scholaraio-hub/shared";
 import { useQuery } from "@tanstack/react-query";
 import { Bell, Check, FolderTree, PenLine, X } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { useLocation, useParams } from "react-router-dom";
+import { useLocation, useNavigate, useParams } from "react-router-dom";
 import { api } from "../../core/api";
 import { queryKeys } from "../../core/queryKeys";
 import type { ThinkingOption } from "../../core/types";
@@ -66,6 +66,7 @@ function SessionPageContent({
   initialStatus?: { owner: "self"; processId: string };
   initialTitle?: string;
 }) {
+  const navigate = useNavigate();
   const { setTitle } = usePageTitle();
   const [filesOpen, setFilesOpen] = useState(false);
   const [message, setMessage] = useState("");
@@ -74,6 +75,7 @@ function SessionPageContent({
   const [sendError, setSendError] = useState("");
   const [selectedModel, setSelectedModel] = useState<string | undefined>(undefined);
   const messageListRef = useRef<MessageListHandle>(null);
+  const stopTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const streamingContext = useStreamingMarkdownContext();
 
   const streamingCallbacks = useMemo(() => {
@@ -120,7 +122,17 @@ function SessionPageContent({
     deferredMessages,
     slashCommands,
     refreshRuntimeState,
+    actualSessionId,
   } = useSession(projectId, sessionId, initialStatus, streamingCallbacks);
+
+  // When the server assigns the real session ID (temp→real transition), replace
+  // the URL so the address bar, browser history, and stream endpoint all stay
+  // in sync without adding a spurious history entry.
+  useEffect(() => {
+    if (actualSessionId !== sessionId) {
+      navigate(`/projects/${projectId}/sessions/${actualSessionId}`, { replace: true });
+    }
+  }, [actualSessionId, sessionId, projectId, navigate]);
 
   const providersQuery = useQuery({
     queryKey: queryKeys.providers(),
@@ -173,14 +185,30 @@ function SessionPageContent({
     await setHold(held).catch(() => {});
   };
 
+  // Cleanup stop timeout on unmount so it never fires against a dead component.
+  useEffect(() => {
+    return () => {
+      if (stopTimeoutRef.current) clearTimeout(stopTimeoutRef.current);
+    };
+  }, []);
+
   const handleStop = async () => {
     if (ownership.owner !== "self") return;
+    // Cancel any pending stop timeout from a previous attempt.
+    if (stopTimeoutRef.current) clearTimeout(stopTimeoutRef.current);
     try {
       await api.interruptProcess(ownership.processId);
+      // Fallback: if the SSE "complete" event never arrives (e.g. stream is
+      // briefly disconnected), reconcile ownership from the server after 3 s.
+      stopTimeoutRef.current = setTimeout(async () => {
+        stopTimeoutRef.current = null;
+        await refreshRuntimeState().catch(() => {});
+      }, 3000);
     } catch {
-      await api.abortProcess(ownership.processId).catch(() => {});
-      setStatus({ owner: "none" });
-      setProcessState("idle");
+      await api.abortProcess(ownership.processId).catch((e) => {
+        console.warn("[SessionPage] abortProcess failed after interruptProcess error", e);
+      });
+      await refreshRuntimeState().catch(() => {});
     }
   };
 

@@ -3,7 +3,10 @@ import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import { App } from "./app/App";
 import { queryClient } from "./core/queryClient";
+import { activityBus } from "./features/session/lib/activityBus";
 import "./styles.css";
+
+activityBus.connect();
 
 const root = document.getElementById("root");
 

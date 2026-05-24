@@ -9,77 +9,154 @@ pdfjs.GlobalWorkerOptions.workerSrc = pdfWorkerUrl;
 
 const ZOOM_STEPS = [0.5, 0.75, 1.0, 1.25, 1.5, 1.75, 2.0];
 const DEFAULT_ZOOM_INDEX = 2; // 1.0
+const OVERSCAN = 2; // pages to render beyond visible range on each side
+const DEBOUNCE_MS = 150;
 
 interface Props {
   url: string;
 }
 
-function getPageNumbers(numPages: number): number[] {
-  const pages: number[] = [];
-  for (let pageNumber = 1; pageNumber <= numPages; pageNumber += 1) {
-    pages.push(pageNumber);
-  }
-  return pages;
-}
-
 export function PdfViewer({ url }: Props) {
   const [numPages, setNumPages] = useState(0);
   const [currentPage, setCurrentPage] = useState(1);
+
+  // zoomIndex is the "committed" scale used for rendering.
+  // pendingZoomIndex is updated immediately on click for UI feedback;
+  // zoomIndex follows after DEBOUNCE_MS to avoid re-rendering every page on
+  // each rapid click.
+  const [pendingZoomIndex, setPendingZoomIndex] = useState(DEFAULT_ZOOM_INDEX);
   const [zoomIndex, setZoomIndex] = useState(DEFAULT_ZOOM_INDEX);
-  const scrollContainerRef = useRef<HTMLDivElement>(null);
+  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const scale = ZOOM_STEPS[zoomIndex] ?? 1.0;
+  const pendingScale = ZOOM_STEPS[pendingZoomIndex] ?? 1.0;
 
-  const onLoadSuccess = useCallback(({ numPages }: { numPages: number }) => {
-    setNumPages(numPages);
+  const scrollContainerRef = useRef<HTMLDivElement>(null);
+
+  // Visible page range for virtual scrolling.
+  const [visibleRange, setVisibleRange] = useState<[number, number]>([1, 1]);
+
+  const onLoadSuccess = useCallback(({ numPages: n }: { numPages: number }) => {
+    setNumPages(n);
     setCurrentPage(1);
+    setVisibleRange([1, Math.min(1 + OVERSCAN, n)]);
   }, []);
 
-  // Track which page is centered in the viewport via IntersectionObserver.
-  // rootMargin clips the observation zone to a thin band at the vertical center,
-  // so the page whose midpoint crosses that band becomes "current".
+  // Track visible range via IntersectionObserver. Split into two effects so the
+  // observer survives zoom changes: one creates the observer (lifetime tied to
+  // numPages), the other re-observes page wrappers after zoom remounts them.
+  const observerRef = useRef<IntersectionObserver | null>(null);
+  const visibleSetRef = useRef<Set<number>>(new Set());
+
   useEffect(() => {
     const container = scrollContainerRef.current;
     if (!container || numPages === 0) return;
 
+    const visible = visibleSetRef.current;
+    visible.clear();
+
     const observer = new IntersectionObserver(
       (entries) => {
         for (const entry of entries) {
+          const n = Number(entry.target.getAttribute("data-page"));
+          if (!n) continue;
           if (entry.isIntersecting) {
-            const n = Number(entry.target.getAttribute("data-page"));
-            if (n) setCurrentPage(n);
+            visible.add(n);
+          } else {
+            visible.delete(n);
           }
         }
+        if (visible.size === 0) return;
+        const min = Math.min(...visible);
+        const max = Math.max(...visible);
+        setCurrentPage(min);
+        setVisibleRange([Math.max(1, min - OVERSCAN), Math.min(numPages, max + OVERSCAN)]);
       },
-      { root: container, rootMargin: "-45% 0px -45% 0px" },
+      { root: container, threshold: 0 },
     );
+    observerRef.current = observer;
 
     for (const el of container.querySelectorAll("[data-page]")) {
       observer.observe(el);
     }
-    return () => observer.disconnect();
+    return () => {
+      observer.disconnect();
+      observerRef.current = null;
+    };
   }, [numPages]);
 
-  const zoomOut = useCallback(() => setZoomIndex((i) => Math.max(0, i - 1)), []);
-  const zoomIn = useCallback(() => setZoomIndex((i) => Math.min(ZOOM_STEPS.length - 1, i + 1)), []);
-  const zoomReset = useCallback(() => setZoomIndex(DEFAULT_ZOOM_INDEX), []);
+  // Re-observe page wrappers against the new DOM nodes that React mounts after
+  // a zoom change. Triggered imperatively from commitZoom so the observer
+  // instance survives the zoom (only its observed targets are refreshed).
+  const reobservePages = useCallback(() => {
+    const container = scrollContainerRef.current;
+    const observer = observerRef.current;
+    if (!container || !observer) return;
+    observer.disconnect();
+    visibleSetRef.current.clear();
+    for (const el of container.querySelectorAll("[data-page]")) {
+      observer.observe(el);
+    }
+  }, []);
+
+  const commitZoom = useCallback(
+    (nextIndex: number) => {
+      if (debounceRef.current) clearTimeout(debounceRef.current);
+      debounceRef.current = setTimeout(() => {
+        setZoomIndex(nextIndex);
+        // Wait two frames for React to commit the new DOM and pdf.js to lay
+        // out the remounted pages before re-observing.
+        requestAnimationFrame(() => requestAnimationFrame(reobservePages));
+      }, DEBOUNCE_MS);
+    },
+    [reobservePages],
+  );
+
+  const zoomOut = useCallback(() => {
+    setPendingZoomIndex((i) => {
+      const next = Math.max(0, i - 1);
+      commitZoom(next);
+      return next;
+    });
+  }, [commitZoom]);
+
+  const zoomIn = useCallback(() => {
+    setPendingZoomIndex((i) => {
+      const next = Math.min(ZOOM_STEPS.length - 1, i + 1);
+      commitZoom(next);
+      return next;
+    });
+  }, [commitZoom]);
+
+  const zoomReset = useCallback(() => {
+    if (debounceRef.current) clearTimeout(debounceRef.current);
+    setPendingZoomIndex(DEFAULT_ZOOM_INDEX);
+    setZoomIndex(DEFAULT_ZOOM_INDEX);
+  }, []);
+
+  // Clean up pending debounce on unmount.
+  useEffect(() => {
+    return () => {
+      if (debounceRef.current) clearTimeout(debounceRef.current);
+    };
+  }, []);
+
+  const [rangeStart, rangeEnd] = visibleRange;
 
   return (
     <div className="flex flex-col h-full overflow-hidden">
       {/* ── Toolbar ── */}
       <div className="shrink-0 flex items-center gap-1 px-4 h-11 bg-surface-container-low border-b border-outline-variant/15">
-        {/* Page indicator (read-only, updated by scroll) */}
         <span className="text-xs font-mono text-on-surface-variant min-w-[4.5rem] text-center select-none">
           {numPages > 0 ? `${currentPage} / ${numPages}` : "—"}
         </span>
 
         <div className="w-px h-4 bg-outline-variant/30 mx-1" />
 
-        {/* Zoom */}
         <button
           type="button"
           onClick={zoomOut}
-          disabled={zoomIndex === 0}
+          disabled={pendingZoomIndex === 0}
           aria-label="缩小"
           className="p-1.5 rounded-lg text-on-surface-variant hover:bg-surface-container-high disabled:opacity-30 disabled:cursor-not-allowed transition-colors border-0 bg-transparent cursor-pointer"
         >
@@ -92,13 +169,13 @@ export function PdfViewer({ url }: Props) {
           aria-label="重置缩放"
           className="text-[10px] font-mono text-on-surface-variant min-w-[2.75rem] text-center px-1.5 py-1 rounded-lg hover:bg-surface-container-high transition-colors border-0 bg-transparent cursor-pointer select-none"
         >
-          {Math.round(scale * 100)}%
+          {Math.round(pendingScale * 100)}%
         </button>
 
         <button
           type="button"
           onClick={zoomIn}
-          disabled={zoomIndex === ZOOM_STEPS.length - 1}
+          disabled={pendingZoomIndex === ZOOM_STEPS.length - 1}
           aria-label="放大"
           className="p-1.5 rounded-lg text-on-surface-variant hover:bg-surface-container-high disabled:opacity-30 disabled:cursor-not-allowed transition-colors border-0 bg-transparent cursor-pointer"
         >
@@ -135,17 +212,31 @@ export function PdfViewer({ url }: Props) {
           }
         >
           <div className="flex flex-col items-center gap-4 py-6 px-4">
-            {getPageNumbers(numPages).map((pageNumber) => (
-              <div key={`page-${pageNumber}`} data-page={pageNumber}>
-                <Page
-                  pageNumber={pageNumber}
-                  scale={scale}
-                  renderTextLayer
-                  renderAnnotationLayer
-                  className="shadow-xl rounded-sm"
-                />
-              </div>
-            ))}
+            {Array.from({ length: numPages }, (_, i) => i + 1).map((pageNumber) => {
+              const inRange = pageNumber >= rangeStart && pageNumber <= rangeEnd;
+              return (
+                <div key={`page-${pageNumber}`} data-page={pageNumber}>
+                  {inRange ? (
+                    <Page
+                      pageNumber={pageNumber}
+                      scale={scale}
+                      renderTextLayer
+                      renderAnnotationLayer
+                      className="shadow-xl rounded-sm"
+                    />
+                  ) : (
+                    // Placeholder keeps scroll position stable while page is offscreen.
+                    // Height is approximated from the previous render; pdfjs reports
+                    // page dimensions via onRenderSuccess but we use a fixed estimate
+                    // (A4 at 96dpi × scale) as a fast approximation.
+                    <div
+                      style={{ width: Math.round(794 * scale), height: Math.round(1123 * scale) }}
+                      className="bg-surface-container-high shadow-xl rounded-sm"
+                    />
+                  )}
+                </div>
+              );
+            })}
           </div>
         </Document>
       </div>

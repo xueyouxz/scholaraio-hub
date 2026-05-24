@@ -103,6 +103,7 @@ export function useSession(
     initialStatus ? "in-turn" : "idle",
   );
   const [pendingInputRequest, setPendingInputRequest] = useState<InputRequest | null>(null);
+  const pendingInputRequestRef = useRef<InputRequest | null>(null);
   const [error, setError] = useState<Error | null>(null);
 
   // Actual session ID from server (may differ from URL sessionId during temp→real ID transition)
@@ -128,6 +129,12 @@ export function useSession(
     setPendingInputRequest(null);
     setDeferredMessages([]);
   }, [status.owner]);
+
+  // Keep ref in sync so event handlers can read the current value without
+  // capturing stale closure state (avoids performing API calls inside setState).
+  useEffect(() => {
+    pendingInputRequestRef.current = pendingInputRequest;
+  }, [pendingInputRequest]);
 
   // Compacting state - true when context is being compressed
   const [isCompacting, setIsCompacting] = useState(false);
@@ -337,6 +344,11 @@ export function useSession(
     timer: ReturnType<typeof setTimeout> | null;
     pending: boolean;
   }>({ timer: null, pending: false });
+
+  // Debounce timer for stream error handling. SSE onerror fires on any transient
+  // network blip. We wait 1.5 s (> the 1 s minimum reconnect delay) before
+  // querying the server so a quick recovery doesn't reset the UI to idle.
+  const streamErrorDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Add a message to the pending queue
   // Generates a tempId that will be sent to the server and echoed back in stream
@@ -560,12 +572,10 @@ export function useSession(
       }
 
       // If activity bus says waiting-input but we don't have the request,
-      // fetch it via REST as a backup
+      // fetch it via REST as a backup. Read via ref to avoid a side effect
+      // inside a setState updater (which React may call more than once).
       if (event.activity === "waiting-input" && event.pendingInputType) {
-        setPendingInputRequest((current) => {
-          if (current) return current; // Already have it, don't fetch
-
-          // Fetch pending request in background (can't return promise from setState)
+        if (!pendingInputRequestRef.current) {
           api
             .getSessionMetadata(projectId, sessionId)
             .then((result) => {
@@ -578,9 +588,7 @@ export function useSession(
               console.warn("[useSession] failed to refresh pending input request", err);
               setError(err);
             });
-
-          return current; // Return unchanged for now, will update when fetch completes
-        });
+        }
       }
     },
     [projectId, sessionId],
@@ -636,6 +644,9 @@ export function useSession(
     return () => {
       if (throttleRef.current.timer) {
         clearTimeout(throttleRef.current.timer);
+      }
+      if (streamErrorDebounceRef.current) {
+        clearTimeout(streamErrorDebounceRef.current);
       }
     };
   }, []);
@@ -870,6 +881,13 @@ export function useSession(
         setPendingInputRequest(null);
         setDeferredMessages([]);
       } else if (data.eventType === "connected") {
+        // SSE reconnected — cancel any pending error-debounce so we don't
+        // mistakenly reset ownership after a transient blip that recovered.
+        if (streamErrorDebounceRef.current) {
+          clearTimeout(streamErrorDebounceRef.current);
+          streamErrorDebounceRef.current = null;
+        }
+
         // Sync state and permission mode from connected event
         const connectedData = data as {
           eventType: string;
@@ -1042,22 +1060,26 @@ export function useSession(
     ],
   );
 
-  // Handle stream errors by checking if process is still alive
-  // If process died (idle timeout), transition to idle state
-  // Uses lightweight metadata endpoint to avoid re-fetching all messages
-  const handleStreamError = useCallback(async () => {
-    try {
-      const data = await api.getSessionMetadata(projectId, sessionId);
-      if (data.ownership.owner !== "self") {
+  // Handle stream errors by checking if process is still alive.
+  // Debounced by 1.5 s so a transient network blip that reconnects within the
+  // SSE backoff window (minimum 1 s) doesn't flash the UI to idle and back.
+  // The "connected" SSE event cancels the debounce when reconnection succeeds.
+  const handleStreamError = useCallback(() => {
+    if (streamErrorDebounceRef.current) clearTimeout(streamErrorDebounceRef.current);
+    streamErrorDebounceRef.current = setTimeout(async () => {
+      streamErrorDebounceRef.current = null;
+      try {
+        const data = await api.getSessionMetadata(projectId, sessionId);
+        if (data.ownership.owner !== "self") {
+          setStatus({ owner: "none" });
+          setProcessState("idle");
+        }
+      } catch (error) {
+        console.warn("[useSession] failed to check session metadata after stream error", error);
         setStatus({ owner: "none" });
         setProcessState("idle");
       }
-    } catch (error) {
-      console.warn("[useSession] failed to check session metadata after stream error", error);
-      // If session fetch fails, assume process is dead
-      setStatus({ owner: "none" });
-      setProcessState("idle");
-    }
+    }, 1500);
   }, [projectId, sessionId]);
 
   // Only connect to session stream when we own the session

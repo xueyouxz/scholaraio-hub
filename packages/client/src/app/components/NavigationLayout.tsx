@@ -187,7 +187,8 @@ export function NavigationLayout() {
   const isPaperReaderRoute = /^\/library\/.+/.test(location.pathname);
   const isLibraryRoute = location.pathname === "/library";
   const isSearchRoute = location.pathname === "/search";
-  const isFullscreenRoute = isSessionRoute || isPaperReaderRoute || isSearchRoute;
+  const isSkillsRoute = /^\/skills(\/|$)/.test(location.pathname);
+  const isFullscreenRoute = isSessionRoute || isPaperReaderRoute || isSearchRoute || isSkillsRoute;
 
   return (
     <ProjectScopeContext value={projectScopeContext}>

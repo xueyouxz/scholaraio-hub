@@ -10,9 +10,21 @@ interface Props {
   papers: PaperReference[];
   selectedId?: string | null;
   onSelect: (paper: PaperReference) => void;
+  selectionMode?: boolean;
+  checkedIds?: Set<string>;
+  addedMap?: Map<string, string>;
+  failedMap?: Map<string, string>;
 }
 
-export function PaperVirtualList({ papers, selectedId, onSelect }: Props) {
+export function PaperVirtualList({
+  papers,
+  selectedId,
+  onSelect,
+  selectionMode,
+  checkedIds,
+  addedMap,
+  failedMap,
+}: Props) {
   const parentRef = useRef<HTMLDivElement>(null);
 
   const virtualizer = useVirtualizer({
@@ -52,6 +64,10 @@ export function PaperVirtualList({ papers, selectedId, onSelect }: Props) {
                 paper={paper}
                 isSelected={selectedId === paper.id}
                 onClick={() => onSelect(paper)}
+                selectionMode={selectionMode}
+                isChecked={checkedIds?.has(paper.id) ?? false}
+                addedLabel={addedMap?.get(paper.id) ?? null}
+                failedReason={failedMap?.get(paper.id) ?? null}
               />
             </div>
           );

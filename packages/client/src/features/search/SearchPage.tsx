@@ -1,5 +1,5 @@
-import { useQuery } from "@tanstack/react-query";
-import { ChevronDown, LayoutGrid, LayoutList, Search, SortAsc, X } from "lucide-react";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { CheckSquare, ChevronDown, LayoutGrid, LayoutList, Search, SortAsc, X } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import { usePageTitle } from "../../app/components/NavigationLayout";
@@ -10,6 +10,7 @@ import { PaperGridCard } from "../library/components/PaperGridCard";
 import { PaperVirtualList } from "../library/components/PaperVirtualList";
 import { toPaperRef } from "../library/paperUtils";
 import type { PaperReference, ViewMode } from "../library/types";
+import { BatchAddDropdown } from "./components/BatchAddDropdown";
 import { SearchSkeleton } from "./components/SearchSkeleton";
 
 // ─── Constants ────────────────────────────────────────────────────────────────
@@ -18,6 +19,7 @@ const SEARCH_SORT_OPTIONS = ["相关度", "年份", "引用量"];
 const BROWSE_SORT_OPTIONS = ["年份", "引用量", "标题"];
 const BROWSE_SORT_KEYS = ["year_desc", "citations_desc", "title_asc"];
 const SEARCH_LIMIT = 100;
+const BATCH_SELECTION_CAP = 200;
 
 interface SearchMode {
   id: string;
@@ -60,6 +62,7 @@ function toRef(p: ScholarPaper): PaperReference {
 
 export function SearchPage() {
   const { setTitle } = usePageTitle();
+  const queryClient = useQueryClient();
 
   // ── Shared view state ──
   const [view, setView] = useState<ViewMode>("grid");
@@ -98,10 +101,158 @@ export function SearchPage() {
   // ── Paper drawer ──
   const [selectedPaper, setSelectedPaper] = useState<PaperReference | null>(null);
 
+  // ── Multi-select state ──
+  // selectionMode: explicit on/off toggle from the toolbar.
+  // selectedIds: paperIds currently checked.
+  // addedMap: paperId → workspace name we successfully added it to in this
+  //   session. Drives the "✓ {ws}" badge; lives only in memory (the authoritative
+  //   state is the workspace endpoint, which we invalidate on success).
+  // failedMap: paperId → reason for the most recent failure. Drives error
+  //   border + tooltip; cleared the moment the user toggles that id off.
+  const [selectionMode, setSelectionMode] = useState(false);
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [addedMap, setAddedMap] = useState<Map<string, string>>(new Map());
+  const [failedMap, setFailedMap] = useState<Map<string, string>>(new Map());
+  const [batchNotice, setBatchNotice] = useState<string | null>(null);
+
+  const clearSelection = () => {
+    setSelectedIds(new Set());
+    setAddedMap(new Map());
+    setFailedMap(new Map());
+    setBatchNotice(null);
+  };
+
+  const exitSelectionMode = () => {
+    setSelectionMode(false);
+    clearSelection();
+  };
+
+  const toggleSelected = (id: string) => {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) {
+        next.delete(id);
+      } else {
+        if (next.size >= BATCH_SELECTION_CAP) {
+          setBatchNotice(`最多一次选择 ${BATCH_SELECTION_CAP} 篇`);
+          return prev;
+        }
+        next.add(id);
+      }
+      return next;
+    });
+    // Clear stale failure marker for this id once user re-engages with it.
+    setFailedMap((prev) => {
+      if (!prev.has(id)) return prev;
+      const next = new Map(prev);
+      next.delete(id);
+      return next;
+    });
+  };
+
+  const workspacesQuery = useQuery({
+    queryKey: queryKeys.scholar.workspaces(),
+    queryFn: ({ signal }) => scholar.getWorkspaces({ signal }),
+    enabled: selectionMode,
+    select: (res) => res.workspaces.map((w) => ({ id: w.id, name: w.name })),
+  });
+
+  const batchAddMutation = useMutation({
+    mutationFn: ({ ws, ids }: { ws: string; ids: string[] }) =>
+      scholar.batchAddPapersToWorkspace(ws, ids),
+    onSuccess: (res, { ws }) => {
+      setAddedMap((prev) => {
+        const next = new Map(prev);
+        for (const id of res.added) next.set(id, ws);
+        for (const s of res.skipped) next.set(s.id, ws);
+        return next;
+      });
+      setFailedMap((prev) => {
+        const next = new Map(prev);
+        for (const id of res.added) next.delete(id);
+        for (const s of res.skipped) next.delete(s.id);
+        for (const f of res.failed) next.set(f.id, f.reason);
+        return next;
+      });
+      // Successes drop out of selection; failures stay checked so the user
+      // can retry against a different workspace.
+      setSelectedIds((prev) => {
+        const next = new Set(prev);
+        for (const id of res.added) next.delete(id);
+        for (const s of res.skipped) next.delete(s.id);
+        return next;
+      });
+      setBatchNotice(
+        `${res.added.length} 已加入 · ${res.skipped.length} 已存在 · ${res.failed.length} 失败`,
+      );
+      queryClient.invalidateQueries({ queryKey: queryKeys.scholar.workspaces() });
+      queryClient.invalidateQueries({ queryKey: queryKeys.scholar.workspace(ws) });
+    },
+    onError: (err: unknown) => {
+      const msg = err instanceof Error ? err.message : "未知错误";
+      setBatchNotice(`加入失败：${msg}`);
+    },
+  });
+
+  const createAndBatchAddMutation = useMutation({
+    mutationFn: async ({ ws, ids }: { ws: string; ids: string[] }) => {
+      await scholar.createWorkspace(ws);
+      return scholar.batchAddPapersToWorkspace(ws, ids);
+    },
+    onSuccess: (res, { ws }) => {
+      // Reuse the same post-success state mutation as batchAddMutation.
+      setAddedMap((prev) => {
+        const next = new Map(prev);
+        for (const id of res.added) next.set(id, ws);
+        for (const s of res.skipped) next.set(s.id, ws);
+        return next;
+      });
+      setFailedMap((prev) => {
+        const next = new Map(prev);
+        for (const id of res.added) next.delete(id);
+        for (const s of res.skipped) next.delete(s.id);
+        for (const f of res.failed) next.set(f.id, f.reason);
+        return next;
+      });
+      setSelectedIds((prev) => {
+        const next = new Set(prev);
+        for (const id of res.added) next.delete(id);
+        for (const s of res.skipped) next.delete(s.id);
+        return next;
+      });
+      setBatchNotice(`已创建 ${ws} · ${res.added.length} 已加入 · ${res.failed.length} 失败`);
+      queryClient.invalidateQueries({ queryKey: queryKeys.scholar.workspaces() });
+      queryClient.invalidateQueries({ queryKey: queryKeys.scholar.workspace(ws) });
+    },
+    onError: (err: unknown) => {
+      const msg = err instanceof Error ? err.message : "未知错误";
+      setBatchNotice(`新建/加入失败：${msg}`);
+    },
+  });
+
+  const batchPending = batchAddMutation.isPending || createAndBatchAddMutation.isPending;
+
   useEffect(() => {
     setTitle("Search");
     return () => setTitle("");
   }, [setTitle]);
+
+  // Clear selection when the underlying data source identity changes
+  // (search↔browse toggle, or a different submitted query). Sorting and
+  // search-mode changes do not clear because they do not redefine the set
+  // of paperIds. We compare against a ref-stored source key so the deps are
+  // genuinely read (not just trigger-deps).
+  const lastSourceKeyRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (!selectionMode) return;
+    const sourceKey = searched ? `s:${submittedSearch?.query ?? ""}` : "b";
+    if (lastSourceKeyRef.current === sourceKey) return;
+    lastSourceKeyRef.current = sourceKey;
+    setSelectedIds(new Set());
+    setAddedMap(new Map());
+    setFailedMap(new Map());
+    setBatchNotice(null);
+  }, [searched, submittedSearch?.query, selectionMode]);
 
   const searchBody = submittedSearch
     ? { query: submittedSearch.query, mode: submittedSearch.mode, limit: SEARCH_LIMIT }
@@ -170,6 +321,17 @@ export function SearchPage() {
     if (searched) setSearchSort(i);
     else setBrowseSort(i);
     setSortOpen(false);
+  };
+
+  // Single click handler shared by grid cards and list rows in both data
+  // sources: in selection mode it toggles checked state, otherwise it opens
+  // the detail panel.
+  const handlePaperClick = (paper: PaperReference) => {
+    if (selectionMode) {
+      toggleSelected(paper.id);
+    } else {
+      setSelectedPaper((prev) => (prev?.id === paper.id ? null : paper));
+    }
   };
 
   // ─────────────────────────────────────────────────────────────────────────
@@ -275,68 +437,129 @@ export function SearchPage() {
 
       {/* ── Unified toolbar (always visible, same layout in all states) ── */}
       <div className="shrink-0 flex items-center justify-between px-6 mb-4" ref={sortRef}>
-        {/* Left: sort pill + divider + count */}
-        <div className="flex items-center gap-3">
-          <div className="relative">
-            <button
-              type="button"
-              onClick={() => setSortOpen((v) => !v)}
-              className="flex items-center gap-1.5 px-3 py-1.5 bg-surface-container-high rounded-full text-sm font-medium text-primary hover:bg-surface-container active:scale-95 transition-all"
-            >
-              <SortAsc className="w-3.5 h-3.5" />
-              {currentSortLabel}
-              <ChevronDown
-                className={`w-3.5 h-3.5 transition-transform ${sortOpen ? "rotate-180" : ""}`}
-              />
-            </button>
-            {sortOpen && (
-              <div className="absolute top-9 left-0 z-20 w-36 bg-surface-container-high border border-outline-variant/20 rounded-xl p-1.5 shadow-xl">
-                {sortOptions.map((opt, i) => (
-                  <button
-                    key={opt}
-                    type="button"
-                    onClick={() => handleSortSelect(i)}
-                    className={`w-full text-left px-3 py-1.5 rounded-lg text-sm transition-colors ${
-                      i === currentSortIndex
-                        ? "bg-primary/10 text-primary font-semibold"
-                        : "text-on-surface hover:bg-surface-container"
-                    }`}
-                  >
-                    {opt}
-                  </button>
-                ))}
-              </div>
-            )}
-          </div>
-          <div className="h-4 w-px bg-outline-variant/30" />
-          <p className="text-sm text-on-surface-variant font-sans">{countText}</p>
-        </div>
+        {selectionMode ? (
+          <>
+            {/* Selection-mode left side: count + clear */}
+            <div className="flex items-center gap-3">
+              <span className="text-sm text-on-surface font-medium">
+                已选 {selectedIds.size} 篇
+              </span>
+              <button
+                type="button"
+                onClick={clearSelection}
+                disabled={selectedIds.size === 0}
+                className="px-3 py-1.5 rounded-full text-sm text-on-surface-variant hover:bg-surface-container-high disabled:opacity-40 disabled:cursor-not-allowed border-0 bg-transparent cursor-pointer"
+              >
+                清空
+              </button>
+              {batchNotice ? (
+                <>
+                  <div className="h-4 w-px bg-outline-variant/30" />
+                  <p className="text-xs text-on-surface-variant font-mono">{batchNotice}</p>
+                </>
+              ) : null}
+            </div>
 
-        {/* Right: view toggle */}
-        <div className="flex gap-1.5">
-          <button
-            type="button"
-            onClick={() => setView("list")}
-            className={`p-1.5 rounded-lg transition-colors ${
-              view === "list"
-                ? "bg-primary/10 text-primary"
-                : "text-on-surface-variant hover:bg-surface-container-high"
-            }`}
-          >
-            <LayoutList className="w-4 h-4" />
-          </button>
-          <button
-            type="button"
-            onClick={() => setView("grid")}
-            className={`p-1.5 rounded-lg transition-colors ${
-              view === "grid"
-                ? "bg-primary/10 text-primary"
-                : "text-on-surface-variant hover:bg-surface-container-high"
-            }`}
-          >
-            <LayoutGrid className="w-4 h-4" />
-          </button>
-        </div>
+            {/* Selection-mode right side: workspace dropdown + exit */}
+            <div className="flex items-center gap-2">
+              <BatchAddDropdown
+                workspaces={workspacesQuery.data ?? []}
+                pending={batchPending}
+                selectedCount={selectedIds.size}
+                onAdd={(ws) => batchAddMutation.mutate({ ws, ids: Array.from(selectedIds) })}
+                onCreateAndAdd={(ws) =>
+                  createAndBatchAddMutation.mutate({ ws, ids: Array.from(selectedIds) })
+                }
+              />
+              <button
+                type="button"
+                onClick={exitSelectionMode}
+                disabled={batchPending}
+                className="p-1.5 rounded-lg text-on-surface-variant hover:bg-surface-container-high disabled:opacity-40 disabled:cursor-not-allowed border-0 bg-transparent cursor-pointer"
+                aria-label="退出选择"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+          </>
+        ) : (
+          <>
+            {/* Left: sort pill + divider + count */}
+            <div className="flex items-center gap-3">
+              <div className="relative">
+                <button
+                  type="button"
+                  onClick={() => setSortOpen((v) => !v)}
+                  className="flex items-center gap-1.5 px-3 py-1.5 bg-surface-container-high rounded-full text-sm font-medium text-primary hover:bg-surface-container active:scale-95 transition-all"
+                >
+                  <SortAsc className="w-3.5 h-3.5" />
+                  {currentSortLabel}
+                  <ChevronDown
+                    className={`w-3.5 h-3.5 transition-transform ${sortOpen ? "rotate-180" : ""}`}
+                  />
+                </button>
+                {sortOpen && (
+                  <div className="absolute top-9 left-0 z-20 w-36 bg-surface-container-high border border-outline-variant/20 rounded-xl p-1.5 shadow-xl">
+                    {sortOptions.map((opt, i) => (
+                      <button
+                        key={opt}
+                        type="button"
+                        onClick={() => handleSortSelect(i)}
+                        className={`w-full text-left px-3 py-1.5 rounded-lg text-sm transition-colors ${
+                          i === currentSortIndex
+                            ? "bg-primary/10 text-primary font-semibold"
+                            : "text-on-surface hover:bg-surface-container"
+                        }`}
+                      >
+                        {opt}
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+              <div className="h-4 w-px bg-outline-variant/30" />
+              <p className="text-sm text-on-surface-variant font-sans">{countText}</p>
+            </div>
+
+            {/* Right: select + view toggle */}
+            <div className="flex items-center gap-1.5">
+              <button
+                type="button"
+                onClick={() => {
+                  setSelectionMode(true);
+                  setSelectedPaper(null);
+                }}
+                title="多选"
+                className="p-1.5 rounded-lg text-on-surface-variant hover:bg-surface-container-high border-0 bg-transparent cursor-pointer"
+              >
+                <CheckSquare className="w-4 h-4" />
+              </button>
+              <div className="h-4 w-px bg-outline-variant/30 mx-1" />
+              <button
+                type="button"
+                onClick={() => setView("list")}
+                className={`p-1.5 rounded-lg transition-colors ${
+                  view === "list"
+                    ? "bg-primary/10 text-primary"
+                    : "text-on-surface-variant hover:bg-surface-container-high"
+                }`}
+              >
+                <LayoutList className="w-4 h-4" />
+              </button>
+              <button
+                type="button"
+                onClick={() => setView("grid")}
+                className={`p-1.5 rounded-lg transition-colors ${
+                  view === "grid"
+                    ? "bg-primary/10 text-primary"
+                    : "text-on-surface-variant hover:bg-surface-container-high"
+                }`}
+              >
+                <LayoutGrid className="w-4 h-4" />
+              </button>
+            </div>
+          </>
+        )}
       </div>
 
       {/* ── Body ── */}
@@ -361,7 +584,11 @@ export function SearchPage() {
               <PaperVirtualList
                 papers={browsePapers}
                 selectedId={selectedPaper?.id}
-                onSelect={(p) => setSelectedPaper((prev) => (prev?.id === p.id ? null : p))}
+                onSelect={handlePaperClick}
+                selectionMode={selectionMode}
+                checkedIds={selectedIds}
+                addedMap={addedMap}
+                failedMap={failedMap}
               />
             </div>
           ) : (
@@ -371,10 +598,12 @@ export function SearchPage() {
                   <PaperGridCard
                     key={paper.id}
                     paper={paper}
-                    isSelected={selectedPaper?.id === paper.id}
-                    onClick={() =>
-                      setSelectedPaper((prev) => (prev?.id === paper.id ? null : paper))
-                    }
+                    isSelected={!selectionMode && selectedPaper?.id === paper.id}
+                    onClick={() => handlePaperClick(paper)}
+                    selectionMode={selectionMode}
+                    isChecked={selectedIds.has(paper.id)}
+                    addedLabel={addedMap.get(paper.id) ?? null}
+                    failedReason={failedMap.get(paper.id) ?? null}
                   />
                 ))}
               </div>
@@ -405,7 +634,11 @@ export function SearchPage() {
                 key={submittedSearch?.query}
                 papers={searchPapers}
                 selectedId={selectedPaper?.id}
-                onSelect={(p) => setSelectedPaper((prev) => (prev?.id === p.id ? null : p))}
+                onSelect={handlePaperClick}
+                selectionMode={selectionMode}
+                checkedIds={selectedIds}
+                addedMap={addedMap}
+                failedMap={failedMap}
               />
             </div>
           ) : (
@@ -415,10 +648,12 @@ export function SearchPage() {
                   <PaperGridCard
                     key={paper.id}
                     paper={paper}
-                    isSelected={selectedPaper?.id === paper.id}
-                    onClick={() =>
-                      setSelectedPaper((prev) => (prev?.id === paper.id ? null : paper))
-                    }
+                    isSelected={!selectionMode && selectedPaper?.id === paper.id}
+                    onClick={() => handlePaperClick(paper)}
+                    selectionMode={selectionMode}
+                    isChecked={selectedIds.has(paper.id)}
+                    addedLabel={addedMap.get(paper.id) ?? null}
+                    failedReason={failedMap.get(paper.id) ?? null}
                   />
                 ))}
               </div>

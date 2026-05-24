@@ -21,10 +21,10 @@ interface FsNode {
   children?: FsNode[] | null;
 }
 
-function buildRootNode(projectId: string): FsNode {
+function buildRootNode(name: string): FsNode {
   return {
     id: "",
-    name: projectId,
+    name,
     isDir: true,
     isDotfile: false,
     children: null,
@@ -226,11 +226,16 @@ function FileViewer({ projectId, filePath, onBack, onFullscreen, isFullscreen }:
 
 interface ProjectFilesPanelProps {
   projectId: string;
+  rootName?: string | null;
   onClose: () => void;
 }
 
-export function ProjectFilesPanel({ projectId, onClose }: ProjectFilesPanelProps) {
-  const [nodes, setNodes] = useState<FsNode[]>(() => [buildRootNode(projectId)]);
+export function ProjectFilesPanel({ projectId, rootName, onClose }: ProjectFilesPanelProps) {
+  const displayRootName = rootName ?? "/";
+  const [nodes, setNodes] = useState<FsNode[]>(() => [buildRootNode(displayRootName)]);
+  useEffect(() => {
+    setNodes((prev) => prev.map((n) => (n.id === "" ? { ...n, name: displayRootName } : n)));
+  }, [displayRootName]);
   const [expanded, setExpanded] = useState<Set<string>>(() => new Set([""]));
   const [loadingSet, setLoadingSet] = useState<Set<string>>(new Set());
   const [selectedFile, setSelectedFile] = useState<string | null>(null);
@@ -349,18 +354,32 @@ const MIN_WIDTH = 200;
 const MAX_WIDTH_VW = 0.5;
 
 interface ResizablePanelProps {
+  open: boolean;
   projectId: string;
+  rootName?: string | null;
   onClose: () => void;
 }
 
-export function ResizableProjectFilesPanel({ projectId, onClose }: ResizablePanelProps) {
+export function ResizableProjectFilesPanel({
+  open,
+  projectId,
+  rootName,
+  onClose,
+}: ResizablePanelProps) {
   const [width, setWidth] = useState(() => {
     const stored = localStorage.getItem(SIDEBAR_WIDTH_KEY);
     return stored ? Math.max(MIN_WIDTH, Number(stored)) : DEFAULT_WIDTH;
   });
   const dragging = useRef(false);
+  const [isDragging, setIsDragging] = useState(false);
   const startX = useRef(0);
   const startWidth = useRef(0);
+  // Lazy mount: avoid the initial fs browse request until the user first opens
+  // the panel; keep it mounted afterwards so reopens are instant.
+  const [hasOpened, setHasOpened] = useState(open);
+  useEffect(() => {
+    if (open) setHasOpened(true);
+  }, [open]);
 
   useEffect(() => {
     const onMove = (e: MouseEvent) => {
@@ -373,6 +392,7 @@ export function ResizableProjectFilesPanel({ projectId, onClose }: ResizablePane
     const onUp = () => {
       if (!dragging.current) return;
       dragging.current = false;
+      setIsDragging(false);
       setWidth((w) => {
         localStorage.setItem(SIDEBAR_WIDTH_KEY, String(w));
         return w;
@@ -389,19 +409,28 @@ export function ResizableProjectFilesPanel({ projectId, onClose }: ResizablePane
   const onDragStart = (e: React.MouseEvent) => {
     e.preventDefault();
     dragging.current = true;
+    setIsDragging(true);
     startX.current = e.clientX;
     startWidth.current = width;
   };
 
   return (
-    <div className="flex h-full shrink-0" style={{ width }}>
-      {/* drag handle */}
-      <div
-        className="w-1 cursor-col-resize hover:bg-primary/30 active:bg-primary/50 shrink-0 transition-colors"
-        onMouseDown={onDragStart}
-      />
-      <div className="flex-1 border-l border-outline-variant/10 bg-surface flex flex-col min-h-0 overflow-hidden">
-        <ProjectFilesPanel projectId={projectId} onClose={onClose} />
+    <div
+      className={`flex h-full shrink-0 justify-end overflow-hidden ${isDragging ? "" : "transition-[width] duration-200 ease-out"}`}
+      style={{ width: open ? width : 0 }}
+      aria-hidden={!open}
+    >
+      <div className="flex h-full shrink-0" style={{ width }}>
+        {/* drag handle */}
+        <div
+          className="w-1 cursor-col-resize hover:bg-primary/30 active:bg-primary/50 shrink-0 transition-colors"
+          onMouseDown={onDragStart}
+        />
+        <div className="flex-1 border-l border-outline-variant/10 bg-surface flex flex-col min-h-0 overflow-hidden">
+          {hasOpened ? (
+            <ProjectFilesPanel projectId={projectId} rootName={rootName} onClose={onClose} />
+          ) : null}
+        </div>
       </div>
     </div>
   );

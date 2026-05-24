@@ -374,6 +374,15 @@ export const scholar = {
         body: JSON.stringify({ paperId }),
       },
     ),
+  batchAddPapersToWorkspace: (workspaceName: string, paperIds: string[]) =>
+    requestJson<{
+      added: string[];
+      skipped: { id: string; reason: string }[];
+      failed: { id: string; reason: string }[];
+    }>(`${SCHOLAR_API_BASE}/workspaces/${pathSegment(workspaceName)}/papers/batch`, {
+      method: "POST",
+      body: JSON.stringify({ paperIds }),
+    }),
   getConfig: (options?: RequestOptions) =>
     requestJson<ScholarConfig>(`${SCHOLAR_API_BASE}/config`, { signal: options?.signal }),
   patchConfig: (patch: DeepPartial<ScholarConfig>, options?: RequestOptions) =>

@@ -1,14 +1,16 @@
 import type { PermissionMode } from "@scholaraio-hub/shared";
 import { useQuery } from "@tanstack/react-query";
-import { Bell, Check, FolderTree, PenLine, X } from "lucide-react";
+import { Bell, BookOpen, Check, FolderTree, PenLine, X } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useLocation, useNavigate, useParams } from "react-router-dom";
-import { api } from "../../core/api";
+import { api, scholar } from "../../core/api";
 import { queryKeys } from "../../core/queryKeys";
 import type { ThinkingOption } from "../../core/types";
+import { PaperReaderView } from "../../features/library/reader/PaperReaderView";
 import { MessageInput } from "../../features/session/components/MessageInput";
 import { MessageList, type MessageListHandle } from "../../features/session/components/MessageList";
 import { ResizableProjectFilesPanel } from "../../features/session/components/ProjectFilesPanel";
+import { ResizableWorkspacePapersPanel } from "../../features/session/components/WorkspacePapersPanel";
 import { AgentContentProvider } from "../../features/session/contexts/AgentContentContext";
 import {
   StreamingMarkdownProvider,
@@ -68,7 +70,8 @@ function SessionPageContent({
 }) {
   const navigate = useNavigate();
   const { setTitle } = usePageTitle();
-  const [filesOpen, setFilesOpen] = useState(false);
+  const [rightPanel, setRightPanel] = useState<"files" | "papers" | null>(null);
+  const [selectedPaperId, setSelectedPaperId] = useState<string | null>(null);
   const [message, setMessage] = useState("");
   const [thinking, setThinking] = useState<ThinkingOption>("auto");
   const [busy, setBusy] = useState(false);
@@ -140,6 +143,59 @@ function SessionPageContent({
     select: (data) => data.providers,
     staleTime: 5 * 60_000,
   });
+
+  const projectsQuery = useQuery({
+    queryKey: queryKeys.projects(),
+    queryFn: ({ signal }) => api.getProjects({ signal }),
+    select: (data) => data.projects,
+    staleTime: 5 * 60_000,
+  });
+  const workspacesQuery = useQuery({
+    queryKey: queryKeys.scholar.workspaces(),
+    queryFn: ({ signal }) => scholar.getWorkspaces({ signal }),
+    select: (data) => data.workspaces,
+    staleTime: 5 * 60_000,
+  });
+  const currentProject = useMemo(
+    () => projectsQuery.data?.find((p) => p.id === projectId) ?? null,
+    [projectsQuery.data, projectId],
+  );
+  // Resolve workspace for this session by matching the current project against
+  // the workspace list (same rule as Sidebar: prefer path, fall back to name).
+  const workspaceName = useMemo(() => {
+    if (!currentProject) return null;
+    const workspaces = workspacesQuery.data ?? [];
+    const match =
+      workspaces.find((w) => w.path === currentProject.path) ??
+      workspaces.find((w) => w.name === (currentProject.name ?? ""));
+    return match?.name ?? null;
+  }, [currentProject, workspacesQuery.data]);
+  const projectRootName = useMemo(() => {
+    if (currentProject?.name) return currentProject.name;
+    const path = currentProject?.path;
+    if (path) {
+      const trimmed = path.replace(/[\\/]+$/, "");
+      const idx = Math.max(trimmed.lastIndexOf("/"), trimmed.lastIndexOf("\\"));
+      const base = idx >= 0 ? trimmed.slice(idx + 1) : trimmed;
+      if (base) return base;
+    }
+    return null;
+  }, [currentProject]);
+
+  const handleTogglePapers = () => {
+    setRightPanel((prev) => (prev === "papers" ? null : "papers"));
+    if (rightPanel === "papers") {
+      setSelectedPaperId(null);
+    }
+  };
+  const handleToggleFiles = () => {
+    setRightPanel((prev) => (prev === "files" ? null : "files"));
+    setSelectedPaperId(null);
+  };
+  const closeRightPanel = () => {
+    setRightPanel(null);
+    setSelectedPaperId(null);
+  };
   const provider = useMemo(
     () => providersQuery.data?.find((p) => p.name === session?.provider),
     [providersQuery.data, session?.provider],
@@ -395,12 +451,22 @@ function SessionPageContent({
             </span>
             <button
               type="button"
-              onClick={() => setFilesOpen((v) => !v)}
+              onClick={handleToggleFiles}
               title="Project files"
-              className={`p-1 rounded transition-colors ${filesOpen ? "text-primary bg-primary/10" : "text-on-surface-variant hover:text-on-surface hover:bg-surface-container"}`}
+              className={`p-1 rounded transition-colors ${rightPanel === "files" ? "text-primary bg-primary/10" : "text-on-surface-variant hover:text-on-surface hover:bg-surface-container"}`}
             >
               <FolderTree size={15} />
             </button>
+            {workspaceName ? (
+              <button
+                type="button"
+                onClick={handleTogglePapers}
+                title="Workspace papers"
+                className={`p-1 rounded transition-colors ${rightPanel === "papers" ? "text-primary bg-primary/10" : "text-on-surface-variant hover:text-on-surface hover:bg-surface-container"}`}
+              >
+                <BookOpen size={15} />
+              </button>
+            ) : null}
           </div>
         </header>
 
@@ -455,83 +521,103 @@ function SessionPageContent({
           </div>
         ) : null}
 
-        <main
-          className={`session-messages${pendingInputRequest ? " session-messages-with-approval" : ""}`}
-        >
-          {error ? <div className="error">{error.message}</div> : null}
-          {sendError ? <div className="error">{sendError}</div> : null}
-          {loading ? <div className="loading">Loading session...</div> : null}
+        {selectedPaperId ? (
+          <main className="flex-1 min-h-0 flex flex-col overflow-hidden">
+            <PaperReaderView paperId={selectedPaperId} onClose={() => setSelectedPaperId(null)} />
+          </main>
+        ) : (
+          <main
+            className={`session-messages${pendingInputRequest ? " session-messages-with-approval" : ""}`}
+          >
+            {error ? <div className="error">{error.message}</div> : null}
+            {sendError ? <div className="error">{sendError}</div> : null}
+            {loading ? <div className="loading">Loading session...</div> : null}
 
-          {!loading ? (
-            <AgentContentProvider
-              agentContent={agentContent}
-              setAgentContent={setAgentContent}
-              toolUseToAgent={toolUseToAgent}
-              projectId={projectId}
-              sessionId={sessionId}
-            >
-              <MessageList
-                ref={messageListRef}
-                messages={messages as SessionRenderMessage[]}
-                markdownAugments={markdownAugments}
-                provider={session?.provider}
-                isStreaming={ownership.owner === "self" && processState === "in-turn"}
-                isProcessing={ownership.owner === "self" && processState === "in-turn"}
-                isCompacting={isCompacting}
-                activeToolApproval={activeToolApproval}
-                hasOlderMessages={pagination?.hasOlderMessages ?? false}
-                loadingOlder={loadingOlder}
-                onLoadOlderMessages={loadOlderMessages}
-                pendingMessages={pendingMessages}
-                deferredMessages={deferredMessages}
-                onCancelDeferred={(tempId) => {
-                  void api.cancelDeferredMessage(sessionId, tempId);
-                }}
+            {!loading ? (
+              <AgentContentProvider
+                agentContent={agentContent}
+                setAgentContent={setAgentContent}
+                toolUseToAgent={toolUseToAgent}
+                projectId={projectId}
+                sessionId={sessionId}
+              >
+                <MessageList
+                  ref={messageListRef}
+                  messages={messages as SessionRenderMessage[]}
+                  markdownAugments={markdownAugments}
+                  provider={session?.provider}
+                  isStreaming={ownership.owner === "self" && processState === "in-turn"}
+                  isProcessing={ownership.owner === "self" && processState === "in-turn"}
+                  isCompacting={isCompacting}
+                  activeToolApproval={activeToolApproval}
+                  hasOlderMessages={pagination?.hasOlderMessages ?? false}
+                  loadingOlder={loadingOlder}
+                  onLoadOlderMessages={loadOlderMessages}
+                  pendingMessages={pendingMessages}
+                  deferredMessages={deferredMessages}
+                  onCancelDeferred={(tempId) => {
+                    void api.cancelDeferredMessage(sessionId, tempId);
+                  }}
+                />
+              </AgentContentProvider>
+            ) : null}
+          </main>
+        )}
+
+        {selectedPaperId ? null : (
+          <footer className="session-input">
+            <div className={`session-connection-bar session-connection-${connectionStatus}`} />
+            <div className="session-input-inner">
+              <MessageInput
+                message={message}
+                thinking={thinking}
+                busy={busy}
+                attachments={attachmentUploads.attachments}
+                uploadProgress={attachmentUploads.uploadProgress}
+                model={selectedModel}
+                models={models}
+                permissionMode={permissionMode ?? "default"}
+                isHeld={sessionIsHeld}
+                draftKey={`session:${sessionId}`}
+                slashCommands={slashCommands}
+                contextUsage={session?.contextUsage}
+                onMessageChange={setMessage}
+                onThinkingChange={setThinking}
+                onAttachFiles={attachmentUploads.addFiles}
+                onRemoveAttachment={attachmentUploads.removeAttachment}
+                onModelChange={(m) => void handleModelChange(m)}
+                onPermissionModeChange={(mode) => void handlePermissionModeChange(mode)}
+                onHoldChange={
+                  ownership.owner === "self" ? (held) => void handleHoldChange(held) : undefined
+                }
+                onSend={send}
+                onQueue={ownership.owner === "self" && processState !== "idle" ? queue : undefined}
+                onStop={handleStop}
+                isRunning={ownership.owner === "self"}
+                isThinking={processState === "in-turn" || processState === "hold"}
+                placeholder={placeholder}
+                supportsPermissionMode={supportsPermissionMode}
+                supportsThinkingToggle={supportsThinkingToggle}
               />
-            </AgentContentProvider>
-          ) : null}
-        </main>
-
-        <footer className="session-input">
-          <div className={`session-connection-bar session-connection-${connectionStatus}`} />
-          <div className="session-input-inner">
-            <MessageInput
-              message={message}
-              thinking={thinking}
-              busy={busy}
-              attachments={attachmentUploads.attachments}
-              uploadProgress={attachmentUploads.uploadProgress}
-              model={selectedModel}
-              models={models}
-              permissionMode={permissionMode ?? "default"}
-              isHeld={sessionIsHeld}
-              draftKey={`session:${sessionId}`}
-              slashCommands={slashCommands}
-              contextUsage={session?.contextUsage}
-              onMessageChange={setMessage}
-              onThinkingChange={setThinking}
-              onAttachFiles={attachmentUploads.addFiles}
-              onRemoveAttachment={attachmentUploads.removeAttachment}
-              onModelChange={(m) => void handleModelChange(m)}
-              onPermissionModeChange={(mode) => void handlePermissionModeChange(mode)}
-              onHoldChange={
-                ownership.owner === "self" ? (held) => void handleHoldChange(held) : undefined
-              }
-              onSend={send}
-              onQueue={ownership.owner === "self" && processState !== "idle" ? queue : undefined}
-              onStop={handleStop}
-              isRunning={ownership.owner === "self"}
-              isThinking={processState === "in-turn" || processState === "hold"}
-              placeholder={placeholder}
-              supportsPermissionMode={supportsPermissionMode}
-              supportsThinkingToggle={supportsThinkingToggle}
-            />
-          </div>
-        </footer>
+            </div>
+          </footer>
+        )}
       </section>
-      {filesOpen && (
-        <ResizableProjectFilesPanel projectId={projectId} onClose={() => setFilesOpen(false)} />
-      )}
+      <ResizableProjectFilesPanel
+        open={rightPanel === "files"}
+        projectId={projectId}
+        rootName={projectRootName}
+        onClose={closeRightPanel}
+      />
+      {workspaceName ? (
+        <ResizableWorkspacePapersPanel
+          open={rightPanel === "papers"}
+          workspaceName={workspaceName}
+          selectedPaperId={selectedPaperId}
+          onSelectPaper={setSelectedPaperId}
+          onClose={closeRightPanel}
+        />
+      ) : null}
     </div>
   );
 }

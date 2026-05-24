@@ -17,6 +17,7 @@ import { createScholarRoutes } from "./routes/scholar.js";
 import { createGlobalSessionsRoute } from "./routes/sessions-global.js";
 import { createSessionsRoutes } from "./routes/sessions.js";
 import { createSettingsRoutes } from "./routes/settings.js";
+import { createSkillsRoutes } from "./routes/skills.js";
 import { createStreamsRoutes } from "./routes/streams.js";
 import { type UploadDeps, createUploadRoutes } from "./routes/upload.js";
 import { createVersionRoutes } from "./routes/version.js";
@@ -58,6 +59,7 @@ export interface AppOptions {
   notificationService?: NotificationService;
   sessionIndexService?: SessionIndexService;
   frontendDistPath?: string;
+  scholaraioSkillsDir?: string;
 }
 
 export interface AppResult {
@@ -256,6 +258,7 @@ export function createApp(options: AppOptions): AppResult {
       eventBus: options.eventBus,
       serverSettingsService: options.serverSettingsService,
       modelInfoService: options.modelInfoService,
+      scholaraioSkillsDir: options.scholaraioSkillsDir,
     }),
   );
 
@@ -326,6 +329,14 @@ export function createApp(options: AppOptions): AppResult {
     "/api/scholar",
     createScholarRoutes({
       scholarAioApiUrl: options.scholarAioApiUrl ?? "http://127.0.0.1:8765",
+    }),
+  );
+
+  app.route(
+    "/api/skills",
+    createSkillsRoutes({
+      scholaraioSkillsDir:
+        options.scholaraioSkillsDir ?? `${process.env.HOME ?? ""}/scholaraio/skills`,
     }),
   );
 

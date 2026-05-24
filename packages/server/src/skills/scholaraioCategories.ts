@@ -1,0 +1,107 @@
+import type { ScholaraioSkillCategory } from "@scholaraio-hub/shared";
+
+export const UNCATEGORIZED_ID = "__uncategorized__";
+
+export const SCHOLARAIO_CATEGORIES: Array<ScholaraioSkillCategory & { skills: string[] }> = [
+  {
+    id: "ingest",
+    label: "采集入库",
+    order: 1,
+    skills: [
+      "ingest",
+      "ingest-link",
+      "import",
+      "arxiv",
+      "patent-search",
+      "patent-fetch",
+      "webextract",
+      "websearch",
+    ],
+  },
+  {
+    id: "maintenance",
+    label: "知识库维护",
+    order: 2,
+    skills: ["enrich", "index", "audit", "scrub", "rename", "backup", "setup"],
+  },
+  {
+    id: "discover",
+    label: "检索浏览",
+    order: 3,
+    skills: [
+      "search",
+      "show",
+      "graph",
+      "citations",
+      "topics",
+      "explore",
+      "workspace",
+      "insights",
+      "metrics",
+    ],
+  },
+  {
+    id: "reading",
+    label: "阅读精读",
+    order: 4,
+    skills: ["paper-guided-reading"],
+  },
+  {
+    id: "writing",
+    label: "学术写作",
+    order: 5,
+    skills: [
+      "academic-writing",
+      "literature-review",
+      "paper-writing",
+      "research-gap",
+      "review-response",
+      "writing-polish",
+      "translate",
+      "citation-check",
+      "poster",
+      "technical-report",
+      "publish",
+    ],
+  },
+  {
+    id: "documents",
+    label: "文档产出",
+    order: 6,
+    skills: ["document", "draw", "export", "paper2any"],
+  },
+  {
+    id: "scientific",
+    label: "科学计算",
+    order: 7,
+    skills: [
+      "scientific-runtime",
+      "scientific-tool-onboarding",
+      "bioinformatics",
+      "gromacs",
+      "lammps",
+      "openfoam",
+      "quantum-espresso",
+    ],
+  },
+];
+
+export const UNCATEGORIZED: ScholaraioSkillCategory = {
+  id: UNCATEGORIZED_ID,
+  label: "未分类",
+  order: 999,
+};
+
+export function getCategoryIdForSkill(skillName: string): string {
+  for (const cat of SCHOLARAIO_CATEGORIES) {
+    if (cat.skills.includes(skillName)) return cat.id;
+  }
+  return UNCATEGORIZED_ID;
+}
+
+export function getCategoryList(): ScholaraioSkillCategory[] {
+  return [
+    ...SCHOLARAIO_CATEGORIES.map(({ id, label, order }) => ({ id, label, order })),
+    UNCATEGORIZED,
+  ];
+}

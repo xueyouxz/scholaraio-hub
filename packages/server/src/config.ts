@@ -39,6 +39,7 @@ export interface Config {
   enabledProviders: string[];
   voiceInputEnabled: boolean;
   httpsSelfSigned: boolean;
+  scholaraioSkillsDir: string;
 }
 
 export function loadConfig(): Config {
@@ -88,6 +89,8 @@ export function loadConfig(): Config {
     enabledProviders: parseEnabledProviders(env.ENABLED_PROVIDERS),
     voiceInputEnabled: env.VOICE_INPUT_ENABLED ?? true,
     httpsSelfSigned: env.HTTPS_SELF_SIGNED ?? false,
+    scholaraioSkillsDir:
+      env.SCHOLARAIO_SKILLS_DIR ?? path.join(os.homedir(), "scholaraio", "skills"),
   };
 }
 

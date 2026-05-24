@@ -203,6 +203,7 @@ async function startServer() {
     sessionIndexService,
     frontendDistPath: config.clientDistDir,
     scholarAioApiUrl: config.scholarAioApiUrl,
+    scholaraioSkillsDir: config.scholaraioSkillsDir,
   });
 
   supervisorForShutdown = supervisor;

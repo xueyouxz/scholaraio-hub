@@ -8,6 +8,8 @@ import type {
   ProviderInfo,
   ProviderName,
   ProviderUsageLimits,
+  ScholaraioSkillDetail,
+  ScholaraioSkillsResponse,
   SlashCommand,
   ThinkingOption,
   UploadedFile,
@@ -143,6 +145,18 @@ export const api = {
     }),
   getProject: (projectId: string) =>
     requestJson<{ project: ProjectSummary }>(`/api/projects/${projectId}`),
+  listScholaraioSkills: (options?: RequestOptions) =>
+    requestJson<ScholaraioSkillsResponse>("/api/skills/scholaraio", {
+      signal: options?.signal,
+    }),
+  getScholaraioSkill: (name: string, options?: RequestOptions) =>
+    requestJson<ScholaraioSkillDetail>(`/api/skills/scholaraio/${pathSegment(name)}`, {
+      signal: options?.signal,
+    }),
+  refreshScholaraioSkills: () =>
+    requestJson<{ refreshed: boolean; count: number }>("/api/skills/scholaraio/refresh", {
+      method: "POST",
+    }),
   getProjectSkills: (projectId: string, provider?: ProviderName, options?: RequestOptions) =>
     requestJson<{ slashCommands: SlashCommand[] }>(
       withQuery(`/api/projects/${projectId}/skills`, { provider }),

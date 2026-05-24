@@ -54,7 +54,36 @@ export interface SlashCommand {
   /** Hint for command arguments (e.g., "<file>") */
   argumentHint?: string;
   /** Where the skill command was discovered. */
-  source?: "project" | "global";
+  source?: "project" | "global" | "research";
+}
+
+/**
+ * A scholaraio research skill discovered under SCHOLARAIO_SKILLS_DIR.
+ */
+export interface ScholaraioSkill {
+  name: string;
+  description: string;
+  /** Manifest category id; "__uncategorized__" if not in manifest. */
+  category: string;
+  source: "research";
+}
+
+export interface ScholaraioSkillDetail extends ScholaraioSkill {
+  /** Raw SKILL.md body (without frontmatter). */
+  body: string;
+  /** Absolute filesystem path to SKILL.md (developer use). */
+  path: string;
+}
+
+export interface ScholaraioSkillCategory {
+  id: string;
+  label: string;
+  order: number;
+}
+
+export interface ScholaraioSkillsResponse {
+  categories: ScholaraioSkillCategory[];
+  skills: ScholaraioSkill[];
 }
 
 /**

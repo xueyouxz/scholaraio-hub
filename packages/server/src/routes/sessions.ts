@@ -63,10 +63,12 @@ async function resolveSlashCommands(
   process: Process | undefined,
   projectPath: string,
   fallbackProvider: ProviderName | string | undefined,
+  scholaraioSkillsDir: string | undefined,
 ): Promise<SlashCommand[]> {
   const skillCommands = await getSkillSlashCommands(
     projectPath,
     process?.provider ?? fallbackProvider,
+    scholaraioSkillsDir,
   );
   const skillNames = new Set(skillCommands.map((command) => command.name));
 
@@ -110,6 +112,8 @@ export interface SessionsDeps {
   serverSettingsService?: ServerSettingsService;
   /** ModelInfoService for context window lookups */
   modelInfoService?: ModelInfoService;
+  /** Directory of scholaraio research skills; merged into slash menu when set. */
+  scholaraioSkillsDir?: string;
 }
 
 interface StartSessionBody {
@@ -452,6 +456,7 @@ export function createSessionsRoutes(deps: SessionsDeps): Hono {
       process,
       project.path,
       sessionSummary?.provider ?? metadataProvider ?? project.provider,
+      deps.scholaraioSkillsDir,
     );
 
     // Calculate hasUnread if we have session summary
@@ -579,6 +584,7 @@ export function createSessionsRoutes(deps: SessionsDeps): Hono {
       process,
       project.path,
       session?.provider ?? project.provider,
+      deps.scholaraioSkillsDir,
     );
 
     if (!session) {

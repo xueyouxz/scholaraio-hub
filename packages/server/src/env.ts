@@ -80,6 +80,7 @@ const RuntimeEnvSchema = z
     VOICE_INPUT_ENABLED: optionalBoolean,
     HTTPS_SELF_SIGNED: optionalBoolean,
     SCHOLARAIO_API_URL: z.string().optional(),
+    SCHOLARAIO_SKILLS_DIR: z.string().optional(),
   })
   .passthrough();
 

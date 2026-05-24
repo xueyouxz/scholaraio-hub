@@ -91,6 +91,7 @@ async function readSkillDir(dir: SkillDir): Promise<SlashCommand[]> {
 export async function getSkillSlashCommands(
   projectPath: string,
   provider: ProviderName | string | undefined,
+  scholaraioSkillsDir?: string,
 ): Promise<SlashCommand[]> {
   const byName = new Map<string, SlashCommand>();
 
@@ -101,5 +102,18 @@ export async function getSkillSlashCommands(
     }
   }
 
-  return [...byName.values()].sort((a, b) => a.name.localeCompare(b.name));
+  const merged: SlashCommand[] = [...byName.values()];
+
+  if (scholaraioSkillsDir) {
+    const researchCommands = await readSkillDir({
+      path: scholaraioSkillsDir,
+      source: "research",
+    });
+    for (const command of researchCommands) {
+      // Keep duplicates across sources so users see both (with source tag).
+      merged.push(command);
+    }
+  }
+
+  return merged.sort((a, b) => a.name.localeCompare(b.name));
 }

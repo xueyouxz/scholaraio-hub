@@ -19,6 +19,9 @@ const PaperReaderPage = lazy(() =>
 const SearchPage = lazy(() =>
   import("../features/search/SearchPage").then((m) => ({ default: m.SearchPage })),
 );
+const SkillsPage = lazy(() =>
+  import("../features/skills/SkillsPage").then((m) => ({ default: m.SkillsPage })),
+);
 
 function PageFallback() {
   return (
@@ -60,6 +63,22 @@ export function App() {
             element={
               <Suspense fallback={<PageFallback />}>
                 <SearchPage />
+              </Suspense>
+            }
+          />
+          <Route
+            path="/skills"
+            element={
+              <Suspense fallback={<PageFallback />}>
+                <SkillsPage />
+              </Suspense>
+            }
+          />
+          <Route
+            path="/skills/:skillId"
+            element={
+              <Suspense fallback={<PageFallback />}>
+                <SkillsPage />
               </Suspense>
             }
           />

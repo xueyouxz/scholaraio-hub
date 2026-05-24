@@ -19,7 +19,8 @@
     "test:e2e": "pnpm --filter @scholaraio-hub/client build && playwright test",
     "audit:prod": "pnpm audit --prod",
     "prepare": "husky",
-    "release:web": "node scripts/release-web.mjs"
+    "release:web": "node scripts/release-web.mjs",
+    "skills:sync": "node scripts/sync-scholaraio-skills.mjs"
   },
   "devDependencies": {
     "@tailwindcss/vite": "^4.1.14",

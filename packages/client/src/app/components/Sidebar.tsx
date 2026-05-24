@@ -10,6 +10,7 @@ import {
   Plus,
   Search,
   Settings,
+  Sparkles,
   User,
 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -68,6 +69,7 @@ interface NavEntry {
 const NAV_ENTRIES: NavEntry[] = [
   { id: "library", label: "Library", to: "/library", icon: Library },
   { id: "search", label: "Search", to: "/search", icon: Search },
+  { id: "skills", label: "Skills", to: "/skills", icon: Sparkles },
 ];
 
 interface SidebarProps {

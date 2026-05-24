@@ -16,6 +16,8 @@ export const queryKeys = {
   providerUsageLimits: () => ["providers", "usage-limits"] as const,
   settings: () => ["settings"] as const,
   version: () => ["version"] as const,
+  scholaraioSkills: () => ["scholaraio-skills"] as const,
+  scholaraioSkill: (name: string) => ["scholaraio-skills", name] as const,
   scholar: {
     all: () => ["scholar"] as const,
     papers: (params: ScholarPaperListParams = {}) => ["scholar", "papers", params] as const,

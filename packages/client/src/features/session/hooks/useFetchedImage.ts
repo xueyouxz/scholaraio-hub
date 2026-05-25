@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 
-interface FetchedImageResult {
+export interface FetchedImageResult {
   url: string | null;
   loading: boolean;
   error: string | null;

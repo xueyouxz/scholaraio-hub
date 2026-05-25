@@ -8,9 +8,6 @@ import { ProjectsPage } from "./pages/ProjectsPage";
 import { SessionPage } from "./pages/SessionPage";
 import { SettingsPage } from "./pages/SettingsPage";
 
-const LibraryPage = lazy(() =>
-  import("../features/library/LibraryPage").then((m) => ({ default: m.LibraryPage })),
-);
 const PaperReaderPage = lazy(() =>
   import("../features/library/reader/PaperReaderPage").then((m) => ({
     default: m.PaperReaderPage,
@@ -21,6 +18,9 @@ const SearchPage = lazy(() =>
 );
 const SkillsPage = lazy(() =>
   import("../features/skills/SkillsPage").then((m) => ({ default: m.SkillsPage })),
+);
+const DebugStreamPage = lazy(() =>
+  import("../features/debug/DebugStreamPage").then((m) => ({ default: m.DebugStreamPage })),
 );
 
 function PageFallback() {
@@ -46,7 +46,7 @@ export function App() {
             path="/library"
             element={
               <Suspense fallback={<PageFallback />}>
-                <LibraryPage />
+                <SearchPage />
               </Suspense>
             }
           />
@@ -55,14 +55,6 @@ export function App() {
             element={
               <Suspense fallback={<PageFallback />}>
                 <PaperReaderPage />
-              </Suspense>
-            }
-          />
-          <Route
-            path="/search"
-            element={
-              <Suspense fallback={<PageFallback />}>
-                <SearchPage />
               </Suspense>
             }
           />
@@ -84,6 +76,26 @@ export function App() {
           />
         </Route>
         <Route path="/projects/:projectId/file" element={<FilePage />} />
+        {import.meta.env.DEV ? (
+          <>
+            <Route
+              path="/debug/stream"
+              element={
+                <Suspense fallback={<PageFallback />}>
+                  <DebugStreamPage />
+                </Suspense>
+              }
+            />
+            <Route
+              path="/debug/stream/:sessionId"
+              element={
+                <Suspense fallback={<PageFallback />}>
+                  <DebugStreamPage />
+                </Suspense>
+              }
+            />
+          </>
+        ) : null}
       </Routes>
     </BrowserRouter>
   );

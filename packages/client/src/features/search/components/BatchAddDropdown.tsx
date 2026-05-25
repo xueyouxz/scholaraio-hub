@@ -1,5 +1,6 @@
 import { FolderPlus, Loader2, Plus } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
+import type { KeyboardEvent as ReactKeyboardEvent } from "react";
 
 interface WorkspaceOption {
   id: string;
@@ -31,9 +32,12 @@ export function BatchAddDropdown({
   const [open, setOpen] = useState(false);
   const [newName, setNewName] = useState("");
   const ref = useRef<HTMLDivElement>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     if (!open) return;
+    // Focus the create input so Enter actually targets it.
+    inputRef.current?.focus();
     const handler = (e: MouseEvent) => {
       if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
     };
@@ -42,14 +46,32 @@ export function BatchAddDropdown({
   }, [open]);
 
   const trimmed = newName.trim();
-  const nameValid = NAME_RE.test(trimmed);
+  const nameValid = trimmed === "" ? true : NAME_RE.test(trimmed);
   const nameDuplicate = workspaces.some((w) => w.name === trimmed);
+  const canCreate = trimmed !== "" && nameValid && !nameDuplicate && !pending;
+
+  const errorMessage =
+    trimmed === ""
+      ? null
+      : !NAME_RE.test(trimmed)
+        ? "名称只允许字母/数字/-/_/."
+        : nameDuplicate
+          ? "名称已存在"
+          : null;
 
   const handleCreate = () => {
-    if (!nameValid || nameDuplicate) return;
+    if (!canCreate) return;
     setNewName("");
     setOpen(false);
     onCreateAndAdd(trimmed);
+  };
+
+  const handleInputKeyDown = (e: ReactKeyboardEvent<HTMLInputElement>) => {
+    if (e.key !== "Enter") return;
+    // Ignore Enter that confirms IME composition.
+    if (e.nativeEvent.isComposing || e.keyCode === 229) return;
+    e.preventDefault();
+    handleCreate();
   };
 
   return (
@@ -74,30 +96,38 @@ export function BatchAddDropdown({
           <div className="p-1.5 border-b border-outline-variant/10 mb-1">
             <div className="flex items-center gap-1.5">
               <input
+                ref={inputRef}
                 value={newName}
                 onChange={(e) => setNewName(e.target.value)}
-                onKeyDown={(e) => e.key === "Enter" && handleCreate()}
+                onKeyDown={handleInputKeyDown}
                 placeholder="新建 workspace…"
-                className="flex-1 bg-surface-container text-on-surface px-2.5 py-1.5 text-xs rounded-lg outline-none placeholder:text-on-surface-variant/50 focus:ring-1 focus:ring-primary/30"
+                className={`flex-1 bg-surface-container text-on-surface px-2.5 py-1.5 text-xs rounded-lg outline-none placeholder:text-on-surface-variant/50 focus:ring-1 ${
+                  errorMessage
+                    ? "focus:ring-error/50 ring-1 ring-error/40"
+                    : "focus:ring-primary/30"
+                }`}
               />
               <button
                 type="button"
                 onClick={handleCreate}
-                disabled={!nameValid || nameDuplicate}
+                disabled={!canCreate}
                 title={
                   trimmed === ""
                     ? "请输入名称"
-                    : !nameValid
-                      ? "名称只允许字母/数字/-/_/."
-                      : nameDuplicate
-                        ? "名称已存在"
-                        : "新建并加入"
+                    : (errorMessage ?? (pending ? "处理中…" : "新建并加入"))
                 }
                 className="p-1.5 rounded-lg text-primary hover:bg-primary/10 disabled:opacity-30 disabled:cursor-not-allowed border-0 bg-transparent cursor-pointer"
               >
-                <Plus className="w-3.5 h-3.5" />
+                {pending ? (
+                  <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                ) : (
+                  <Plus className="w-3.5 h-3.5" />
+                )}
               </button>
             </div>
+            {errorMessage ? (
+              <p className="mt-1 px-1 text-[10px] text-error">{errorMessage}</p>
+            ) : null}
           </div>
 
           {workspaces.length === 0 ? (

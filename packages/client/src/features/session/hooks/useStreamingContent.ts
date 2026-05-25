@@ -4,10 +4,10 @@ import { getMessageId } from "../lib/mergeMessages";
 import type { ContentBlock, Message } from "../types";
 import { getStreamingEnabled } from "./useStreamingEnabled";
 
-/** Throttle interval for batching streaming UI updates */
+/** 流式 UI 更新节流间隔；过小会卡 React，过大会让用户感觉打字不顺滑 */
 const STREAMING_THROTTLE_MS = 50;
 
-/** Callbacks for streaming markdown events (augment/pending from SSE) */
+/** 流式 markdown 事件回调集合（由 useSession 从 StreamingMarkdownContext 取出后透传进来） */
 export interface StreamingMarkdownCallbacks {
   onAugment?: (augment: {
     blockIndex: number;
@@ -21,39 +21,39 @@ export interface StreamingMarkdownCallbacks {
   captureHtml?: () => string | null;
 }
 
-/** Context usage info for subagent progress tracking */
+/** 子 agent 的上下文消耗信息，用于在 Task 工具面板上展示进度条 */
 export interface ContextUsage {
   inputTokens: number;
   percentage: number;
 }
 
-/** Options for useStreamingContent hook */
+/** useStreamingContent hook 的入参 */
 export interface UseStreamingContentOptions {
-  /** Called when a streaming message needs to be updated in state */
+  /** 当流式消息需要更新到 React state 时回调 */
   onUpdateMessage: (message: Message, agentId?: string) => void;
-  /** Streaming markdown callbacks (passed through) */
+  /** 流式 markdown 回调（透传给 StreamingMarkdownContext） */
   streamingMarkdownCallbacks?: StreamingMarkdownCallbacks;
-  /** Callback when toolUseId→agentId mapping is discovered */
+  /** 发现新的 toolUseId → agentId 映射时回调（子 agent 路由） */
   onToolUseMapping?: (toolUseId: string, agentId: string) => void;
-  /** Callback for agent context usage updates */
+  /** 子 agent 上下文窗口使用率更新回调 */
   onAgentContextUsage?: (agentId: string, usage: ContextUsage) => void;
-  /** Fallback context window size when stream metadata doesn't include one */
+  /** 当流元数据没带 context window 时使用的兜底值 */
   contextWindowSize?: number;
 }
 
-/** Result from useStreamingContent hook */
+/** useStreamingContent hook 的返回值 */
 export interface UseStreamingContentResult {
-  /** Process a stream_event SSE message. Returns true if handled. */
+  /** 处理一条 stream_event SSE 消息。返回 true 表示已处理完毕，false 表示该交给外层处理 */
   handleStreamEvent: (data: Record<string, unknown>) => boolean;
-  /** Clear all streaming state (called when assistant message arrives) */
+  /** 清空所有流式状态（在最终 assistant 消息到达时调用） */
   clearStreaming: () => void;
-  /** Cleanup function for useEffect (clears timers) */
+  /** 卸载清理（清定时器），useEffect 返回函数中调用 */
   cleanup: () => void;
-  /** Get the current streaming agent ID (for routing assistant messages) */
+  /** 获取当前流式的 agentId（用于路由 assistant 消息到子 agent 或主消息流） */
   getCurrentAgentId: () => string | null;
 }
 
-/** Internal streaming state for a message */
+/** 单条流式消息的内部累积状态 */
 interface StreamingState {
   blocks: ContentBlock[];
   isStreaming: boolean;
@@ -61,13 +61,18 @@ interface StreamingState {
 }
 
 /**
- * Hook for managing streaming content accumulation from SSE stream_event messages.
+ * 流式内容累积 hook。
  *
- * This hook handles:
- * - Accumulating content blocks from streaming API events
- * - Throttling UI updates to avoid overwhelming React with re-renders
- * - Routing subagent streams via agentId
- * - Notifying streaming markdown context of updates
+ * 职责：把 Anthropic SDK 的 stream_event 子事件序列
+ *   message_start → content_block_start → content_block_delta* → content_block_stop
+ *   → ...（多个 block 重复）→ message_stop
+ * 累积成一条完整的 Message 对象，并以 50ms 节流更新到 React state。
+ *
+ * 关键设计：
+ *  1. 数据先进 useRef Map（同步、高频），React state 通过节流批量更新（避免每个字符触发重渲染）。
+ *  2. 用 message_start 里的 message.id 作为 streamingId，所有后续 delta 都归属到这个 ID。
+ *  3. 通过 isSubagent + parentToolUseId / agentId 把子 agent 流分流到 agentContent。
+ *  4. 流结束时不立即清 currentStreamingIdRef，留给最终 assistant 消息触发占位替换。
  */
 export function useStreamingContent(
   options: UseStreamingContentOptions,
@@ -80,26 +85,30 @@ export function useStreamingContent(
     contextWindowSize: defaultContextWindowSize,
   } = options;
 
-  // Streaming state: accumulates content from stream_event messages
-  // Key is the message uuid, value is the accumulated content blocks
+  // 当前所有进行中流式消息的累积状态。
+  // key 是 message.id，value 是已累积的 ContentBlock 数组。
+  // 用 ref 而非 state：delta 高频写入不能触发重渲染，state 更新由下面的节流统一刷。
   const streamingContentRef = useRef<Map<string, StreamingState>>(new Map());
 
-  // Track current streaming message ID (from message_start event)
-  // Each stream_event has its own uuid, but they all belong to the same message
+  // 由 message_start 事件确定的当前流式消息 ID。
+  // 每个 stream_event 本身有自己的 uuid（envelope 层），但它们都属于同一个 API message。
   const currentStreamingIdRef = useRef<string | null>(null);
 
-  // Track current streaming agentId (if this is a subagent stream)
+  // 当前流式归属的 agentId（如果是子 agent 流）。
+  // 主消息流时为 null；当 isSubagent && parentToolUseId 时存子 agent 的 ID。
   const currentStreamingAgentIdRef = useRef<string | null>(null);
 
-  // Throttle streaming UI updates to avoid overwhelming React with re-renders
-  // Data accumulates in streamingContentRef immediately, but state updates are batched
+  // 节流批处理状态：所有 delta 把目标 messageId 塞进 pendingIds，
+  // 50ms 内只起一次 timer，到期统一 flush 所有积压的 ID。
+  // 这种 "leading + 合并" 模式比 lodash throttle 更轻量，且能合并不同消息的更新。
   const streamingThrottleRef = useRef<{
     timer: ReturnType<typeof setTimeout> | null;
     pendingIds: Set<string>;
   }>({ timer: null, pendingIds: new Set() });
 
-  // Update messages with streaming content
-  // Creates or updates a streaming placeholder message with accumulated content
+  // 把 ref 里的累积内容构造成一条带 _isStreaming 标记的占位 Message，推给上层 React state。
+  // 上层（useSessionMessages）会把这条占位消息合入 messages[]，
+  // 等最终 assistant 消息来时再统一删除所有 _isStreaming 的占位。
   const updateStreamingMessage = useCallback(
     (messageId: string) => {
       const streaming = streamingContentRef.current.get(messageId);
@@ -117,23 +126,24 @@ export function useStreamingContent(
         _source: "sdk",
       };
 
-      // Call the update callback with optional agentId for routing
+      // agentId 不为空 → 上层路由到 agentContent[agentId] 而不是主 messages[]
       onUpdateMessage(streamingMessage, streaming.agentId);
     },
     [onUpdateMessage],
   );
 
-  // Throttled version of updateStreamingMessage for delta events
-  // Batches rapid updates to reduce React re-renders during streaming
+  // 节流版的 updateStreamingMessage。
+  // delta 调用时只把 messageId 入队，不立即 setState；
+  // 由共享的 timer 到期时一次性 flush 队列里的所有 ID。
   const throttledUpdateStreamingMessage = useCallback(
     (messageId: string) => {
       const throttle = streamingThrottleRef.current;
       throttle.pendingIds.add(messageId);
 
-      // If no timer running, start one
+      // 没有正在跑的 timer，立即起一个；50ms 后 flush
       if (!throttle.timer) {
         throttle.timer = setTimeout(() => {
-          // Flush all pending updates
+          // 节流窗口结束，把队列里的所有目标都 flush 一遍
           for (const id of throttle.pendingIds) {
             updateStreamingMessage(id);
           }
@@ -145,24 +155,25 @@ export function useStreamingContent(
     [updateStreamingMessage],
   );
 
-  // Process a stream_event SSE message
-  // Returns true if the event was handled, false if it should be processed elsewhere
+  // 处理一条 stream_event SSE 消息。
+  // 返回 true 代表已处理（外层不要再当作普通 message 处理），false 代表未处理。
   const handleStreamEvent = useCallback(
     (data: Record<string, unknown>): boolean => {
-      // Only handle stream_event messages when streaming is enabled
+      // 只接 stream_event 类型，且全局开关打开（用户可关闭流式渲染优化降级）
       const msgType = data.type as string | undefined;
       if (msgType !== "stream_event" || !getStreamingEnabled()) {
         return false;
       }
 
       const event = data.event as Record<string, unknown> | undefined;
-      if (!event) return true; // Handled but no event data
+      if (!event) return true; // 算已处理但没有内容
 
       const eventType = event.type as string | undefined;
 
-      // Check if this is a subagent stream (marked by server via markSubagent)
-      // Legacy SDK: uses parentToolUseId as routing key
-      // SDK 0.2.76+: uses agentId directly (no parentToolUseId)
+      // 判断是否为子 agent 流。
+      // 兼容两种 SDK 版本：
+      //   - 旧 SDK：用 parentToolUseId 作路由 key（也就是 Task 工具的 tool_use_id）
+      //   - 新 SDK (0.2.76+)：用 agentId 直接路由（不再带 parentToolUseId）
       const isSubagentStream =
         data.isSubagent &&
         (typeof data.parentToolUseId === "string" || typeof data.agentId === "string");
@@ -170,26 +181,23 @@ export function useStreamingContent(
         ? ((data.parentToolUseId as string) ?? (data.agentId as string))
         : undefined;
 
-      // Set toolUseToAgent mapping for subagent streams so TaskRenderer can find content
+      // 把 toolUseId → agentId 映射告诉上层，让 TaskRenderer 渲染时能找到对应子 agent 的内容
       if (streamAgentId && onToolUseMapping) {
         onToolUseMapping(streamAgentId, streamAgentId);
       }
 
-      // Handle message_start to capture the message ID for this streaming response
-      // Each stream_event has its own uuid, but they all belong to the same API message
+      // message_start：第一个事件，携带本次流式消息的 API message id。
+      // 后续所有 delta 都通过这个 id 关联回累积状态。
       if (eventType === "message_start") {
         const message = event.message as Record<string, unknown> | undefined;
         if (message?.id) {
           currentStreamingIdRef.current = message.id as string;
-          // Also track if this is a subagent stream
           currentStreamingAgentIdRef.current = streamAgentId ?? null;
-          // Notify streaming markdown context of new message
+          // 通知 streaming markdown 总线：新的流式消息开始了
           streamingMarkdownCallbacks?.setCurrentMessageId?.(message.id as string);
 
-          // Extract context usage for subagent progress tracking
-          // Note: We only update subagent context usage from message_start, not main session.
-          // Main session context usage comes from the API (which reads from JSONL after
-          // the assistant message is complete with full usage data).
+          // 子 agent 的上下文消耗只能在这里抓取，因为主消息的 usage
+          // 要等流结束后从 JSONL 里取（带完整 input_tokens + cache stats）。
           if (streamAgentId && onAgentContextUsage) {
             const usage = message.usage as { input_tokens?: number } | undefined;
             if (usage?.input_tokens) {
@@ -199,6 +207,7 @@ export function useStreamingContent(
                 typeof message.model_context_window === "number"
                   ? message.model_context_window
                   : undefined;
+              // 三级兜底：消息自带 → 按 model 查表 → 全局默认值
               const contextWindow =
                 modelContextWindow && modelContextWindow > 0
                   ? modelContextWindow
@@ -213,38 +222,38 @@ export function useStreamingContent(
         return true;
       }
 
-      // Use the captured message ID, or fall back to generating one
+      // 后续事件如果 message_start 漏了（断线重连等异常），用时间戳兜底生成 ID
       const streamingId = currentStreamingIdRef.current ?? `stream-${Date.now()}`;
-      // Use tracked agentId, falling back to current message's agentId
+      // 用已跟踪的 agentId，没有则用当前事件自带的（应对 message_start 漏接）
       const agentId = currentStreamingAgentIdRef.current ?? streamAgentId;
 
-      // Handle different stream event types
+      // 不同 stream event 类型分支处理
       if (eventType === "content_block_start") {
-        // New content block starting
+        // 新 content block 开始（文本块 / thinking 块 / tool_use 块）
         const index = event.index as number;
         const contentBlock = event.content_block as Record<string, unknown> | null;
         if (contentBlock) {
           const streaming = streamingContentRef.current.get(streamingId) ?? {
             blocks: [],
             isStreaming: true,
-            agentId, // Track which agent this stream belongs to
+            agentId, // 记录当前流式归属，updateStreamingMessage 据此决定路由
           };
-          // Ensure array is long enough
+          // 数组长度补齐到 index+1，避免 sparse array 渲染时下标错位
           while (streaming.blocks.length <= index) {
             streaming.blocks.push({ type: "text", text: "" });
           }
-          // Initialize the block with its type
+          // 初始化这个块（接下来的 delta 会往 text/thinking 字段累加）
           streaming.blocks[index] = {
             type: (contentBlock.type as string) ?? "text",
             text: (contentBlock.text as string) ?? "",
             thinking: (contentBlock.thinking as string) ?? undefined,
           };
           streamingContentRef.current.set(streamingId, streaming);
+          // block_start 不走节流，立刻刷一次——让用户看到 "新段落开始了" 的反馈
           updateStreamingMessage(streamingId);
         }
       } else if (eventType === "content_block_delta") {
-        // Content delta - append to existing block
-        // Use throttled updates to avoid overwhelming React with re-renders
+        // 增量内容——这是最高频的事件，每个字符一次，必须节流
         const index = event.index as number;
         const delta = event.delta as Record<string, unknown> | null;
         if (delta) {
@@ -252,26 +261,28 @@ export function useStreamingContent(
           if (streaming?.blocks[index]) {
             const block = streaming.blocks[index];
             const deltaType = delta.type as string;
+            // 区分两种 delta：普通文本 vs 内部思考
             if (deltaType === "text_delta" && delta.text) {
               block.text = (block.text ?? "") + (delta.text as string);
             } else if (deltaType === "thinking_delta" && delta.thinking) {
               block.thinking = (block.thinking ?? "") + (delta.thinking as string);
             }
+            // 走节流：50ms 内多个 delta 只触发一次 setState
             throttledUpdateStreamingMessage(streamingId);
           }
         }
       } else if (eventType === "content_block_stop") {
-        // Block complete - nothing special needed, final message will replace
+        // 当前块结束。这里不需要做任何事——最终 assistant 消息会整体替换占位
       } else if (eventType === "message_stop") {
-        // Message complete - clean up streaming ref state
-        // DON'T clear currentStreamingIdRef here - we need it to remove the
-        // streaming placeholder when the final assistant message arrives
+        // 消息流结束，清掉累积 ref。
+        // 注意：currentStreamingIdRef 不清，因为还要让最终 assistant 消息
+        // 通过这个 ID 找到对应的 _isStreaming 占位消息并替换之。
         streamingContentRef.current.delete(streamingId);
-        // Notify streaming markdown context that stream has ended
+        // 通知 streaming markdown 总线：流结束，TextBlock 该把 pending 区域清掉
         streamingMarkdownCallbacks?.onStreamEnd?.();
       }
 
-      return true; // Event was handled
+      return true; // 已处理
     },
     [
       updateStreamingMessage,
@@ -283,19 +294,21 @@ export function useStreamingContent(
     ],
   );
 
-  // Clear all streaming state (called when assistant message arrives)
+  // 清空所有流式状态。
+  // 在最终 assistant 消息到达时由 useSession 调用，
+  // 之后会把所有 _isStreaming 占位删掉，换成完整真实消息。
   const clearStreaming = useCallback(() => {
     streamingContentRef.current.clear();
     currentStreamingIdRef.current = null;
     currentStreamingAgentIdRef.current = null;
   }, []);
 
-  // Get the current streaming agent ID (for routing assistant messages)
+  // 返回当前流式归属的 agentId（外层用来路由最终 assistant 消息到主流或子 agent）
   const getCurrentAgentId = useCallback(() => {
     return currentStreamingAgentIdRef.current;
   }, []);
 
-  // Cleanup function for useEffect (clears timers)
+  // useEffect 卸载清理：清掉节流 timer，避免在已卸载组件上触发 setState
   const cleanup = useCallback(() => {
     if (streamingThrottleRef.current.timer) {
       clearTimeout(streamingThrottleRef.current.timer);

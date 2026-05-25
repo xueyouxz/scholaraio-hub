@@ -223,6 +223,9 @@ export function SearchPage() {
       setBatchNotice(`已创建 ${ws} · ${res.added.length} 已加入 · ${res.failed.length} 失败`);
       queryClient.invalidateQueries({ queryKey: queryKeys.scholar.workspaces() });
       queryClient.invalidateQueries({ queryKey: queryKeys.scholar.workspace(ws) });
+      // Workspace creation may also produce a new project entry; refresh the
+      // sidebar projects list so the new workspace's session group renders.
+      queryClient.invalidateQueries({ queryKey: queryKeys.projects() });
     },
     onError: (err: unknown) => {
       const msg = err instanceof Error ? err.message : "未知错误";
@@ -233,7 +236,7 @@ export function SearchPage() {
   const batchPending = batchAddMutation.isPending || createAndBatchAddMutation.isPending;
 
   useEffect(() => {
-    setTitle("Search");
+    setTitle("Library");
     return () => setTitle("");
   }, [setTitle]);
 

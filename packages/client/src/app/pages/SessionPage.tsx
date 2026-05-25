@@ -1,4 +1,4 @@
-import type { PermissionMode } from "@scholaraio-hub/shared";
+import { type PermissionMode, toUrlProjectId } from "@scholaraio-hub/shared";
 import { useQuery } from "@tanstack/react-query";
 import { Bell, BookOpen, Check, FolderTree, PenLine, X } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
@@ -160,16 +160,20 @@ function SessionPageContent({
     () => projectsQuery.data?.find((p) => p.id === projectId) ?? null,
     [projectsQuery.data, projectId],
   );
-  // Resolve workspace for this session by matching the current project against
-  // the workspace list (same rule as Sidebar: prefer path, fall back to name).
+  // Resolve workspace for this session by reverse-matching the URL projectId
+  // against each workspace's toUrlProjectId(path). This avoids depending on
+  // projectsQuery — which is cached for 5 min and may not yet contain a project
+  // that was just created by sending the first message on NewSessionPage.
   const workspaceName = useMemo(() => {
-    if (!currentProject) return null;
     const workspaces = workspacesQuery.data ?? [];
     const match =
-      workspaces.find((w) => w.path === currentProject.path) ??
-      workspaces.find((w) => w.name === (currentProject.name ?? ""));
+      workspaces.find((w) => toUrlProjectId(w.path) === projectId) ??
+      (currentProject
+        ? (workspaces.find((w) => w.path === currentProject.path) ??
+          workspaces.find((w) => w.name === (currentProject.name ?? "")))
+        : undefined);
     return match?.name ?? null;
-  }, [currentProject, workspacesQuery.data]);
+  }, [projectId, currentProject, workspacesQuery.data]);
   const projectRootName = useMemo(() => {
     if (currentProject?.name) return currentProject.name;
     const path = currentProject?.path;

@@ -692,18 +692,20 @@ export function useSession(
   const handleStreamMessage = useCallback(
     (data: { eventType: string; [key: string]: unknown }) => {
       if (data.eventType === "message") {
-        // Track stream activity for engagement tracking
-        // This ensures sessions are marked as "seen" even when receiving
-        // subagent content (which doesn't update parent session file mtime)
+        // ─── message 事件分发器 ───────────────────────────────────────────
+        // 这是 SSE 三种事件里"结构化骨架"那一支，承载所有 SDK 原始消息。
+        // 内部还有第二层 type 分流：stream_event(增量) / assistant(终态) / user / system 等
+
+        // 记录最后一次流式活动时间，用于 engagement tracking。
+        // 子 agent 消息也算（不会更新父会话文件 mtime），所以要在这里手动打点
         setLastStreamActivityAt(new Date().toISOString());
 
-        // The message event contains the SDK message directly
-        // Pass through all fields without stripping
+        // SSE 推来的对象就是 SDK 原始消息体，全字段透传不剥任何字段
         const sdkMessage = data as Record<string, unknown> & {
           eventType: string;
         };
 
-        // Extract id - prefer uuid, fall back to id field, then generate
+        // 取 ID 的三级兜底：uuid（最终消息）→ id（中间事件）→ 本地时间戳生成
         const rawUuid = sdkMessage.uuid;
         const rawId = sdkMessage.id;
         const id: string =
@@ -711,31 +713,32 @@ export function useSession(
           (typeof rawId === "string" ? rawId : null) ??
           `msg-${Date.now()}`;
 
-        // Extract type and role
+        // 取 type 和 role 用于后续分流
         const msgType = typeof sdkMessage.type === "string" ? sdkMessage.type : undefined;
         const msgRole = sdkMessage.role as Message["role"] | undefined;
 
-        // Handle stream_event messages (partial content from streaming API)
-        // Delegate to useStreamingContent hook
+        // stream_event 子类型：Anthropic 流式增量（message_start / content_block_delta / message_stop）
+        // 委托给 useStreamingContent 做 delta 积累 + 50ms 节流，处理完直接 return
         if (msgType === "stream_event") {
           if (handleStreamEvent(sdkMessage)) {
-            return; // Event was handled, don't process as regular message
+            return; // 已被 streaming 子系统消费，不走下面的合并逻辑
           }
         }
 
-        // For assistant messages, clear streaming state and remove ALL streaming placeholders
+        // assistant 子类型：一轮回复的"最终消息"（带 uuid，已写 JSONL）。
+        // 此时所有 _isStreaming 占位消息都要被这条真实消息替换掉。
         if (msgType === "assistant") {
-          // Check if this is a subagent message
-          // Use parentToolUseId as the routing key (it's the Task tool_use id)
+          // 子 agent 的最终消息要路由到 agentContent[agentId] 而不是主消息流。
+          // 路由 key 用 parentToolUseId（也就是 Task 工具自身的 tool_use_id）。
           const isSubagentMsg =
             sdkMessage.isSubagent && typeof sdkMessage.parentToolUseId === "string";
           const msgAgentId = isSubagentMsg ? (sdkMessage.parentToolUseId as string) : undefined;
 
-          // Clear streaming state via hook
+          // 让 useStreamingContent 清掉它内部的 ref Map 与 currentStreamingIdRef
           clearStreaming();
 
           if (msgAgentId) {
-            // Remove streaming placeholders from this agent's content
+            // 子 agent 流结束：删掉这个 agent 下面所有 _isStreaming 占位
             setAgentContent((prev) => {
               const existing = prev[msgAgentId];
               if (!existing) return prev;
@@ -747,26 +750,26 @@ export function useSession(
               };
             });
           } else {
-            // Remove ALL streaming placeholder messages from main messages
+            // 主流结束：把主消息列表里所有 _isStreaming 占位删掉，
+            // 紧接着下面 handleStreamMessageEvent 会把真实消息插入
             setMessages((prev) => prev.filter((m) => !m._isStreaming));
           }
         }
 
-        // Build message object, preserving all SDK fields
+        // 构造内部 Message 对象，保留 SDK 全部字段（tool_use/tool_result/usage 等都不能丢）
         const incoming: Message = {
           ...(sdkMessage as Partial<Message>),
           id,
           type: msgType,
-          // Ensure role is set for user/assistant types
+          // 保证 user/assistant 类型一定有 role 字段，避免渲染层误判
           role: msgRole ?? (msgType === "user" || msgType === "assistant" ? msgType : undefined),
         };
 
-        // Remove eventType from the message (it's stream envelope, not message data)
+        // eventType 是 SSE 信封字段，不属于消息本体，去掉
         (incoming as { eventType?: string }).eventType = undefined;
 
-        // Extract skills, tools, and mcp_servers from init messages. Do not use
-        // slash_commands here; Claude may include CLI built-ins that the web UI
-        // cannot execute directly.
+        // init 消息携带本会话可用的 skills / tools / mcp_servers。
+        // 不取 slash_commands —— Claude CLI 自带的命令在网页端没法执行，会误导用户。
         if (msgType === "system" && sdkMessage.subtype === "init") {
           if (Array.isArray(sdkMessage.skills)) {
             setSlashCommands((prev) => {
@@ -786,28 +789,27 @@ export function useSession(
           }
         }
 
-        // Handle status messages (compacting indicator)
+        // system/status：上下文压缩指示器（开始压缩 vs 压缩中），是瞬时状态不入消息列表
         if (msgType === "system" && sdkMessage.subtype === "status") {
           const status = sdkMessage.status as "compacting" | null;
           setIsCompacting(status === "compacting");
-          // Don't add status messages to the message list - they're transient
-          return;
+          return; // 不追加到 messages[]
         }
 
-        // Clear compacting state when compact_boundary arrives (compaction complete)
+        // compact_boundary：压缩完成的边界标记，清掉指示器；但这条消息本身要进列表
+        // 因为前端要在这里画一条"已压缩"的分隔线
         if (msgType === "system" && sdkMessage.subtype === "compact_boundary") {
           setIsCompacting(false);
-          // Let the message be added to show the completed compaction indicator
         }
 
-        // Handle tempId for pending message resolution
-        // When server echoes back tempId, remove from pending queue
+        // tempId 是前端发消息时生成的临时 ID，服务端会在用户消息回显时带回。
+        // 收到带 tempId 的 user 消息 → 从 pendingMessages 队列里删掉对应的乐观占位
         const tempId = sdkMessage.tempId as string | undefined;
         if (msgType === "user" && tempId) {
           removePendingMessage(tempId);
         } else if (msgType === "user") {
-          // Fallback for providers that omit tempId on user echo:
-          // clear one matching optimistic pending message by content.
+          // 某些 provider（如 Codex）不带 tempId 回显，退而求其次按内容匹配
+          // 只删一条匹配的，避免误删用户重复发送的相同内容
           const incomingText = extractUserMessageText(sdkMessage);
           if (incomingText) {
             setPendingMessages((prev) => {
@@ -818,21 +820,21 @@ export function useSession(
           }
         }
 
-        // Route subagent messages to agentContent instead of main messages
-        // This keeps the parent session's DAG clean and allows proper nesting in UI
-        // Use parentToolUseId as the routing key (it's the Task tool_use id)
+        // 子 agent 消息路由：分流到 agentContent[agentId] 而非主 messages[]。
+        // 这样主会话的 DAG（依赖图）保持干净，UI 上 Task 工具面板可以独立展开嵌套查看。
         if (sdkMessage.isSubagent && typeof sdkMessage.parentToolUseId === "string") {
           const agentId = sdkMessage.parentToolUseId;
 
-          // Capture toolUseId → agentId mapping on first subagent message
-          // This allows TaskRenderer to access agentContent immediately
-          // Note: Since agentId === parentToolUseId === toolUseId, the mapping is identity
+          // 第一次见到这个子 agent 时记录 toolUseId → agentId 映射。
+          // 注意：当前实现里 agentId === parentToolUseId === toolUseId（同一个值），
+          // 所以这个映射本质是恒等映射，但保留这层为未来可能的解耦做好准备
           registerToolUseAgent(agentId, agentId);
 
           handleStreamSubagentMessage(incoming, agentId);
-          return; // Don't add to main messages
+          return; // 子 agent 消息不进主消息列表
         }
 
+        // 主消息流：交给 useSessionMessages 去做"初始加载前缓冲 + 合并去重"
         handleStreamMessageEvent(incoming);
       } else if (data.eventType === "status") {
         const statusData = data as {
@@ -982,7 +984,10 @@ export function useSession(
           applyServerModeUpdate(modeData.permissionMode, modeData.modeVersion);
         }
       } else if (data.eventType === "markdown-augment") {
-        // Handle markdown augment events (server-rendered)
+        // ─── markdown-augment 事件：服务端预渲染好的稳定 HTML 块 ────────────
+        // 服务端跑了 shiki 高亮 / katex 数学 / mermaid 图 / safe-markdown sanitize，
+        // 前端拿到现成 HTML 直接塞 DOM（dangerouslySetInnerHTML），避免在浏览器里
+        // 跑一遍重型的 markdown 解析管线（rehype + 一堆插件）。
         const augmentData = data as {
           eventType: string;
           blockIndex?: number;
@@ -991,19 +996,21 @@ export function useSession(
           messageId?: string;
         };
 
-        // Two types of markdown-augment events:
-        // 1. Final message augment: has messageId (uuid), no blockIndex
-        //    → Store in markdownAugments for completed message rendering
-        // 2. Streaming block augment: has blockIndex and type
-        //    → Dispatch to streaming context for live rendering
+        // 两种形态需要分别处理：
+        //   ① 最终消息整体 HTML：有 messageId，没 blockIndex
+        //     → 存进 markdownAugments[uuid]，MessageList 渲染完成消息时直接用
+        //     → 这条 augment 会随 JSONL 持久化，重渲染/页面刷新都能复用
+        //   ② 流式中刚闭合的某个块（如代码块写完了）：有 blockIndex + type
+        //     → 派发给 StreamingMarkdownContext，由当前流式 TextBlock 接收并替换占位
         if (augmentData.messageId && augmentData.blockIndex === undefined && augmentData.html) {
-          // Final message augment - store in markdownAugments
+          // 形态①：键到 uuid 永久保存
           setMarkdownAugments((prev) => ({
             ...prev,
             [augmentData.messageId as string]: { html: augmentData.html },
           }));
         } else if (augmentData.blockIndex !== undefined) {
-          // Streaming block augment - dispatch to context
+          // 形态②：派发到流式总线，TextBlock 通过 ref 直接操作 DOM 插入
+          // 这条路径完全绕开 React diff，是高频更新下保证流畅度的关键
           streamingMarkdownCallbacks?.onAugment?.({
             blockIndex: augmentData.blockIndex,
             html: augmentData.html,
@@ -1012,11 +1019,15 @@ export function useSession(
           });
         }
       } else if (data.eventType === "pending") {
-        // Handle streaming markdown pending text events
+        // ─── pending 事件：还没闭合那一段的"活" HTML ───────────────────────
+        // 每个 text delta 都会触发一次，是真正的"打字预览"。
+        // 仅含 inline 格式化（**加粗** / `行内代码` / [链接]），重型块（代码块/数学）
+        // 不会出现在这里——它们会等闭合后由 markdown-augment 推送。
         const pendingData = data as {
           eventType: string;
           html: string;
         };
+        // 直接派发到 TextBlock，pendingRef 整段替换，零 React state 变更
         streamingMarkdownCallbacks?.onPending?.({
           html: pendingData.html,
         });

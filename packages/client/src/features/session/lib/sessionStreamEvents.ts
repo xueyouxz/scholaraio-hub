@@ -1,39 +1,20 @@
+import {
+  type DeferredQueueMessage,
+  SESSION_STREAM_EVENT,
+  type StreamMessagePayload,
+  type SessionStreamEvent as WireSessionStreamEvent,
+} from "@scholaraio-hub/shared";
 import type { InputRequest, PermissionMode, ProviderName } from "../types";
 
-export type StreamMessagePayload = Record<string, unknown>;
+export type { DeferredQueueMessage, StreamMessagePayload };
 
-export interface DeferredQueueMessage {
-  tempId?: string;
-  content: string;
-  timestamp: string;
-}
-
+/**
+ * Parsed session stream event: the shared wire contract plus a
+ * forward-compatible `unknown` fallback for event names this client build does
+ * not recognize yet.
+ */
 export type SessionStreamEvent =
-  | { eventType: "message"; message: StreamMessagePayload }
-  | {
-      eventType: "connected";
-      sessionId?: string;
-      state?: string;
-      permissionMode?: PermissionMode;
-      modeVersion?: number;
-      request?: InputRequest;
-      provider?: ProviderName;
-      model?: string;
-      deferredMessages?: DeferredQueueMessage[];
-    }
-  | { eventType: "status"; state?: string; request?: InputRequest }
-  | { eventType: "mode-change"; permissionMode?: PermissionMode; modeVersion?: number }
-  | {
-      eventType: "markdown-augment";
-      blockIndex?: number;
-      html?: string;
-      type?: string;
-      messageId?: string;
-    }
-  | { eventType: "pending"; html?: string; messageId?: string }
-  | { eventType: "deferred-queue"; messages: DeferredQueueMessage[] }
-  | { eventType: "complete"; timestamp?: string }
-  | { eventType: "session-id-changed"; oldSessionId?: string; newSessionId?: string }
+  | WireSessionStreamEvent
   | { eventType: "unknown"; originalEventType: string; payload: Record<string, unknown> };
 
 const PERMISSION_MODES = new Set<PermissionMode>([
@@ -110,9 +91,9 @@ export function parseSessionStreamEvent(
   payload: Record<string, unknown>,
 ): SessionStreamEvent {
   switch (eventType) {
-    case "message":
+    case SESSION_STREAM_EVENT.message:
       return { eventType, message: payload };
-    case "connected":
+    case SESSION_STREAM_EVENT.connected:
       return {
         eventType,
         sessionId: asNonEmptyString(payload.sessionId),
@@ -124,19 +105,19 @@ export function parseSessionStreamEvent(
         model: asNonEmptyString(payload.model),
         deferredMessages: asDeferredMessages(payload.deferredMessages),
       };
-    case "status":
+    case SESSION_STREAM_EVENT.status:
       return {
         eventType,
         state: asNonEmptyString(payload.state),
         request: asInputRequest(payload.request),
       };
-    case "mode-change":
+    case SESSION_STREAM_EVENT.modeChange:
       return {
         eventType,
         permissionMode: asPermissionMode(payload.permissionMode),
         modeVersion: asNumber(payload.modeVersion),
       };
-    case "markdown-augment":
+    case SESSION_STREAM_EVENT.markdownAugment:
       return {
         eventType,
         blockIndex: asNumber(payload.blockIndex),
@@ -144,23 +125,23 @@ export function parseSessionStreamEvent(
         type: asNonEmptyString(payload.type),
         messageId: asNonEmptyString(payload.messageId),
       };
-    case "pending":
+    case SESSION_STREAM_EVENT.pending:
       return {
         eventType,
         html: asString(payload.html),
         messageId: asNonEmptyString(payload.messageId),
       };
-    case "deferred-queue":
+    case SESSION_STREAM_EVENT.deferredQueue:
       return {
         eventType,
         messages: asDeferredMessages(payload.messages),
       };
-    case "complete":
+    case SESSION_STREAM_EVENT.complete:
       return {
         eventType,
         timestamp: asNonEmptyString(payload.timestamp),
       };
-    case "session-id-changed":
+    case SESSION_STREAM_EVENT.sessionIdChanged:
       return {
         eventType,
         oldSessionId: asNonEmptyString(payload.oldSessionId),

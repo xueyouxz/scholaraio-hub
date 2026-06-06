@@ -18,6 +18,7 @@ import type {
   ToolApprovalResult,
   UserMessage,
 } from "../sdk/types.js";
+import { normalizeProviderStreamMessage } from "./messageNormalization.js";
 import type {
   AgentActivity,
   InputRequest,
@@ -1500,7 +1501,7 @@ export class Process {
           break;
         }
 
-        const message = this.withTimestamp(result.value);
+        const message = normalizeProviderStreamMessage(this.withTimestamp(result.value));
         this._lastMessageTime = new Date();
 
         // Store message in history for replay to late-joining clients.

@@ -172,14 +172,12 @@ export function useFileActivity(options: UseFileActivityOptions = {}) {
     };
   }, []);
 
-  // Sync local connected state with the bus. The bus only emits "reconnect"
-  // on re-connection (not initial), and there is no "disconnect" event, so we
-  // poll. Cheap (one boolean read per second) and matches the template.
+  // Sync local connected state with the bus via its connection-change
+  // subscription (no polling). Seed with the current value in case a transition
+  // already happened before this effect ran.
   useEffect(() => {
-    const interval = window.setInterval(() => {
-      setConnected(activityBus.connected);
-    }, 1000);
-    return () => window.clearInterval(interval);
+    setConnected(activityBus.connected);
+    return activityBus.onConnectionChange(setConnected);
   }, []);
 
   const clearEvents = useCallback(() => {

@@ -88,6 +88,14 @@ export type {
 } from "./app-types.js";
 export { getModelContextWindow } from "./app-types.js";
 
+export type {
+  SessionStreamEvent,
+  SessionStreamEventName,
+  StreamMessagePayload,
+  DeferredQueueMessage,
+} from "./session-stream.js";
+export { SESSION_STREAM_EVENT } from "./session-stream.js";
+
 export {
   SessionView,
   getSessionDisplayTitle,

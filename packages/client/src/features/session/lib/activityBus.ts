@@ -97,25 +97,6 @@ export interface WorkerActivityEvent {
   timestamp: string;
 }
 
-export interface BrowserTabConnectedEvent {
-  type: "browser-tab-connected";
-  browserProfileId: string;
-  connectionId: number;
-  transport: "ws";
-  tabCount: number;
-  totalTabCount: number;
-  timestamp: string;
-}
-
-export interface BrowserTabDisconnectedEvent {
-  type: "browser-tab-disconnected";
-  browserProfileId: string;
-  connectionId: number;
-  tabCount: number;
-  totalTabCount: number;
-  timestamp: string;
-}
-
 interface ActivityEventMap {
   "file-change": FileChangeEvent;
   "session-status-changed": SessionStatusEvent;
@@ -124,8 +105,6 @@ interface ActivityEventMap {
   "session-seen": SessionSeenEvent;
   "process-state-changed": ProcessStateEvent;
   "session-metadata-changed": SessionMetadataChangedEvent;
-  "browser-tab-connected": BrowserTabConnectedEvent;
-  "browser-tab-disconnected": BrowserTabDisconnectedEvent;
   "source-change": SourceChangeEvent;
   "backend-reloaded": undefined;
   "worker-activity-changed": WorkerActivityEvent;
@@ -160,9 +139,30 @@ export class ActivityBus {
   private sourceListenerCleanups: Array<() => void> = [];
   private visibilityHandler: (() => void) | null = null;
   private _connected = false;
+  private connectionListeners = new Set<(connected: boolean) => void>();
 
   get connected(): boolean {
     return this._connected;
+  }
+
+  /**
+   * Subscribe to connection-state transitions. Fires only when the value
+   * actually changes, replacing per-consumer polling of `connected`. Returns an
+   * unsubscribe function.
+   */
+  onConnectionChange(listener: (connected: boolean) => void): () => void {
+    this.connectionListeners.add(listener);
+    return () => {
+      this.connectionListeners.delete(listener);
+    };
+  }
+
+  private setConnected(value: boolean): void {
+    if (this._connected === value) return;
+    this._connected = value;
+    for (const listener of this.connectionListeners) {
+      listener(value);
+    }
   }
 
   connect(): void {
@@ -173,7 +173,7 @@ export class ActivityBus {
     this.source = source;
 
     const handleConnected = () => {
-      this._connected = true;
+      this.setConnected(true);
       if (this.hasConnected) {
         this.emit("reconnect", undefined);
       }
@@ -213,23 +213,17 @@ export class ActivityBus {
     addSourceListener("session-metadata-changed", (event) =>
       handleTypedEvent("session-metadata-changed", event),
     );
-    addSourceListener("browser-tab-connected", (event) =>
-      handleTypedEvent("browser-tab-connected", event),
-    );
-    addSourceListener("browser-tab-disconnected", (event) =>
-      handleTypedEvent("browser-tab-disconnected", event),
-    );
     addSourceListener("source-change", (event) => handleTypedEvent("source-change", event));
     addSourceListener("backend-reloaded", () => this.emit("backend-reloaded", undefined));
     addSourceListener("worker-activity-changed", (event) =>
       handleTypedEvent("worker-activity-changed", event),
     );
     addSourceListener("heartbeat", () => {
-      this._connected = true;
+      this.setConnected(true);
     });
 
     source.onerror = () => {
-      this._connected = false;
+      this.setConnected(false);
       this.closeSource();
       if (this.reconnectTimer) return;
       this.reconnectTimer = setTimeout(() => {
@@ -249,7 +243,7 @@ export class ActivityBus {
     this.closeSource();
     this.removeVisibilityListener();
     this.hasConnected = false;
-    this._connected = false;
+    this.setConnected(false);
   }
 
   on<K extends ActivityEventType>(

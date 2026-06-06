@@ -1,11 +1,12 @@
 /**
  * 会话流和活动流共用的订阅处理器。
  *
- * WebSocket relay 层会调用这里的工厂函数，并传入各自的 `emit`
+ * SSE 流路由（streams.ts）会调用这里的工厂函数，并传入各自的 `emit`
  * 实现。这样订阅逻辑只负责把内部事件转换成外部事件，具体传输
- * 方式则由调用方决定。
+ * 方式则由调用方决定（当前为 SSE，工厂本身与传输无关）。
  */
 
+import { SESSION_STREAM_EVENT } from "@scholaraio-hub/shared";
 import { type StreamAugmenter, createStreamAugmenter, markSubagent } from "./augments/index.js";
 import { getLogger } from "./logging/logger.js";
 import type { Process } from "./supervisor/Process.js";
@@ -19,23 +20,6 @@ export interface SubscriptionOptions {
   onError?: (err: unknown) => void;
   /** 可选的调试日志标签，通常用于写入订阅 id，方便排查具体连接。 */
   logLabel?: string;
-}
-
-/**
- * 在执行增强和渲染之前，先把不同 provider 的流式消息字段规范成统一形状。
- *
- * 这里故意只做很轻量的字段别名兼容，避免订阅层承担 provider 专属的复杂转换。
- * 如果后续需要更重的结构重写，应放在 provider 适配层或更靠近数据来源的位置。
- */
-export function normalizeStreamMessage(message: Record<string, unknown>): Record<string, unknown> {
-  if (
-    message.type === "user" &&
-    message.tool_use_result === undefined &&
-    message.toolUseResult !== undefined
-  ) {
-    message.tool_use_result = message.toolUseResult;
-  }
-  return message;
 }
 
 /**
@@ -68,10 +52,10 @@ export function createSessionSubscription(
     if (!augmenterPromise) {
       augmenterPromise = createStreamAugmenter({
         onMarkdownAugment: (data) => {
-          if (!completed) emit("markdown-augment", data);
+          if (!completed) emit(SESSION_STREAM_EVENT.markdownAugment, data);
         },
         onPending: (data) => {
-          if (!completed) emit("pending", data);
+          if (!completed) emit(SESSION_STREAM_EVENT.pending, data);
         },
         onError: (err, context) => {
           options?.onError?.(err);
@@ -89,7 +73,7 @@ export function createSessionSubscription(
   const heartbeatInterval = setInterval(() => {
     try {
       if (!completed) {
-        emit("heartbeat", { timestamp: new Date().toISOString() });
+        emit(SESSION_STREAM_EVENT.heartbeat, { timestamp: new Date().toISOString() });
       }
     } catch {
       clearInterval(heartbeatInterval);
@@ -107,47 +91,49 @@ export function createSessionSubscription(
     try {
       switch (event.type) {
         case "message": {
-          const message = normalizeStreamMessage(event.message as Record<string, unknown>);
+          // Provider field normalization happens at ingestion (Process), so the
+          // message here is already in canonical shape for augmentation + emit.
+          const message = event.message as Record<string, unknown>;
           const aug = await getAugmenter();
           await aug.processMessage(message);
-          emit("message", markSubagent(message));
+          emit(SESSION_STREAM_EVENT.message, markSubagent(message));
           break;
         }
 
         case "state-change":
-          emit("status", {
+          emit(SESSION_STREAM_EVENT.status, {
             state: event.state.type,
             ...(event.state.type === "waiting-input" ? { request: event.state.request } : {}),
           });
           break;
 
         case "mode-change":
-          emit("mode-change", {
+          emit(SESSION_STREAM_EVENT.modeChange, {
             permissionMode: event.mode,
             modeVersion: event.version,
           });
           break;
 
         case "error":
-          emit("error", { message: event.error.message });
+          emit(SESSION_STREAM_EVENT.error, { message: event.error.message });
           break;
 
         case "session-id-changed":
-          emit("session-id-changed", {
+          emit(SESSION_STREAM_EVENT.sessionIdChanged, {
             oldSessionId: event.oldSessionId,
             newSessionId: event.newSessionId,
           });
           break;
 
         case "deferred-queue":
-          emit("deferred-queue", { messages: event.messages });
+          emit(SESSION_STREAM_EVENT.deferredQueue, { messages: event.messages });
           break;
 
         case "complete":
           if (augmenter) {
             await augmenter.flush();
           }
-          emit("complete", { timestamp: new Date().toISOString() });
+          emit(SESSION_STREAM_EVENT.complete, { timestamp: new Date().toISOString() });
           completed = true;
           clearInterval(heartbeatInterval);
           break;
@@ -162,7 +148,7 @@ export function createSessionSubscription(
   // resolved model、等待输入请求，以及尚未发送的 deferred queue 摘要。
   const currentState = process.state;
   const deferredMessages = process.getDeferredQueueSummary();
-  emit("connected", {
+  emit(SESSION_STREAM_EVENT.connected, {
     processId: process.id,
     sessionId: process.sessionId,
     state: currentState.type,
@@ -178,7 +164,7 @@ export function createSessionSubscription(
   // isReplay 标记让前端能够区分历史消息和实时消息，避免把回放内容当作新输出处理。
   for (const message of process.getMessageHistory()) {
     emit(
-      "message",
+      SESSION_STREAM_EVENT.message,
       markSubagent({
         ...message,
         isReplay: true,

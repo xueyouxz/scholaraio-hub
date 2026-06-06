@@ -4,7 +4,7 @@
  * This module provides components for:
  * - Rendering markdown blocks as they stream in from Claude
  * - Computing edit augments with unified diff and syntax highlighting
- * - Transport-agnostic stream augmentation for WebSocket subscriptions
+ * - Transport-agnostic stream augmentation for SSE session subscriptions
  */
 
 // Block detection

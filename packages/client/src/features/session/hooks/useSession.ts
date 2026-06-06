@@ -114,12 +114,26 @@ export function useSession(
   // Deferred messages queue - messages queued server-side waiting for agent's turn to end
   const [deferredMessages, setDeferredMessages] = useState<DeferredMessage[]>([]);
 
-  useEffect(() => {
-    if (status.owner !== "none") return;
+  // Clear all per-process activity (turn state, pending approval, deferred queue)
+  // without touching ownership. Used when ownership is already known to be "none".
+  const clearProcessActivity = useCallback(() => {
     setProcessState("idle");
     setPendingInputRequest(null);
     setDeferredMessages([]);
-  }, [status.owner]);
+  }, []);
+
+  // Full reset to an unowned, idle session: drops ownership and all activity.
+  // This is the single convergence point for terminated/complete transitions
+  // that previously inlined the same four setters in six places.
+  const resetToIdle = useCallback(() => {
+    setStatus({ owner: "none" });
+    clearProcessActivity();
+  }, [clearProcessActivity]);
+
+  useEffect(() => {
+    if (status.owner !== "none") return;
+    clearProcessActivity();
+  }, [status.owner, clearProcessActivity]);
 
   // Keep ref in sync so event handlers can read the current value without
   // capturing stale closure state (avoids performing API calls inside setState).
@@ -172,9 +186,7 @@ export function useSession(
 
       const serverState = snapshot.ownership.state;
       if (snapshot.ownership.owner === "none" || serverState === "terminated") {
-        setProcessState("idle");
-        setPendingInputRequest(null);
-        setDeferredMessages([]);
+        clearProcessActivity();
         return;
       }
 
@@ -188,7 +200,7 @@ export function useSession(
         setPendingInputRequest(null);
       }
     },
-    [],
+    [clearProcessActivity],
   );
 
   const refreshRuntimeState = useCallback(async () => {
@@ -506,10 +518,7 @@ export function useSession(
       if (event.sessionId !== sessionId) return;
 
       if (event.activity === "terminated") {
-        setStatus({ owner: "none" });
-        setProcessState("idle");
-        setPendingInputRequest(null);
-        setDeferredMessages([]);
+        resetToIdle();
         return;
       }
 
@@ -547,7 +556,7 @@ export function useSession(
         }
       }
     },
-    [projectId, sessionId],
+    [projectId, sessionId, resetToIdle],
   );
 
   // Handle activity bus reconnection (e.g., after phone screen wake).
@@ -757,10 +766,7 @@ export function useSession(
         handleStreamMessageEvent(incoming);
       } else if (event.eventType === "status") {
         if (event.state === "terminated") {
-          setProcessState("idle");
-          setStatus({ owner: "none" });
-          setPendingInputRequest(null);
-          setDeferredMessages([]);
+          resetToIdle();
           return;
         }
         // Track process state (in-turn, idle, waiting-input, hold)
@@ -783,10 +789,7 @@ export function useSession(
       } else if (event.eventType === "deferred-queue") {
         setDeferredMessages(event.messages ?? []);
       } else if (event.eventType === "complete") {
-        setProcessState("idle");
-        setStatus({ owner: "none" });
-        setPendingInputRequest(null);
-        setDeferredMessages([]);
+        resetToIdle();
       } else if (event.eventType === "connected") {
         // SSE reconnected — cancel any pending error-debounce so we don't
         // mistakenly reset ownership after a transient blip that recovered.
@@ -805,10 +808,7 @@ export function useSession(
         }
 
         if (event.state === "terminated") {
-          setProcessState("idle");
-          setStatus({ owner: "none" });
-          setPendingInputRequest(null);
-          setDeferredMessages([]);
+          resetToIdle();
           return;
         }
 
@@ -939,6 +939,7 @@ export function useSession(
       setSession,
       fetchNewMessages,
       session?.provider,
+      resetToIdle,
     ],
   );
 

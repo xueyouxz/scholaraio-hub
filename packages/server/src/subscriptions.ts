@@ -23,23 +23,6 @@ export interface SubscriptionOptions {
 }
 
 /**
- * 在执行增强和渲染之前，先把不同 provider 的流式消息字段规范成统一形状。
- *
- * 这里故意只做很轻量的字段别名兼容，避免订阅层承担 provider 专属的复杂转换。
- * 如果后续需要更重的结构重写，应放在 provider 适配层或更靠近数据来源的位置。
- */
-export function normalizeStreamMessage(message: Record<string, unknown>): Record<string, unknown> {
-  if (
-    message.type === "user" &&
-    message.tool_use_result === undefined &&
-    message.toolUseResult !== undefined
-  ) {
-    message.tool_use_result = message.toolUseResult;
-  }
-  return message;
-}
-
-/**
  * 创建会话订阅，并把 Process 产生的内部事件通过 `emit` 转发给外部连接。
  *
  * 订阅建立后会按顺序发送：
@@ -108,7 +91,9 @@ export function createSessionSubscription(
     try {
       switch (event.type) {
         case "message": {
-          const message = normalizeStreamMessage(event.message as Record<string, unknown>);
+          // Provider field normalization happens at ingestion (Process), so the
+          // message here is already in canonical shape for augmentation + emit.
+          const message = event.message as Record<string, unknown>;
           const aug = await getAugmenter();
           await aug.processMessage(message);
           emit(SESSION_STREAM_EVENT.message, markSubagent(message));

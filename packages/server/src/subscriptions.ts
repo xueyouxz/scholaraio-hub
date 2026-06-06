@@ -1,9 +1,9 @@
 /**
  * 会话流和活动流共用的订阅处理器。
  *
- * WebSocket relay 层会调用这里的工厂函数，并传入各自的 `emit`
+ * SSE 流路由（streams.ts）会调用这里的工厂函数，并传入各自的 `emit`
  * 实现。这样订阅逻辑只负责把内部事件转换成外部事件，具体传输
- * 方式则由调用方决定。
+ * 方式则由调用方决定（当前为 SSE，工厂本身与传输无关）。
  */
 
 import { type StreamAugmenter, createStreamAugmenter, markSubagent } from "./augments/index.js";

@@ -183,31 +183,6 @@ export interface NetworkBindingChangedEvent {
   timestamp: string;
 }
 
-/** Event emitted when a browser tab connects to the activity stream */
-export interface BrowserTabConnectedEvent {
-  type: "browser-tab-connected";
-  browserProfileId: string;
-  connectionId: number;
-  transport: "ws";
-  /** Total tabs connected for this browserProfileId */
-  tabCount: number;
-  /** Total tabs connected across all browser profiles */
-  totalTabCount: number;
-  timestamp: string;
-}
-
-/** Event emitted when a browser tab disconnects from the activity stream */
-export interface BrowserTabDisconnectedEvent {
-  type: "browser-tab-disconnected";
-  browserProfileId: string;
-  connectionId: number;
-  /** Remaining tabs for this browserProfileId (0 = browser profile fully offline) */
-  tabCount: number;
-  /** Total tabs connected across all browser profiles */
-  totalTabCount: number;
-  timestamp: string;
-}
-
 /** Union of all event types that can be emitted through the bus */
 export type BusEvent =
   | FileChangeEvent
@@ -225,9 +200,7 @@ export type BusEvent =
   | SessionMetadataChangedEvent
   | SessionAbortedEvent
   | SessionUpdatedEvent
-  | NetworkBindingChangedEvent
-  | BrowserTabConnectedEvent
-  | BrowserTabDisconnectedEvent;
+  | NetworkBindingChangedEvent;
 
 export type EventHandler<T = BusEvent> = (event: T) => void;
 

@@ -97,25 +97,6 @@ export interface WorkerActivityEvent {
   timestamp: string;
 }
 
-export interface BrowserTabConnectedEvent {
-  type: "browser-tab-connected";
-  browserProfileId: string;
-  connectionId: number;
-  transport: "ws";
-  tabCount: number;
-  totalTabCount: number;
-  timestamp: string;
-}
-
-export interface BrowserTabDisconnectedEvent {
-  type: "browser-tab-disconnected";
-  browserProfileId: string;
-  connectionId: number;
-  tabCount: number;
-  totalTabCount: number;
-  timestamp: string;
-}
-
 interface ActivityEventMap {
   "file-change": FileChangeEvent;
   "session-status-changed": SessionStatusEvent;
@@ -124,8 +105,6 @@ interface ActivityEventMap {
   "session-seen": SessionSeenEvent;
   "process-state-changed": ProcessStateEvent;
   "session-metadata-changed": SessionMetadataChangedEvent;
-  "browser-tab-connected": BrowserTabConnectedEvent;
-  "browser-tab-disconnected": BrowserTabDisconnectedEvent;
   "source-change": SourceChangeEvent;
   "backend-reloaded": undefined;
   "worker-activity-changed": WorkerActivityEvent;
@@ -212,12 +191,6 @@ export class ActivityBus {
     );
     addSourceListener("session-metadata-changed", (event) =>
       handleTypedEvent("session-metadata-changed", event),
-    );
-    addSourceListener("browser-tab-connected", (event) =>
-      handleTypedEvent("browser-tab-connected", event),
-    );
-    addSourceListener("browser-tab-disconnected", (event) =>
-      handleTypedEvent("browser-tab-disconnected", event),
     );
     addSourceListener("source-change", (event) => handleTypedEvent("source-change", event));
     addSourceListener("backend-reloaded", () => this.emit("backend-reloaded", undefined));

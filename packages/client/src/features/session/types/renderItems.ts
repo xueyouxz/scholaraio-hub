@@ -29,6 +29,8 @@ export interface TextItem extends RenderItemBase {
   text: string;
   /** True if this text is still being streamed */
   isStreaming?: boolean;
+  /** Source message id used to route streaming markdown augments */
+  streamingMessageId?: string;
   /** Pre-rendered HTML from server (for completed messages) */
   augmentHtml?: string;
 }

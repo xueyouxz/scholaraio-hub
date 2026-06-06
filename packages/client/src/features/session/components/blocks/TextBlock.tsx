@@ -6,6 +6,7 @@ import { LocalMediaModal, useLocalMediaClick } from "../LocalMediaModal";
 interface Props {
   text: string;
   isStreaming?: boolean;
+  streamingMessageId?: string;
   /** Pre-rendered HTML from server (for completed messages) */
   augmentHtml?: string;
 }
@@ -13,43 +14,48 @@ interface Props {
 export const TextBlock = memo(function TextBlock({
   text,
   isStreaming = false,
+  streamingMessageId,
   augmentHtml,
 }: Props) {
   const [copied, setCopied] = useState(false);
 
   // Streaming markdown hook for server-rendered content
-  const streamingMarkdown = useStreamingMarkdown();
+  const { containerRef, pendingRef, onAugment, onPending, onStreamEnd, reset } =
+    useStreamingMarkdown();
   const streamingContext = useStreamingMarkdownContext();
 
-  // Track whether we're actively using streaming markdown (received at least one augment)
+  // Track whether we're actively using streaming markdown (received augment or pending HTML)
   const [useStreamingContent, setUseStreamingContent] = useState(false);
 
   // Register with context when streaming and context is available
   useEffect(() => {
     if (!isStreaming || !streamingContext) {
       // Reset streaming state when not streaming
-      // (HTML is captured to markdownAugments before component remounts)
       if (!isStreaming) {
         setUseStreamingContent(false);
-        streamingMarkdown.reset();
+        reset();
       }
       return;
     }
 
     // Register handlers with the context
-    const unregister = streamingContext.registerStreamingHandler({
-      onAugment: (augment) => {
-        // Mark that we're using streaming content on first augment
-        setUseStreamingContent(true);
-        streamingMarkdown.onAugment(augment);
+    const unregister = streamingContext.registerStreamingHandler(
+      {
+        onAugment: (augment) => {
+          setUseStreamingContent(true);
+          onAugment(augment);
+        },
+        onPending: (pending) => {
+          setUseStreamingContent(true);
+          onPending(pending);
+        },
+        onStreamEnd,
       },
-      onPending: streamingMarkdown.onPending,
-      onStreamEnd: streamingMarkdown.onStreamEnd,
-      captureHtml: streamingMarkdown.captureHtml,
-    });
+      streamingMessageId,
+    );
 
     return unregister;
-  }, [isStreaming, streamingContext, streamingMarkdown]);
+  }, [isStreaming, streamingContext, streamingMessageId, onAugment, onPending, onStreamEnd, reset]);
 
   const handleCopy = useCallback(async () => {
     try {
@@ -88,8 +94,8 @@ export const TextBlock = memo(function TextBlock({
       {/* Always render streaming elements when streaming so refs are ready for augments */}
       {renderStreamingContainer && (
         <div style={showStreamingContent ? undefined : { display: "none" }}>
-          <div ref={streamingMarkdown.containerRef} className="streaming-blocks" />
-          <span ref={streamingMarkdown.pendingRef} className="streaming-pending" />
+          <div ref={containerRef} className="streaming-blocks" />
+          <span ref={pendingRef} className="streaming-pending" />
         </div>
       )}
 

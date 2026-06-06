@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import { type SessionStreamEvent, parseSessionStreamEvent } from "../lib/sessionStreamEvents";
 
 interface UseSessionStreamOptions {
-  onMessage: (data: { eventType: string; [key: string]: unknown }) => void;
+  onMessage: (event: SessionStreamEvent) => void;
   onError?: (error: Event) => void;
   onOpen?: () => void;
 }
@@ -50,16 +51,17 @@ export function useSessionStream(sessionId: string | null, options: UseSessionSt
     const forward = (eventType: string, event: MessageEvent<string>) => {
       try {
         const payload = event.data ? JSON.parse(event.data) : {};
-        optionsRef.current.onMessage({
-          ...(payload as Record<string, unknown>),
-          eventType,
-        });
+        const record =
+          payload && typeof payload === "object" && !Array.isArray(payload)
+            ? (payload as Record<string, unknown>)
+            : {};
+        optionsRef.current.onMessage(parseSessionStreamEvent(eventType, record));
       } catch (error) {
         console.warn("[useSessionStream] failed to parse stream event payload", {
           eventType,
           error,
         });
-        optionsRef.current.onMessage({ eventType });
+        optionsRef.current.onMessage(parseSessionStreamEvent(eventType, {}));
       }
     };
 

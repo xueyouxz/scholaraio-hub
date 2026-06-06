@@ -1,13 +1,10 @@
-import {
-  type ProviderName,
-  type SlashCommand,
-  getModelContextWindow,
-} from "@scholaraio-hub/shared";
+import { type SlashCommand, getModelContextWindow } from "@scholaraio-hub/shared";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { api } from "../api/client";
-import { getMessageId } from "../lib/mergeMessages";
 import { findPendingTasks } from "../lib/pendingTasks";
 import { extractSessionIdFromFileEvent } from "../lib/sessionFile";
+import type { SessionStreamEvent } from "../lib/sessionStreamEvents";
+import { getSubagentRoute } from "../lib/subagentRouting";
 import type {
   InputRequest,
   MarkdownAugment,
@@ -110,12 +107,6 @@ export function useSession(
   // This happens when createSession returns before the SDK sends the real session ID
   const [actualSessionId, setActualSessionId] = useState<string>(sessionId);
 
-  // Track last stream activity timestamp for engagement tracking
-  // This includes both main session and subagent messages, so we can properly
-  // mark sessions as "seen" even when subagent content arrives (which doesn't
-  // update the parent session file's mtime until completion)
-  const [lastStreamActivityAt, setLastStreamActivityAt] = useState<string | null>(null);
-
   // Pending messages queue - messages waiting for server confirmation
   // These are displayed separately from the main message list
   const [pendingMessages, setPendingMessages] = useState<PendingMessage[]>([]);
@@ -159,10 +150,6 @@ export function useSession(
 
   // Skill slash commands available for this session.
   const [slashCommands, setSlashCommands] = useState<SlashCommand[]>([]);
-  // Tools available for this session (from init message)
-  const [sessionTools, setSessionTools] = useState<string[]>([]);
-  // MCP servers available for this session (from init message)
-  const [mcpServers, setMcpServers] = useState<string[]>([]);
   const lastKnownModeVersionRef = useRef<number>(0);
 
   // Apply server mode update only if version is >= our last known version
@@ -274,11 +261,11 @@ export function useSession(
     handleStreamMessageEvent,
     handleStreamSubagentMessage,
     registerToolUseAgent,
-    setAgentContent,
-    setToolUseToAgent,
-    setMessages,
+    registerToolUseAgents,
+    mergeAgentContent,
+    updateAgentContextUsage,
+    clearStreamingPlaceholders,
     fetchNewMessages,
-    fetchSessionMetadata,
     pagination,
     loadingOlder,
     loadOlderMessages,
@@ -394,17 +381,9 @@ export function useSession(
         const { mappings } = await api.getAgentMappings(projectId, sessionId);
         const mappingsMap = new Map(mappings.map((m) => [m.toolUseId, m.agentId]));
 
-        // Update the toolUseToAgent state with loaded mappings
-        // This allows TaskRenderer to access agentContent even after page reload
-        setToolUseToAgent((prev) => {
-          const next = new Map(prev);
-          for (const [toolUseId, agentId] of mappingsMap) {
-            if (!next.has(toolUseId)) {
-              next.set(toolUseId, agentId);
-            }
-          }
-          return next;
-        });
+        // Update the toolUseToAgent state with loaded mappings.
+        // This allows TaskRenderer to access agentContent even after page reload.
+        registerToolUseAgents(mappingsMap);
 
         // Load content for each pending task that has an agent file
         for (const task of pendingTasks) {
@@ -414,30 +393,7 @@ export function useSession(
           try {
             const agentData = await api.getAgentSession(projectId, sessionId, agentId);
 
-            // Merge into agentContent state, deduping by message ID
-            // Use getMessageId to prefer uuid over id
-            setAgentContent((prev) => {
-              const existing = prev[agentId];
-              if (existing && existing.messages.length > 0) {
-                // Already have content (maybe from stream), merge without duplicates
-                const existingIds = new Set(existing.messages.map((m) => getMessageId(m)));
-                const newMessages = agentData.messages.filter(
-                  (m) => !existingIds.has(getMessageId(m)),
-                );
-                return {
-                  ...prev,
-                  [agentId]: {
-                    messages: [...existing.messages, ...newMessages],
-                    status: agentData.status,
-                  },
-                };
-              }
-              // No existing content, use loaded data
-              return {
-                ...prev,
-                [agentId]: agentData,
-              };
-            });
+            mergeAgentContent(agentId, agentData);
           } catch (error) {
             console.warn("[useSession] failed to load pending agent session", {
               agentId,
@@ -451,7 +407,7 @@ export function useSession(
     };
 
     loadPendingAgents();
-  }, [loading, messages, projectId, sessionId, setAgentContent, setToolUseToAgent]);
+  }, [loading, messages, projectId, sessionId, mergeAgentContent, registerToolUseAgents]);
 
   // Leading + trailing edge throttle:
   // - Leading: fires immediately on first call
@@ -654,18 +610,9 @@ export function useSession(
   // Callback for agent context usage updates
   const handleAgentContextUsage = useCallback(
     (agentId: string, usage: { inputTokens: number; percentage: number }) => {
-      setAgentContent((prev) => {
-        const existing = prev[agentId] ?? {
-          messages: [],
-          status: "running",
-        };
-        return {
-          ...prev,
-          [agentId]: { ...existing, contextUsage: usage },
-        };
-      });
+      updateAgentContextUsage(agentId, usage);
     },
-    [setAgentContent],
+    [updateAgentContextUsage],
   );
 
   // Use streaming content hook for handling stream_event stream messages
@@ -690,20 +637,14 @@ export function useSession(
 
   // Subscribe to live updates
   const handleStreamMessage = useCallback(
-    (data: { eventType: string; [key: string]: unknown }) => {
-      if (data.eventType === "message") {
+    (event: SessionStreamEvent) => {
+      if (event.eventType === "message") {
         // ─── message 事件分发器 ───────────────────────────────────────────
         // 这是 SSE 三种事件里"结构化骨架"那一支，承载所有 SDK 原始消息。
         // 内部还有第二层 type 分流：stream_event(增量) / assistant(终态) / user / system 等
 
-        // 记录最后一次流式活动时间，用于 engagement tracking。
-        // 子 agent 消息也算（不会更新父会话文件 mtime），所以要在这里手动打点
-        setLastStreamActivityAt(new Date().toISOString());
-
         // SSE 推来的对象就是 SDK 原始消息体，全字段透传不剥任何字段
-        const sdkMessage = data as Record<string, unknown> & {
-          eventType: string;
-        };
+        const sdkMessage = event.message;
 
         // 取 ID 的三级兜底：uuid（最终消息）→ id（中间事件）→ 本地时间戳生成
         const rawUuid = sdkMessage.uuid;
@@ -730,29 +671,18 @@ export function useSession(
         if (msgType === "assistant") {
           // 子 agent 的最终消息要路由到 agentContent[agentId] 而不是主消息流。
           // 路由 key 用 parentToolUseId（也就是 Task 工具自身的 tool_use_id）。
-          const isSubagentMsg =
-            sdkMessage.isSubagent && typeof sdkMessage.parentToolUseId === "string";
-          const msgAgentId = isSubagentMsg ? (sdkMessage.parentToolUseId as string) : undefined;
+          const subagentRoute = getSubagentRoute(sdkMessage);
 
-          // 让 useStreamingContent 清掉它内部的 ref Map 与 currentStreamingIdRef
+          // 让 useStreamingContent 清掉它内部的 route 状态
           clearStreaming();
 
-          if (msgAgentId) {
+          if (subagentRoute) {
             // 子 agent 流结束：删掉这个 agent 下面所有 _isStreaming 占位
-            setAgentContent((prev) => {
-              const existing = prev[msgAgentId];
-              if (!existing) return prev;
-              const filtered = existing.messages.filter((m) => !m._isStreaming);
-              if (filtered.length === existing.messages.length) return prev;
-              return {
-                ...prev,
-                [msgAgentId]: { ...existing, messages: filtered },
-              };
-            });
+            clearStreamingPlaceholders(subagentRoute.agentId);
           } else {
             // 主流结束：把主消息列表里所有 _isStreaming 占位删掉，
             // 紧接着下面 handleStreamMessageEvent 会把真实消息插入
-            setMessages((prev) => prev.filter((m) => !m._isStreaming));
+            clearStreamingPlaceholders();
           }
         }
 
@@ -765,10 +695,7 @@ export function useSession(
           role: msgRole ?? (msgType === "user" || msgType === "assistant" ? msgType : undefined),
         };
 
-        // eventType 是 SSE 信封字段，不属于消息本体，去掉
-        (incoming as { eventType?: string }).eventType = undefined;
-
-        // init 消息携带本会话可用的 skills / tools / mcp_servers。
+        // init 消息携带本会话可用的 skills。
         // 不取 slash_commands —— Claude CLI 自带的命令在网页端没法执行，会误导用户。
         if (msgType === "system" && sdkMessage.subtype === "init") {
           if (Array.isArray(sdkMessage.skills)) {
@@ -780,12 +707,6 @@ export function useSession(
                 description: descriptions.get(name)?.description ?? "",
               }));
             });
-          }
-          if (Array.isArray(sdkMessage.tools)) {
-            setSessionTools(sdkMessage.tools as string[]);
-          }
-          if (Array.isArray(sdkMessage.mcp_servers)) {
-            setMcpServers(sdkMessage.mcp_servers as string[]);
           }
         }
 
@@ -822,27 +743,20 @@ export function useSession(
 
         // 子 agent 消息路由：分流到 agentContent[agentId] 而非主 messages[]。
         // 这样主会话的 DAG（依赖图）保持干净，UI 上 Task 工具面板可以独立展开嵌套查看。
-        if (sdkMessage.isSubagent && typeof sdkMessage.parentToolUseId === "string") {
-          const agentId = sdkMessage.parentToolUseId;
+        const subagentRoute = getSubagentRoute(sdkMessage);
+        if (subagentRoute) {
+          if (subagentRoute.toolUseId) {
+            registerToolUseAgent(subagentRoute.toolUseId, subagentRoute.agentId);
+          }
 
-          // 第一次见到这个子 agent 时记录 toolUseId → agentId 映射。
-          // 注意：当前实现里 agentId === parentToolUseId === toolUseId（同一个值），
-          // 所以这个映射本质是恒等映射，但保留这层为未来可能的解耦做好准备
-          registerToolUseAgent(agentId, agentId);
-
-          handleStreamSubagentMessage(incoming, agentId);
+          handleStreamSubagentMessage(incoming, subagentRoute.agentId);
           return; // 子 agent 消息不进主消息列表
         }
 
         // 主消息流：交给 useSessionMessages 去做"初始加载前缓冲 + 合并去重"
         handleStreamMessageEvent(incoming);
-      } else if (data.eventType === "status") {
-        const statusData = data as {
-          eventType: string;
-          state: string;
-          request?: InputRequest;
-        };
-        if (statusData.state === "terminated") {
+      } else if (event.eventType === "status") {
+        if (event.state === "terminated") {
           setProcessState("idle");
           setStatus({ owner: "none" });
           setPendingInputRequest(null);
@@ -850,39 +764,30 @@ export function useSession(
           return;
         }
         // Track process state (in-turn, idle, waiting-input, hold)
-        if (
-          statusData.state === "idle" ||
-          statusData.state === "in-turn" ||
-          statusData.state === "waiting-input" ||
-          statusData.state === "hold"
-        ) {
-          setProcessState(statusData.state as ProcessState);
+        if (isProcessState(event.state)) {
+          setProcessState(event.state);
         }
         // Capture pending input request when waiting for user input
-        if (statusData.state === "waiting-input" && statusData.request) {
-          setPendingInputRequest(statusData.request);
+        if (event.state === "waiting-input" && event.request) {
+          setPendingInputRequest(event.request);
           // Also update actualSessionId from request in case it differs from URL
           // This handles the temp→real ID transition when state-change arrives
           // after the connected event (which may have had the temp ID)
-          if (statusData.request.sessionId && statusData.request.sessionId !== sessionId) {
-            setActualSessionId(statusData.request.sessionId);
+          if (event.request.sessionId && event.request.sessionId !== sessionId) {
+            setActualSessionId(event.request.sessionId);
           }
         } else {
           // Clear pending request when state changes away from waiting-input
           setPendingInputRequest(null);
         }
-      } else if (data.eventType === "deferred-queue") {
-        const deferredData = data as {
-          eventType: string;
-          messages: DeferredMessage[];
-        };
-        setDeferredMessages(deferredData.messages ?? []);
-      } else if (data.eventType === "complete") {
+      } else if (event.eventType === "deferred-queue") {
+        setDeferredMessages(event.messages ?? []);
+      } else if (event.eventType === "complete") {
         setProcessState("idle");
         setStatus({ owner: "none" });
         setPendingInputRequest(null);
         setDeferredMessages([]);
-      } else if (data.eventType === "connected") {
+      } else if (event.eventType === "connected") {
         // SSE reconnected — cancel any pending error-debounce so we don't
         // mistakenly reset ownership after a transient blip that recovered.
         if (streamErrorDebounceRef.current) {
@@ -890,29 +795,16 @@ export function useSession(
           streamErrorDebounceRef.current = null;
         }
 
-        // Sync state and permission mode from connected event
-        const connectedData = data as {
-          eventType: string;
-          sessionId?: string;
-          state?: string;
-          permissionMode?: PermissionMode;
-          modeVersion?: number;
-          request?: InputRequest;
-          provider?: ProviderName;
-          model?: string;
-          deferredMessages?: DeferredMessage[];
-        };
-
         // Update actual session ID if server reports a different one
         // This handles the temp→real ID transition when createSession returns
         // before the SDK sends the real session ID
         // Check both the connected event's sessionId and the request's sessionId
-        const serverSessionId = connectedData.sessionId ?? connectedData.request?.sessionId;
+        const serverSessionId = event.sessionId ?? event.request?.sessionId;
         if (serverSessionId && serverSessionId !== sessionId) {
           setActualSessionId(serverSessionId);
         }
 
-        if (connectedData.state === "terminated") {
+        if (event.state === "terminated") {
           setProcessState("idle");
           setStatus({ owner: "none" });
           setPendingInputRequest(null);
@@ -921,30 +813,25 @@ export function useSession(
         }
 
         // Sync process state so watching tabs see "processing" indicator
-        if (
-          connectedData.state === "idle" ||
-          connectedData.state === "in-turn" ||
-          connectedData.state === "waiting-input" ||
-          connectedData.state === "hold"
-        ) {
-          setProcessState(connectedData.state as ProcessState);
+        if (isProcessState(event.state)) {
+          setProcessState(event.state);
         }
         // Restore pending input request if state is waiting-input, clear if not
         // (handles reconnection after another tab already approved/denied)
-        if (connectedData.state === "waiting-input" && connectedData.request) {
-          setPendingInputRequest(connectedData.request);
+        if (event.state === "waiting-input" && event.request) {
+          setPendingInputRequest(event.request);
         } else {
           setPendingInputRequest(null);
         }
-        if (connectedData.permissionMode && connectedData.modeVersion !== undefined) {
-          applyServerModeUpdate(connectedData.permissionMode, connectedData.modeVersion);
+        if (event.permissionMode && event.modeVersion !== undefined) {
+          applyServerModeUpdate(event.permissionMode, event.modeVersion);
         }
 
         // Update session with provider/model from connected event (belt-and-suspenders)
         // This ensures the ProviderBadge shows even if the initial session load returned
         // incomplete data (e.g., JSONL not yet written for new sessions)
-        const sseProvider = connectedData.provider;
-        const sseModel = connectedData.model;
+        const sseProvider = event.provider;
+        const sseModel = event.model;
         if (sseProvider) {
           setSession((prev) => {
             if (!prev) return prev;
@@ -959,13 +846,13 @@ export function useSession(
         }
 
         // Sync deferred messages from connected event
-        setDeferredMessages(connectedData.deferredMessages ?? []);
+        setDeferredMessages(event.deferredMessages ?? []);
 
         // Fetch messages from JSONL since last known message.
         // For Codex providers, skip the very first connected-event fetch because
         // it can duplicate fresh stream messages (ID mismatch between stream and
         // early JSONL normalization). Reconnects still fetch as normal.
-        const connectedProvider = connectedData.provider ?? session?.provider;
+        const connectedProvider = event.provider ?? session?.provider;
         const isCodexProvider = connectedProvider === "codex" || connectedProvider === "codex-oss";
         const isFirstConnectedEvent = !hasHandledConnectedEventRef.current;
         hasHandledConnectedEventRef.current = true;
@@ -973,80 +860,65 @@ export function useSession(
         if (!(isFirstConnectedEvent && isCodexProvider)) {
           fetchNewMessages();
         }
-      } else if (data.eventType === "mode-change") {
+      } else if (event.eventType === "mode-change") {
         // Handle mode change from another tab/client
-        const modeData = data as {
-          eventType: string;
-          permissionMode?: PermissionMode;
-          modeVersion?: number;
-        };
-        if (modeData.permissionMode && modeData.modeVersion !== undefined) {
-          applyServerModeUpdate(modeData.permissionMode, modeData.modeVersion);
+        if (event.permissionMode && event.modeVersion !== undefined) {
+          applyServerModeUpdate(event.permissionMode, event.modeVersion);
         }
-      } else if (data.eventType === "markdown-augment") {
+      } else if (event.eventType === "markdown-augment") {
         // ─── markdown-augment 事件：服务端预渲染好的稳定 HTML 块 ────────────
         // 服务端跑了 shiki 高亮 / katex 数学 / mermaid 图 / safe-markdown sanitize，
         // 前端拿到现成 HTML 直接塞 DOM（dangerouslySetInnerHTML），避免在浏览器里
         // 跑一遍重型的 markdown 解析管线（rehype + 一堆插件）。
-        const augmentData = data as {
-          eventType: string;
-          blockIndex?: number;
-          html: string;
-          type?: string;
-          messageId?: string;
-        };
-
         // 两种形态需要分别处理：
         //   ① 最终消息整体 HTML：有 messageId，没 blockIndex
         //     → 存进 markdownAugments[uuid]，MessageList 渲染完成消息时直接用
         //     → 这条 augment 会随 JSONL 持久化，重渲染/页面刷新都能复用
         //   ② 流式中刚闭合的某个块（如代码块写完了）：有 blockIndex + type
         //     → 派发给 StreamingMarkdownContext，由当前流式 TextBlock 接收并替换占位
-        if (augmentData.messageId && augmentData.blockIndex === undefined && augmentData.html) {
+        const messageId = event.messageId;
+        const html = event.html;
+        if (messageId && event.blockIndex === undefined && html !== undefined) {
           // 形态①：键到 uuid 永久保存
           setMarkdownAugments((prev) => ({
             ...prev,
-            [augmentData.messageId as string]: { html: augmentData.html },
+            [messageId]: { html },
           }));
-        } else if (augmentData.blockIndex !== undefined) {
+        } else if (event.blockIndex !== undefined && html !== undefined) {
           // 形态②：派发到流式总线，TextBlock 通过 ref 直接操作 DOM 插入
           // 这条路径完全绕开 React diff，是高频更新下保证流畅度的关键
           streamingMarkdownCallbacks?.onAugment?.({
-            blockIndex: augmentData.blockIndex,
-            html: augmentData.html,
-            type: augmentData.type ?? "text",
-            messageId: augmentData.messageId,
+            blockIndex: event.blockIndex,
+            html,
+            type: event.type ?? "text",
+            messageId,
           });
         }
-      } else if (data.eventType === "pending") {
+      } else if (event.eventType === "pending") {
         // ─── pending 事件：还没闭合那一段的"活" HTML ───────────────────────
         // 每个 text delta 都会触发一次，是真正的"打字预览"。
         // 仅含 inline 格式化（**加粗** / `行内代码` / [链接]），重型块（代码块/数学）
         // 不会出现在这里——它们会等闭合后由 markdown-augment 推送。
-        const pendingData = data as {
-          eventType: string;
-          html: string;
-        };
         // 直接派发到 TextBlock，pendingRef 整段替换，零 React state 变更
-        streamingMarkdownCallbacks?.onPending?.({
-          html: pendingData.html,
-        });
-      } else if (data.eventType === "session-id-changed") {
+        if (event.html !== undefined) {
+          streamingMarkdownCallbacks?.onPending?.({
+            html: event.html,
+            messageId: event.messageId,
+          });
+        }
+      } else if (event.eventType === "session-id-changed") {
         // Handle session ID change (temp ID → real SDK ID)
         // This event means the URL should be updated to use the new session ID
-        const changeData = data as {
-          eventType: string;
-          oldSessionId: string;
-          newSessionId: string;
-        };
-        if (changeData.newSessionId && changeData.newSessionId !== sessionId) {
-          setActualSessionId(changeData.newSessionId);
+        const newSessionId = event.newSessionId;
+        const oldSessionId = event.oldSessionId;
+        if (newSessionId && newSessionId !== sessionId) {
+          setActualSessionId(newSessionId);
           // Also update pendingInputRequest.sessionId if it matches the old ID
           // This prevents approval panel from hiding due to ID mismatch after
           // the temp→real transition
           setPendingInputRequest((prev) => {
-            if (prev && prev.sessionId === changeData.oldSessionId) {
-              return { ...prev, sessionId: changeData.newSessionId };
+            if (prev && prev.sessionId === oldSessionId) {
+              return { ...prev, sessionId: newSessionId };
             }
             return prev;
           });
@@ -1063,8 +935,7 @@ export function useSession(
       handleStreamMessageEvent,
       handleStreamSubagentMessage,
       registerToolUseAgent,
-      setAgentContent,
-      setMessages,
+      clearStreamingPlaceholders,
       setSession,
       fetchNewMessages,
       session?.provider,
@@ -1120,7 +991,7 @@ export function useSession(
     setSessionModel,
     messages,
     agentContent, // Subagent messages keyed by agentId (for Task tool)
-    setAgentContent, // Setter for merging lazy-loaded agent content
+    mergeAgentContent, // Merge lazy-loaded agent content
     toolUseToAgent, // Mapping from Task tool_use_id → agentId (for rendering during streaming)
     markdownAugments, // Pre-rendered markdown HTML from REST response (keyed by blockId)
     status,
@@ -1136,7 +1007,6 @@ export function useSession(
     connected,
     sessionWatchConnected,
     sessionUpdatesConnected,
-    lastStreamActivityAt, // Last stream message timestamp for engagement tracking
     setStatus,
     setProcessState,
     setPermissionMode,
@@ -1147,8 +1017,6 @@ export function useSession(
     updatePendingMessage, // Update pending message fields (e.g. status)
     deferredMessages, // Messages queued server-side waiting for agent turn to end
     slashCommands, // Available slash commands from init message
-    sessionTools, // Available tools from init message
-    mcpServers, // Available MCP servers from init message
     pagination, // Compact-boundary pagination metadata
     loadingOlder, // Whether older messages are being loaded
     loadOlderMessages, // Load next chunk of older messages

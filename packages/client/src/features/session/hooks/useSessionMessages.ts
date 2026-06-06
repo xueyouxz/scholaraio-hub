@@ -5,23 +5,17 @@ import {
   hasEquivalentJsonlMessage,
   reconcileCodexLinearMessages,
 } from "../lib/codexLinearMessages";
-import { getMessageId, mergeJSONLMessages, mergeStreamMessage } from "../lib/mergeMessages";
+import {
+  getMessageId,
+  mergeJSONLMessages,
+  mergeMessage,
+  mergeStreamMessage,
+} from "../lib/mergeMessages";
 import { getProvider } from "../providers/registry";
 import type { Message, Session, SessionStatus } from "../types";
+import type { AgentContent, AgentContentMap } from "../types/agentContent";
 
-/** Content from a subagent (Task tool) */
-export interface AgentContent {
-  messages: Message[];
-  status: "pending" | "running" | "completed" | "failed";
-  /** Real-time context usage from message_start events */
-  contextUsage?: {
-    inputTokens: number;
-    percentage: number;
-  };
-}
-
-/** Map of agentId → agent content */
-export type AgentContentMap = Record<string, AgentContent>;
+export type { AgentContent, AgentContentMap } from "../types/agentContent";
 
 /** Result from initial session load */
 export interface SessionLoadResult {
@@ -36,7 +30,7 @@ export interface SessionLoadResult {
 }
 
 /** Options for useSessionMessages */
-export type SessionRefreshOperation = "fetch-new-messages" | "load-older-messages" | "metadata";
+export type SessionRefreshOperation = "fetch-new-messages" | "load-older-messages";
 
 export interface UseSessionMessagesOptions {
   projectId: string;
@@ -71,16 +65,19 @@ export interface UseSessionMessagesResult {
   handleStreamSubagentMessage: (incoming: Message, agentId: string) => void;
   /** Register toolUse → agent mapping */
   registerToolUseAgent: (toolUseId: string, agentId: string) => void;
-  /** Update agent content (for lazy loading) */
-  setAgentContent: React.Dispatch<React.SetStateAction<AgentContentMap>>;
-  /** Update toolUseToAgent mapping */
-  setToolUseToAgent: React.Dispatch<React.SetStateAction<Map<string, string>>>;
-  /** Direct messages setter (for clearing streaming placeholders) */
-  setMessages: React.Dispatch<React.SetStateAction<Message[]>>;
+  /** Register several toolUse → agent mappings */
+  registerToolUseAgents: (mappings: Iterable<[string, string]>) => void;
+  /** Merge lazy-loaded or recovered agent content into current state */
+  mergeAgentContent: (agentId: string, incoming: AgentContent) => void;
+  /** Update real-time context usage for one agent */
+  updateAgentContextUsage: (
+    agentId: string,
+    usage: { inputTokens: number; percentage: number },
+  ) => void;
+  /** Remove transient streaming placeholder messages */
+  clearStreamingPlaceholders: (agentId?: string) => void;
   /** Fetch new messages incrementally (for file change events) */
   fetchNewMessages: () => Promise<void>;
-  /** Fetch session metadata only */
-  fetchSessionMetadata: () => Promise<void>;
   /** Pagination info from compact-boundary-based loading */
   pagination: PaginationInfo | undefined;
   /** Whether older messages are being loaded */
@@ -106,6 +103,31 @@ function getMessageRole(message: Message): string {
     return message.role;
   }
   return "unknown";
+}
+
+function mergeAgentContentValue(
+  existing: AgentContent | undefined,
+  incoming: AgentContent,
+): AgentContent {
+  if (!existing) return incoming;
+
+  const messageMap = new Map<string, Message>();
+  for (const message of existing.messages) {
+    messageMap.set(getMessageId(message), message);
+  }
+  for (const message of incoming.messages) {
+    const id = getMessageId(message);
+    const previous = messageMap.get(id);
+    messageMap.set(id, previous ? mergeMessage(previous, message, "jsonl") : message);
+  }
+
+  return {
+    ...existing,
+    ...incoming,
+    messages: Array.from(messageMap.values()),
+    status: existing.status === "running" ? existing.status : incoming.status,
+    contextUsage: existing.contextUsage ?? incoming.contextUsage,
+  };
 }
 
 function isEmptyAssistantContent(message: Message): boolean {
@@ -158,6 +180,7 @@ export function useSessionMessages(options: UseSessionMessagesOptions): UseSessi
   const [session, setSession] = useState<Session | null>(null);
   const [pagination, setPagination] = useState<PaginationInfo | undefined>();
   const [loadingOlder, setLoadingOlder] = useState(false);
+  const loadingOlderRef = useRef(false);
 
   // Buffering: queue stream messages until initial load completes
   const streamBufferRef = useRef<
@@ -269,8 +292,15 @@ export function useSessionMessages(options: UseSessionMessagesOptions): UseSessi
     initialLoadCompleteRef.current = false;
     streamBufferRef.current = [];
     maxPersistedTimestampMsRef.current = Number.NEGATIVE_INFINITY;
+    lastMessageIdRef.current = undefined;
+    providerRef.current = undefined;
+    loadingOlderRef.current = false;
     setLoading(true);
+    setSession(null);
+    setMessages([]);
+    setPagination(undefined);
     setAgentContent({});
+    setToolUseToAgent(new Map<string, string>());
 
     api
       .getSession(projectId, sessionId, undefined, { tailCompactions: 2 })
@@ -410,6 +440,63 @@ export function useSessionMessages(options: UseSessionMessagesOptions): UseSessi
     });
   }, []);
 
+  const registerToolUseAgents = useCallback((mappings: Iterable<[string, string]>) => {
+    setToolUseToAgent((prev) => {
+      let next: Map<string, string> | null = null;
+      for (const [toolUseId, agentId] of mappings) {
+        if (prev.get(toolUseId) === agentId) continue;
+        next ??= new Map(prev);
+        next.set(toolUseId, agentId);
+      }
+      return next ?? prev;
+    });
+  }, []);
+
+  const mergeAgentContent = useCallback((agentId: string, incoming: AgentContent) => {
+    setAgentContent((prev) => {
+      const merged = mergeAgentContentValue(prev[agentId], incoming);
+      if (merged === prev[agentId]) return prev;
+      return { ...prev, [agentId]: merged };
+    });
+  }, []);
+
+  const updateAgentContextUsage = useCallback(
+    (agentId: string, usage: { inputTokens: number; percentage: number }) => {
+      setAgentContent((prev) => {
+        const existing = prev[agentId] ?? {
+          messages: [],
+          status: "running" as const,
+        };
+        return {
+          ...prev,
+          [agentId]: { ...existing, contextUsage: usage },
+        };
+      });
+    },
+    [],
+  );
+
+  const clearStreamingPlaceholders = useCallback((agentId?: string) => {
+    if (agentId) {
+      setAgentContent((prev) => {
+        const existing = prev[agentId];
+        if (!existing) return prev;
+        const filtered = existing.messages.filter((message) => !message._isStreaming);
+        if (filtered.length === existing.messages.length) return prev;
+        return {
+          ...prev,
+          [agentId]: { ...existing, messages: filtered },
+        };
+      });
+      return;
+    }
+
+    setMessages((prev) => {
+      const filtered = prev.filter((message) => !message._isStreaming);
+      return filtered.length === prev.length ? prev : filtered;
+    });
+  }, []);
+
   // Fetch new messages incrementally (for file change events)
   const fetchNewMessages = useCallback(async () => {
     try {
@@ -441,9 +528,14 @@ export function useSessionMessages(options: UseSessionMessagesOptions): UseSessi
 
   // Load older messages (previous chunk before the current truncation point)
   const loadOlderMessages = useCallback(async () => {
-    if (!pagination?.hasOlderMessages || !pagination.truncatedBeforeMessageId) {
+    if (
+      loadingOlderRef.current ||
+      !pagination?.hasOlderMessages ||
+      !pagination.truncatedBeforeMessageId
+    ) {
       return;
     }
+    loadingOlderRef.current = true;
     setLoadingOlder(true);
     try {
       const data = await api.getSession(projectId, sessionId, undefined, {
@@ -458,7 +550,19 @@ export function useSessionMessages(options: UseSessionMessagesOptions): UseSessi
           _source: "jsonl" as const,
         }));
         updatePersistedTimestampWatermark(taggedOlder);
-        const combined = [...taggedOlder, ...prev];
+        const incomingById = new Map(taggedOlder.map((m) => [getMessageId(m), m]));
+        const mergedExisting = prev.map((message) => {
+          const incoming = incomingById.get(getMessageId(message));
+          return incoming ? mergeMessage(message, incoming, "jsonl") : message;
+        });
+        const seen = new Set(mergedExisting.map(getMessageId));
+        const prependedOlder = taggedOlder.filter((message) => {
+          const id = getMessageId(message);
+          if (seen.has(id)) return false;
+          seen.add(id);
+          return true;
+        });
+        const combined = [...prependedOlder, ...mergedExisting];
         return isCodexProvider(loadedSession.provider)
           ? reconcileCodexLinearMessages(combined)
           : combined;
@@ -469,27 +573,10 @@ export function useSessionMessages(options: UseSessionMessagesOptions): UseSessi
       console.warn("[useSessionMessages] failed to load older messages", err);
       onRefreshError?.(err, "load-older-messages");
     } finally {
+      loadingOlderRef.current = false;
       setLoadingOlder(false);
     }
   }, [projectId, sessionId, pagination, updatePersistedTimestampWatermark, onRefreshError]);
-
-  // Fetch session metadata only
-  const fetchSessionMetadata = useCallback(async () => {
-    try {
-      const data = await api.getSessionMetadata(projectId, sessionId);
-      const loadedSession = data.session as unknown as Session;
-      // For new sessions, prev may be null if JSONL didn't exist on initial load
-      setSession((prev) =>
-        prev
-          ? { ...prev, ...loadedSession, messages: prev.messages }
-          : { ...loadedSession, messages: [] },
-      );
-    } catch (error) {
-      const err = toError(error);
-      console.warn("[useSessionMessages] failed to fetch session metadata", err);
-      onRefreshError?.(err, "metadata");
-    }
-  }, [projectId, sessionId, onRefreshError]);
 
   return {
     messages,
@@ -502,11 +589,11 @@ export function useSessionMessages(options: UseSessionMessagesOptions): UseSessi
     handleStreamMessageEvent,
     handleStreamSubagentMessage,
     registerToolUseAgent,
-    setAgentContent,
-    setToolUseToAgent,
-    setMessages,
+    registerToolUseAgents,
+    mergeAgentContent,
+    updateAgentContextUsage,
+    clearStreamingPlaceholders,
     fetchNewMessages,
-    fetchSessionMetadata,
     pagination,
     loadingOlder,
     loadOlderMessages,

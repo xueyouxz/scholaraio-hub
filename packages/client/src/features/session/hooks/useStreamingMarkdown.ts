@@ -1,4 +1,4 @@
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useRef } from "react";
 
 // Debug logging — enable via window.__STREAMING_DEBUG__ = true (declared in src/global.d.ts)
 function debugLog(
@@ -31,17 +31,18 @@ function getLogStyle(category: string): string {
 export interface StreamingMarkdownState {
   containerRef: React.RefObject<HTMLDivElement | null>;
   pendingRef: React.RefObject<HTMLSpanElement | null>;
-  isStreaming: boolean;
 }
 
 export interface AugmentEvent {
   blockIndex: number;
   html: string;
   type: string;
+  messageId?: string;
 }
 
 export interface PendingEvent {
   html: string;
+  messageId?: string;
 }
 
 /**
@@ -53,7 +54,7 @@ export interface PendingEvent {
  *
  * @example
  * ```tsx
- * const { containerRef, pendingRef, isStreaming, onAugment, onPending, onStreamEnd, reset } =
+ * const { containerRef, pendingRef, onAugment, onPending, onStreamEnd, reset } =
  *   useStreamingMarkdown();
  *
  * // Attach refs to DOM elements
@@ -71,11 +72,9 @@ export function useStreamingMarkdown(): StreamingMarkdownState & {
   onPending: (pending: PendingEvent) => void;
   onStreamEnd: () => void;
   reset: () => void;
-  captureHtml: () => string | null;
 } {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const pendingRef = useRef<HTMLSpanElement | null>(null);
-  const [isStreaming, setIsStreaming] = useState(false);
 
   // Track which block indices we've received to handle out-of-order augments
   // Maps blockIndex -> DOM element for that block
@@ -102,9 +101,6 @@ export function useStreamingMarkdown(): StreamingMarkdownState & {
       debugLog("augment", "ERROR: containerRef.current is null - refs not attached!");
       return;
     }
-
-    // Mark as streaming on first augment
-    setIsStreaming(true);
 
     const { blockIndex, html } = augment;
 
@@ -187,9 +183,6 @@ export function useStreamingMarkdown(): StreamingMarkdownState & {
       return;
     }
 
-    // Mark as streaming on first pending update
-    setIsStreaming(true);
-
     pendingElement.innerHTML = pending.html;
     debugLog("pending", "Updated pending element innerHTML");
   }, []);
@@ -206,8 +199,6 @@ export function useStreamingMarkdown(): StreamingMarkdownState & {
       pendingElement.innerHTML = "";
       debugLog("event", "Cleared pending element");
     }
-    setIsStreaming(false);
-    debugLog("event", "Set isStreaming to false");
   }, []);
 
   /**
@@ -232,7 +223,6 @@ export function useStreamingMarkdown(): StreamingMarkdownState & {
     const previousBlockCount = blocksRef.current.size;
     blocksRef.current.clear();
     maxBlockIndexRef.current = -1;
-    setIsStreaming(false);
 
     debugLog("event", "Reset complete", {
       previousBlockCount,
@@ -240,26 +230,12 @@ export function useStreamingMarkdown(): StreamingMarkdownState & {
     });
   }, []);
 
-  /**
-   * Capture the current streaming HTML for persistence.
-   * Returns the container's innerHTML or null if not available.
-   */
-  const captureHtml = useCallback((): string | null => {
-    const container = containerRef.current;
-    if (!container) return null;
-    const html = container.innerHTML;
-    debugLog("event", "Captured HTML", { length: html.length });
-    return html || null;
-  }, []);
-
   return {
     containerRef,
     pendingRef,
-    isStreaming,
     onAugment,
     onPending,
     onStreamEnd,
     reset,
-    captureHtml,
   };
 }

@@ -1,96 +1,36 @@
-import type { AgentContent, AgentContentMap } from "../hooks/useSession";
-import type { Message } from "../types";
-import { getMessageId } from "./mergeMessages";
+export interface SubagentRoute {
+  /** Key used for agentContent. Prefer the real agentId when the provider sends it. */
+  agentId: string;
+  /** Parent Task/Agent tool_use id, when available. */
+  toolUseId?: string;
+}
 
-/**
- * Check if a message is from a subagent (Task tool).
- * Subagent messages have isSubagent: true set by the server.
- */
-export function isSubagentMessage(msg: {
-  isSubagent?: boolean;
-  session_id?: string;
-}): boolean {
-  return msg.isSubagent === true && typeof msg.session_id === "string";
+function asString(value: unknown): string | undefined {
+  return typeof value === "string" && value.length > 0 ? value : undefined;
 }
 
 /**
- * Extract the agentId from a subagent message.
- * The agentId is the session_id of the subagent.
+ * Resolve subagent routing metadata from normalized SSE/JSONL-like messages.
+ *
+ * Legacy SDK messages carry parent_tool_use_id/parentToolUseId. Newer SDK
+ * sidechain messages carry agentId + isSubagent but no parent tool id. When
+ * both are present, store content under the real agentId and register the
+ * parent tool id as a lookup alias for TaskRenderer.
  */
-export function extractAgentId(msg: { session_id?: string }): string | null {
-  return typeof msg.session_id === "string" ? msg.session_id : null;
-}
+export function getSubagentRoute(message: Record<string, unknown>): SubagentRoute | null {
+  if (message.isSubagent !== true) {
+    return null;
+  }
 
-/**
- * Add a message to the agent content map.
- * Returns a new map with the message added (immutable update).
- * Deduplicates by message ID using getMessageId (prefers uuid over id).
- */
-export function addMessageToAgentContent(
-  agentContent: AgentContentMap,
-  agentId: string,
-  message: Message,
-): AgentContentMap {
-  const existing = agentContent[agentId] ?? {
-    messages: [],
-    status: "running" as const,
-  };
+  const toolUseId = asString(message.parentToolUseId) ?? asString(message.parent_tool_use_id);
+  const agentId = asString(message.agentId) ?? toolUseId;
 
-  // Dedupe by message ID using getMessageId
-  const messageId = getMessageId(message);
-  if (existing.messages.some((m) => getMessageId(m) === messageId)) {
-    return agentContent;
+  if (!agentId) {
+    return null;
   }
 
   return {
-    ...agentContent,
-    [agentId]: {
-      ...existing,
-      messages: [...existing.messages, message],
-      status: "running",
-    },
-  };
-}
-
-/**
- * Group messages by agentId.
- * Useful for organizing subagent messages from a flat list.
- */
-export function groupMessagesByAgentId(
-  messages: Array<Message & { session_id?: string }>,
-): AgentContentMap {
-  const result: AgentContentMap = {};
-
-  for (const msg of messages) {
-    const agentId = extractAgentId(msg);
-    if (!agentId) continue;
-
-    if (!result[agentId]) {
-      result[agentId] = { messages: [], status: "running" };
-    }
-    result[agentId].messages.push(msg);
-  }
-
-  return result;
-}
-
-/**
- * Update the status of an agent based on tool_result.
- * Call this when a Task tool_result is received to mark the agent as completed/failed.
- */
-export function updateAgentStatus(
-  agentContent: AgentContentMap,
-  agentId: string,
-  status: AgentContent["status"],
-): AgentContentMap {
-  const existing = agentContent[agentId];
-  if (!existing) return agentContent;
-
-  return {
-    ...agentContent,
-    [agentId]: {
-      ...existing,
-      status,
-    },
+    agentId,
+    ...(toolUseId ? { toolUseId } : {}),
   };
 }

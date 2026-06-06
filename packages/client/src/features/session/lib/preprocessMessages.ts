@@ -301,6 +301,7 @@ function processMessage(
           isSubagent: msg.isSubagent,
           // Only show streaming cursor on the last text block
           isStreaming: msg._isStreaming && i === lastTextBlockIndex,
+          streamingMessageId: msgId,
           // Prefer inline _html from server, fall back to markdownAugments (SSE path)
           augmentHtml: blockHtml ?? augments?.markdown?.[msgId]?.html,
         });

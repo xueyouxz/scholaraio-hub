@@ -99,6 +99,76 @@ describe("Process", () => {
         expect(lastChange.state.type).toBe("idle");
       }
     });
+
+    it("accumulates streaming text once at the process source", async () => {
+      const messages: SDKMessage[] = [
+        {
+          type: "stream_event",
+          event: { type: "message_start", message: { id: "msg-stream-1" } },
+        },
+        {
+          type: "stream_event",
+          event: {
+            type: "content_block_delta",
+            delta: { type: "text_delta", text: "Hel" },
+          },
+        },
+        {
+          type: "stream_event",
+          event: {
+            type: "content_block_delta",
+            delta: { type: "text_delta", text: "lo" },
+          },
+        },
+      ];
+
+      const iterator = createMockIterator(messages);
+      const process = new Process(iterator, {
+        projectPath: "/test",
+        projectId: "proj-1",
+        sessionId: "sess-1",
+        idleTimeoutMs: 100,
+      });
+
+      process.subscribe(() => {});
+      process.subscribe(() => {});
+
+      await new Promise((resolve) => setTimeout(resolve, 50));
+
+      expect(process.getStreamingContent()).toEqual({
+        messageId: "msg-stream-1",
+        text: "Hello",
+      });
+    });
+
+    it("clears streaming catch-up text when the stream stops", async () => {
+      const messages: SDKMessage[] = [
+        {
+          type: "stream_event",
+          event: { type: "message_start", message: { id: "msg-stream-1" } },
+        },
+        {
+          type: "stream_event",
+          event: {
+            type: "content_block_delta",
+            delta: { type: "text_delta", text: "Hello" },
+          },
+        },
+        { type: "stream_event", event: { type: "message_stop" } },
+      ];
+
+      const iterator = createMockIterator(messages);
+      const process = new Process(iterator, {
+        projectPath: "/test",
+        projectId: "proj-1",
+        sessionId: "sess-1",
+        idleTimeoutMs: 100,
+      });
+
+      await new Promise((resolve) => setTimeout(resolve, 50));
+
+      expect(process.getStreamingContent()).toBeNull();
+    });
   });
 
   describe("message queue", () => {

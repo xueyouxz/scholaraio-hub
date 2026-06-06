@@ -343,15 +343,13 @@ function RenderedColumnInner({ projectId, sessionId }: { projectId: string; sess
       onAugment: streamingContext.dispatchAugment,
       onPending: streamingContext.dispatchPending,
       onStreamEnd: streamingContext.dispatchStreamEnd,
-      setCurrentMessageId: streamingContext.setCurrentMessageId,
-      captureHtml: streamingContext.captureStreamingHtml,
     };
   }, [streamingContext]);
 
   const {
     messages,
     agentContent,
-    setAgentContent,
+    mergeAgentContent,
     toolUseToAgent,
     markdownAugments,
     pendingMessages,
@@ -375,7 +373,7 @@ function RenderedColumnInner({ projectId, sessionId }: { projectId: string; sess
   return (
     <AgentContentProvider
       agentContent={agentContent}
-      setAgentContent={setAgentContent}
+      mergeAgentContent={mergeAgentContent}
       toolUseToAgent={toolUseToAgent}
       projectId={projectId}
       sessionId={sessionId}

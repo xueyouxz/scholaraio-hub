@@ -77,8 +77,9 @@ function normalizeClaudeQueueOperationContent(content: unknown): string {
  */
 export function normalizeSession(loaded: LoadedSession): Session {
   const { summary, data } = loaded;
+  const provider = data.provider;
 
-  switch (data.provider) {
+  switch (provider) {
     case "claude":
     case "claude-ollama": {
       const rawMessages = data.session.messages;
@@ -99,7 +100,7 @@ export function normalizeSession(loaded: LoadedSession): Session {
         messages: convertCodexEntries(data.session.entries, summary.id),
       };
     default:
-      throw new Error(`Unsupported session provider: ${data.provider}`);
+      throw new Error(`Unsupported session provider: ${String(provider)}`);
   }
 }
 

@@ -94,6 +94,15 @@ const DEFAULT_STATS: GlobalSessionStats = {
   executorCounts: {},
 };
 
+function sessionMatchesProviderGroup(
+  provider: ProviderName,
+  filter?: ProviderGroupFilter,
+): boolean {
+  if (!filter) return true;
+  if (filter === "claude") return provider === "claude" || provider === "claude-ollama";
+  return provider === "codex" || provider === "codex-oss";
+}
+
 async function fetchGlobalSessions(
   params?: {
     project?: string;
@@ -126,28 +135,31 @@ async function fetchGlobalSessions(
   // Server already enriches sessions, but its rows are SessionSummary-shaped
   // (with extra projectName attached). Map to GlobalSessionItem.
   const projectsById = new Map(data.projects.map((p) => [p.id, p.name]));
-  const sessions: GlobalSessionItem[] = data.sessions.map((session) => {
-    const withName = session as AppSessionSummary & { projectName?: string };
-    return {
-      id: session.id,
-      title: session.title,
-      createdAt: session.createdAt,
-      updatedAt: session.updatedAt,
-      messageCount: session.messageCount,
-      provider: session.provider,
-      projectId: session.projectId,
-      projectName: withName.projectName ?? projectsById.get(session.projectId) ?? session.projectId,
-      ownership: session.ownership,
-      pendingInputType: session.pendingInputType,
-      activity: session.activity,
-      hasUnread: session.hasUnread,
-      customTitle: session.customTitle,
-      isArchived: session.isArchived,
-      isStarred: session.isStarred,
-      executor: session.executor,
-      model: session.model,
-    };
-  });
+  const sessions: GlobalSessionItem[] = data.sessions
+    .filter((session) => sessionMatchesProviderGroup(session.provider, params?.provider))
+    .map((session) => {
+      const withName = session as AppSessionSummary & { projectName?: string };
+      return {
+        id: session.id,
+        title: session.title,
+        createdAt: session.createdAt,
+        updatedAt: session.updatedAt,
+        messageCount: session.messageCount,
+        provider: session.provider,
+        projectId: session.projectId,
+        projectName:
+          withName.projectName ?? projectsById.get(session.projectId) ?? session.projectId,
+        ownership: session.ownership,
+        pendingInputType: session.pendingInputType,
+        activity: session.activity,
+        hasUnread: session.hasUnread,
+        customTitle: session.customTitle,
+        isArchived: session.isArchived,
+        isStarred: session.isStarred,
+        executor: session.executor,
+        model: session.model,
+      };
+    });
 
   return {
     sessions,

@@ -87,7 +87,7 @@ interface Props {
   /** Whether older messages are currently being loaded */
   loadingOlder?: boolean;
   /** Callback to load the next chunk of older messages */
-  onLoadOlderMessages?: () => void;
+  onLoadOlderMessages?: () => void | Promise<void>;
 }
 
 export const MessageList = memo(
@@ -156,17 +156,17 @@ export const MessageList = memo(
     const turnGroups = useMemo(() => groupItemsIntoTurns(renderItems), [renderItems]);
 
     // Load older messages with scroll position preservation
-    const handleLoadOlder = useCallback(() => {
+    const handleLoadOlder = useCallback(async () => {
       if (!onLoadOlderMessages) return;
       const container = containerRef.current?.parentElement;
       if (!container) {
-        onLoadOlderMessages();
+        await onLoadOlderMessages();
         return;
       }
       // Capture scroll state before prepending older messages
       const scrollHeightBefore = container.scrollHeight;
       const scrollTopBefore = container.scrollTop;
-      onLoadOlderMessages();
+      await onLoadOlderMessages();
       // Restore scroll position after React re-renders with prepended messages
       requestAnimationFrame(() => {
         requestAnimationFrame(() => {

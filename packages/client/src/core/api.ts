@@ -93,7 +93,9 @@ export interface ScholarConfig {
   paths: { papers_dir: string; workspace_dir: string };
 }
 
-type DeepPartial<T> = { [K in keyof T]?: T[K] extends object ? DeepPartial<T[K]> : T[K] };
+type DeepPartial<T> = {
+  [K in keyof T]?: T[K] extends object ? DeepPartial<T[K]> : T[K];
+};
 
 interface SessionLaunchBodyInput {
   message?: string;
@@ -137,7 +139,9 @@ export interface HealthCheckResult {
 
 export const api = {
   getProjects: (options?: RequestOptions) =>
-    requestJson<{ projects: ProjectSummary[] }>("/api/projects", { signal: options?.signal }),
+    requestJson<{ projects: ProjectSummary[] }>("/api/projects", {
+      signal: options?.signal,
+    }),
   addProject: (path: string) =>
     requestJson<{ project: ProjectSummary }>("/api/projects", {
       method: "POST",
@@ -167,7 +171,9 @@ export const api = {
     options?: RequestOptions & { provider?: ProviderGroupFilter },
   ) =>
     requestJson<{ sessions: AppSessionSummary[] }>(
-      withQuery(`/api/projects/${projectId}/sessions`, { provider: options?.provider }),
+      withQuery(`/api/projects/${projectId}/sessions`, {
+        provider: options?.provider,
+      }),
       {
         signal: options?.signal,
       },
@@ -175,7 +181,10 @@ export const api = {
   getSession: (
     projectId: string,
     sessionId: string,
-    options?: { beforeMessageId?: string; tailCompactions?: number } & RequestOptions,
+    options?: {
+      beforeMessageId?: string;
+      tailCompactions?: number;
+    } & RequestOptions,
   ) => {
     const params = new URLSearchParams();
     if (options?.beforeMessageId) params.set("beforeMessageId", options.beforeMessageId);
@@ -194,17 +203,22 @@ export const api = {
       { signal: options?.signal },
     ),
   getProcesses: () =>
-    requestJson<{ processes: ProcessSummary[]; terminatedProcesses?: ProcessSummary[] }>(
-      "/api/processes?includeTerminated=true",
-    ),
+    requestJson<{
+      processes: ProcessSummary[];
+      terminatedProcesses?: ProcessSummary[];
+    }>("/api/processes?includeTerminated=true"),
   getProviders: (options?: RequestOptions) =>
-    requestJson<{ providers: ProviderInfo[] }>("/api/providers", { signal: options?.signal }),
+    requestJson<{ providers: ProviderInfo[] }>("/api/providers", {
+      signal: options?.signal,
+    }),
   getProviderUsageLimits: (options?: RequestOptions) =>
     requestJson<{ usageLimits: ProviderUsageLimits[] }>("/api/providers/usage-limits", {
       signal: options?.signal,
     }),
   getSettings: (options?: RequestOptions) =>
-    requestJson<{ settings: ServerSettings }>("/api/settings", { signal: options?.signal }),
+    requestJson<{ settings: ServerSettings }>("/api/settings", {
+      signal: options?.signal,
+    }),
   updateSettings: (settings: Partial<ServerSettings>) =>
     requestJson<{ settings: ServerSettings }>("/api/settings", {
       method: "PUT",
@@ -225,7 +239,10 @@ export const api = {
     ),
   getFile: (projectId: string, filePath: string, highlight = true, options?: RequestOptions) =>
     requestJson<FileContentResponse>(
-      withQuery(`/api/projects/${projectId}/files`, { path: filePath, highlight }),
+      withQuery(`/api/projects/${projectId}/files`, {
+        path: filePath,
+        highlight,
+      }),
       { signal: options?.signal },
     ),
   getFileRawUrl: (projectId: string, filePath: string, download = false) =>
@@ -252,20 +269,22 @@ export const api = {
       },
     ),
   queueMessage: (input: QueueMessageInput) =>
-    requestJson<{ queued: boolean; restarted?: boolean; processId?: string; deferred?: boolean }>(
-      `/api/sessions/${input.sessionId}/messages`,
-      {
-        method: "POST",
-        body: JSON.stringify({
-          message: input.message,
-          mode: input.mode,
-          thinking: input.thinking,
-          attachments: input.attachments,
-          tempId: input.tempId,
-          deferred: input.deferred,
-        }),
-      },
-    ),
+    requestJson<{
+      queued: boolean;
+      restarted?: boolean;
+      processId?: string;
+      deferred?: boolean;
+    }>(`/api/sessions/${input.sessionId}/messages`, {
+      method: "POST",
+      body: JSON.stringify({
+        message: input.message,
+        mode: input.mode,
+        thinking: input.thinking,
+        attachments: input.attachments,
+        tempId: input.tempId,
+        deferred: input.deferred,
+      }),
+    }),
   cancelDeferredMessage: (sessionId: string, tempId: string) =>
     requestJson<{ cancelled: boolean }>(
       `/api/sessions/${sessionId}/deferred/${encodeURIComponent(tempId)}`,
@@ -342,10 +361,11 @@ export const scholar = {
       { signal: options?.signal },
     ),
   getPaper: (id: string, options?: RequestOptions) =>
-    requestJson<{ paper: ScholarPaper & { content?: string; l3Conclusion?: string } }>(
-      `${SCHOLAR_API_BASE}/papers/${pathSegment(id)}`,
-      { signal: options?.signal },
-    ),
+    requestJson<{
+      paper: ScholarPaper & { content?: string; l3Conclusion?: string };
+    }>(`${SCHOLAR_API_BASE}/papers/${pathSegment(id)}`, {
+      signal: options?.signal,
+    }),
   getPaperImages: (id: string, options?: RequestOptions) =>
     requestJson<{ images: string[] }>(`${SCHOLAR_API_BASE}/papers/${pathSegment(id)}/images`, {
       signal: options?.signal,
@@ -356,7 +376,9 @@ export const scholar = {
       { signal: options?.signal },
     ),
   getStats: (options?: RequestOptions) =>
-    requestJson<ScholarStats>(`${SCHOLAR_API_BASE}/stats`, { signal: options?.signal }),
+    requestJson<ScholarStats>(`${SCHOLAR_API_BASE}/stats`, {
+      signal: options?.signal,
+    }),
   search: (body: ScholarSearchBody, options?: RequestOptions) =>
     requestJson<{ results: ScholarPaper[]; mode: string; total: number }>(
       `${SCHOLAR_API_BASE}/search`,
@@ -398,7 +420,9 @@ export const scholar = {
       body: JSON.stringify({ paperIds }),
     }),
   getConfig: (options?: RequestOptions) =>
-    requestJson<ScholarConfig>(`${SCHOLAR_API_BASE}/config`, { signal: options?.signal }),
+    requestJson<ScholarConfig>(`${SCHOLAR_API_BASE}/config`, {
+      signal: options?.signal,
+    }),
   patchConfig: (patch: DeepPartial<ScholarConfig>, options?: RequestOptions) =>
     requestJson<ScholarConfig>(`${SCHOLAR_API_BASE}/config`, {
       method: "PATCH",
@@ -521,7 +545,9 @@ export interface FsBrowseResponse {
 }
 
 export const browseFsDirectory = (path: string, options?: RequestOptions) =>
-  requestJson<FsBrowseResponse>(withQuery("/hub/fs/browse", { path }), { signal: options?.signal });
+  requestJson<FsBrowseResponse>(withQuery("/hub/fs/browse", { path }), {
+    signal: options?.signal,
+  });
 
 export const PERMISSION_MODES: readonly PermissionMode[] = [
   "default",
@@ -555,7 +581,11 @@ export function messageText(content: unknown): string {
   return content
     .map((item) => {
       if (typeof item === "object" && item !== null) {
-        const maybeText = item as { text?: string; content?: string; type?: string };
+        const maybeText = item as {
+          text?: string;
+          content?: string;
+          type?: string;
+        };
         return maybeText.text ?? maybeText.content ?? (maybeText.type ? `[${maybeText.type}]` : "");
       }
       return "";

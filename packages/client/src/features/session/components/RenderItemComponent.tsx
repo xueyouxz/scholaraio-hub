@@ -91,6 +91,7 @@ function buildDebugSnapshot(
         : item.type === "text"
           ? {
               isStreamingTextBlock: item.isStreaming ?? false,
+              streamingMessageId: item.streamingMessageId,
               hasAugmentHtml: Boolean(item.augmentHtml),
             }
           : item.type === "thinking"
@@ -150,6 +151,7 @@ export const RenderItemComponent = memo(function RenderItemComponent({
           <TextBlock
             text={item.text}
             isStreaming={item.isStreaming}
+            streamingMessageId={item.streamingMessageId}
             augmentHtml={item.augmentHtml}
           />
         );

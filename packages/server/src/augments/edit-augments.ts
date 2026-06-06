@@ -1,20 +1,22 @@
 /**
- * Edit augment service - computes structuredPatch and highlighted diff HTML
- * for Edit tool_use blocks.
+ * Edit augment 服务——为 Edit tool_use 块计算 structuredPatch 和带语法高亮的 diff HTML。
  *
- * This enables consistent unified diff display for both pending (tool_use)
- * and completed (tool_result) edits.
+ * 该模块统一了待处理（tool_use）和已完成（tool_result）两种状态下的 unified diff 展示逻辑：
+ * - 对拥有 old_string / new_string 的标准 Edit 调用，使用 jsdiff 直接计算结构化 patch；
+ * - 对 Codex apply_patch 等原始 patch 格式，先解析成统一的 PatchHunk[] 再走同一条高亮管线；
+ * - 高亮管线优先按文件扩展名用 Shiki 对源码做语法高亮，再叠加词级 diff 标记；
+ *   语言未知或高亮失败时降级为纯 diff 高亮，再次失败时降级为转义纯文本。
  */
 
 import type { EditAugment, PatchHunk } from "@scholaraio-hub/shared";
 import { diffWordsWithSpace, structuredPatch } from "diff";
 import { getLanguageForPath, highlightCode } from "../highlighting/index.js";
 
-/** Number of context lines to include in the diff */
+/** diff 上下文行数：每个变更区块前后各保留 3 行不变内容，方便阅读时定位改动位置 */
 const CONTEXT_LINES = 3;
 
 /**
- * Input for computing an edit augment.
+ * 计算 edit augment 所需的输入，对应 Edit tool_use 的标准参数。
  */
 export interface EditInput {
   file_path: string;
@@ -30,8 +32,9 @@ interface DiffHtmlInput {
 }
 
 /**
- * Convert jsdiff patch hunks to our PatchHunk format.
- * jsdiff hunks have the same structure but we need to add line prefixes.
+ * 将 jsdiff 返回的 patch hunk 转换为项目内部的 PatchHunk 格式。
+ * jsdiff hunk 结构与内部格式基本一致，主要差异是需要过滤掉
+ * "\ No newline at end of file" 这类对 UI 展示无用的行。
  */
 function convertHunks(
   hunks: Array<{
@@ -47,27 +50,29 @@ function convertHunks(
     oldLines: hunk.oldLines,
     newStart: hunk.newStart,
     newLines: hunk.newLines,
-    // Filter out "\ No newline at end of file" - not useful for UI display
+    // 过滤掉 "\ No newline at end of file"，该行对前端展示无意义
     lines: hunk.lines.filter((line) => line !== "\\ No newline at end of file"),
   }));
 }
 
 /**
- * Convert structured patch hunks to unified diff text for highlighting.
+ * 将结构化 patch hunk 还原为 unified diff 纯文本。
+ * 用于语法高亮降级路径：当按源码语言高亮失败时，将 diff 文本传给 Shiki 的 "diff" 语言高亮器。
  */
 function patchToUnifiedText(hunks: PatchHunk[]): string {
   const lines: string[] = [];
 
   for (const hunk of hunks) {
-    // Add hunk header
+    // 写入 hunk 头部，格式为标准 unified diff 的 @@ 行
     lines.push(`@@ -${hunk.oldStart},${hunk.oldLines} +${hunk.newStart},${hunk.newLines} @@`);
-    // Add diff lines (already prefixed with ' ', '-', or '+')
+    // 写入 diff 行，每行已包含 ' '（上下文）、'-'（删除）或 '+'（新增）前缀
     lines.push(...hunk.lines);
   }
 
   return lines.join("\n");
 }
 
+/** 统计 hunk 行列表中属于旧文件（上下文行 + 删除行）的行数 */
 function countOldLinesInHunk(lines: string[]): number {
   let count = 0;
   for (const line of lines) {
@@ -79,6 +84,7 @@ function countOldLinesInHunk(lines: string[]): number {
   return count;
 }
 
+/** 统计 hunk 行列表中属于新文件（上下文行 + 新增行）的行数 */
 function countNewLinesInHunk(lines: string[]): number {
   let count = 0;
   for (const line of lines) {
@@ -90,12 +96,24 @@ function countNewLinesInHunk(lines: string[]): number {
   return count;
 }
 
+/**
+ * 从 hunk 行重建合成 diff 输入（oldString / newString）。
+ * 适用于只有 PatchHunk[] 而没有原始文件内容的场景（如 Codex apply_patch 持久化行），
+ * 从 hunk 行逆向还原两侧字符串，再送入语法高亮管线。
+ */
 interface SyntheticDiffInput {
   oldString: string;
   newString: string;
   hunks: PatchHunk[];
 }
 
+/**
+ * 从 PatchHunk[] 逆向构建合成 diff 输入。
+ *
+ * 遍历所有 hunk 行，将上下文行（' '）和删除行（'-'）合并为 oldString，
+ * 将上下文行（' '）和新增行（'+'）合并为 newString，同时将 hunk 的行号
+ * 重置为从第 1 行起连续编号，确保后续 Shiki 高亮时行索引对齐。
+ */
 function buildSyntheticDiffInput(hunks: PatchHunk[]): SyntheticDiffInput {
   const oldLines: string[] = [];
   const newLines: string[] = [];
@@ -149,8 +167,11 @@ function buildSyntheticDiffInput(hunks: PatchHunk[]): SyntheticDiffInput {
 }
 
 /**
- * Extract the inner content of each <span class="line">...</span> from Shiki HTML.
- * Handles nested spans by counting depth.
+ * 从 Shiki 输出的 HTML 中提取每个 `<span class="line">` 的内部内容。
+ *
+ * Shiki 为每行代码生成一个 `<span class="line">...</span>`，内部可能嵌套多层
+ * 语法着色 span。本函数通过深度计数追踪嵌套，精确定位每行的起止位置，
+ * 返回每行的内层 HTML（不含外层 line span 标签自身），供后续拼接 diff 行时使用。
  */
 function extractShikiLines(html: string): string[] {
   const lines: string[] = [];
@@ -162,7 +183,7 @@ function extractShikiLines(html: string): string[] {
     let depth = 1;
     let pos = startPos;
 
-    // Find the matching closing </span> by tracking nesting depth
+    // 通过追踪 span 嵌套深度找到与起始 <span> 匹配的闭合 </span>
     while (depth > 0 && pos < html.length) {
       const nextOpen = html.indexOf("<span", pos);
       const nextClose = html.indexOf("</span>", pos);
@@ -171,13 +192,13 @@ function extractShikiLines(html: string): string[] {
 
       if (nextOpen !== -1 && nextOpen < nextClose) {
         depth++;
-        pos = nextOpen + 5; // Move past "<span"
+        pos = nextOpen + 5; // 跳过 "<span"，5 个字符
       } else {
         depth--;
         if (depth === 0) {
           lines.push(html.slice(startPos, nextClose));
         }
-        pos = nextClose + 7; // Move past "</span>"
+        pos = nextClose + 7; // 跳过 "</span>"，7 个字符
       }
     }
     match = lineStartRegex.exec(html);
@@ -187,34 +208,39 @@ function extractShikiLines(html: string): string[] {
 }
 
 /**
- * Information about word-level diffs for specific lines within a hunk.
+ * 一个 hunk 内各行的词级 diff 结果，以行绝对索引（0-based）为键。
  */
 interface HunkWordDiffs {
-  /** Map from old line index (0-based within oldLines array) to word diff */
+  /** 旧文件行索引（在 oldLines 数组中的 0-based 绝对位置）→ 词级 diff 片段列表 */
   oldLineDiffs: Map<number, WordDiffSegment[]>;
-  /** Map from new line index (0-based within newLines array) to word diff */
+  /** 新文件行索引（在 newLines 数组中的 0-based 绝对位置）→ 词级 diff 片段列表 */
   newLineDiffs: Map<number, WordDiffSegment[]>;
 }
 
 /**
- * Pre-compute word diffs for replacement pairs in a hunk.
- * Returns maps from line indices to word diffs.
+ * 预计算单个 hunk 中所有替换行对的词级 diff。
+ *
+ * 遍历 hunk 行，将连续的删除行（'-'）和新增行（'+'）两两配对；
+ * 对每个配对调用 computeWordDiff，若存在实际变更则以行的绝对索引为键
+ * 存入返回的映射中，供 highlightDiffWithSyntax 在构建 diff HTML 时按行查找。
+ *
+ * @param hunk - 待处理的 patch hunk
+ * @param hunkOldStartIdx - 该 hunk 旧文件起始行在 oldLines 数组中的 0-based 绝对索引
+ * @param hunkNewStartIdx - 该 hunk 新文件起始行在 newLines 数组中的 0-based 绝对索引
  */
 function computeHunkWordDiffs(
   hunk: PatchHunk,
-  hunkOldStartIdx: number, // Starting index in oldLines for this hunk
-  hunkNewStartIdx: number, // Starting index in newLines for this hunk
+  hunkOldStartIdx: number,
+  hunkNewStartIdx: number,
 ): HunkWordDiffs {
   const oldLineDiffs = new Map<number, WordDiffSegment[]>();
   const newLineDiffs = new Map<number, WordDiffSegment[]>();
 
-  // Find replacement pairs in this hunk
+  // findReplacePairs 用于识别连续 -/+ 行对，此处只取配对结果（pairs 字段暂不使用，
+  // 实际配对逻辑在下方的 flushPairs 中重新实现以携带绝对行索引）
   const { pairs } = findReplacePairs(hunk.lines);
 
-  // For each pair, compute word diff and store by absolute line index
-  // We need to map the pair's relative indices back to the oldLines/newLines arrays
-
-  // Track how many - and + lines we've seen to compute absolute indices
+  // 分别追踪旧文件和新文件的行偏移量，用于计算每行在全局 oldLines/newLines 数组中的绝对索引
   let oldOffset = 0;
   let newOffset = 0;
   let currentRemovals: Array<{ absIdx: number; text: string }> = [];
@@ -227,7 +253,7 @@ function computeHunkWordDiffs(
       const addition = currentAdditions[i];
       if (removal && addition) {
         const wordDiff = computeWordDiff(removal.text, addition.text);
-        // Only add if there are actual changes (not all unchanged)
+        // 仅在词级 diff 确实存在变更时才记录，纯相同的配对行无需标记
         const hasChanges = wordDiff.some((seg) => seg.type === "removed" || seg.type === "added");
         if (hasChanges) {
           oldLineDiffs.set(removal.absIdx, wordDiff);
@@ -244,7 +270,7 @@ function computeHunkWordDiffs(
     const text = line.slice(1);
 
     if (prefix === "-") {
-      // If we were collecting additions, flush first
+      // 遇到新的删除行前若已有积累的新增行，先将当前组刷出配对
       if (currentAdditions.length > 0) {
         flushPairs();
       }
@@ -260,25 +286,31 @@ function computeHunkWordDiffs(
       });
       newOffset++;
     } else if (prefix === " ") {
+      // 上下文行：当前组结束，刷出配对并推进两侧偏移
       flushPairs();
       oldOffset++;
       newOffset++;
     } else if (line.startsWith("@@")) {
+      // hunk 头部：重置当前组
       flushPairs();
     }
   }
 
-  // Flush any remaining pairs
+  // 刷出行尾残余的未配对组
   flushPairs();
 
   return { oldLineDiffs, newLineDiffs };
 }
 
 /**
- * Build syntax-highlighted diff HTML by highlighting old_string and new_string
- * separately with the file's language, then reconstructing the diff.
+ * 用源码语言的语法高亮构建 diff HTML。
  *
- * @returns Highlighted HTML or null if language is unknown/unsupported
+ * 核心思路：分别对 oldString 和 newString 整体做 Shiki 语法高亮，再按 hunk 行顺序
+ * 从对应侧取出已高亮的行，并叠加词级 diff 标记，最终拼合成带行类型 CSS 类的 HTML。
+ * 这样既保留了语言级别的着色（关键字、字符串等），又能精确标出行内的增删词。
+ *
+ * @returns 高亮后的 HTML 字符串；文件扩展名未知或 Shiki 高亮失败时返回 null，
+ *          调用方应降级为纯 diff 高亮。
  */
 async function highlightDiffWithSyntax(
   oldString: string,
@@ -286,29 +318,28 @@ async function highlightDiffWithSyntax(
   hunks: PatchHunk[],
   filePath: string,
 ): Promise<string | null> {
-  // Detect language from file extension
+  // 根据文件扩展名识别语言；未知扩展名无法做源码高亮，直接返回 null 触发降级
   const lang = getLanguageForPath(filePath);
   if (!lang) return null;
 
-  // Highlight both strings with the file's language
-  // Handle empty strings - highlightCode returns null for empty input
+  // 分别对旧版本和新版本整体高亮；空字符串时 highlightCode 返回 null，单独处理避免误判
   const oldResult = oldString.length > 0 ? await highlightCode(oldString, lang) : null;
   const newResult = newString.length > 0 ? await highlightCode(newString, lang) : null;
 
-  // If both fail (not just empty), fall back
+  // 非空字符串高亮失败（语言不支持或内部错误）时返回 null，触发降级
   if (!oldResult && oldString.length > 0) return null;
   if (!newResult && newString.length > 0) return null;
 
-  // Extract lines from Shiki HTML
+  // 从 Shiki HTML 中逐行提取内层高亮 HTML
   const oldLines = oldResult ? extractShikiLines(oldResult.html) : [];
   const newLines = newResult ? extractShikiLines(newResult.html) : [];
 
-  // Pre-compute word diffs for all hunks
+  // 预计算所有 hunk 的词级 diff，合并为全局映射供后续按行查找
   const allOldLineDiffs = new Map<number, WordDiffSegment[]>();
   const allNewLineDiffs = new Map<number, WordDiffSegment[]>();
 
   for (const hunk of hunks) {
-    const hunkOldStartIdx = hunk.oldStart - 1; // Convert to 0-indexed
+    const hunkOldStartIdx = hunk.oldStart - 1; // 转为 0-based 索引
     const hunkNewStartIdx = hunk.newStart - 1;
     const { oldLineDiffs, newLineDiffs } = computeHunkWordDiffs(
       hunk,
@@ -316,7 +347,7 @@ async function highlightDiffWithSyntax(
       hunkNewStartIdx,
     );
 
-    // Merge into global maps
+    // 合并到全局映射
     for (const [idx, diff] of oldLineDiffs) {
       allOldLineDiffs.set(idx, diff);
     }
@@ -325,16 +356,16 @@ async function highlightDiffWithSyntax(
     }
   }
 
-  // Build diff HTML by mapping hunk lines to highlighted source lines
+  // 按 hunk 顺序拼合最终 diff HTML
   const resultLines: string[] = [];
 
   for (const hunk of hunks) {
-    // Add hunk header (hidden by CSS but needed for tests)
+    // hunk 头部行（CSS 可隐藏，但测试中需要用于定位）
     resultLines.push(
       `<span class="line line-hunk">@@ -${hunk.oldStart},${hunk.oldLines} +${hunk.newStart},${hunk.newLines} @@</span>`,
     );
 
-    let oldIdx = hunk.oldStart - 1; // 0-indexed
+    let oldIdx = hunk.oldStart - 1; // 0-based
     let newIdx = hunk.newStart - 1;
 
     for (const line of hunk.lines) {
@@ -343,32 +374,30 @@ async function highlightDiffWithSyntax(
       let content: string;
 
       if (prefix === " ") {
-        // Context line - use old (identical in both)
+        // 上下文行：旧新两侧内容相同，取旧侧高亮行即可
         lineClass = "line line-context";
         content = oldLines[oldIdx++] ?? "";
         newIdx++;
       } else if (prefix === "-") {
-        // Deleted line - use old
+        // 删除行：取旧侧高亮行，若有词级 diff 则注入标记
         lineClass = "line line-deleted";
         content = oldLines[oldIdx] ?? "";
-        // Apply word diff if available
         const wordDiff = allOldLineDiffs.get(oldIdx);
         if (wordDiff) {
           content = injectWordDiffMarkers(content, wordDiff, "old");
         }
         oldIdx++;
       } else if (prefix === "+") {
-        // Inserted line - use new
+        // 新增行：取新侧高亮行，若有词级 diff 则注入标记
         lineClass = "line line-inserted";
         content = newLines[newIdx] ?? "";
-        // Apply word diff if available
         const wordDiff = allNewLineDiffs.get(newIdx);
         if (wordDiff) {
           content = injectWordDiffMarkers(content, wordDiff, "new");
         }
         newIdx++;
       } else {
-        continue; // Skip unexpected
+        continue; // 跳过不认识的前缀
       }
 
       resultLines.push(
@@ -380,24 +409,30 @@ async function highlightDiffWithSyntax(
   return `<pre class="shiki"><code class="language-${lang}">${resultLines.join("\n")}</code></pre>`;
 }
 
+/**
+ * 带降级策略的 diff HTML 构建器，按以下优先级尝试三种渲染方式：
+ * 1. 按源码语言语法高亮（highlightDiffWithSyntax）——效果最佳；
+ * 2. 仅对 diff 文本做高亮（Shiki "diff" 语言）——语言未知时的备选；
+ * 3. 转义纯文本包裹在 `<pre><code>` 中——最后保底方案。
+ */
 async function buildDiffHtmlWithFallback({
   oldString,
   newString,
   hunks,
   filePath,
 }: DiffHtmlInput): Promise<string> {
-  // Try syntax-highlighted diff first (highlights code with file's language)
+  // 优先尝试按源码语言做语法高亮 diff
   let diffHtml = await highlightDiffWithSyntax(oldString, newString, hunks, filePath);
 
-  // Fall back to diff-only highlighting if syntax highlighting fails
   if (!diffHtml) {
+    // 语法高亮不可用时，将 hunk 还原为 unified diff 文本交给 Shiki 的 diff 语言处理器
     const diffText = patchToUnifiedText(hunks);
     const highlightResult = await highlightCode(diffText, "diff");
     if (highlightResult) {
-      // Post-process to add line type classes for background colors
+      // 后处理：给每行加上行类型 CSS 类，使背景色与源码语言高亮路径保持一致
       diffHtml = addDiffLineClasses(highlightResult.html);
     } else {
-      // Fallback to plain text wrapped in pre/code
+      // 最终降级：输出转义纯文本，确保任何情况下都能展示内容
       diffHtml = `<pre class="shiki"><code class="language-diff">${escapeHtml(diffText)}</code></pre>`;
     }
   }
@@ -406,8 +441,13 @@ async function buildDiffHtmlWithFallback({
 }
 
 /**
- * Compute diff HTML from a parsed structured patch without original file text.
- * Used for persisted Codex apply_patch rows.
+ * 从结构化 patch（PatchHunk[]）直接计算 diff HTML，无需原始文件内容。
+ *
+ * 适用于历史会话中已持久化的 Codex apply_patch 行：这类记录只有 hunk 数据
+ * 而没有完整的 old_string / new_string，通过 buildSyntheticDiffInput 逆向
+ * 重建两侧字符串后走统一的高亮管线。
+ *
+ * @returns 高亮 HTML 字符串，patch 为空时返回 null
  */
 export async function computeStructuredPatchDiffHtml(
   filePath: string,
@@ -431,12 +471,16 @@ export async function computeStructuredPatchDiffHtml(
 }
 
 /**
- * Compute an edit augment for an Edit tool_use.
+ * 为 Edit tool_use 块计算完整的 edit augment。
  *
- * @param toolUseId - The tool_use ID to associate with this augment
- * @param input - The Edit tool input containing file_path, old_string, new_string
- * @param contextLines - Number of context lines to include (default: 3)
- * @returns EditAugment with structuredPatch and highlighted diff HTML
+ * 这是标准 Edit 调用（带有 old_string / new_string）的主入口：
+ * 使用 jsdiff 计算结构化 patch，再经 buildDiffHtmlWithFallback 生成高亮 HTML，
+ * 最终将两者打包为 EditAugment 返回，供前端直接渲染。
+ *
+ * @param toolUseId - 关联的 tool_use 块 ID，用于前端按 ID 查找对应 augment
+ * @param input - Edit 工具的输入参数：file_path、old_string、new_string
+ * @param contextLines - diff 上下文行数，默认 3
+ * @returns 包含 structuredPatch 和高亮 diffHtml 的 EditAugment
  */
 export async function computeEditAugment(
   toolUseId: string,
@@ -445,18 +489,18 @@ export async function computeEditAugment(
 ): Promise<EditAugment> {
   const { file_path, old_string, new_string } = input;
 
-  // Compute structured patch using jsdiff
+  // 使用 jsdiff 计算 unified diff，得到结构化 hunk 数组
   const patch = structuredPatch(
     file_path,
     file_path,
     old_string,
     new_string,
-    "", // oldHeader
+    "", // oldHeader（不需要文件头注释）
     "", // newHeader
     { context: contextLines },
   );
 
-  // Convert hunks to our format
+  // 转换为内部 PatchHunk 格式
   const structuredPatchResult = convertHunks(patch.hunks);
 
   const diffHtml = await buildDiffHtmlWithFallback({
@@ -476,17 +520,22 @@ export async function computeEditAugment(
 }
 
 /**
- * Add diff line type classes to shiki HTML output.
- * Detects line content and adds classes like "line-deleted", "line-inserted", "line-context", "line-hunk".
- * This enables CSS background colors for traditional diff styling.
+ * 为 Shiki 输出的 diff HTML 中每行添加行类型 CSS 类。
+ *
+ * Shiki 用 "diff" 语言高亮时只产出通用的 `<span class="line">`，
+ * 本函数检测每行可见文本的第一个字符，将其替换为带语义类的版本：
+ * - `-` → `line-deleted`（删除行，红色背景）
+ * - `+` → `line-inserted`（新增行，绿色背景）
+ * - `@` → `line-hunk`（hunk 头部，灰色背景）
+ * - ` ` → `line-context`（上下文行，无特殊背景）
+ *
+ * 与 highlightDiffWithSyntax 保持相同的类名约定，确保 CSS 样式通用。
  */
 function addDiffLineClasses(html: string): string {
-  // Match each <span class="line">...</span> and inspect content
+  // 匹配每个 `<span class="line">...</span>`，检查其可见文本的首字符
   return html.replace(/<span class="line">([\s\S]*?)<\/span>/g, (_match, content: string) => {
-    // Decode HTML entities to check the actual first character
+    // 先解码 HTML 实体，再剥离标签，得到实际的可见文本首字符
     const decoded = content.replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&amp;/g, "&");
-
-    // Get the visible text (strip HTML tags)
     const textContent = decoded.replace(/<[^>]*>/g, "");
     const firstChar = textContent[0];
 
@@ -505,9 +554,7 @@ function addDiffLineClasses(html: string): string {
   });
 }
 
-/**
- * Escape HTML special characters for fallback rendering.
- */
+/** 转义 HTML 特殊字符，用于降级渲染时将代码内容安全插入 HTML */
 function escapeHtml(text: string): string {
   return text
     .replace(/&/g, "&amp;")
@@ -518,37 +565,36 @@ function escapeHtml(text: string): string {
 }
 
 /**
- * Represents a paired line in a replacement hunk (a line that was modified).
+ * 替换 hunk 中一对被修改的行（旧行 → 新行），用于词级 diff 配对。
  */
 interface LinePair {
-  oldLineIndex: number; // Index into the removed lines array (0-based within the group)
-  newLineIndex: number; // Index into the added lines array (0-based within the group)
-  oldText: string; // The text content (without the - prefix)
-  newText: string; // The text content (without the + prefix)
+  oldLineIndex: number; // 在当前删除行组中的 0-based 相对索引
+  newLineIndex: number; // 在当前新增行组中的 0-based 相对索引
+  oldText: string; // 旧行文本（去掉 '-' 前缀）
+  newText: string; // 新行文本（去掉 '+' 前缀）
 }
 
 /**
- * Result of analyzing a hunk for replacement pairs.
+ * 分析单个 hunk 后得到的替换行配对结果。
  */
 interface HunkReplacePairs {
   pairs: LinePair[];
-  // Lines that don't have a pair (pure additions/deletions)
+  /** 无法配对的多余删除行（删除行数 > 新增行数时出现） */
   unpairedRemovals: Array<{ index: number; text: string }>;
+  /** 无法配对的多余新增行（新增行数 > 删除行数时出现） */
   unpairedAdditions: Array<{ index: number; text: string }>;
 }
 
 /**
- * Find consecutive -/+ line pairs in diff hunk lines that represent "replacements".
- * These pairs are candidates for word-level diffing.
+ * 在 hunk 行中找出连续的 -/+ 行对，这些行对代表"被替换的行"，是词级 diff 的候选。
  *
- * Pairing strategy:
- * - Match removed lines with added lines in order (first - with first +, etc.)
- * - If there are more - than +, extra removed lines have no pair
- * - If there are more + than -, extra added lines have no pair
- * - Context lines (space prefix) or hunk headers (@@) reset the grouping
+ * 配对策略：
+ * - 按出现顺序将删除行与新增行一一匹配（第 1 个 '-' 与第 1 个 '+' 配对，以此类推）；
+ * - 删除行多于新增行时，多余的删除行记为未配对；反之亦然；
+ * - 上下文行（空格前缀）或 hunk 头部（@@）会重置当前配对组。
  *
- * @param hunkLines - Array of diff lines with prefixes: ' ', '-', '+', or starting with '@@'
- * @returns Object containing pairs and unpaired lines
+ * @param hunkLines - hunk 行数组，每行以 ' '、'-'、'+' 或 '@@' 开头
+ * @returns 配对结果及未配对行
  */
 function findReplacePairs(hunkLines: string[]): HunkReplacePairs {
   const result: HunkReplacePairs = {
@@ -557,16 +603,14 @@ function findReplacePairs(hunkLines: string[]): HunkReplacePairs {
     unpairedAdditions: [],
   };
 
-  // Collect removals and additions in the current contiguous group
+  // 暂存当前连续删除/新增组，遇到分隔符时统一配对
   let currentRemovals: Array<{ index: number; text: string }> = [];
   let currentAdditions: Array<{ index: number; text: string }> = [];
 
   /**
-   * Process the current group of removals and additions, creating pairs
-   * and tracking unpaired lines.
+   * 将当前积累的删除行与新增行按顺序配对，多余的行记为未配对，然后清空缓存。
    */
   function flushGroup() {
-    // Pair up removals and additions in order
     const pairCount = Math.min(currentRemovals.length, currentAdditions.length);
 
     for (let i = 0; i < pairCount; i++) {
@@ -582,7 +626,7 @@ function findReplacePairs(hunkLines: string[]): HunkReplacePairs {
       }
     }
 
-    // Track unpaired removals (when more - than +)
+    // 删除行比新增行多时，多余的删除行无法配对
     for (let i = pairCount; i < currentRemovals.length; i++) {
       const removal = currentRemovals[i];
       if (removal) {
@@ -590,7 +634,7 @@ function findReplacePairs(hunkLines: string[]): HunkReplacePairs {
       }
     }
 
-    // Track unpaired additions (when more + than -)
+    // 新增行比删除行多时，多余的新增行无法配对
     for (let i = pairCount; i < currentAdditions.length; i++) {
       const addition = currentAdditions[i];
       if (addition) {
@@ -598,7 +642,6 @@ function findReplacePairs(hunkLines: string[]): HunkReplacePairs {
       }
     }
 
-    // Reset for next group
     currentRemovals = [];
     currentAdditions = [];
   }
@@ -607,8 +650,7 @@ function findReplacePairs(hunkLines: string[]): HunkReplacePairs {
     const prefix = line[0];
 
     if (prefix === "-") {
-      // If we were collecting additions, flush the group first
-      // (additions after removals is normal, but - after + means new group)
+      // 删除行之前若已有新增行（+ 后跟 -），说明进入新组，先刷出上一组
       if (currentAdditions.length > 0) {
         flushGroup();
       }
@@ -617,26 +659,26 @@ function findReplacePairs(hunkLines: string[]): HunkReplacePairs {
         text: line.slice(1),
       });
     } else if (prefix === "+") {
-      // Additions are added to current group
+      // 新增行直接追加到当前组（- 后跟 + 是正常的替换模式）
       currentAdditions.push({
         index: currentAdditions.length,
         text: line.slice(1),
       });
     } else if (prefix === " " || line.startsWith("@@")) {
-      // Context line or hunk header - flush current group and reset
+      // 上下文行或 hunk 头部：当前组结束，刷出配对并重置
       flushGroup();
     }
-    // Skip other lines (like "\ No newline at end of file")
+    // "\ No newline at end of file" 等其他行直接跳过
   }
 
-  // Flush any remaining group
+  // 刷出末尾残余组
   flushGroup();
 
   return result;
 }
 
 /**
- * Represents a segment of a word-level diff.
+ * 词级 diff 的单个片段，描述两行之间某段文本的变更状态。
  */
 export interface WordDiffSegment {
   text: string;
@@ -644,14 +686,16 @@ export interface WordDiffSegment {
 }
 
 /**
- * Compute word-level diff between two strings.
- * Uses jsdiff's diffWordsWithSpace to find word-by-word changes.
- * Unlike diffWords, this treats whitespace as significant, so leading
- * indentation is preserved as unchanged when only words change.
+ * 计算两行之间的词级 diff。
  *
- * @param oldLine - The original string
- * @param newLine - The modified string
- * @returns Array of diff segments with their types
+ * 使用 jsdiff 的 diffWordsWithSpace（而非 diffWords），区别在于：
+ * diffWordsWithSpace 将空白字符视为有意义的内容，
+ * 因此当只有词语变化时，行首缩进会被标记为"未变"而非"删除+新增"。
+ * 这对代码 diff 而言更准确，避免缩进变化淹没真正的词语变化。
+ *
+ * @param oldLine - 旧行文本（不含 '-' 前缀）
+ * @param newLine - 新行文本（不含 '+' 前缀）
+ * @returns 词级 diff 片段数组
  */
 function computeWordDiff(oldLine: string, newLine: string): WordDiffSegment[] {
   const changes = diffWordsWithSpace(oldLine, newLine);
@@ -662,9 +706,7 @@ function computeWordDiff(oldLine: string, newLine: string): WordDiffSegment[] {
   }));
 }
 
-/**
- * Maps HTML entity names to their decoded characters.
- */
+/** 常用 HTML 命名实体到原始字符的映射表，用于词级 diff 注入时对齐纯文本与 HTML 偏移 */
 const HTML_ENTITY_MAP: Record<string, string> = {
   "&lt;": "<",
   "&gt;": ">",
@@ -675,18 +717,21 @@ const HTML_ENTITY_MAP: Record<string, string> = {
 };
 
 /**
- * Represents a segment of HTML that is either text content or a tag.
+ * HTML 段，表示一段纯文本内容或一个 HTML 标签。
+ * 用于在保持 HTML 结构完整的同时，将词级 diff 标记注入到语法高亮 HTML 中。
  */
 interface HtmlSegment {
   type: "text" | "tag";
   content: string;
-  // For text segments, the decoded plain text
+  /** 仅文本段有效：content 中 HTML 实体解码后的纯文本，用于与词级 diff 文本对齐 */
   plainText?: string;
 }
 
 /**
- * Parse HTML into segments of text content and tags.
- * Text content has HTML entities decoded for matching against plain text.
+ * 将 HTML 字符串拆分为文本段和标签段的交替序列。
+ *
+ * 文本段的 plainText 字段预先解码了 HTML 实体，便于后续按字符数与
+ * 词级 diff 文本对齐；content 字段保留原始 HTML 编码，用于输出时原样拼接。
  */
 function parseHtmlSegments(html: string): HtmlSegment[] {
   const segments: HtmlSegment[] = [];
@@ -694,7 +739,7 @@ function parseHtmlSegments(html: string): HtmlSegment[] {
   let lastIndex = 0;
 
   for (const match of html.matchAll(tagRegex)) {
-    // Add text content before this tag
+    // 标签前的文本内容
     if (match.index > lastIndex) {
       const content = html.slice(lastIndex, match.index);
       segments.push({
@@ -704,7 +749,7 @@ function parseHtmlSegments(html: string): HtmlSegment[] {
       });
     }
 
-    // Add the tag itself
+    // 标签本身（开始标签、结束标签或自闭合标签）
     segments.push({
       type: "tag",
       content: match[0],
@@ -713,7 +758,7 @@ function parseHtmlSegments(html: string): HtmlSegment[] {
     lastIndex = match.index + match[0].length;
   }
 
-  // Add any remaining text after the last tag
+  // 最后一个标签之后的剩余文本
   if (lastIndex < html.length) {
     const content = html.slice(lastIndex);
     segments.push({
@@ -727,17 +772,17 @@ function parseHtmlSegments(html: string): HtmlSegment[] {
 }
 
 /**
- * Decode HTML entities in a string to their plain text equivalents.
- * Handles named entities (&lt;), decimal entities (&#60;), and hex entities (&#x3C;).
+ * 将 HTML 实体解码为对应的纯文本字符。
+ * 支持命名实体（&lt;）、十进制数字实体（&#60;）和十六进制数字实体（&#x3C;）。
  */
 function decodeHtmlEntities(html: string): string {
   return html.replace(/&[^;]+;/g, (entity) => {
-    // Check named entity map first
+    // 先查命名实体映射表
     if (HTML_ENTITY_MAP[entity]) {
       return HTML_ENTITY_MAP[entity];
     }
 
-    // Handle numeric entities: &#60; (decimal) or &#x3C; (hex)
+    // 处理数字实体：&#60;（十进制）或 &#x3C;（十六进制）
     if (entity.startsWith("&#")) {
       const isHex = entity[2] === "x" || entity[2] === "X";
       const numStr = isHex ? entity.slice(3, -1) : entity.slice(2, -1);
@@ -747,52 +792,53 @@ function decodeHtmlEntities(html: string): string {
       }
     }
 
+    // 无法识别的实体保持原样
     return entity;
   });
 }
 
 /**
- * Inject word-level diff markers into syntax-highlighted HTML.
+ * 将词级 diff 标记注入到语法高亮 HTML 中，同时不破坏 Shiki 产生的 span 嵌套结构。
  *
- * This function takes syntax-highlighted HTML (from Shiki) and a word diff,
- * then wraps changed portions in <span class="diff-word-removed"> or
- * <span class="diff-word-added"> tags without breaking the HTML structure.
+ * 核心问题：Shiki 按语法着色生成嵌套 span，而词级 diff 是按字符区间划分的；
+ * 两者的边界往往不对齐。本函数同步遍历词级 diff 片段和 HTML 段（文本/标签交替），
+ * 对需要高亮的字符区间包裹 `<span class="diff-word-removed/added">`，
+ * 遇到中间的 HTML 标签时先关闭高亮 span、输出标签、再重新开启，
+ * 确保最终 HTML 结构合法。
  *
- * @param html - Syntax-highlighted HTML for a single line (inner content of <span class="line">)
- * @param wordDiff - Word diff segments from computeWordDiff()
- * @param mode - Whether this is the 'old' (removed) or 'new' (added) line
- * @returns HTML with word diff markers injected
+ * @param html - 单行的语法高亮 HTML（`<span class="line">` 的内层内容）
+ * @param wordDiff - computeWordDiff() 返回的词级 diff 片段列表
+ * @param mode - 'old' 表示处理删除行（标记 removed 片段），'new' 表示处理新增行（标记 added 片段）
+ * @returns 注入了词级 diff 标记的 HTML 字符串
  */
 function injectWordDiffMarkers(
   html: string,
   wordDiff: WordDiffSegment[],
   mode: "old" | "new",
 ): string {
-  // Determine which segment type to highlight based on mode
+  // 根据模式确定需要高亮的片段类型和对应 CSS 类
   const targetType = mode === "old" ? "removed" : "added";
   const cssClass = mode === "old" ? "diff-word-removed" : "diff-word-added";
 
-  // Build the plain text that should appear in this version
-  // In 'old' mode: unchanged + removed
-  // In 'new' mode: unchanged + added
+  // 筛选出当前模式下应出现在 HTML 中的片段：
+  // old 模式 → 保留 unchanged + removed；new 模式 → 保留 unchanged + added
   const relevantSegments = wordDiff.filter(
     (seg) => seg.type === "unchanged" || seg.type === targetType,
   );
 
-  // Parse HTML into text and tag segments
+  // 将 HTML 拆分为文本段和标签段，方便按字符数推进
   const htmlSegments = parseHtmlSegments(html);
 
-  // Build result by walking through word diff segments and HTML segments together
   const result: string[] = [];
   let htmlSegmentIndex = 0;
-  let htmlTextOffset = 0; // Offset within current text segment's plainText
+  let htmlTextOffset = 0; // 当前文本段内已消费的纯文本字符数
 
   for (const segment of relevantSegments) {
     const segmentText = segment.text;
     let remaining = segmentText.length;
     const needsHighlight = segment.type === targetType;
 
-    // Track if we're in the middle of a highlight span
+    // 累积需要包裹在高亮 span 内的 HTML 片段
     let highlightParts: string[] = [];
 
     while (remaining > 0) {
@@ -800,10 +846,8 @@ function injectWordDiffMarkers(
       if (!htmlSeg) break;
 
       if (htmlSeg.type === "tag") {
-        // Tags pass through unchanged
-        // If we're collecting highlight parts, we need to close/reopen the highlight
+        // 标签原样透传；若当前正在积累高亮内容，先关闭高亮 span 再输出标签
         if (needsHighlight && highlightParts.length > 0) {
-          // Flush accumulated highlight parts before the tag
           result.push(`<span class="${cssClass}">${highlightParts.join("")}</span>`);
           highlightParts = [];
         }
@@ -812,24 +856,26 @@ function injectWordDiffMarkers(
         continue;
       }
 
-      // Text segment
+      // 文本段：按需取出所需字符数
       const plainText = htmlSeg.plainText ?? "";
       const availableText = plainText.slice(htmlTextOffset);
       const availableLen = availableText.length;
 
       if (availableLen === 0) {
-        // Move to next segment
+        // 当前文本段已耗尽，移到下一段
         htmlSegmentIndex++;
         htmlTextOffset = 0;
         continue;
       }
 
-      // How much of this text segment do we need?
       const takeLen = Math.min(remaining, availableLen);
-      const takenPlainText = availableText.slice(0, takeLen);
 
-      // Convert taken plain text back to HTML (re-encode entities)
-      const takenHtml = convertPlainTextToHtml(htmlSeg.content, htmlTextOffset, takenPlainText);
+      // 将纯文本区间映射回原始 HTML（含实体编码），确保输出时实体不被双重编码
+      const takenHtml = convertPlainTextToHtml(
+        htmlSeg.content,
+        htmlTextOffset,
+        availableText.slice(0, takeLen),
+      );
 
       if (needsHighlight) {
         highlightParts.push(takenHtml);
@@ -840,20 +886,19 @@ function injectWordDiffMarkers(
       remaining -= takeLen;
       htmlTextOffset += takeLen;
 
-      // If we've consumed this segment, move to next
       if (htmlTextOffset >= plainText.length) {
         htmlSegmentIndex++;
         htmlTextOffset = 0;
       }
     }
 
-    // Flush any remaining highlight parts
+    // 片段处理完毕后刷出剩余的高亮积累
     if (needsHighlight && highlightParts.length > 0) {
       result.push(`<span class="${cssClass}">${highlightParts.join("")}</span>`);
     }
   }
 
-  // Append any remaining HTML segments (tags after all text is consumed)
+  // 追加所有文本已消费后剩余的 HTML 段（通常是行尾的闭合标签）
   for (let i = htmlSegmentIndex; i < htmlSegments.length; i++) {
     const htmlSeg = htmlSegments[i];
     if (!htmlSeg) continue;
@@ -861,7 +906,7 @@ function injectWordDiffMarkers(
     if (htmlSeg.type === "tag") {
       result.push(htmlSeg.content);
     } else if (i === htmlSegmentIndex && htmlTextOffset > 0) {
-      // First remaining segment may have a partial offset
+      // 当前文本段仅部分消费，输出剩余部分
       const remainingText = (htmlSeg.plainText ?? "").slice(htmlTextOffset);
       if (remainingText.length > 0) {
         result.push(
@@ -869,7 +914,7 @@ function injectWordDiffMarkers(
         );
       }
     } else {
-      // Full text segment
+      // 完整文本段直接输出
       result.push(htmlSeg.content);
     }
   }
@@ -878,41 +923,41 @@ function injectWordDiffMarkers(
 }
 
 /**
- * Convert a portion of plain text back to its HTML representation,
- * using the original HTML as a reference for entity encoding.
+ * 将纯文本区间还原为其在原始 HTML 中对应的子字符串（含实体编码）。
  *
- * @param originalHtml - The original HTML text segment (with entities)
- * @param startPlainOffset - Starting offset in the decoded plain text
- * @param plainText - The plain text portion we want to convert
- * @returns The HTML representation of the plain text
+ * 由于 Shiki 输出的 HTML 中 `<`、`>`、`&` 等字符被编码为实体，
+ * 若直接按字符数截取 HTML 会产生偏移错误。本函数通过
+ * findHtmlOffsetForPlainTextOffset 将纯文本偏移映射回 HTML 偏移，
+ * 保证实体完整、不被截断。
+ *
+ * @param originalHtml - 原始 HTML 文本段（可能含实体编码，不含子标签）
+ * @param startPlainOffset - 目标区间在解码纯文本中的起始偏移（字符数）
+ * @param plainText - 需要还原的纯文本片段
+ * @returns 对应的原始 HTML 子字符串
  */
 function convertPlainTextToHtml(
   originalHtml: string,
   startPlainOffset: number,
   plainText: string,
 ): string {
-  // Find the starting position in the original HTML
   const htmlStart = findHtmlOffsetForPlainTextOffset(originalHtml, startPlainOffset);
-
-  // Find the ending position
   const htmlEnd = findHtmlOffsetForPlainTextOffset(
     originalHtml,
     startPlainOffset + plainText.length,
   );
-
   return originalHtml.slice(htmlStart, htmlEnd);
 }
 
 /**
- * Check if an HTML entity decodes to a single character.
- * Handles named entities, decimal entities (&#60;), and hex entities (&#x3C;).
+ * 判断给定字符串是否是一个能解码为单个字符的合法 HTML 实体。
+ * 支持命名实体（来自 HTML_ENTITY_MAP）、十进制数字实体（&#60;）和十六进制数字实体（&#x3C;）。
  */
 function isValidHtmlEntity(entity: string): boolean {
   if (HTML_ENTITY_MAP[entity]) {
     return true;
   }
 
-  // Check numeric entities: &#60; or &#x3C;
+  // 数字实体：&#60;（十进制）或 &#x3C;（十六进制）
   if (entity.startsWith("&#")) {
     const isHex = entity[2] === "x" || entity[2] === "X";
     const numStr = isHex ? entity.slice(3, -1) : entity.slice(2, -1);
@@ -924,25 +969,27 @@ function isValidHtmlEntity(entity: string): boolean {
 }
 
 /**
- * Find the position in HTML string that corresponds to a position in decoded plain text.
+ * 将解码纯文本中的字符偏移量映射回原始 HTML 字符串中的字节偏移量。
  *
- * @param html - HTML string (may contain entities)
- * @param plainOffset - Offset in the decoded plain text
- * @returns Offset in the HTML string
+ * HTML 中的实体（如 `&lt;`）在纯文本中只占 1 个字符，但在 HTML 中占多个字节；
+ * 本函数逐字符推进，遇到实体时整体跳过并只计 1 个纯文本字符，
+ * 从而保证截取 HTML 子串时实体不被从中间截断。
+ *
+ * @param html - 含实体的 HTML 文本段（不含子标签）
+ * @param plainOffset - 目标位置在解码纯文本中的字符数偏移
+ * @returns 对应的 HTML 字符串字节偏移
  */
 function findHtmlOffsetForPlainTextOffset(html: string, plainOffset: number): number {
   let htmlPos = 0;
   let plainPos = 0;
 
   while (plainPos < plainOffset && htmlPos < html.length) {
-    // Check for HTML entity
+    // 检测 HTML 实体：以 '&' 开头，找到对应的 ';' 后整体视为 1 个字符
     if (html[htmlPos] === "&") {
-      // Find the end of the entity
       const semiPos = html.indexOf(";", htmlPos);
       if (semiPos !== -1) {
         const entity = html.slice(htmlPos, semiPos + 1);
         if (isValidHtmlEntity(entity)) {
-          // This entity decodes to one character
           htmlPos = semiPos + 1;
           plainPos++;
           continue;
@@ -950,7 +997,7 @@ function findHtmlOffsetForPlainTextOffset(html: string, plainOffset: number): nu
       }
     }
 
-    // Regular character
+    // 普通字符，HTML 位置和纯文本位置同步推进
     htmlPos++;
     plainPos++;
   }
@@ -960,7 +1007,7 @@ function findHtmlOffsetForPlainTextOffset(html: string, plainOffset: number): nu
 
 /**
  * @internal
- * Exported for testing purposes only. Do not use in production code.
+ * 仅供测试使用，不得在生产代码中直接调用。
  */
 export const __test__ = {
   extractShikiLines,

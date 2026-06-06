@@ -87,8 +87,6 @@ function SessionPageContent({
       onAugment: streamingContext.dispatchAugment,
       onPending: streamingContext.dispatchPending,
       onStreamEnd: streamingContext.dispatchStreamEnd,
-      setCurrentMessageId: streamingContext.setCurrentMessageId,
-      captureHtml: streamingContext.captureStreamingHtml,
     };
   }, [streamingContext]);
 
@@ -97,7 +95,7 @@ function SessionPageContent({
     setSessionModel,
     messages,
     agentContent,
-    setAgentContent,
+    mergeAgentContent,
     toolUseToAgent,
     status: ownership,
     processState,
@@ -540,7 +538,7 @@ function SessionPageContent({
             {!loading ? (
               <AgentContentProvider
                 agentContent={agentContent}
-                setAgentContent={setAgentContent}
+                mergeAgentContent={mergeAgentContent}
                 toolUseToAgent={toolUseToAgent}
                 projectId={projectId}
                 sessionId={sessionId}

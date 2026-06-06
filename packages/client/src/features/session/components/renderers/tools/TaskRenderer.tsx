@@ -1,6 +1,5 @@
 import { useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
 import type { ZodError } from "zod";
-import { useSessionMetadata } from "../../../../../shared/contexts/SessionMetadataContext";
 import { AgentContentContext } from "../../../contexts/AgentContentContext";
 import { useSchemaValidationContext } from "../../../contexts/SchemaValidationContext";
 import { classifyToolError } from "../../../lib/classifyToolError";
@@ -154,7 +153,6 @@ function TaskInline({
   status: "pending" | "complete" | "error" | "aborted";
   toolUseId?: string;
 }) {
-  const { projectId, sessionId } = useSessionMetadata();
   const context = useContext(AgentContentContext);
   const {
     reportValidationError,
@@ -286,14 +284,14 @@ function TaskInline({
     const loadContent = async () => {
       setIsLoadingContent(true);
       try {
-        await context.loadAgentContent(projectId, sessionId, agentId);
+        await context.loadAgentContent(agentId);
       } finally {
         setIsLoadingContent(false);
       }
     };
 
     loadContent();
-  }, [isExpanded, agentId, context, projectId, sessionId]);
+  }, [isExpanded, agentId, context]);
 
   // Store validation errors for inline warning display
   const [validationErrors, setValidationErrors] = useState<ZodError | null>(null);
@@ -330,7 +328,7 @@ function TaskInline({
       setIsExpanded(true);
       setIsLoadingContent(true);
       try {
-        await context.loadAgentContent(projectId, sessionId, agentId);
+        await context.loadAgentContent(agentId);
       } finally {
         setIsLoadingContent(false);
       }

@@ -49,6 +49,50 @@ export function shouldEmitMessage(_message: SDKMessage): boolean {
   return true;
 }
 
+function getStreamEvent(message: SDKMessage): Record<string, unknown> | null {
+  if (message.type !== "stream_event") return null;
+  const event = (message as { event?: unknown }).event;
+  return event && typeof event === "object" ? (event as Record<string, unknown>) : null;
+}
+
+function extractStreamingMessageId(message: SDKMessage): string | null {
+  const event = getStreamEvent(message);
+  if (event?.type === "message_start") {
+    const startedMessage = event.message as Record<string, unknown> | undefined;
+    return typeof startedMessage?.id === "string" ? startedMessage.id : null;
+  }
+
+  if (message.type === "assistant" && typeof message.uuid === "string") {
+    return message.uuid;
+  }
+
+  return null;
+}
+
+function extractStreamingText(message: SDKMessage): string | null {
+  const event = getStreamEvent(message);
+  if (event?.type === "content_block_delta") {
+    const delta = event.delta as Record<string, unknown> | undefined;
+    if (delta?.type === "text_delta" && typeof delta.text === "string") {
+      return delta.text;
+    }
+  }
+
+  if (message.type === "assistant") {
+    const content =
+      (message as { message?: { content?: unknown }; content?: unknown }).message?.content ??
+      (message as { content?: unknown }).content;
+    return typeof content === "string" ? content : null;
+  }
+
+  return null;
+}
+
+function isStreamingCompleteMessage(message: SDKMessage): boolean {
+  const event = getStreamEvent(message);
+  return event?.type === "message_stop" || message.type === "result";
+}
+
 /**
  * Pending tool approval request.
  * The SDK's canUseTool callback creates this and waits for respondToInput.
@@ -749,11 +793,7 @@ export class Process {
     };
   }
 
-  /**
-   * Accumulate streaming text from a delta.
-   * Called by stream routes when processing stream_event messages.
-   */
-  accumulateStreamingText(messageId: string, text: string): void {
+  private accumulateStreamingText(messageId: string, text: string): void {
     if (this._streamingMessageId !== messageId) {
       // New streaming message, reset accumulator
       this._streamingMessageId = messageId;
@@ -763,12 +803,26 @@ export class Process {
     }
   }
 
-  /**
-   * Clear streaming text accumulator (called when stream ends).
-   */
-  clearStreamingText(): void {
+  private clearStreamingText(): void {
     this._streamingText = "";
     this._streamingMessageId = null;
+  }
+
+  private trackStreamingCatchUp(message: SDKMessage): void {
+    const startedMessageId = extractStreamingMessageId(message);
+    if (startedMessageId && this._streamingMessageId !== startedMessageId) {
+      this._streamingMessageId = startedMessageId;
+      this._streamingText = "";
+    }
+
+    const text = extractStreamingText(message);
+    if (text && this._streamingMessageId) {
+      this.accumulateStreamingText(this._streamingMessageId, text);
+    }
+
+    if (isStreamingCompleteMessage(message)) {
+      this.clearStreamingText();
+    }
   }
 
   /**
@@ -1690,6 +1744,10 @@ export class Process {
   }
 
   private emit(event: ProcessEvent): void {
+    if (event.type === "message") {
+      this.trackStreamingCatchUp(event.message);
+    }
+
     if (event.type === "state-change") {
       getLogger().debug(
         {

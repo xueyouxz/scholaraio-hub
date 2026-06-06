@@ -390,18 +390,16 @@ describe("createSessionSubscription", () => {
     expect(events.length).toBe(countAfterCleanup);
   });
 
-  it("cleanup clears streaming text if active", () => {
+  it("does not clear process-owned streaming catch-up state on cleanup", () => {
     const { process } = createMockProcess();
     const { emit } = collectEmit();
 
-    // We need to trigger a message with a streaming ID to set currentStreamingMessageId
-    // But since we can't easily do that without async augmenter, test that clearStreamingText
-    // is called on cleanup after a message event triggers accumulation
     const { cleanup } = createSessionSubscription(process, emit);
     cleanup();
 
-    // clearStreamingText is not called if no streaming was active (currentStreamingMessageId is null)
-    // This is correct behavior - it only clears if there was active streaming
+    expect(
+      (process as unknown as { clearStreamingText: Mock }).clearStreamingText,
+    ).not.toHaveBeenCalled();
   });
 
   it("calls onError when emit throws in event handler", async () => {

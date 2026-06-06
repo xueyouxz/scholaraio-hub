@@ -2,9 +2,9 @@ import { type SlashCommand, getModelContextWindow } from "@scholaraio-hub/shared
 import { useCallback, useEffect, useRef, useState } from "react";
 import { api } from "../api/client";
 import { findPendingTasks } from "../lib/pendingTasks";
+import { handleSdkStreamMessage } from "../lib/sessionEventHandlers";
 import { extractSessionIdFromFileEvent } from "../lib/sessionFile";
 import type { SessionStreamEvent } from "../lib/sessionStreamEvents";
-import { getSubagentRoute } from "../lib/subagentRouting";
 import type {
   InputRequest,
   MarkdownAugment,
@@ -56,31 +56,6 @@ export interface DeferredMessage {
   tempId?: string;
   content: string;
   timestamp: string;
-}
-
-function extractUserMessageText(sdkMessage: Record<string, unknown>): string | null {
-  const message = sdkMessage.message as { content?: unknown; role?: unknown } | undefined;
-  const content = message?.content;
-
-  if (typeof content === "string") {
-    const trimmed = content.trim();
-    return trimmed.length > 0 ? trimmed : null;
-  }
-
-  if (Array.isArray(content)) {
-    const textParts = content
-      .map((block) => {
-        if (!block || typeof block !== "object") return "";
-        const text = (block as { text?: unknown }).text;
-        return typeof text === "string" ? text : "";
-      })
-      .filter((part) => part.length > 0);
-    if (textParts.length === 0) return null;
-    const joined = textParts.join("\n").trim();
-    return joined.length > 0 ? joined : null;
-  }
-
-  return null;
 }
 
 function toError(error: unknown): Error {
@@ -648,122 +623,20 @@ export function useSession(
   const handleStreamMessage = useCallback(
     (event: SessionStreamEvent) => {
       if (event.eventType === "message") {
-        // ─── message 事件分发器 ───────────────────────────────────────────
-        // 这是 SSE 三种事件里"结构化骨架"那一支，承载所有 SDK 原始消息。
-        // 内部还有第二层 type 分流：stream_event(增量) / assistant(终态) / user / system 等
-
-        // SSE 推来的对象就是 SDK 原始消息体，全字段透传不剥任何字段
-        const sdkMessage = event.message;
-
-        // 取 ID 的三级兜底：uuid（最终消息）→ id（中间事件）→ 本地时间戳生成
-        const rawUuid = sdkMessage.uuid;
-        const rawId = sdkMessage.id;
-        const id: string =
-          (typeof rawUuid === "string" ? rawUuid : null) ??
-          (typeof rawId === "string" ? rawId : null) ??
-          `msg-${Date.now()}`;
-
-        // 取 type 和 role 用于后续分流
-        const msgType = typeof sdkMessage.type === "string" ? sdkMessage.type : undefined;
-        const msgRole = sdkMessage.role as Message["role"] | undefined;
-
-        // stream_event 子类型：Anthropic 流式增量（message_start / content_block_delta / message_stop）
-        // 委托给 useStreamingContent 做 delta 积累 + 50ms 节流，处理完直接 return
-        if (msgType === "stream_event") {
-          if (handleStreamEvent(sdkMessage)) {
-            return; // 已被 streaming 子系统消费，不走下面的合并逻辑
-          }
-        }
-
-        // assistant 子类型：一轮回复的"最终消息"（带 uuid，已写 JSONL）。
-        // 此时所有 _isStreaming 占位消息都要被这条真实消息替换掉。
-        if (msgType === "assistant") {
-          // 子 agent 的最终消息要路由到 agentContent[agentId] 而不是主消息流。
-          // 路由 key 用 parentToolUseId（也就是 Task 工具自身的 tool_use_id）。
-          const subagentRoute = getSubagentRoute(sdkMessage);
-
-          // 让 useStreamingContent 清掉它内部的 route 状态
-          clearStreaming();
-
-          if (subagentRoute) {
-            // 子 agent 流结束：删掉这个 agent 下面所有 _isStreaming 占位
-            clearStreamingPlaceholders(subagentRoute.agentId);
-          } else {
-            // 主流结束：把主消息列表里所有 _isStreaming 占位删掉，
-            // 紧接着下面 handleStreamMessageEvent 会把真实消息插入
-            clearStreamingPlaceholders();
-          }
-        }
-
-        // 构造内部 Message 对象，保留 SDK 全部字段（tool_use/tool_result/usage 等都不能丢）
-        const incoming: Message = {
-          ...(sdkMessage as Partial<Message>),
-          id,
-          type: msgType,
-          // 保证 user/assistant 类型一定有 role 字段，避免渲染层误判
-          role: msgRole ?? (msgType === "user" || msgType === "assistant" ? msgType : undefined),
-        };
-
-        // init 消息携带本会话可用的 skills。
-        // 不取 slash_commands —— Claude CLI 自带的命令在网页端没法执行，会误导用户。
-        if (msgType === "system" && sdkMessage.subtype === "init") {
-          if (Array.isArray(sdkMessage.skills)) {
-            setSlashCommands((prev) => {
-              const descriptions = new Map(prev.map((command) => [command.name, command]));
-              return (sdkMessage.skills as string[]).map((name) => ({
-                ...descriptions.get(name),
-                name,
-                description: descriptions.get(name)?.description ?? "",
-              }));
-            });
-          }
-        }
-
-        // system/status：上下文压缩指示器（开始压缩 vs 压缩中），是瞬时状态不入消息列表
-        if (msgType === "system" && sdkMessage.subtype === "status") {
-          const status = sdkMessage.status as "compacting" | null;
-          setIsCompacting(status === "compacting");
-          return; // 不追加到 messages[]
-        }
-
-        // compact_boundary：压缩完成的边界标记，清掉指示器；但这条消息本身要进列表
-        // 因为前端要在这里画一条"已压缩"的分隔线
-        if (msgType === "system" && sdkMessage.subtype === "compact_boundary") {
-          setIsCompacting(false);
-        }
-
-        // tempId 是前端发消息时生成的临时 ID，服务端会在用户消息回显时带回。
-        // 收到带 tempId 的 user 消息 → 从 pendingMessages 队列里删掉对应的乐观占位
-        const tempId = sdkMessage.tempId as string | undefined;
-        if (msgType === "user" && tempId) {
-          removePendingMessage(tempId);
-        } else if (msgType === "user") {
-          // 某些 provider（如 Codex）不带 tempId 回显，退而求其次按内容匹配
-          // 只删一条匹配的，避免误删用户重复发送的相同内容
-          const incomingText = extractUserMessageText(sdkMessage);
-          if (incomingText) {
-            setPendingMessages((prev) => {
-              const idx = prev.findIndex((p) => p.content.trim() === incomingText);
-              if (idx === -1) return prev;
-              return prev.filter((_, i) => i !== idx);
-            });
-          }
-        }
-
-        // 子 agent 消息路由：分流到 agentContent[agentId] 而非主 messages[]。
-        // 这样主会话的 DAG（依赖图）保持干净，UI 上 Task 工具面板可以独立展开嵌套查看。
-        const subagentRoute = getSubagentRoute(sdkMessage);
-        if (subagentRoute) {
-          if (subagentRoute.toolUseId) {
-            registerToolUseAgent(subagentRoute.toolUseId, subagentRoute.agentId);
-          }
-
-          handleStreamSubagentMessage(incoming, subagentRoute.agentId);
-          return; // 子 agent 消息不进主消息列表
-        }
-
-        // 主消息流：交给 useSessionMessages 去做"初始加载前缓冲 + 合并去重"
-        handleStreamMessageEvent(incoming);
+        // message 事件承载所有 SDK 原始消息；第二层 type 分流（stream_event /
+        // assistant / user / system / subagent 路由）已抽到 sessionEventHandlers。
+        handleSdkStreamMessage(event.message, {
+          handleStreamEvent,
+          clearStreaming,
+          clearStreamingPlaceholders,
+          registerToolUseAgent,
+          handleStreamSubagentMessage,
+          handleStreamMessageEvent,
+          setSlashCommands,
+          setIsCompacting,
+          removePendingMessage,
+          setPendingMessages,
+        });
       } else if (event.eventType === "status") {
         if (event.state === "terminated") {
           resetToIdle();

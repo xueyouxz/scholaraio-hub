@@ -6,6 +6,7 @@
  * 方式则由调用方决定（当前为 SSE，工厂本身与传输无关）。
  */
 
+import { SESSION_STREAM_EVENT } from "@scholaraio-hub/shared";
 import { type StreamAugmenter, createStreamAugmenter, markSubagent } from "./augments/index.js";
 import { getLogger } from "./logging/logger.js";
 import type { Process } from "./supervisor/Process.js";
@@ -68,10 +69,10 @@ export function createSessionSubscription(
     if (!augmenterPromise) {
       augmenterPromise = createStreamAugmenter({
         onMarkdownAugment: (data) => {
-          if (!completed) emit("markdown-augment", data);
+          if (!completed) emit(SESSION_STREAM_EVENT.markdownAugment, data);
         },
         onPending: (data) => {
-          if (!completed) emit("pending", data);
+          if (!completed) emit(SESSION_STREAM_EVENT.pending, data);
         },
         onError: (err, context) => {
           options?.onError?.(err);
@@ -89,7 +90,7 @@ export function createSessionSubscription(
   const heartbeatInterval = setInterval(() => {
     try {
       if (!completed) {
-        emit("heartbeat", { timestamp: new Date().toISOString() });
+        emit(SESSION_STREAM_EVENT.heartbeat, { timestamp: new Date().toISOString() });
       }
     } catch {
       clearInterval(heartbeatInterval);
@@ -110,44 +111,44 @@ export function createSessionSubscription(
           const message = normalizeStreamMessage(event.message as Record<string, unknown>);
           const aug = await getAugmenter();
           await aug.processMessage(message);
-          emit("message", markSubagent(message));
+          emit(SESSION_STREAM_EVENT.message, markSubagent(message));
           break;
         }
 
         case "state-change":
-          emit("status", {
+          emit(SESSION_STREAM_EVENT.status, {
             state: event.state.type,
             ...(event.state.type === "waiting-input" ? { request: event.state.request } : {}),
           });
           break;
 
         case "mode-change":
-          emit("mode-change", {
+          emit(SESSION_STREAM_EVENT.modeChange, {
             permissionMode: event.mode,
             modeVersion: event.version,
           });
           break;
 
         case "error":
-          emit("error", { message: event.error.message });
+          emit(SESSION_STREAM_EVENT.error, { message: event.error.message });
           break;
 
         case "session-id-changed":
-          emit("session-id-changed", {
+          emit(SESSION_STREAM_EVENT.sessionIdChanged, {
             oldSessionId: event.oldSessionId,
             newSessionId: event.newSessionId,
           });
           break;
 
         case "deferred-queue":
-          emit("deferred-queue", { messages: event.messages });
+          emit(SESSION_STREAM_EVENT.deferredQueue, { messages: event.messages });
           break;
 
         case "complete":
           if (augmenter) {
             await augmenter.flush();
           }
-          emit("complete", { timestamp: new Date().toISOString() });
+          emit(SESSION_STREAM_EVENT.complete, { timestamp: new Date().toISOString() });
           completed = true;
           clearInterval(heartbeatInterval);
           break;
@@ -162,7 +163,7 @@ export function createSessionSubscription(
   // resolved model、等待输入请求，以及尚未发送的 deferred queue 摘要。
   const currentState = process.state;
   const deferredMessages = process.getDeferredQueueSummary();
-  emit("connected", {
+  emit(SESSION_STREAM_EVENT.connected, {
     processId: process.id,
     sessionId: process.sessionId,
     state: currentState.type,
@@ -178,7 +179,7 @@ export function createSessionSubscription(
   // isReplay 标记让前端能够区分历史消息和实时消息，避免把回放内容当作新输出处理。
   for (const message of process.getMessageHistory()) {
     emit(
-      "message",
+      SESSION_STREAM_EVENT.message,
       markSubagent({
         ...message,
         isReplay: true,

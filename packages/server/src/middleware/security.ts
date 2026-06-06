@@ -1,6 +1,8 @@
 import type { MiddlewareHandler } from "hono";
-import { cors } from "hono/cors";
-import { allowAllHosts, isAllowedHost, isAllowedOrigin } from "./allowed-hosts.js";
+import { allowAllHosts, isAllowedHost } from "./allowed-hosts.js";
+
+/** Custom header required on mutating requests (CSRF protection). */
+export const CUSTOM_HEADER = "ScholarAIO-Hub";
 
 /**
  * Host header validation middleware.
@@ -38,18 +40,11 @@ export const hostCheckMiddleware: MiddlewareHandler = async (c, next) => {
   await next();
 };
 
-export const corsMiddleware = cors({
-  origin: (origin) => (isAllowedOrigin(origin) ? origin : null),
-  credentials: true,
-  allowMethods: ["GET", "POST", "PUT", "DELETE"],
-  allowHeaders: ["Content-Type", "Authorization", "X-Yep-Anywhere"],
-});
-
 // Only require header on mutating requests (SSE uses native EventSource which can't send headers)
 export const requireCustomHeader: MiddlewareHandler = async (c, next) => {
   const method = c.req.method;
   if (method !== "GET" && method !== "HEAD" && method !== "OPTIONS") {
-    if (c.req.header("X-Yep-Anywhere") !== "true") {
+    if (c.req.header(CUSTOM_HEADER) !== "true") {
       return c.json({ error: "Missing required header" }, 403);
     }
   }

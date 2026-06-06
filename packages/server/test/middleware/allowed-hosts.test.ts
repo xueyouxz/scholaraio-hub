@@ -107,49 +107,6 @@ describe("allowed-hosts", () => {
     });
   });
 
-  describe("isAllowedOrigin (Origin header)", () => {
-    let isAllowedOrigin: typeof AllowedHosts.isAllowedOrigin;
-
-    beforeEach(async () => {
-      vi.resetModules();
-      process.env.ALLOWED_HOSTS = undefined;
-      const mod = await loadModule();
-      isAllowedOrigin = mod.isAllowedOrigin;
-    });
-
-    it("allows missing origin (same-origin request)", () => {
-      expect(isAllowedOrigin(undefined)).toBe(true);
-    });
-
-    it('allows "null" origin (file://, about:blank)', () => {
-      expect(isAllowedOrigin("null")).toBe(true);
-    });
-
-    it("allows localhost origins", () => {
-      expect(isAllowedOrigin("http://localhost:3400")).toBe(true);
-      expect(isAllowedOrigin("https://localhost")).toBe(true);
-    });
-
-    it("allows private IP origins", () => {
-      expect(isAllowedOrigin("http://192.168.1.100:3400")).toBe(true);
-      expect(isAllowedOrigin("http://10.0.0.1")).toBe(true);
-    });
-
-    it("allows Tailscale origins", () => {
-      expect(isAllowedOrigin("http://myhost.ts.net:3400")).toBe(true);
-      expect(isAllowedOrigin("https://foo.bar.ts.net")).toBe(true);
-    });
-
-    it("rejects public origins", () => {
-      expect(isAllowedOrigin("https://evil.com")).toBe(false);
-      expect(isAllowedOrigin("https://attacker.github.io")).toBe(false);
-    });
-
-    it("rejects invalid URLs", () => {
-      expect(isAllowedOrigin("not-a-url")).toBe(false);
-    });
-  });
-
   describe("ALLOWED_HOSTS env var", () => {
     afterEach(() => {
       process.env.ALLOWED_HOSTS = undefined;
@@ -173,7 +130,6 @@ describe("allowed-hosts", () => {
 
       expect(mod.allowAllHosts()).toBe(true);
       expect(mod.isAllowedHost("anything.com:1234")).toBe(true);
-      expect(mod.isAllowedOrigin("https://anything.com")).toBe(true);
     });
 
     it("handles whitespace in env var", async () => {
@@ -183,73 +139,6 @@ describe("allowed-hosts", () => {
 
       expect(mod.isAllowedHostname("foo.com")).toBe(true);
       expect(mod.isAllowedHostname("bar.com")).toBe(true);
-    });
-  });
-
-  describe("updateAllowedHosts (runtime settings)", () => {
-    let mod: typeof AllowedHosts;
-
-    beforeEach(async () => {
-      vi.resetModules();
-      process.env.ALLOWED_HOSTS = undefined;
-      mod = await loadModule();
-    });
-
-    it("adds hostnames from settings at runtime", () => {
-      expect(mod.isAllowedHostname("custom.dev")).toBe(false);
-      mod.updateAllowedHosts("custom.dev");
-      expect(mod.isAllowedHostname("custom.dev")).toBe(true);
-    });
-
-    it("supports comma-separated hostnames", () => {
-      mod.updateAllowedHosts("a.com, b.com");
-      expect(mod.isAllowedHostname("a.com")).toBe(true);
-      expect(mod.isAllowedHostname("b.com")).toBe(true);
-      expect(mod.isAllowedHostname("c.com")).toBe(false);
-    });
-
-    it("supports wildcard '*' to allow all", () => {
-      expect(mod.allowAllHosts()).toBe(false);
-      mod.updateAllowedHosts("*");
-      expect(mod.allowAllHosts()).toBe(true);
-      expect(mod.isAllowedHost("anything.com:3400")).toBe(true);
-    });
-
-    it("clears settings hosts with undefined", () => {
-      mod.updateAllowedHosts("custom.dev");
-      expect(mod.isAllowedHostname("custom.dev")).toBe(true);
-      mod.updateAllowedHosts(undefined);
-      expect(mod.isAllowedHostname("custom.dev")).toBe(false);
-    });
-
-    it("clears settings hosts with empty string", () => {
-      mod.updateAllowedHosts("custom.dev");
-      expect(mod.isAllowedHostname("custom.dev")).toBe(true);
-      mod.updateAllowedHosts("");
-      expect(mod.isAllowedHostname("custom.dev")).toBe(false);
-    });
-
-    it("env var and settings combine (both checked)", async () => {
-      vi.resetModules();
-      process.env.ALLOWED_HOSTS = "from-env.com";
-      mod = await loadModule();
-
-      mod.updateAllowedHosts("from-settings.com");
-      expect(mod.isAllowedHostname("from-env.com")).toBe(true);
-      expect(mod.isAllowedHostname("from-settings.com")).toBe(true);
-      expect(mod.isAllowedHostname("neither.com")).toBe(false);
-    });
-
-    it("settings wildcard overrides even without env var wildcard", () => {
-      mod.updateAllowedHosts("*");
-      expect(mod.allowAllHosts()).toBe(true);
-      expect(mod.isAllowedOrigin("https://anything.com")).toBe(true);
-    });
-
-    it("is case-insensitive", () => {
-      mod.updateAllowedHosts("MyDomain.COM");
-      expect(mod.isAllowedHostname("mydomain.com")).toBe(true);
-      expect(mod.isAllowedHostname("MYDOMAIN.COM")).toBe(true);
     });
   });
 });

@@ -1,20 +1,16 @@
 /**
  * Host-based security validation (Vite model).
  *
- * One shared hostname allowlist, three distinct checks:
- *
- * | Check       | What              | Where        | Protects Against           |
- * |-------------|-------------------|--------------|----------------------------|
- * | Host header | Host on /api/*    | security.ts  | DNS rebinding              |
- * | WS Origin   | Origin on WS      | ws-relay.ts  | Cross-site WS hijacking    |
- * | CORS        | Origin on HTTP    | security.ts  | Cross-origin data leaks    |
+ * A shared hostname allowlist backing the Host header check that
+ * `hostCheckMiddleware` (security.ts) applies to /api/* and /hub/fs to
+ * protect against DNS rebinding.
  *
  * Built-in allowed hostnames:
  * - localhost, 127.0.0.1, ::1, [::1]
  * - Private IPs (192.168.x.x, 10.x.x.x, 172.16-31.x.x)
  * - *.ts.net (Tailscale, including nested subdomains)
  *
- * Plus ALLOWED_HOSTS env var and in-app settings (comma-separated hostnames, or "*" to allow all).
+ * Plus the ALLOWED_HOSTS env var (comma-separated hostnames, or "*" to allow all).
  */
 
 /**
@@ -27,49 +23,15 @@ const ENV_HOSTS: Set<string> | "*" = (() => {
   return new Set(raw.split(",").map((h) => h.trim().toLowerCase()));
 })();
 
-/**
- * Mutable state from in-app settings (updated at runtime via updateAllowedHosts).
- * null = not configured (use defaults only).
- */
-let settingsHosts: Set<string> | "*" | null = null;
-
-/**
- * Update allowed hosts from in-app settings. Called on startup (from persisted settings)
- * and when the user changes the setting via the UI.
- *
- * @param value - The allowedHosts setting value: "*" for all, comma-separated hostnames, or undefined to clear
- */
-export function updateAllowedHosts(value: string | undefined): void {
-  if (!value) {
-    settingsHosts = null;
-    return;
-  }
-  const trimmed = value.trim();
-  if (trimmed === "*") {
-    settingsHosts = "*";
-    return;
-  }
-  if (!trimmed) {
-    settingsHosts = null;
-    return;
-  }
-  settingsHosts = new Set(
-    trimmed
-      .split(",")
-      .map((h) => h.trim().toLowerCase())
-      .filter(Boolean),
-  );
-}
-
-/** True when env var or settings is "*" (disables all host/origin checking). */
+/** True when the ALLOWED_HOSTS env var is "*" (disables host checking). */
 export function allowAllHosts(): boolean {
-  return ENV_HOSTS === "*" || settingsHosts === "*";
+  return ENV_HOSTS === "*";
 }
 
 /**
  * Core check: is this hostname allowed?
  *
- * Matches against built-in patterns, the ALLOWED_HOSTS env var, and in-app settings.
+ * Matches against built-in patterns and the ALLOWED_HOSTS env var.
  * Does NOT check for wildcard — callers should check allowAllHosts() first.
  */
 export function isAllowedHostname(hostname: string): boolean {
@@ -88,9 +50,6 @@ export function isAllowedHostname(hostname: string): boolean {
 
   // ALLOWED_HOSTS env var entries
   if (ENV_HOSTS !== "*" && ENV_HOSTS.size > 0 && ENV_HOSTS.has(h)) return true;
-
-  // In-app settings entries
-  if (settingsHosts instanceof Set && settingsHosts.has(h)) return true;
 
   return false;
 }
@@ -123,25 +82,4 @@ export function isAllowedHost(host: string | undefined): boolean {
   }
 
   return isAllowedHostname(hostname);
-}
-
-/**
- * Validate an Origin header value.
- *
- * Extracts hostname from the origin URL and checks it.
- * Returns true for missing/null origins (same-origin or non-browser clients).
- */
-export function isAllowedOrigin(origin: string | undefined): boolean {
-  // No origin = same-origin request or non-browser client (allowed).
-  // "null" = about:blank, file://, sandboxed iframe, etc. (allowed).
-  if (!origin || origin === "null") return true;
-  if (allowAllHosts()) return true;
-
-  try {
-    const hostname = new URL(origin).hostname.toLowerCase();
-    return isAllowedHostname(hostname);
-  } catch {
-    // Invalid origin URL
-    return false;
-  }
 }

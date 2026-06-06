@@ -80,6 +80,9 @@ export async function requestJson<T>(path: string, init?: RequestInit): Promise<
   if (init?.body && !(init.body instanceof FormData) && !headers.has("Content-Type")) {
     headers.set("Content-Type", "application/json");
   }
+  // CSRF protection: the server's requireCustomHeader middleware rejects mutating
+  // requests without this header. Sent on every request (harmless on GET/SSE-less reads).
+  headers.set("ScholarAIO-Hub", "true");
 
   const response = await fetch(path, {
     ...init,

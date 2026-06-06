@@ -4,6 +4,7 @@ import { etag } from "hono/etag";
 import { createStaticRoutes } from "./frontend/static.js";
 import type { SessionIndexService } from "./indexes/index.js";
 import type { ProjectMetadataService, SessionMetadataService } from "./metadata/index.js";
+import { hostCheckMiddleware, requireCustomHeader } from "./middleware/security.js";
 import type { NotificationService } from "./notifications/index.js";
 import { CODEX_SESSIONS_DIR, CodexSessionScanner } from "./projects/codex-scanner.js";
 import { ProjectScanner } from "./projects/scanner.js";
@@ -182,6 +183,17 @@ export function createApp(options: AppOptions): AppResult {
 
   app.use("/health/*", (c, next) => next());
   app.route("/health", health);
+
+  // Security middleware for the sensitive surfaces (API + filesystem browse).
+  // hostCheck guards against DNS rebinding; requireCustomHeader guards mutating
+  // requests against CSRF. /health and the static frontend are intentionally exempt.
+  // Mounted before the route registrations below so they run first.
+  app.use("/api/*", hostCheckMiddleware);
+  app.use("/api/*", requireCustomHeader);
+  app.use("/hub/fs", hostCheckMiddleware);
+  app.use("/hub/fs/*", hostCheckMiddleware);
+  app.use("/hub/fs", requireCustomHeader);
+  app.use("/hub/fs/*", requireCustomHeader);
 
   // Apply ETag/304 negotiation to read-mostly JSON aggregate endpoints.
   // SSE/stream and SDK message routes are excluded because their responses

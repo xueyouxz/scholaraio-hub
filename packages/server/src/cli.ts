@@ -12,7 +12,6 @@
  *   PORT                          # Server port (default: 3400)
  *   SCHOLARAIO_HUB_DATA_DIR         # Data directory override
  *   SCHOLARAIO_HUB_PROFILE          # Profile name (creates ~/.scholaraio-hub-{profile}/)
- *   AUTH_ENABLED                  # Enable cookie auth (default: false)
  *   LOG_LEVEL                     # Log level: fatal, error, warn, info, debug, trace
  *   ... (see CLAUDE.md for full list)
  */
@@ -84,28 +83,17 @@ OPTIONS:
   --https-self-signed   Enable HTTPS using a self-signed certificate
                         stored in the app data directory
   --open                Open the dashboard in your default browser on startup
-  --auth-disable        Disable authentication (bypass auth even if enabled in settings)
-                        Emergency recovery mode; re-enable auth after fixing config
 
-SETUP OPTIONS (for headless installation):
-  --setup-auth <password>
-                        Set up local authentication with the given password
-                        (min 6 characters). Exits after setup.
-
-  --setup-remote-access --username <name> --password <pass> [--relay <url>]
-                        Set up remote access with SRP authentication.
-                        Registers with the relay to verify username availability.
-                        Exits with error if username is taken.
-                        --username: Relay username (3-32 chars, lowercase alphanumeric + hyphens)
-                        --password: SRP password (min 8 characters)
-                        --relay: Relay URL (default: wss://relay.scholaraio-hub.com/ws)
+SECURITY:
+  This server has no authentication. Access is restricted by a host allowlist
+  (localhost, private LAN, *.ts.net) that guards against DNS rebinding. Do not
+  expose it directly to untrusted networks.
 
 ENVIRONMENT VARIABLES:
   PORT                          Server port (default: 3400)
   HOST                          Host/interface to bind (default: localhost)
   SCHOLARAIO_HUB_DATA_DIR         Data directory override
   SCHOLARAIO_HUB_PROFILE          Profile name (creates ~/.scholaraio-hub-{profile}/)
-  AUTH_DISABLED                 Disable auth (bypass even if enabled in settings)
   HTTPS_SELF_SIGNED             Enable HTTPS with a self-signed certificate
   LOG_LEVEL                     Log level: fatal, error, warn, info, debug, trace
   LOG_PRETTY                    Pretty-print console logs (default: true)
@@ -139,18 +127,6 @@ EXAMPLES:
 
   # Use development profile (separate data directory)
   SCHOLARAIO_HUB_PROFILE=dev scholaraio-hub
-
-  # Reset local auth password (headless recovery)
-  scholaraio-hub --setup-auth "mypassword123"
-
-  # Emergency auth bypass (temporary)
-  scholaraio-hub --auth-disable
-
-  # Headless setup: configure remote access
-  scholaraio-hub --setup-remote-access --username myserver --password "secretpass123"
-
-  # Headless setup: remote access with custom relay
-  scholaraio-hub --setup-remote-access --username myserver --password "secretpass123" --relay wss://my-relay.example.com/ws
 
 DOCUMENTATION:
   For full documentation, see: https://github.com/kzahel/scholaraio-hub
@@ -243,84 +219,6 @@ if (httpsSelfSignedIndex !== -1) {
   args.splice(httpsSelfSignedIndex, 1);
 }
 
-// Parse --auth-disable flag
-const authDisableIndex = args.indexOf("--auth-disable");
-if (authDisableIndex !== -1) {
-  process.env.AUTH_DISABLED = "true";
-  args.splice(authDisableIndex, 1);
-}
-
-// Parse --setup-auth flag
-const setupAuthIndex = args.indexOf("--setup-auth");
-let setupAuthPassword: string | undefined;
-if (setupAuthIndex !== -1) {
-  const passwordValue = args[setupAuthIndex + 1];
-  if (!passwordValue || passwordValue.startsWith("-")) {
-    console.error("Error: --setup-auth requires a password value");
-    process.exit(1);
-  }
-  setupAuthPassword = passwordValue;
-  args.splice(setupAuthIndex, 2);
-}
-
-// Parse --setup-remote-access flag and its options
-const setupRemoteIndex = args.indexOf("--setup-remote-access");
-let setupRemoteAccess = false;
-let remoteUsername: string | undefined;
-let remotePassword: string | undefined;
-let remoteRelay: string | undefined;
-
-if (setupRemoteIndex !== -1) {
-  setupRemoteAccess = true;
-  args.splice(setupRemoteIndex, 1);
-
-  // Parse --username
-  const usernameIndex = args.indexOf("--username");
-  if (usernameIndex !== -1) {
-    const usernameValue = args[usernameIndex + 1];
-    if (!usernameValue || usernameValue.startsWith("-")) {
-      console.error("Error: --username requires a value");
-      process.exit(1);
-    }
-    remoteUsername = usernameValue;
-    args.splice(usernameIndex, 2);
-  }
-
-  // Parse --password
-  const passwordIndex = args.indexOf("--password");
-  if (passwordIndex !== -1) {
-    const passwordValue = args[passwordIndex + 1];
-    if (!passwordValue || passwordValue.startsWith("-")) {
-      console.error("Error: --password requires a value");
-      process.exit(1);
-    }
-    remotePassword = passwordValue;
-    args.splice(passwordIndex, 2);
-  }
-
-  // Parse --relay (optional)
-  const relayIndex = args.indexOf("--relay");
-  if (relayIndex !== -1) {
-    const relayValue = args[relayIndex + 1];
-    if (!relayValue || relayValue.startsWith("-")) {
-      console.error("Error: --relay requires a URL value");
-      process.exit(1);
-    }
-    remoteRelay = relayValue;
-    args.splice(relayIndex, 2);
-  }
-
-  // Validate required options
-  if (!remoteUsername) {
-    console.error("Error: --setup-remote-access requires --username");
-    process.exit(1);
-  }
-  if (!remotePassword) {
-    console.error("Error: --setup-remote-access requires --password");
-    process.exit(1);
-  }
-}
-
 // If there are unknown arguments, show error and help
 if (args.length > 0) {
   console.error(`Error: Unknown arguments: ${args.join(" ")}`);
@@ -337,40 +235,9 @@ if (!process.env.NODE_ENV) {
   process.env.NODE_ENV = "production";
 }
 
-// Handle setup commands (exit after completion)
-if (setupAuthPassword || setupRemoteAccess) {
-  runSetup(setupAuthPassword, setupRemoteAccess, remoteUsername, remotePassword, remoteRelay);
-} else {
-  // Only check for Claude CLI when starting the server (not for setup commands)
-  checkClaudeCli();
-  // Normal server startup
-  runServer();
-}
-
-async function runSetup(
-  authPassword: string | undefined,
-  remoteAccess: boolean,
-  username: string | undefined,
-  password: string | undefined,
-  relay: string | undefined,
-): Promise<never> {
-  try {
-    const { setupAuth, setupRemoteAccess } = await import("./cli-setup.js");
-
-    if (authPassword) {
-      await setupAuth({ password: authPassword });
-    }
-
-    if (remoteAccess && username && password) {
-      await setupRemoteAccess({ username, password, relayUrl: relay });
-    }
-
-    process.exit(0);
-  } catch (error) {
-    console.error(`Setup failed: ${error instanceof Error ? error.message : String(error)}`);
-    process.exit(1);
-  }
-}
+// Only check for Claude CLI when starting the server
+checkClaudeCli();
+runServer();
 
 /**
  * Start the server by importing the main module.

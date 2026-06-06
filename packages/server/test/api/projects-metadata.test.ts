@@ -37,7 +37,7 @@ describe("Projects metadata integration", () => {
 
     const res = await app.request("/api/projects", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: { "Content-Type": "application/json", "ScholarAIO-Hub": "true" },
       body: JSON.stringify({ path: addedProjectPath }),
     });
 

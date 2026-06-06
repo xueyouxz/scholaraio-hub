@@ -44,7 +44,7 @@ describe("Sessions API", () => {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          "X-Yep-Anywhere": "true",
+          "ScholarAIO-Hub": "true",
         },
         body: JSON.stringify({}),
       });
@@ -61,7 +61,7 @@ describe("Sessions API", () => {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          "X-Yep-Anywhere": "true",
+          "ScholarAIO-Hub": "true",
         },
         body: "not json",
       });
@@ -78,7 +78,7 @@ describe("Sessions API", () => {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          "X-Yep-Anywhere": "true",
+          "ScholarAIO-Hub": "true",
         },
         body: JSON.stringify({ message: "hello" }),
       });
@@ -96,7 +96,7 @@ describe("Sessions API", () => {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          "X-Yep-Anywhere": "true",
+          "ScholarAIO-Hub": "true",
         },
         body: JSON.stringify({ message: "hello" }),
       });
@@ -115,7 +115,7 @@ describe("Sessions API", () => {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          "X-Yep-Anywhere": "true",
+          "ScholarAIO-Hub": "true",
         },
         body: JSON.stringify({
           message: "hello",
@@ -139,7 +139,7 @@ describe("Sessions API", () => {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          "X-Yep-Anywhere": "true",
+          "ScholarAIO-Hub": "true",
         },
         body: JSON.stringify({ message: "hello", mode: "acceptEdits" }),
       });
@@ -158,7 +158,7 @@ describe("Sessions API", () => {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          "X-Yep-Anywhere": "true",
+          "ScholarAIO-Hub": "true",
         },
         body: JSON.stringify({ message: "hello", mode: "acceptEdits" }),
       });
@@ -177,7 +177,7 @@ describe("Sessions API", () => {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          "X-Yep-Anywhere": "true",
+          "ScholarAIO-Hub": "true",
         },
         body: JSON.stringify({ message: "hello" }),
       });
@@ -197,7 +197,7 @@ describe("Sessions API", () => {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          "X-Yep-Anywhere": "true",
+          "ScholarAIO-Hub": "true",
         },
         body: JSON.stringify({}),
       });
@@ -214,7 +214,7 @@ describe("Sessions API", () => {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          "X-Yep-Anywhere": "true",
+          "ScholarAIO-Hub": "true",
         },
         body: JSON.stringify({ message: "hello" }),
       });
@@ -230,7 +230,7 @@ describe("Sessions API", () => {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          "X-Yep-Anywhere": "true",
+          "ScholarAIO-Hub": "true",
         },
         body: JSON.stringify({ message: "continue" }),
       });
@@ -248,7 +248,7 @@ describe("Sessions API", () => {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          "X-Yep-Anywhere": "true",
+          "ScholarAIO-Hub": "true",
         },
         body: JSON.stringify({ message: "continue", mode: "plan" }),
       });
@@ -266,7 +266,7 @@ describe("Sessions API", () => {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          "X-Yep-Anywhere": "true",
+          "ScholarAIO-Hub": "true",
         },
         body: JSON.stringify({
           message: "continue",
@@ -289,7 +289,7 @@ describe("Sessions API", () => {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          "X-Yep-Anywhere": "true",
+          "ScholarAIO-Hub": "true",
         },
         body: JSON.stringify({ message: "hello" }),
       });
@@ -320,7 +320,7 @@ describe("Sessions API", () => {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          "X-Yep-Anywhere": "true",
+          "ScholarAIO-Hub": "true",
         },
         body: JSON.stringify({ requestId: "req-1", response: "approve" }),
       });
@@ -340,7 +340,7 @@ describe("Sessions API", () => {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          "X-Yep-Anywhere": "true",
+          "ScholarAIO-Hub": "true",
         },
         body: JSON.stringify({ message: "hello" }),
       });
@@ -355,7 +355,7 @@ describe("Sessions API", () => {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          "X-Yep-Anywhere": "true",
+          "ScholarAIO-Hub": "true",
         },
         body: JSON.stringify({ requestId: "req-1", response: "approve" }),
       });
@@ -388,7 +388,7 @@ describe("Sessions API", () => {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          "X-Yep-Anywhere": "true",
+          "ScholarAIO-Hub": "true",
         },
         body: JSON.stringify({ message: "hello" }),
       });
@@ -403,7 +403,7 @@ describe("Sessions API", () => {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          "X-Yep-Anywhere": "true",
+          "ScholarAIO-Hub": "true",
         },
         body: JSON.stringify({ response: "approve" }),
       });
@@ -437,7 +437,7 @@ describe("Sessions API", () => {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          "X-Yep-Anywhere": "true",
+          "ScholarAIO-Hub": "true",
         },
         body: JSON.stringify({ message: "hello" }),
       });
@@ -452,7 +452,7 @@ describe("Sessions API", () => {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          "X-Yep-Anywhere": "true",
+          "ScholarAIO-Hub": "true",
         },
         body: JSON.stringify({ requestId: "wrong-id", response: "approve" }),
       });
@@ -487,7 +487,7 @@ describe("Sessions API", () => {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          "X-Yep-Anywhere": "true",
+          "ScholarAIO-Hub": "true",
         },
         body: JSON.stringify({ message: "hello" }),
       });
@@ -509,7 +509,7 @@ describe("Sessions API", () => {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          "X-Yep-Anywhere": "true",
+          "ScholarAIO-Hub": "true",
         },
         body: JSON.stringify({ requestId, response: "approve" }),
       });
@@ -544,7 +544,7 @@ describe("Sessions API", () => {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          "X-Yep-Anywhere": "true",
+          "ScholarAIO-Hub": "true",
         },
         body: JSON.stringify({ message: "hello" }),
       });
@@ -559,7 +559,7 @@ describe("Sessions API", () => {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          "X-Yep-Anywhere": "true",
+          "ScholarAIO-Hub": "true",
         },
         body: JSON.stringify({ requestId, response: "deny" }),
       });

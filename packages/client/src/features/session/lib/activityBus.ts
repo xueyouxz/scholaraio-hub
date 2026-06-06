@@ -139,9 +139,30 @@ export class ActivityBus {
   private sourceListenerCleanups: Array<() => void> = [];
   private visibilityHandler: (() => void) | null = null;
   private _connected = false;
+  private connectionListeners = new Set<(connected: boolean) => void>();
 
   get connected(): boolean {
     return this._connected;
+  }
+
+  /**
+   * Subscribe to connection-state transitions. Fires only when the value
+   * actually changes, replacing per-consumer polling of `connected`. Returns an
+   * unsubscribe function.
+   */
+  onConnectionChange(listener: (connected: boolean) => void): () => void {
+    this.connectionListeners.add(listener);
+    return () => {
+      this.connectionListeners.delete(listener);
+    };
+  }
+
+  private setConnected(value: boolean): void {
+    if (this._connected === value) return;
+    this._connected = value;
+    for (const listener of this.connectionListeners) {
+      listener(value);
+    }
   }
 
   connect(): void {
@@ -152,7 +173,7 @@ export class ActivityBus {
     this.source = source;
 
     const handleConnected = () => {
-      this._connected = true;
+      this.setConnected(true);
       if (this.hasConnected) {
         this.emit("reconnect", undefined);
       }
@@ -198,11 +219,11 @@ export class ActivityBus {
       handleTypedEvent("worker-activity-changed", event),
     );
     addSourceListener("heartbeat", () => {
-      this._connected = true;
+      this.setConnected(true);
     });
 
     source.onerror = () => {
-      this._connected = false;
+      this.setConnected(false);
       this.closeSource();
       if (this.reconnectTimer) return;
       this.reconnectTimer = setTimeout(() => {
@@ -222,7 +243,7 @@ export class ActivityBus {
     this.closeSource();
     this.removeVisibilityListener();
     this.hasConnected = false;
-    this._connected = false;
+    this.setConnected(false);
   }
 
   on<K extends ActivityEventType>(

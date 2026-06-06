@@ -35,11 +35,8 @@ export function useSessionWatchStream(
     setConnected(activityBus.connected);
     optionsRef.current.onOpen?.();
 
-    const interval = window.setInterval(() => {
-      setConnected(activityBus.connected);
-    }, 1000);
-
     const unsubscribers = [
+      activityBus.onConnectionChange(setConnected),
       activityBus.on("session-updated", (event) => {
         if (event.sessionId === targetSessionId && event.projectId === targetProjectId) {
           optionsRef.current.onChange();
@@ -61,7 +58,6 @@ export function useSessionWatchStream(
     ];
 
     return () => {
-      window.clearInterval(interval);
       for (const unsubscribe of unsubscribers) {
         unsubscribe();
       }

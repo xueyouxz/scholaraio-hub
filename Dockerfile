@@ -34,7 +34,10 @@ COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
 COPY packages/server/package.json  ./packages/server/
 COPY packages/shared/package.json  ./packages/shared/
 
-RUN pnpm install --frozen-lockfile --prod
+# --ignore-scripts: the runtime only needs the prebuilt dist, and the root
+# `prepare` script runs husky (a devDependency, absent in a --prod install),
+# which would otherwise fail the install with "husky: not found".
+RUN pnpm install --frozen-lockfile --prod --ignore-scripts
 
 COPY --from=builder /app/packages/server/dist  ./packages/server/dist
 COPY --from=builder /app/packages/shared/dist  ./packages/shared/dist

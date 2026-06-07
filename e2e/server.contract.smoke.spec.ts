@@ -1,4 +1,12 @@
+import { createRequire } from "node:module";
 import { expect, test } from "@playwright/test";
+
+// The /api/version endpoint reports the server package's own version, so pin
+// the expectation to that (not a hardcoded string) — it changes on every
+// changesets release.
+const serverVersion = (
+  createRequire(import.meta.url)("../packages/server/package.json") as { version: string }
+).version;
 
 function extractMessageText(message: {
   content?: unknown;
@@ -30,8 +38,8 @@ test("exposes the core server read contracts against fixture-backed state", asyn
     resumeProtocolVersion: number;
     capabilities: string[];
   };
-  expect(versionJson.current).toBe("0.0.1");
-  expect(versionJson.latest).toBe("0.0.1");
+  expect(versionJson.current).toBe(serverVersion);
+  expect(versionJson.latest).toBe(serverVersion);
   expect(versionJson.updateAvailable).toBe(false);
   expect(versionJson.resumeProtocolVersion).toBeGreaterThan(0);
   expect(versionJson.capabilities).toContain("voiceInput");

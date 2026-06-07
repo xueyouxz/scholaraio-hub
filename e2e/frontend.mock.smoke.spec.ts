@@ -370,7 +370,7 @@ test("renders the first-stage workbench shell and excludes unsupported navigatio
   await expect(page.getByRole("heading", { name: "ScholarAIO" })).toBeVisible();
   await expect(page.getByRole("heading", { name: "Projects" })).toBeVisible();
   await expect(page.getByRole("link", { name: "Library", exact: true })).toBeVisible();
-  await expect(page.getByRole("link", { name: "Search", exact: true })).toBeVisible();
+  await expect(page.getByRole("link", { name: "Skills", exact: true })).toBeVisible();
   await expect(page.getByRole("link", { name: "New Chat", exact: true })).toBeVisible();
   await expect(page.getByRole("button", { name: "Projects 1" })).toBeVisible();
   await expect(page.getByText("Inbox")).toHaveCount(0);

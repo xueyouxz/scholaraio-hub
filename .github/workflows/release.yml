@@ -4,58 +4,24 @@ on:
   push:
     branches: [main]
 
-# Don't cancel an in-flight publish; let releases complete.
+# Don't cancel an in-flight release; let the image push complete.
 concurrency:
   group: release-${{ github.ref }}
   cancel-in-progress: false
 
 jobs:
-  release:
-    runs-on: ubuntu-latest
-    permissions:
-      contents: write # push the version PR, create tags + GitHub Releases
-      pull-requests: write # open/update the "version packages" PR
-      id-token: write # npm provenance (OIDC)
-    outputs:
-      published: ${{ steps.changesets.outputs.published }}
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          fetch-depth: 0 # changelog generation needs full history
-      - uses: ./.github/actions/setup
-      # Quality gate: never publish an unverified tree.
-      - run: pnpm lint
-      - run: pnpm typecheck
-      - run: pnpm test
-      - name: Configure npm auth
-        run: echo "//registry.npmjs.org/:_authToken=${NPM_TOKEN}" > "$HOME/.npmrc"
-        env:
-          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
-      # Either opens/updates the version PR, or (once that PR is merged and
-      # versions are pending) builds and publishes to npm + creates GitHub
-      # Releases. `published`/`publishedPackages` outputs drive the docker job.
-      - name: Create Release PR or publish
-        id: changesets
-        uses: changesets/action@v1
-        with:
-          version: pnpm version-packages
-          publish: pnpm release
-          commit: "chore: version packages"
-          title: "chore: version packages"
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          NPM_CONFIG_PROVENANCE: "true"
-
-  docker:
-    needs: release
-    # Only build + push the image when an actual npm publish happened.
-    if: needs.release.outputs.published == 'true'
+  image:
     runs-on: ubuntu-latest
     permissions:
       contents: read
-      packages: write
+      packages: write # push the image to GHCR
     steps:
       - uses: actions/checkout@v4
+      - uses: ./.github/actions/setup
+      # Quality gate: never ship an image from an unverified tree.
+      - run: pnpm lint
+      - run: pnpm typecheck
+      - run: pnpm test
       - name: Read server version
         id: ver
         run: echo "version=$(node -p "require('./packages/server/package.json').version")" >> "$GITHUB_OUTPUT"
@@ -64,15 +30,14 @@ jobs:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
-      - uses: docker/setup-buildx-action@v3
-      - uses: docker/build-push-action@v6
-        with:
-          context: .
-          push: true
-          # `latest` is safe here: this job only runs on a published stable
-          # release off main (no pre-releases in this flow).
-          tags: |
-            ghcr.io/${{ github.repository }}:latest
-            ghcr.io/${{ github.repository }}:${{ steps.ver.outputs.version }}
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+      # Plain docker build/push (daemon BuildKit) — avoids the buildx
+      # docker-container driver, which is flaky pulling moby/buildkit on runners.
+      - name: Build and push image
+        run: |
+          image="ghcr.io/${{ github.repository }}"
+          docker build \
+            -t "$image:latest" \
+            -t "$image:${{ steps.ver.outputs.version }}" \
+            -t "$image:sha-$(git rev-parse --short HEAD)" \
+            .
+          docker push --all-tags "$image"

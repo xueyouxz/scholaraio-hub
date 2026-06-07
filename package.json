@@ -18,6 +18,7 @@
     "test": "pnpm --filter @scholaraio-hub/shared test && pnpm --filter @scholaraio-hub/server test && pnpm --filter @scholaraio-hub/client test",
     "test:e2e": "pnpm --filter @scholaraio-hub/client build && playwright test",
     "audit:prod": "pnpm audit --prod",
+    "ci:local": "node scripts/ci-local.mjs",
     "prepare": "husky",
     "release:web": "node scripts/release-web.mjs",
     "skills:sync": "node scripts/sync-scholaraio-skills.mjs"

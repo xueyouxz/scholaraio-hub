@@ -55,6 +55,12 @@ like "generated/co-authored by/with AI", `Co-Authored-By:` trailers naming an AI
 fine. PRs: brief summary, linked issue/spec, test evidence, screenshots for UI; call out
 `PORT` / `CLIENT_PORT` / `SCHOLARAIO_HUB_*` changes.
 
+**Releases**: versioning/publishing is driven by [Changesets](https://github.com/changesets/changesets).
+Any PR that changes published packages (`@scholaraio-hub/server`, `@scholaraio-hub/shared`)
+must include a changeset — run `pnpm changeset` and commit the generated `.changeset/*.md`.
+Merging to `main` opens a "version packages" PR; merging *that* bumps versions, publishes to
+npm, tags, and pushes the Docker image. No manual version edits.
+
 ## Detailed specs (in `.claude/`)
 
 Path-scoped rules load automatically when you work in the matching package:

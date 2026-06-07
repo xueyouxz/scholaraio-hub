@@ -1,0 +1,18 @@
+name: Setup pnpm + Node
+description: >-
+  Checkout-independent toolchain setup: pnpm (version from root packageManager),
+  Node 20 with pnpm store cache, and a frozen-lockfile install. Centralised so
+  the pnpm version lives in exactly one place (the root package.json).
+
+runs:
+  using: composite
+  steps:
+    # No `version:` here on purpose — pnpm/action-setup reads it from the root
+    # package.json `packageManager` field, keeping a single source of truth.
+    - uses: pnpm/action-setup@v4
+    - uses: actions/setup-node@v4
+      with:
+        node-version: 20
+        cache: pnpm
+    - run: pnpm install --frozen-lockfile
+      shell: bash

@@ -18,12 +18,16 @@
     "test": "pnpm --filter @scholaraio-hub/shared test && pnpm --filter @scholaraio-hub/server test && pnpm --filter @scholaraio-hub/client test",
     "test:e2e": "pnpm --filter @scholaraio-hub/client build && playwright test",
     "audit:prod": "pnpm audit --prod",
+    "changeset": "changeset",
+    "version-packages": "changeset version",
+    "release": "pnpm build && changeset publish",
     "prepare": "husky",
     "release:web": "node scripts/release-web.mjs",
     "skills:sync": "node scripts/sync-scholaraio-skills.mjs"
   },
   "devDependencies": {
     "@biomejs/biome": "^1.9.4",
+    "@changesets/cli": "^2.31.0",
     "@playwright/test": "^1.50.1",
     "@tailwindcss/vite": "^4.1.14",
     "@vitejs/plugin-react": "^4.3.4",

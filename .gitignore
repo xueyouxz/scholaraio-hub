@@ -8,8 +8,7 @@ test-results/
 # TypeScript incremental build cache
 *.tsbuildinfo
 
-# IDE / AI tool personal config (project-level commands & skills are tracked intentionally)
-.claude/settings.json
+# IDE / AI tool personal config (project-level commands, skills, hooks & settings are tracked intentionally)
 .claude/settings.local.json
 .claude/memory/
 .claude/todos/

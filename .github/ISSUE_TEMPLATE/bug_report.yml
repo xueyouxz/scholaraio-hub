@@ -49,9 +49,7 @@ body:
     attributes:
       label: Installation method
       options:
-        - npx
-        - Docker
-        - Docker Compose
+        - Built from source (pnpm build + start)
         - Built from source (pnpm dev)
     validations:
       required: true

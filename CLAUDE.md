@@ -22,6 +22,8 @@ A `pnpm` workspace monorepo: a self-hosted hub for supervising coding-agent prov
 - `pnpm typecheck` — TypeScript across all packages
 - `pnpm test` — `shared` + `server` + `client` Vitest suites
 - `pnpm test:e2e` — build client + run Playwright (`e2e/`)
+- `pnpm ci:local` — run the full CI gate locally (mirrors `.github/workflows/ci.yml`);
+  `pnpm ci:local --audit` also runs the dependency audit
 
 ## Cross-cutting rules (apply everywhere)
 
@@ -36,6 +38,10 @@ A `pnpm` workspace monorepo: a self-hosted hub for supervising coding-agent prov
   `packages/server/src/config.ts` / `env.ts` before adding new ones).
 - **Resource release**: anything that acquires a resource (timer, listener, subscription,
   watcher, handle) must declare its release path at the point of creation.
+- **Verify locally, don't push-and-pray**: run `pnpm ci:local` before pushing. Remote CI
+  is a safety net, not your edit-test loop. Turning on a gate that was never enforced (a
+  test suite) is a *migration*: expect it to surface accumulated drift, so run everything
+  locally first and fix the failures as one batch. See `.claude/topics/ci-and-local-verification.md`.
 
 ## Testing
 
@@ -55,11 +61,9 @@ like "generated/co-authored by/with AI", `Co-Authored-By:` trailers naming an AI
 fine. PRs: brief summary, linked issue/spec, test evidence, screenshots for UI; call out
 `PORT` / `CLIENT_PORT` / `SCHOLARAIO_HUB_*` changes.
 
-**Releases**: every push to `main` runs the quality gate (lint/typecheck/test) and then
-builds and pushes a Docker image to GHCR (`ghcr.io/<owner>/scholaraio-hub`), tagged
-`latest`, the `packages/server` version, and `sha-<short>`. Packages are **not** published
-to npm. To cut a versioned image, bump `packages/server/package.json` (and `shared` if
-relevant) in your PR; the tag follows that version.
+**Running it**: the server serves both the API and the built client from one process —
+`pnpm build && pnpm --filter @scholaraio-hub/server start` (or `pnpm dev` for watch mode).
+There is no container/registry release; run it directly with Node.
 
 ## Detailed specs (in `.claude/`)
 
@@ -75,4 +79,4 @@ Read on demand:
 
 - **Domain terms** → `.claude/glossary.md`
 - **Deep dives** → `.claude/topics/` — provider-state-machine, session-liveness,
-  resource-lifecycle, agent-rendering
+  resource-lifecycle, agent-rendering, ci-and-local-verification

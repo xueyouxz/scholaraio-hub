@@ -30,7 +30,7 @@
     "@hono/node-ws": "^1.2.0",
     "@scholaraio-hub/shared": "workspace:*",
     "diff": "^8.0.3",
-    "dotenv": "^16.4.7",
+    "dotenv": "^17.4.2",
     "hono": "^4.12.1",
     "marked": "^17.0.1",
     "pino": "^10.1.0",

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { getSubagentRoute } from "./subagentRouting";
+import { getSubagentRoute } from "../subagentRouting";
 
 describe("getSubagentRoute", () => {
   it("routes legacy parentToolUseId messages under the parent tool id", () => {

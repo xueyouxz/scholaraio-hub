@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { ScholarPaper } from "../../core/api";
+import type { ScholarPaper } from "../../../core/api";
 import {
   abbreviateSource,
   buildPdfUrl,
@@ -12,8 +12,8 @@ import {
   findPaperById,
   groupByYear,
   toPaperRef,
-} from "./paperUtils";
-import type { PaperReference } from "./types";
+} from "../paperUtils";
+import type { PaperReference } from "../types";
 
 // ─── Fixtures ────────────────────────────────────────────────────────────────
 

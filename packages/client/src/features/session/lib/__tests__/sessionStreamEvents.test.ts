@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { parseSessionStreamEvent } from "./sessionStreamEvents";
+import { parseSessionStreamEvent } from "../sessionStreamEvents";
 
 describe("parseSessionStreamEvent", () => {
   it("keeps message payload separate from the SSE envelope", () => {

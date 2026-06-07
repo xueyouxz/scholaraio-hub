@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import type { ScholarTopic } from "../../../core/api";
-import { buildGlobalTopicCloud, buildTopicCloud } from "./topicCloud";
+import type { ScholarTopic } from "../../../../core/api";
+import { buildGlobalTopicCloud, buildTopicCloud } from "../topicCloud";
 
 const colors = new Map<number, string>([
   [1, "#005235"],

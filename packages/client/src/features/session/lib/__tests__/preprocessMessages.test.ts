@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import type { Message } from "../types";
-import { preprocessMessages } from "./preprocessMessages";
+import type { Message } from "../../types";
+import { preprocessMessages } from "../preprocessMessages";
 
 describe("preprocessMessages", () => {
   it("pairs tool_use with tool_result", () => {

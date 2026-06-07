@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { ActivityBus } from "./activityBus";
+import { ActivityBus } from "../activityBus";
 
 class FakeEventSource {
   static instances: FakeEventSource[] = [];

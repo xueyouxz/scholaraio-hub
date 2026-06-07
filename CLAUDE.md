@@ -1,70 +1,72 @@
-# Repository Guidelines
+# scholaraio-hub — Agent Guide
 
-## Project Structure & Module Organization
+A `pnpm` workspace monorepo: a self-hosted hub for supervising coding-agent providers
+(Claude Agent SDK, Codex). This file is a thin index — detailed, path-scoped rules live in
+`.claude/`.
 
-This repository is a `pnpm` workspace monorepo. Main packages live under `packages/`:
+## Project map
 
-- `packages/client`: Vite frontend entrypoints in `src/`
-- `packages/server`: Hono-based API, session supervision, watchers, and provider integrations in `src/`
-- `packages/shared`: shared types, schemas, ports, and helpers consumed by both apps
+- `packages/client` — Vite + React 19 frontend (`src/`).
+- `packages/server` — Hono API, session supervision (`src/supervisor/`), file watchers
+  (`src/watcher/`), subscriptions (`src/subscriptions.ts`), provider integrations
+  (`src/sdk/providers/`).
+- `packages/shared` — types, Zod schemas, ports, helpers consumed by both apps.
+- `e2e/` — Playwright smoke tests · `scripts/` — build/release utils · `docs/` — human
+  technical docs · `.design/DESIGN.md` — UI source of truth.
 
-End-to-end tests live in `e2e/`. Package-level tests live beside each package under `test/`. Build and release utilities are in `scripts/`. Generated protocol code under `packages/server/src/sdk/providers/codex-protocol/generated/` should be treated as generated output.
+## Commands (run from repo root)
 
-## Build, Test, and Development Commands
+- `pnpm dev` — server + client in parallel
+- `pnpm build` — build `shared` → `server` → `client`
+- `pnpm lint` / `pnpm lint:fix` — Biome check / autofix
+- `pnpm typecheck` — TypeScript across all packages
+- `pnpm test` — `shared` + `server` + `client` Vitest suites
+- `pnpm test:e2e` — build client + run Playwright (`e2e/`)
 
-Run all commands from the repo root:
+## Cross-cutting rules (apply everywhere)
 
-- `pnpm install`: install workspace dependencies and Husky hooks
-- `pnpm dev`: start server and client in parallel
-- `pnpm build`: build `shared`, then `server`, then `client`
-- `pnpm lint`: run Biome checks across the workspace
-- `pnpm lint:fix`: apply Biome formatting and safe fixes
-- `pnpm typecheck`: run TypeScript checks for all packages
-- `pnpm test`: run shared and server Vitest suites
-- `pnpm test:e2e`: build the client and run Playwright smoke tests
+- **Formatting (Biome)**: 2-space indent, double quotes, semicolons, trailing commas,
+  100-col width. Run `pnpm lint:fix` before a PR.
+- **No bypass comments**: never use ignore comments to silence type/lint/logic errors —
+  fix the cause.
+- **Naming**: `PascalCase` for classes/schema files (`SessionIndexService.ts`),
+  `camelCase` for functions, kebab-case for top-level scripts (`release-web.mjs`).
+- **Single source of truth**: don't restate volatile facts. Ports derive from
+  `packages/shared/src/ports.ts`; env vars are documented in `.env.example` (review
+  `packages/server/src/config.ts` / `env.ts` before adding new ones).
+- **Resource release**: anything that acquires a resource (timer, listener, subscription,
+  watcher, handle) must declare its release path at the point of creation.
 
-## Coding Style & Naming Conventions
+## Testing
 
-TypeScript uses Biome formatting: 2-space indentation, double quotes, semicolons, trailing commas, and 100-column line width. Use `pnpm lint:fix` before opening a PR.
+Name tests `*.test.ts(x)` under the owning package: `server`/`shared` use a `test/` dir;
+`client` co-locates tests in a sibling `__tests__/` dir (e.g.
+`packages/client/src/core/__tests__/api.test.ts`). Two e2e layers: repo-root `e2e/`
+Playwright (`pnpm test:e2e`) and `packages/server`'s Vitest suite
+(`pnpm --filter @scholaraio-hub/server test:e2e`, plus `test:e2e:real` gated by
+`REAL_SDK_TESTS`/`FOREGROUND`).
 
-Do not use ignore comments to bypass type, linting, or logic errors. All issues must be addressed properly through code fixes, improved typing, or global configuration adjustments.
+## Commits & PRs
 
-Match existing naming patterns: `PascalCase` for classes and schema files such as `SessionIndexService.ts`, `camelCase` for functions, and kebab-case for top-level scripts like `release-web.mjs`. Prefer small modules under the relevant package instead of cross-package imports that bypass `@scholaraio-hub/shared`.
+Keep subjects short, imperative, specific (e.g. `Add codex session pagination`). The
+commit-msg hook (`scripts/check-commit-message.mjs`) rejects AI *attribution* — phrases
+like "generated/co-authored by/with AI", `Co-Authored-By:` trailers naming an AI tool, the
+🤖 emoji, and links like `Generated with [Claude Code]` — but plain provider mentions are
+fine. PRs: brief summary, linked issue/spec, test evidence, screenshots for UI; call out
+`PORT` / `CLIENT_PORT` / `SCHOLARAIO_HUB_*` changes.
 
-For frontend component work and UI implementation, always follow the style design specification documented in `.design/DESIGN.md`. Treat that file as the source of truth for visual and interaction design decisions instead of redefining design rules inline.
+## Detailed specs (in `.claude/`)
 
-## Testing Guidelines
+Path-scoped rules load automatically when you work in the matching package:
 
-Vitest is used for unit and integration tests; Playwright covers app smoke flows. Name tests `*.test.ts` and keep them under the owning package, for example `packages/server/test/routes/settings.test.ts`. Add or update tests for behavior changes in routes, session parsing, shared schemas, and port logic.
+- **Client code** → `.claude/rules/client.md` (React resources, imperative D3/Canvas,
+  shared derived data, UI)
+- **Server code** → `.claude/rules/server.md` (error handling, resource quiescence,
+  idempotency, session identity, env isolation, codex audit gate)
+- **Shared code** → `.claude/rules/shared.md` (single source of truth, import discipline)
 
-## Commit & Pull Request Guidelines
+Read on demand:
 
-Keep commit subjects short, imperative, and specific, for example `Add codex session pagination`. The commit-msg hook rejects AI-related wording such as `AI`, `GPT`, `Claude`, or `Codex` in commit messages.
-
-PRs should include a brief summary, linked issue or spec when applicable, test evidence (`pnpm test`, `pnpm test:e2e`, etc.), and screenshots for UI changes. Call out config or env-var changes explicitly, especially anything affecting `PORT`, `CLIENT_PORT`, or `SCHOLARAIO_HUB_*`.
-
-## Security & Configuration Tips
-
-Use `.env.local` for local overrides and avoid committing secrets. Default ports are derived from `PORT` via shared logic in `packages/shared/src/ports.ts`; keep server and client port changes aligned. Review `packages/server/src/config.ts` before adding new environment variables.
-
-## Runtime & Resource Management
-
-Any code that acquires a resource — timers, intervals, event listeners, subscriptions, open file handles, or database connections — must document its release path at the point of creation, not as an afterthought. In React, resources created outside `useEffect` must store their handle in a `useRef` and be cleaned up in a `useEffect` return function. Bare `setInterval` or `addEventListener` calls outside of `useEffect` are never acceptable.
-
-Guard clauses that check a precondition must exit before the work begins. A check followed by a log that does not return is not a guard — it is a comment. Functions that are expected to be idempotent (file already built, job already running) must enforce that contract with an early return, not an informational message.
-
-## Error Handling
-
-API endpoints must not convert exceptions into degraded-but-successful responses (e.g., returning `{ built: false }` when a file exists but fails to parse). Distinguish between "resource does not exist" (return empty/false state) and "resource exists but is unreadable" (return a 500 with a diagnostic message). Silent `except: pass` and bare `.catch(() => {})` are prohibited; at minimum, log the error with enough context to diagnose it.
-
-## Imperative Rendering (Canvas / D3)
-
-Components that use canvas or imperative rendering libraries (D3, WebGL, Three.js) must isolate their internal state from React's reactivity system. D3 scales, selections, zoom transforms, quadtrees, and animation frames are not React state and must not appear in `useMemo` dependency arrays or `useCallback` deps beyond the initial setup effect. The correct boundary is: React owns data props; the imperative layer owns its own render lifecycle. Wire them together with a single `useEffect` that calls an `update(data)` method. Mixing both models in the same component causes cascade invalidation on every render.
-
-## Shared Derived Data
-
-Data derived from a common source and consumed by sibling components must be computed once at the nearest common ancestor and passed down as a prop. Recomputing the same derivation independently in each consumer (e.g., color maps, filtered sets, aggregated counts) creates divergence risk and wastes CPU. If the derivation is expensive, memoize it at the ancestor; if it is cheap, it is still the ancestor's responsibility.
-
-## Idempotency for Background Jobs
-
-Functions that perform offline computation and persist results to disk must answer the question "is the output already up to date?" before doing any work, and return the existing result if so. This check belongs in the function itself, not in the caller. Job runners that submit these functions must additionally check whether a job of the same kind is already queued or running before enqueuing a new one. UI controls that trigger jobs must be disabled while any job of that kind is in a pending/running state.
+- **Domain terms** → `.claude/glossary.md`
+- **Deep dives** → `.claude/topics/` — provider-state-machine, session-liveness,
+  resource-lifecycle, agent-rendering

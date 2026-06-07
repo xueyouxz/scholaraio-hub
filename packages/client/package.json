@@ -16,7 +16,7 @@
     "@tanstack/react-virtual": "^3.13.24",
     "d3": "^7.9.0",
     "katex": "^0.16.47",
-    "lucide-react": "^0.511.0",
+    "lucide-react": "^1.17.0",
     "pdfjs-dist": "5.4.296",
     "react": "^19.0.0",
     "react-arborist": "^3.7.0",

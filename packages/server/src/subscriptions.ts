@@ -67,6 +67,22 @@ export function createSessionSubscription(
     return augmenter;
   };
 
+  // Serializes all augmentation work so the stateful StreamCoordinator (a single
+  // BlockDetector + blockIndex counter behind getAugmenter()) is never entered
+  // concurrently. Raw deltas are still emitted immediately and never gated on
+  // augmentation; only the augmentation itself is chained, so each processMessage
+  // runs strictly after the previous one. Without this, a burst of deltas (e.g.
+  // deltas piling up while the coordinator/shiki highlighter lazily initializes,
+  // then releasing at once) interleaves onChunk calls and corrupts block indices
+  // — every closed block collapses onto blockIndex 0 and the client can't
+  // reassemble the rendered blocks. A single failing item is logged and dropped
+  // so it never breaks the chain for subsequent deltas.
+  let augmentTail: Promise<void> = Promise.resolve();
+  const enqueueAugment = (work: () => Promise<void>): Promise<void> => {
+    augmentTail = augmentTail.then(work).catch((err) => options?.onError?.(err));
+    return augmentTail;
+  };
+
   // 心跳用于让客户端和中间代理知道连接仍然存活。
   // 释放路径：会话完成和 cleanup() 都会 clearInterval；如果 emit 抛错，
   // 说明传输层很可能已经断开，也立即停止心跳，避免泄漏定时器。
@@ -99,22 +115,25 @@ export function createSessionSubscription(
           // shiki/markdown rendering per chunk, so awaiting it before emit would
           // gate real-time delta delivery behind that work — making the answer
           // appear all at once at the end instead of streaming. Emit the delta
-          // first, then let the augmenter produce pending/markdown-augment HTML
-          // asynchronously (it layers on top, it must never block the raw delta).
+          // first, then augment in the background — but via the serialized tail so
+          // the stateful coordinator processes deltas strictly in order.
           if (message.type === "stream_event") {
             emit(SESSION_STREAM_EVENT.message, markSubagent(message));
-            void getAugmenter()
-              .then((aug) => aug.processMessage(message))
-              .catch((err) => options?.onError?.(err));
+            void enqueueAugment(async () => {
+              const aug = await getAugmenter();
+              await aug.processMessage(message);
+            });
             break;
           }
 
           // Non-streaming messages (notably the final assistant message) carry
           // augments the client expects to be present on arrival — e.g. the
-          // markdown-augment keyed by uuid. Keep augment-then-emit ordering so
-          // those are ready when the message lands.
-          const aug = await getAugmenter();
-          await aug.processMessage(message);
+          // markdown-augment keyed by uuid. Run through the same tail (so any
+          // in-flight delta augmentation finishes first), then emit once ready.
+          await enqueueAugment(async () => {
+            const aug = await getAugmenter();
+            await aug.processMessage(message);
+          });
           emit(SESSION_STREAM_EVENT.message, markSubagent(message));
           break;
         }
@@ -149,9 +168,13 @@ export function createSessionSubscription(
           break;
 
         case "complete":
-          if (augmenter) {
-            await augmenter.flush();
-          }
+          // Flush through the tail so it runs after every in-flight delta
+          // augmentation, then wait for the chain to drain before signaling
+          // completion — guaranteeing all pending/markdown-augment events land
+          // before the client sees "complete".
+          await enqueueAugment(async () => {
+            if (augmenter) await augmenter.flush();
+          });
           emit(SESSION_STREAM_EVENT.complete, { timestamp: new Date().toISOString() });
           completed = true;
           clearInterval(heartbeatInterval);
@@ -197,13 +220,16 @@ export function createSessionSubscription(
   // 让新连接的客户端可以立即看到正在增长的答案片段。
   const streamingContent = process.getStreamingContent();
   if (streamingContent) {
-    getAugmenter()
-      .then(async (aug) => {
+    // Route through the serialized tail so catch-up rendering never enters the
+    // coordinator concurrently with the first live deltas.
+    void enqueueAugment(async () => {
+      try {
+        const aug = await getAugmenter();
         await aug.processCatchUp(streamingContent.text, streamingContent.messageId);
-      })
-      .catch((err) => {
+      } catch (err) {
         console.warn("[subscription] Failed to send catch-up pending HTML:", err);
-      });
+      }
+    });
   }
 
   return {

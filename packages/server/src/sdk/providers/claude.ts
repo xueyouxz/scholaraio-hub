@@ -1,5 +1,8 @@
 import { type ChildProcess, execFile, spawn } from "node:child_process";
+import { constants, accessSync, existsSync, readFileSync } from "node:fs";
+import { createRequire } from "node:module";
 import { homedir } from "node:os";
+import { delimiter, join } from "node:path";
 import { promisify } from "node:util";
 import {
   type SDKMessage as AgentSDKMessage,
@@ -36,10 +39,105 @@ import type {
  */
 const USE_SPAWN_WRAPPER = true;
 const execFileAsync = promisify(execFile);
+const requireFromHere = createRequire(import.meta.url);
 const CLAUDE_CODE_KEYCHAIN_SERVICE = "Claude Code-credentials";
 const CLAUDE_OAUTH_USAGE_URL = "https://api.anthropic.com/api/oauth/usage";
 const CLAUDE_OAUTH_BETA_HEADER = "oauth-2025-04-20";
 const USAGE_LIMITS_TIMEOUT_MS = 8000;
+
+/**
+ * Absolute path to the local `claude` executable the SDK should spawn.
+ *
+ * The SDK defaults to a bundled `cli.js` that is absent in standalone installs
+ * (and ships no native binary package for every platform). When the SDK can't
+ * find an executable, `query()` spawns nothing, the init handshake never lands,
+ * and `supportedModels()` hangs until the probe timeout — stalling
+ * `/api/providers` for 15s. Resolving the executable ourselves and passing it as
+ * `pathToClaudeCodeExecutable` makes the spawn deterministic.
+ *
+ * Resolution order (first hit wins): explicit env override → the SDK's optional
+ * native binary package → `claude` on `PATH`. `undefined` lets the SDK fall back
+ * to its own default (preserving prior behavior when nothing is found).
+ */
+let cachedLocalClaudeCodeExecutable: string | null | undefined;
+
+function isExecutableFile(filePath: string | undefined): filePath is string {
+  if (!filePath) return false;
+  try {
+    accessSync(filePath, constants.X_OK);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function resolvePathExecutable(command: string): string | undefined {
+  if (!command.trim()) return undefined;
+
+  // An explicit path is used as-is (when executable); a bare name is searched on PATH.
+  if (command.includes("/") || command.includes("\\")) {
+    return isExecutableFile(command) ? command : undefined;
+  }
+
+  const pathEnv = process.env.PATH ?? "";
+  for (const dir of pathEnv.split(delimiter)) {
+    const candidate = join(dir, command);
+    if (isExecutableFile(candidate)) {
+      return candidate;
+    }
+  }
+  return undefined;
+}
+
+function hasGlibcRuntime(): boolean {
+  if (typeof process.report?.getReport !== "function") {
+    return false;
+  }
+  const report = process.report.getReport() as {
+    header?: { glibcVersionRuntime?: string };
+  };
+  return Boolean(report.header?.glibcVersionRuntime);
+}
+
+function getClaudeSdkNativePackageNames(): string[] {
+  const binaryArch = process.arch;
+  if (process.platform === "linux") {
+    const glibcPackage = `@anthropic-ai/claude-agent-sdk-linux-${binaryArch}`;
+    const muslPackage = `${glibcPackage}-musl`;
+    return hasGlibcRuntime() ? [glibcPackage, muslPackage] : [muslPackage, glibcPackage];
+  }
+  return [`@anthropic-ai/claude-agent-sdk-${process.platform}-${binaryArch}`];
+}
+
+function resolveClaudeSdkNativeExecutable(): string | undefined {
+  const binaryName = process.platform === "win32" ? "claude.exe" : "claude";
+  for (const packageName of getClaudeSdkNativePackageNames()) {
+    try {
+      const executable = requireFromHere.resolve(`${packageName}/${binaryName}`);
+      if (isExecutableFile(executable)) {
+        return executable;
+      }
+    } catch {
+      // Optional native package not installed for this platform — try the next.
+    }
+  }
+  return undefined;
+}
+
+function resolveLocalClaudeCodeExecutable(): string | undefined {
+  if (cachedLocalClaudeCodeExecutable !== undefined) {
+    return cachedLocalClaudeCodeExecutable ?? undefined;
+  }
+
+  const envExecutable = process.env.CLAUDE_CODE_EXECUTABLE ?? process.env.CLAUDE_CODE_PATH;
+  const executable =
+    resolvePathExecutable(envExecutable ?? "") ??
+    resolveClaudeSdkNativeExecutable() ??
+    resolvePathExecutable("claude");
+
+  cachedLocalClaudeCodeExecutable = executable ?? null;
+  return executable;
+}
 
 /** Static fallback list of Claude models (used if probe fails) */
 const CLAUDE_MODELS_FALLBACK: ModelInfo[] = [
@@ -161,16 +259,113 @@ export class ClaudeProvider implements AgentProvider {
 
   /**
    * Get detailed authentication status.
-   * If Claude CLI is installed, assume it's authenticated.
-   * The SDK handles auth internally and will error at session start if not authenticated.
+   *
+   * Authentication is detected, not assumed: an installed-but-unauthenticated CLI
+   * must report `authenticated: false` so {@link getAvailableModels} returns the
+   * static fallback list *without* probing. A probe against an unauthenticated CLI
+   * never completes its init handshake and stalls the `/api/providers` response for
+   * the full probe timeout (15s).
+   *
+   * Resolution order (first match wins):
+   *   1. `ANTHROPIC_API_KEY` env var.
+   *   2. `claude auth status` (authoritative; short 5s timeout so it can't block).
+   *   3. Stored OAuth credentials (macOS Keychain, else `~/.claude/.credentials.json`).
    */
   async getAuthStatus(): Promise<AuthStatus> {
     const installed = await this.isClaudeCliInstalled();
-    return {
-      installed,
-      authenticated: installed,
-      enabled: installed,
-    };
+    if (!installed) {
+      return { installed: false, authenticated: false, enabled: false };
+    }
+
+    if (process.env.ANTHROPIC_API_KEY?.trim()) {
+      return { installed: true, authenticated: true, enabled: true };
+    }
+
+    const cliAuthStatus = await this.getCliAuthStatus();
+    if (cliAuthStatus) {
+      return cliAuthStatus;
+    }
+
+    const oauth = await this.readClaudeOAuthCredentials();
+    if (!oauth || !(oauth.accessToken || oauth.refreshToken)) {
+      return { installed: true, authenticated: false, enabled: false };
+    }
+
+    const expiresAt = typeof oauth.expiresAt === "number" ? new Date(oauth.expiresAt) : undefined;
+    // A live refresh token keeps us authenticated even past the access token expiry.
+    const authenticated = !expiresAt || expiresAt >= new Date() || Boolean(oauth.refreshToken);
+
+    return { installed: true, authenticated, enabled: authenticated, expiresAt };
+  }
+
+  /**
+   * Ask the Claude CLI directly whether it is logged in. Returns null (so callers
+   * fall through to credential inspection) when the CLI doesn't support
+   * `auth status`, times out, or emits non-JSON output — those are expected, not
+   * failures worth surfacing.
+   */
+  private async getCliAuthStatus(): Promise<AuthStatus | null> {
+    try {
+      const cliInfo = detectClaudeCli();
+      const claudePath = cliInfo.path ?? "claude";
+      const { stdout } = await execFileAsync(claudePath, ["auth", "status"], {
+        encoding: "utf-8",
+        timeout: 5000,
+      });
+
+      const parsed = JSON.parse(stdout) as { loggedIn?: boolean; email?: string };
+      if (typeof parsed.loggedIn !== "boolean") {
+        return null;
+      }
+
+      return {
+        installed: true,
+        authenticated: parsed.loggedIn,
+        enabled: parsed.loggedIn,
+        user: parsed.email ? { email: parsed.email } : undefined,
+      };
+    } catch (error) {
+      console.debug("[Claude] `claude auth status` unavailable, falling back:", error);
+      return null;
+    }
+  }
+
+  /**
+   * Read the stored `claudeAiOauth` credential block. On macOS this lives in the
+   * Keychain (matching {@link readClaudeCodeOAuthAccessToken}); elsewhere it's a
+   * plaintext `~/.claude/.credentials.json`. Returns null when absent/unreadable.
+   */
+  private async readClaudeOAuthCredentials(): Promise<{
+    accessToken?: string;
+    refreshToken?: string;
+    expiresAt?: number;
+  } | null> {
+    try {
+      let raw: string;
+      if (process.platform === "darwin") {
+        const service = process.env.CLAUDE_CODE_KEYCHAIN_SERVICE ?? CLAUDE_CODE_KEYCHAIN_SERVICE;
+        const { stdout } = await execFileAsync(
+          "security",
+          ["find-generic-password", "-s", service, "-w"],
+          { timeout: USAGE_LIMITS_TIMEOUT_MS },
+        );
+        raw = stdout;
+      } else {
+        const credentialsPath = join(homedir(), ".claude", ".credentials.json");
+        if (!existsSync(credentialsPath)) {
+          return null;
+        }
+        raw = readFileSync(credentialsPath, "utf-8");
+      }
+
+      const parsed = JSON.parse(raw) as {
+        claudeAiOauth?: { accessToken?: string; refreshToken?: string; expiresAt?: number };
+      };
+      return parsed.claudeAiOauth ?? null;
+    } catch (error) {
+      console.debug("[Claude] No readable OAuth credentials:", error);
+      return null;
+    }
   }
 
   /**
@@ -339,6 +534,7 @@ export class ClaudeProvider implements AgentProvider {
           abortController,
           permissionMode: "default",
           persistSession: false,
+          pathToClaudeCodeExecutable: resolveLocalClaudeCodeExecutable(),
           env: this.getEnv(),
         },
       });
@@ -470,6 +666,7 @@ export class ClaudeProvider implements AgentProvider {
           effort: options.effort,
           // Filter env to exclude npm_*, scholaraio-hub specific, and other irrelevant vars
           env: this.getEnv(),
+          pathToClaudeCodeExecutable: resolveLocalClaudeCodeExecutable(),
           // Remote execution via SSH
           spawnClaudeCodeProcess,
         },

@@ -94,6 +94,25 @@ export function createSessionSubscription(
           // Provider field normalization happens at ingestion (Process), so the
           // message here is already in canonical shape for augmentation + emit.
           const message = event.message as Record<string, unknown>;
+
+          // stream_event deltas arrive at ~token frequency. The augmenter runs
+          // shiki/markdown rendering per chunk, so awaiting it before emit would
+          // gate real-time delta delivery behind that work — making the answer
+          // appear all at once at the end instead of streaming. Emit the delta
+          // first, then let the augmenter produce pending/markdown-augment HTML
+          // asynchronously (it layers on top, it must never block the raw delta).
+          if (message.type === "stream_event") {
+            emit(SESSION_STREAM_EVENT.message, markSubagent(message));
+            void getAugmenter()
+              .then((aug) => aug.processMessage(message))
+              .catch((err) => options?.onError?.(err));
+            break;
+          }
+
+          // Non-streaming messages (notably the final assistant message) carry
+          // augments the client expects to be present on arrival — e.g. the
+          // markdown-augment keyed by uuid. Keep augment-then-emit ordering so
+          // those are ready when the message lands.
           const aug = await getAugmenter();
           await aug.processMessage(message);
           emit(SESSION_STREAM_EVENT.message, markSubagent(message));

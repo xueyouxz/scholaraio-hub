@@ -6,7 +6,10 @@ import { z } from "zod";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
-const repoRoot = path.resolve(__dirname, "../..");
+// env.ts lives at packages/server/src (and builds to packages/server/dist), so the
+// repo root is three levels up. Using "../.." pointed at packages/, where no .env
+// files exist, so repo-root .env/.env.local were silently never loaded.
+const repoRoot = path.resolve(__dirname, "../../..");
 
 const PermissionModeSchema = z.enum(["default", "acceptEdits", "plan", "bypassPermissions"]);
 

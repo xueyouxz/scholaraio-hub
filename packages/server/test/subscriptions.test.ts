@@ -219,6 +219,34 @@ describe("createSessionSubscription", () => {
     });
   });
 
+  it("forwards stream_event deltas immediately without awaiting augmentation", async () => {
+    const { process, fireEvent } = createMockProcess();
+    const { emit, events } = collectEmit();
+
+    createSessionSubscription(process, emit);
+
+    // Fire a token-level delta but do NOT await the handler yet: the message
+    // must be emitted synchronously (before the async augmenter resolves), so
+    // live deltas reach the client in real time instead of all at once.
+    const fired = fireEvent({
+      type: "message",
+      message: {
+        type: "stream_event",
+        event: {
+          type: "content_block_delta",
+          index: 0,
+          delta: { type: "text_delta", text: "Hi" },
+        },
+      },
+    } as ProcessEvent);
+
+    const messageEvent = events.find(([type]) => type === "message");
+    expect(messageEvent).toBeDefined();
+    expect((messageEvent?.[1] as { type?: string }).type).toBe("stream_event");
+
+    await fired;
+  });
+
   it("augments codex-style Edit raw patches during streaming", async () => {
     const { process, fireEvent } = createMockProcess();
     const { emit, events } = collectEmit();

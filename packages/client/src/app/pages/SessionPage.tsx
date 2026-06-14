@@ -2,7 +2,7 @@ import { type PermissionMode, toUrlProjectId } from "@scholaraio-hub/shared";
 import { useQuery } from "@tanstack/react-query";
 import { Bell, BookOpen, Check, FolderTree, PenLine, X } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { useLocation, useNavigate, useParams } from "react-router-dom";
+import { useLocation, useNavigate, useNavigationType, useParams } from "react-router-dom";
 import { api, scholar } from "../../core/api";
 import { queryKeys } from "../../core/queryKeys";
 import type { ThinkingOption } from "../../core/types";
@@ -29,7 +29,18 @@ import { usePageTitle } from "../components/NavigationLayout";
 export function SessionPage() {
   const { projectId = "", sessionId = "" } = useParams();
   const location = useLocation();
+  const navigationType = useNavigationType();
   const navState = location.state as SessionNavState | null;
+
+  // `location.state` is backed by `window.history.state`, which the browser
+  // persists across a page refresh (and back/forward navigation). The
+  // `initialStatus` optimization assumes "this session was just started, so it's
+  // running" and seeds an optimistic in-turn/running UI. That is only valid for a
+  // fresh PUSH/REPLACE navigation out of the new-session flow. On POP (refresh,
+  // back/forward) the stale status would flash a false RUNNING state — and a
+  // running-styled composer/send button — until the server snapshot arrives, so
+  // drop it and let REST/SSE establish the real state. Title is harmless to keep.
+  const initialStatus = navigationType === "POP" ? undefined : navState?.initialStatus;
 
   if (!projectId || !sessionId) {
     return (
@@ -49,7 +60,7 @@ export function SessionPage() {
           key={sessionId}
           projectId={projectId}
           sessionId={sessionId}
-          initialStatus={navState?.initialStatus}
+          initialStatus={initialStatus}
           initialTitle={navState?.initialTitle}
         />
       </StreamingMarkdownProvider>
@@ -236,11 +247,15 @@ function SessionPageContent({
   };
 
   const handlePermissionModeChange = async (mode: PermissionMode) => {
-    await setPermissionMode(mode).catch(() => {});
+    await setPermissionMode(mode).catch((err) => {
+      console.warn("[SessionPage] setPermissionMode failed", { mode, err });
+    });
   };
 
   const handleHoldChange = async (held: boolean) => {
-    await setHold(held).catch(() => {});
+    await setHold(held).catch((err) => {
+      console.warn("[SessionPage] setHold failed", { held, err });
+    });
   };
 
   // Cleanup stop timeout on unmount so it never fires against a dead component.
@@ -260,13 +275,17 @@ function SessionPageContent({
       // briefly disconnected), reconcile ownership from the server after 3 s.
       stopTimeoutRef.current = setTimeout(async () => {
         stopTimeoutRef.current = null;
-        await refreshRuntimeState().catch(() => {});
+        await refreshRuntimeState().catch((err) => {
+          console.warn("[SessionPage] refreshRuntimeState failed after stop timeout", err);
+        });
       }, 3000);
     } catch {
       await api.abortProcess(ownership.processId).catch((e) => {
         console.warn("[SessionPage] abortProcess failed after interruptProcess error", e);
       });
-      await refreshRuntimeState().catch(() => {});
+      await refreshRuntimeState().catch((err) => {
+        console.warn("[SessionPage] refreshRuntimeState failed after abortProcess", err);
+      });
     }
   };
 
@@ -379,11 +398,18 @@ function SessionPageContent({
     await api.respondToInput(sessionId, pendingInputRequest.id, response);
     if (response === "deny") {
       window.setTimeout(() => {
-        void refreshRuntimeState().catch(() => {});
+        void refreshRuntimeState().catch((err) => {
+          console.warn("[SessionPage] refreshRuntimeState failed after deny", err);
+        });
       }, 250);
       return;
     }
-    await refreshRuntimeState().catch(() => {});
+    await refreshRuntimeState().catch((err) => {
+      console.warn("[SessionPage] refreshRuntimeState failed after input response", {
+        response,
+        err,
+      });
+    });
   };
 
   // Use initialTitle from navigation state as an optimistic title until session data loads.

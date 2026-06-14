@@ -4,6 +4,7 @@ import * as path from "node:path";
 import { serve } from "@hono/node-server";
 import { createNodeWebSocket } from "@hono/node-ws";
 import { createApp } from "./app.js";
+import { warmMarkdownAugments } from "./augments/markdown-augments.js";
 import { loadConfig } from "./config.js";
 import { attachUnifiedUpgradeHandler } from "./frontend/index.js";
 import { ensureSelfSignedCertificate } from "./https/self-signed.js";
@@ -179,8 +180,19 @@ async function startServer() {
   await notificationService.initialize();
   await sessionIndexService.initialize();
 
-  modelInfoService.warmProvider("claude").catch(() => {});
-  modelInfoService.warmProvider("codex").catch(() => {});
+  modelInfoService.warmProvider("claude").catch((err) => {
+    console.warn("[Startup] warmProvider(claude) failed", err);
+  });
+  modelInfoService.warmProvider("codex").catch((err) => {
+    console.warn("[Startup] warmProvider(codex) failed", err);
+  });
+
+  // Prime the shared shiki highlighter so the first session's first streaming
+  // delta doesn't eat the 1–3s WASM/grammar cold start. Non-blocking and
+  // off the request path; a failure only forfeits the warmup, so log and move on.
+  warmMarkdownAugments().catch((err) => {
+    console.warn("[Startup] markdown augmenter warmup failed", err);
+  });
 
   const { app, supervisor, scanner } = createApp({
     realSdk,

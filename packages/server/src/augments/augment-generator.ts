@@ -26,6 +26,52 @@ const cssVarsTheme = createCssVariablesTheme({
   fontStyle: true,
 });
 
+/**
+ * 模块级共享的 Shiki Highlighter 单例。
+ *
+ * `createHighlighter` 会加载较重的 oniguruma WASM 引擎（首轮冷启动 1–3s 的主要来源）
+ * 以及配置的语法包。过去每个 `createAugmentGenerator`（即每个会话的 stream
+ * coordinator）都会新建一个 highlighter，导致每开一个会话都重复付这笔成本。改为
+ * 全模块共享一个实例：WASM 与语法包只加载一次，后续会话直接复用。语言按需加载是
+ * 幂等的，因此 `sharedLoadedLanguages` 也一并模块级共享，保证「是否已加载」的判断
+ * 在所有 generator 间一致。
+ *
+ * 释放路径：highlighter 随进程生命周期存在，无需显式释放（进程退出即回收）。
+ */
+let sharedHighlighterPromise: Promise<Highlighter> | null = null;
+const sharedLoadedLanguages = new Set<string>();
+
+async function getSharedHighlighter(
+  initialLanguages: BundledLanguage[],
+): Promise<{ highlighter: Highlighter; loadedLanguages: Set<string> }> {
+  if (!sharedHighlighterPromise) {
+    const langs = initialLanguages.length > 0 ? initialLanguages : ["javascript", "typescript"];
+    sharedHighlighterPromise = createHighlighter({
+      themes: [cssVarsTheme],
+      langs: langs as BundledLanguage[],
+    }).then((highlighter) => {
+      for (const lang of langs) sharedLoadedLanguages.add(lang);
+      return highlighter;
+    });
+  }
+
+  const highlighter = await sharedHighlighterPromise;
+
+  // 共享实例可能由先到的调用方用一组语言初始化；补载本次请求里尚未加载的有效语言，
+  // 让首次以非默认语言渲染时也能走同步高亮路径（失败的单个语言留给渲染期降级处理）。
+  for (const lang of initialLanguages) {
+    if (sharedLoadedLanguages.has(lang)) continue;
+    try {
+      await highlighter.loadLanguage(lang);
+      sharedLoadedLanguages.add(lang);
+    } catch {
+      // 单个语言预载失败不致命：renderCodeWithHighlighter 会在渲染期再次尝试并降级。
+    }
+  }
+
+  return { highlighter, loadedLanguages: sharedLoadedLanguages };
+}
+
 export interface Augment {
   blockIndex: number;
   html: string;
@@ -61,14 +107,8 @@ export async function createAugmentGenerator(
     (lang) => lang in bundledLanguages,
   ) as BundledLanguage[];
 
-  // 使用 CSS 变量主题创建高亮器，具体颜色交给前端主题变量决定，从而支持明暗主题切换。
-  const highlighter = await createHighlighter({
-    themes: [cssVarsTheme],
-    langs: validLanguages.length > 0 ? validLanguages : ["javascript", "typescript"],
-  });
-
-  // 记录已加载语言，后续渲染时可判断是否需要动态补载语言包。
-  const loadedLanguages = new Set<string>(validLanguages);
+  // 复用模块级共享 highlighter（含已加载语言集合），避免每个 generator 重复创建。
+  const { highlighter, loadedLanguages } = await getSharedHighlighter(validLanguages);
 
   return {
     async processBlock(block: CompletedBlock, blockIndex: number): Promise<Augment> {

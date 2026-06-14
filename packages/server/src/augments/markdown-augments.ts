@@ -90,6 +90,21 @@ export async function renderMarkdownToHtml(markdown: string): Promise<string> {
 }
 
 /**
+ * Eagerly initialize the shared markdown→HTML pipeline at server startup.
+ *
+ * The first `renderMarkdownToHtml` call lazily creates the shared shiki
+ * highlighter, whose oniguruma WASM + grammar load is the 1–3s cold start that
+ * otherwise lands on the first session's first streaming delta (making the
+ * opening chunk appear all at once). Rendering a tiny code sample here primes
+ * the shared highlighter — and thus the streaming coordinator that reuses it —
+ * before any request arrives. Idempotent: the underlying generator is a
+ * singleton, so repeated calls are cheap no-ops.
+ */
+export async function warmMarkdownAugments(): Promise<void> {
+  await renderMarkdownToHtml("```ts\nconst a = 1;\n```");
+}
+
+/**
  * Augment text blocks with pre-rendered HTML.
  *
  * Mutates text blocks in assistant messages, adding `_html` field

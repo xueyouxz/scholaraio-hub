@@ -38,6 +38,14 @@ const EXCLUDED_VARS = new Set([
   // leak into Claude Code child processes where it breaks project tooling
   // (e.g. React 19 + Vitest). See GitHub issue #41.
   "NODE_ENV",
+  // Let the CLI settings or the explicit SDK model option select the model.
+  "ANTHROPIC_MODEL",
+  "PORT",
+  "HOST",
+  "CLIENT_PORT",
+  "CLIENT_PREVIEW_PORT",
+  "UV_PROJECT_ENVIRONMENT",
+  "UV_CACHE_DIR",
 ]);
 
 /** Essential variables to always keep (even if they match excluded patterns) */

@@ -8,9 +8,9 @@
   "files": ["dist"],
   "exports": {
     ".": {
-      "source": "./src/index.ts",
-      "import": "./dist/index.js",
-      "types": "./dist/index.d.ts"
+      "scholaraio-source": "./src/index.ts",
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
     }
   },
   "scripts": {

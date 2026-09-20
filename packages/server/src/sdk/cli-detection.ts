@@ -1,4 +1,4 @@
-import { exec, execFile } from "node:child_process";
+import { exec, execFile, execFileSync } from "node:child_process";
 import { existsSync } from "node:fs";
 import * as os from "node:os";
 import { promisify } from "node:util";
@@ -38,9 +38,16 @@ export interface ClaudeCliInfo {
  *
  * @returns Information about the CLI installation
  */
-export function detectClaudeCli(): ClaudeCliInfo {
-  // Short-circuit: let the SDK handle CLI spawning and errors
-  return { found: true, path: "claude", version: "(SDK-managed)" };
+export function detectClaudeCli(executable = "claude"): ClaudeCliInfo {
+  try {
+    const version = execFileSync(executable, ["--version"], {
+      encoding: "utf8",
+      timeout: 10000,
+    }).trim();
+    return { found: true, path: executable, version };
+  } catch (error) {
+    return { found: false, error: error instanceof Error ? error.message : String(error) };
+  }
 }
 
 /**
@@ -77,7 +84,7 @@ export async function detectCodexCli(): Promise<CodexCliInfo> {
 
   return {
     found: false,
-    error: "Codex CLI not found. Install via: cargo install codex",
+    error: "Codex CLI cannot run. Repair with: npm install -g @openai/codex",
   };
 }
 

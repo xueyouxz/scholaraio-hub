@@ -76,7 +76,12 @@ export function LibraryPage() {
       <div className="flex flex-wrap gap-3 items-center justify-between">
         <div>
           <h1 className="text-2xl text-primary">本地文献</h1>
-          <p className="text-sm text-on-surface-variant mt-1">查找、阅读，并围绕原文展开对话。</p>
+          <p className="text-sm text-on-surface-variant mt-1">
+            查找、阅读，并围绕原文展开对话。
+            {papers.data
+              ? ` · ${results.length} 篇${query && results.length === 200 ? "（显示前 200 条匹配）" : ""}`
+              : ""}
+          </p>
         </div>
         <div className="flex gap-2">
           <input
@@ -253,6 +258,11 @@ export function LibraryPage() {
                     <p className="text-xs text-on-surface-variant truncate mt-1">
                       {[paper.authors, paper.year, paper.journal].filter(Boolean).join(" · ") ||
                         "元数据尚未补齐"}
+                      {paper.parseStatus !== "ready" ? (
+                        <span className="ml-2 text-tertiary">
+                          {paper.parseStatus === "failed" ? "解析失败" : "未解析"}
+                        </span>
+                      ) : null}
                     </p>
                     <p className="text-xs mt-2 line-clamp-2">
                       {matches[0]?.text.slice(0, 200) ||

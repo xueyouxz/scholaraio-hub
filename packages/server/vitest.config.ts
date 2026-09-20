@@ -1,3 +1,4 @@
+import { fileURLToPath } from "node:url";
 import { defineConfig } from "vitest/config";
 
 const exclude = ["node_modules/**", "dist/**"];
@@ -8,7 +9,9 @@ if (process.env.ALLOW_SOCKET_TESTS !== "true") {
 
 export default defineConfig({
   resolve: {
-    conditions: ["source"],
+    alias: {
+      "@scholaraio-hub/shared": fileURLToPath(new URL("../shared/src/index.ts", import.meta.url)),
+    },
   },
   test: {
     exclude,

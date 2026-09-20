@@ -1,9 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { app } from "../src/app.js";
+import { health } from "../src/routes/health.js";
 
 describe("GET /health", () => {
   it("returns ok status", async () => {
-    const res = await app.request("/health");
+    const res = await health.request("/");
     const json = await res.json();
 
     expect(res.status).toBe(200);

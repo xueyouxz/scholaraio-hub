@@ -1467,8 +1467,15 @@ export class Process {
     }
 
     // Wait for CLI process to fully exit (with timeout to avoid hanging)
-    const timeout = new Promise<void>((resolve) => setTimeout(resolve, 5000));
-    await Promise.race([this._exitPromise, timeout]);
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    try {
+      const timeout = new Promise<void>((resolve) => {
+        timer = setTimeout(resolve, 5000);
+      });
+      await Promise.race([this._exitPromise, timeout]);
+    } finally {
+      clearTimeout(timer);
+    }
 
     // Signal completion to subscribers (skip if already terminated —
     // markTerminated() already emitted "complete")
@@ -1708,26 +1715,9 @@ export class Process {
         return;
       }
 
-      // Keep ownership while the underlying process is still alive. This lets
-      // long-lived Claude sessions remain reusable instead of decaying into
-      // "external" after the idle timeout.
-      if (this.isProcessAlive === true) {
-        getLogger().debug(
-          {
-            event: "idle_cleanup_deferred",
-            sessionId: this._sessionId,
-            processId: this.id,
-            projectId: this.projectId,
-            idleTimeoutMs: this.idleTimeoutMs,
-          },
-          `Idle cleanup deferred: ${this._sessionId} is still alive`,
-        );
-        this.startIdleTimer();
-        return;
-      }
-
-      // Emit completion - Supervisor will clean up
-      this.emit({ type: "complete" });
+      // The application keeps its native ID for resume; an idle CLI worker
+      // need not live forever just to keep the session visible.
+      this.terminate("Idle timeout");
     }, this.idleTimeoutMs);
     this.idleTimer.unref?.();
   }

@@ -1,20 +1,10 @@
-import {
-  createContext,
-  useCallback,
-  useContext,
-  useEffect,
-  useMemo,
-  useRef,
-  useState,
-} from "react";
+import { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
 import { Outlet, useLocation, useOutletContext } from "react-router-dom";
 import { Sidebar } from "./Sidebar";
 
 const DESKTOP_BREAKPOINT = 1100;
 export const SIDEBAR_WIDTH_COLLAPSED = 60;
 export const SIDEBAR_WIDTH_EXPANDED_DEFAULT = 248;
-export const SIDEBAR_WIDTH_MIN = 180;
-export const SIDEBAR_WIDTH_MAX = 400;
 
 // ─── PageTitle context ────────────────────────────────────────────────────────
 
@@ -30,28 +20,6 @@ const PageTitleContext = createContext<PageTitleContextValue>({
 
 export function usePageTitle() {
   return useContext(PageTitleContext);
-}
-
-// ─── ProjectScope context ─────────────────────────────────────────────────────
-
-export type SelectedProvider = "claude" | "codex" | null;
-
-interface ProjectScopeContextValue {
-  selectedProvider: SelectedProvider;
-  selectedProjectId: string | null;
-  setSelectedProvider: (provider: SelectedProvider) => void;
-  setSelectedProjectId: (id: string | null) => void;
-}
-
-const ProjectScopeContext = createContext<ProjectScopeContextValue>({
-  selectedProvider: null,
-  selectedProjectId: null,
-  setSelectedProvider: () => {},
-  setSelectedProjectId: () => {},
-});
-
-export function useProjectScope() {
-  return useContext(ProjectScopeContext);
 }
 
 // ─── NavigationLayout context (sidebar toggle) ───────────────────────────────
@@ -75,67 +43,6 @@ export function NavigationLayout() {
   const [isMobileSidebarOpen, setIsMobileSidebarOpen] = useState(false);
   const [pageTitle, setPageTitle] = useState("");
 
-  // Persisted expanded width — only read on mount; updates come from handleDragEnd.
-  const [expandedWidth, setExpandedWidth] = useState(() => {
-    const stored = localStorage.getItem("sidebarExpandedWidth");
-    const parsed = stored ? Number.parseInt(stored, 10) : SIDEBAR_WIDTH_EXPANDED_DEFAULT;
-    return Number.isNaN(parsed)
-      ? SIDEBAR_WIDTH_EXPANDED_DEFAULT
-      : Math.min(Math.max(parsed, SIDEBAR_WIDTH_MIN), SIDEBAR_WIDTH_MAX);
-  });
-
-  // Ref to the root grid container — mutated directly during drag to skip React.
-  const layoutRef = useRef<HTMLDivElement>(null);
-
-  /**
-   * Called on every mousemove during a sidebar drag.
-   * Writes gridTemplateColumns directly so there is zero React overhead and
-   * both the sidebar cell and the content cell update in the same browser frame.
-   */
-  const handleDragMove = useCallback((width: number) => {
-    const el = layoutRef.current;
-    if (!el) return;
-    el.style.transition = "none";
-    el.style.gridTemplateColumns = `${width}px 1fr`;
-  }, []);
-
-  /**
-   * Called once on mouseup. Syncs React state (triggers one re-render to
-   * persist the value and restore the CSS transition via the style prop).
-   */
-  const handleDragEnd = useCallback((finalWidth: number) => {
-    const clamped = Math.min(Math.max(finalWidth, SIDEBAR_WIDTH_MIN), SIDEBAR_WIDTH_MAX);
-    setExpandedWidth(clamped);
-    localStorage.setItem("sidebarExpandedWidth", String(clamped));
-  }, []);
-
-  // Restore provider + project from localStorage
-  const [selectedProvider, setSelectedProviderState] = useState<SelectedProvider>(() => {
-    const stored = localStorage.getItem("selectedProvider");
-    return stored === "claude" || stored === "codex" ? stored : null;
-  });
-  const [selectedProjectId, setSelectedProjectIdState] = useState<string | null>(() => {
-    return localStorage.getItem("selectedProjectId");
-  });
-
-  const setSelectedProvider = useCallback((provider: SelectedProvider) => {
-    setSelectedProviderState(provider);
-    if (provider) {
-      localStorage.setItem("selectedProvider", provider);
-    } else {
-      localStorage.removeItem("selectedProvider");
-    }
-  }, []);
-
-  const setSelectedProjectId = useCallback((id: string | null) => {
-    setSelectedProjectIdState(id);
-    if (id) {
-      localStorage.setItem("selectedProjectId", id);
-    } else {
-      localStorage.removeItem("selectedProjectId");
-    }
-  }, []);
-
   useEffect(() => {
     const handleResize = () => {
       const nextIsDesktop = getIsDesktop();
@@ -156,7 +63,9 @@ export function NavigationLayout() {
 
   const closeMobileSidebar = useCallback(() => setIsMobileSidebarOpen(false), []);
 
-  const sidebarWidth = isSidebarCollapsed ? SIDEBAR_WIDTH_COLLAPSED : expandedWidth;
+  const sidebarWidth = isSidebarCollapsed
+    ? SIDEBAR_WIDTH_COLLAPSED
+    : SIDEBAR_WIDTH_EXPANDED_DEFAULT;
 
   const layoutContext = useMemo<NavigationLayoutContext>(
     () => ({
@@ -173,97 +82,70 @@ export function NavigationLayout() {
     [pageTitle],
   );
 
-  const projectScopeContext = useMemo<ProjectScopeContextValue>(
-    () => ({
-      selectedProvider,
-      selectedProjectId,
-      setSelectedProvider,
-      setSelectedProjectId,
-    }),
-    [selectedProvider, selectedProjectId, setSelectedProvider, setSelectedProjectId],
-  );
-
-  const isSessionRoute = /^\/projects\/[^/]+\/sessions\/[^/]+/.test(location.pathname);
+  const isSessionRoute = /^\/sessions(\/|$)/.test(location.pathname);
   const isPaperReaderRoute = /^\/library\/.+/.test(location.pathname);
   const isLibraryRoute = location.pathname === "/library";
-  const isSkillsRoute = /^\/skills(\/|$)/.test(location.pathname);
-  const isNewSessionRoute = location.pathname === "/new-session";
-  const isFullscreenRoute =
-    isSessionRoute || isPaperReaderRoute || isLibraryRoute || isSkillsRoute || isNewSessionRoute;
+  const isFullscreenRoute = isSessionRoute || isPaperReaderRoute || isLibraryRoute;
 
   return (
-    <ProjectScopeContext value={projectScopeContext}>
-      <PageTitleContext value={pageTitleContext}>
-        {/*
-         * Desktop: CSS Grid with two columns — sidebar track + content track.
-         * Both update from the same single style prop, so they are always
-         * pixel-perfect in sync. During drag, handleDragMove bypasses React and
-         * mutates gridTemplateColumns directly; handleDragEnd fires once to
-         * persist state and React restores the transition via the style prop.
-         *
-         * Mobile: plain block layout; sidebar is a fixed overlay.
-         */}
+    <PageTitleContext value={pageTitleContext}>
+      <div
+        className="min-h-screen bg-surface"
+        style={
+          isDesktop
+            ? {
+                display: "grid",
+                gridTemplateColumns: `${sidebarWidth}px 1fr`,
+                transition: "grid-template-columns 220ms ease-in-out",
+              }
+            : undefined
+        }
+      >
+        {/* Mobile overlay backdrop */}
+        {!isDesktop && isMobileSidebarOpen ? (
+          <button
+            type="button"
+            aria-label="Close navigation"
+            className="fixed inset-0 z-40 bg-on-surface/20 border-0 p-0 cursor-pointer"
+            onClick={closeMobileSidebar}
+          />
+        ) : null}
+
+        <Sidebar
+          isDesktop={isDesktop}
+          isCollapsed={isSidebarCollapsed}
+          isOpen={isDesktop || isMobileSidebarOpen}
+          onToggle={toggleSidebar}
+          onClose={closeMobileSidebar}
+        />
+
+        {/* Main content — no margin/padding needed; grid track handles spacing */}
         <div
-          ref={layoutRef}
-          className="min-h-screen bg-surface"
-          style={
-            isDesktop
-              ? {
-                  display: "grid",
-                  gridTemplateColumns: `${sidebarWidth}px 1fr`,
-                  transition: "grid-template-columns 220ms ease-in-out",
-                }
-              : undefined
-          }
+          className={`flex flex-col min-w-0 ${isFullscreenRoute ? "h-screen overflow-hidden" : "min-h-screen"}`}
         >
-          {/* Mobile overlay backdrop */}
-          {!isDesktop && isMobileSidebarOpen ? (
-            <button
-              type="button"
-              aria-label="Close navigation"
-              className="fixed inset-0 z-40 bg-on-surface/20 border-0 p-0 cursor-pointer"
-              onClick={closeMobileSidebar}
-            />
+          {!isSessionRoute ? (
+            <header className="sticky top-0 z-30 flex items-center h-[3.25rem] px-6 bg-surface border-b border-outline-variant/10">
+              {pageTitle ? (
+                <h3 className="font-serif text-[1.65rem] font-bold text-primary leading-none">
+                  {pageTitle}
+                </h3>
+              ) : null}
+            </header>
           ) : null}
 
-          <Sidebar
-            isDesktop={isDesktop}
-            isCollapsed={isSidebarCollapsed}
-            isOpen={isDesktop || isMobileSidebarOpen}
-            onToggle={toggleSidebar}
-            onClose={closeMobileSidebar}
-            expandedWidth={expandedWidth}
-            onDragMove={handleDragMove}
-            onDragEnd={handleDragEnd}
-          />
-
-          {/* Main content — no margin/padding needed; grid track handles spacing */}
-          <div
-            className={`flex flex-col min-w-0 ${isFullscreenRoute ? "h-screen overflow-hidden" : "min-h-screen"}`}
+          <main
+            id="main-content"
+            className={
+              isFullscreenRoute
+                ? "flex-1 min-w-0 min-h-0 flex flex-col"
+                : "flex-1 min-w-0 px-6 py-8 flex flex-col"
+            }
           >
-            {!isSessionRoute ? (
-              <header className="sticky top-0 z-30 flex items-center h-[3.25rem] px-6 bg-surface border-b border-outline-variant/10">
-                {pageTitle ? (
-                  <h3 className="font-serif text-[1.65rem] font-bold text-primary leading-none">
-                    {pageTitle}
-                  </h3>
-                ) : null}
-              </header>
-            ) : null}
-
-            <main
-              className={
-                isFullscreenRoute
-                  ? "flex-1 min-w-0 min-h-0 flex flex-col"
-                  : "flex-1 min-w-0 px-6 py-8 flex flex-col"
-              }
-            >
-              <Outlet context={layoutContext} />
-            </main>
-          </div>
+            <Outlet context={layoutContext} />
+          </main>
         </div>
-      </PageTitleContext>
-    </ProjectScopeContext>
+      </div>
+    </PageTitleContext>
   );
 }
 

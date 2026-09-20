@@ -10,7 +10,7 @@ const nodeArgs =
         "exec",
         "tsx",
         "--conditions",
-        "source",
+        "scholaraio-source",
         "src/tools.ts",
         command,
         ...args,
@@ -23,15 +23,16 @@ const child = spawn("pnpm", nodeArgs, {
     SCHOLARAIO_HUB_PROFILE: production ? "production" : "dev",
   },
 });
-const stop = (signal) => child.kill(signal);
-process.on("SIGINT", stop);
-process.on("SIGTERM", stop);
+const interrupt = () => child.kill("SIGINT");
+const terminate = () => child.kill("SIGTERM");
+process.on("SIGINT", interrupt);
+process.on("SIGTERM", terminate);
 child.on("error", (error) => {
   console.error(error);
   process.exitCode = 1;
 });
 child.on("exit", (code) => {
-  process.off("SIGINT", stop);
-  process.off("SIGTERM", stop);
+  process.off("SIGINT", interrupt);
+  process.off("SIGTERM", terminate);
   process.exitCode = code ?? 0;
 });

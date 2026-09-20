@@ -1,3 +1,4 @@
+import { filterEnvForChildProcess } from "./env-filter.js";
 /**
  * Codex Provider implementation using codex app-server JSON-RPC.
  *
@@ -5,7 +6,7 @@
  * server-initiated permission requests (command/file approval).
  */
 
-import { type ChildProcess, exec, spawn } from "node:child_process";
+import { type ChildProcess, exec, execFile, spawn } from "node:child_process";
 import { promisify } from "node:util";
 import type { ModelInfo, ProviderUsageLimits } from "@scholaraio-hub/shared";
 import {
@@ -114,7 +115,7 @@ const CODEX_POLICY_OVERRIDES: {
  * When enabled, declare Codex session originator as "Codex Desktop"
  * when initializing app-server sessions.
  */
-const DECLARE_CODEX_ORIGINATOR = true;
+const DECLARE_CODEX_ORIGINATOR = false;
 const DECLARED_CODEX_ORIGINATOR = "Codex Desktop";
 
 const PREFERRED_MODEL_ORDER = [
@@ -520,9 +521,19 @@ class CodexAppServerClient {
     const id = this.nextRequestId++;
 
     const resultPromise = new Promise<T>((resolve, reject) => {
+      const timer = setTimeout(() => {
+        this.pendingRequests.delete(id);
+        reject(new Error(`Codex ${method} request timed out`));
+      }, 30000);
       this.pendingRequests.set(id, {
-        resolve: (result) => resolve(result as T),
-        reject,
+        resolve: (result) => {
+          clearTimeout(timer);
+          resolve(result as T);
+        },
+        reject: (error) => {
+          clearTimeout(timer);
+          reject(error);
+        },
       });
     });
 
@@ -629,7 +640,12 @@ export class CodexProvider implements AgentProvider {
    */
   private async isCodexCliInstalled(): Promise<boolean> {
     if (this.config.codexPath) {
-      return true;
+      try {
+        await promisify(execFile)(this.config.codexPath, ["--version"], { timeout: 10000 });
+        return true;
+      } catch {
+        return false;
+      }
     }
     return (await findCodexCliPath()) !== null;
   }
@@ -650,7 +666,7 @@ export class CodexProvider implements AgentProvider {
    * Build environment overrides for Codex subprocesses.
    */
   private getCodexEnv(): NodeJS.ProcessEnv {
-    const env: NodeJS.ProcessEnv = { ...process.env };
+    const env: NodeJS.ProcessEnv = filterEnvForChildProcess();
     if (this.config.baseUrl) {
       env.OPENAI_BASE_URL = this.config.baseUrl;
     }
@@ -670,15 +686,29 @@ export class CodexProvider implements AgentProvider {
 
   /**
    * Get detailed authentication status.
-   * If Codex CLI is installed, assume it's authenticated.
+   * Ask the executable itself; a path on disk does not prove availability or login.
    */
   async getAuthStatus(): Promise<AuthStatus> {
     const installed = await this.isCodexCliInstalled();
-    return {
-      installed,
-      authenticated: installed,
-      enabled: installed,
-    };
+    const env = this.getCodexEnv();
+    let authenticated =
+      installed &&
+      ["OPENAI_API_KEY", "CODEX_API_KEY", "CODEX_ACCESS_TOKEN"].some((name) =>
+        Boolean(env[name]?.trim()),
+      );
+    if (installed && !authenticated) {
+      try {
+        await promisify(execFile)(await this.resolveCodexCommand(), ["login", "status"], {
+          timeout: 10000,
+          env: this.getCodexEnv(),
+        });
+        authenticated = true;
+      } catch {
+        // The login status command communicates logged-out state with its exit code.
+        authenticated = false;
+      }
+    }
+    return { installed, authenticated, enabled: authenticated };
   }
 
   /**
@@ -1027,11 +1057,26 @@ export class CodexProvider implements AgentProvider {
       queue,
       abort: () => {
         abortController.abort();
+        queue.push({ text: "" });
         activeClient?.close();
       },
       isProcessAlive: () => activeClient?.isAlive() ?? false,
       get pid() {
         return activeClient?.pid;
+      },
+      // Same native cancellation route as YepAnywhere. If a turn has not started
+      // yet, terminate this worker so queued input cannot begin after Stop.
+      interrupt: async () => {
+        if (!activeClient || !runtimeState.threadId || !runtimeState.activeTurnId) {
+          abortController.abort();
+          queue.push({ text: "" });
+          activeClient?.close();
+          return;
+        }
+        await activeClient.request("turn/interrupt", {
+          threadId: runtimeState.threadId,
+          turnId: runtimeState.activeTurnId,
+        });
       },
       steer: async (message) => {
         if (!activeClient) return false;
@@ -1570,6 +1615,25 @@ export class CodexProvider implements AgentProvider {
     usageByTurnId: Map<string, TokenUsageSnapshot>,
   ): SDKMessage[] {
     switch (notification.method) {
+      case "item/agentMessage/delta": {
+        const params = notification.params as Record<string, unknown> | undefined;
+        if (
+          params?.threadId !== sessionId ||
+          typeof params?.itemId !== "string" ||
+          typeof params?.turnId !== "string" ||
+          typeof params?.delta !== "string"
+        )
+          return [];
+        return [
+          {
+            type: "text_delta",
+            session_id: sessionId,
+            uuid: `${params.itemId}-${params.turnId}`,
+            delta: params.delta,
+          },
+        ];
+      }
+
       case "turn/completed": {
         const params = this.asTurnCompletedNotification(notification.params);
         const turnId = params?.turn.id ?? null;

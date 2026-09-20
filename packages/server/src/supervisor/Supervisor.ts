@@ -82,6 +82,7 @@ export type OnProviderSDKMessageCallback = (provider: ProviderName, message: SDK
 const INITIAL_RECONCILE_DELAYS_MS = [1000, 3000] as const;
 
 export interface SupervisorOptions {
+  onProcessCreated?: (process: Process) => void;
   /** Agent provider interface (preferred for new code) */
   provider?: AgentProvider;
   /** Legacy SDK interface for mock SDK */
@@ -108,6 +109,7 @@ export interface SupervisorOptions {
 }
 
 export class Supervisor {
+  private onProcessCreated?: (process: Process) => void;
   private processes: Map<string, Process> = new Map();
   private sessionToProcess: Map<string, string> = new Map(); // sessionId -> processId
   private everOwnedSessions: Set<string> = new Set(); // Sessions we've ever owned (for orphan detection)
@@ -127,6 +129,7 @@ export class Supervisor {
   private staleCheckTimer: ReturnType<typeof setInterval>;
 
   constructor(options: SupervisorOptions) {
+    this.onProcessCreated = options.onProcessCreated;
     this.provider = options.provider ?? null;
     this.sdk = options.sdk ?? null;
     this.realSdk = options.realSdk ?? null;
@@ -152,6 +155,11 @@ export class Supervisor {
     if (!this.provider && !this.sdk && !this.realSdk) {
       throw new Error("Either provider, sdk, or realSdk must be provided");
     }
+  }
+
+  async close(): Promise<void> {
+    clearInterval(this.staleCheckTimer);
+    await Promise.all(this.getAllProcesses().map((process) => process.abort()));
   }
 
   async startSession(
@@ -192,7 +200,9 @@ export class Supervisor {
 
     // Resolve provider: use specified provider name, or fall back to default provider
     const provider = modelSettings?.providerName
-      ? getProvider(modelSettings.providerName)
+      ? this.provider?.name === modelSettings.providerName
+        ? this.provider
+        : getProvider(modelSettings.providerName)
       : this.provider;
 
     // Use provider if available (preferred)
@@ -271,7 +281,9 @@ export class Supervisor {
 
     // Resolve provider: use specified provider name, or fall back to default provider
     const provider = modelSettings?.providerName
-      ? getProvider(modelSettings.providerName)
+      ? this.provider?.name === modelSettings.providerName
+        ? this.provider
+        : getProvider(modelSettings.providerName)
       : this.provider;
 
     // Use provider if available (preferred)
@@ -369,6 +381,7 @@ export class Supervisor {
     };
 
     const process = new Process(iterator, options);
+    this.onProcessCreated?.(process);
     processHolder.process = process;
 
     // Wait for the real session ID from the SDK
@@ -472,6 +485,7 @@ export class Supervisor {
     };
 
     const process = new Process(iterator, options);
+    this.onProcessCreated?.(process);
     processHolder.process = process;
 
     // Add the initial user message to history with the same UUID we passed to SDK.
@@ -572,6 +586,7 @@ export class Supervisor {
     };
 
     const process = new Process(iterator, options);
+    this.onProcessCreated?.(process);
     processHolder.process = process;
 
     // Wait for the real session ID from the provider
@@ -673,6 +688,7 @@ export class Supervisor {
     };
 
     const process = new Process(iterator, options);
+    this.onProcessCreated?.(process);
     processHolder.process = process;
 
     // Add the initial user message to history with the same UUID we passed to provider.
@@ -729,6 +745,7 @@ export class Supervisor {
     };
 
     const process = new Process(iterator, options);
+    this.onProcessCreated?.(process);
 
     this.registerProcess(process, !resumeSessionId);
 
@@ -864,7 +881,9 @@ export class Supervisor {
 
     // Resolve provider: use specified provider name, or fall back to default provider
     const provider = modelSettings?.providerName
-      ? getProvider(modelSettings.providerName)
+      ? this.provider?.name === modelSettings.providerName
+        ? this.provider
+        : getProvider(modelSettings.providerName)
       : this.provider;
 
     // Use provider if available (preferred)
@@ -1678,7 +1697,9 @@ export class Supervisor {
     modelSettings?: ModelSettings,
   ): Promise<Process> {
     const provider = modelSettings?.providerName
-      ? getProvider(modelSettings.providerName)
+      ? this.provider?.name === modelSettings.providerName
+        ? this.provider
+        : getProvider(modelSettings.providerName)
       : this.provider;
 
     // Use provider if available (preferred)
@@ -1728,7 +1749,9 @@ export class Supervisor {
     modelSettings?: ModelSettings,
   ): Promise<Process> {
     const provider = modelSettings?.providerName
-      ? getProvider(modelSettings.providerName)
+      ? this.provider?.name === modelSettings.providerName
+        ? this.provider
+        : getProvider(modelSettings.providerName)
       : this.provider;
 
     if (provider) {

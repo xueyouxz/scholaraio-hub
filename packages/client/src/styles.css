@@ -1531,3 +1531,47 @@ textarea {
   background-size: 800px 100%;
   animation: skeleton-shimmer 1.4s ease-in-out infinite;
 }
+
+@source "../node_modules/streamdown/dist/*.js";
+@source "../node_modules/@streamdown/code/dist/*.js";
+@source "../node_modules/@streamdown/math/dist/*.js";
+@source "../node_modules/@streamdown/cjk/dist/*.js";
+
+.hub-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: .5rem;
+  padding: .55rem .8rem;
+  border-radius: .75rem;
+  font-size: .875rem;
+  background-color: var(--color-surface-container);
+  cursor: pointer;
+}
+.hub-button:hover {
+  filter: brightness(0.97);
+}
+.hub-button:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+.hub-input {
+  min-width: 0;
+  border: 1px solid var(--color-outline-variant);
+  border-radius: .75rem;
+  padding: .65rem .8rem;
+  background: var(--color-surface-container-lowest);
+}
+:where(button, a, input, textarea, select, summary):focus-visible {
+  outline: 2px solid var(--color-primary);
+  outline-offset: 3px;
+}
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    scroll-behavior: auto !important;
+    animation-duration: .01ms !important;
+    transition-duration: .01ms !important;
+  }
+}

@@ -17,6 +17,24 @@ function createMockIterator(messages: SDKMessage[]): AsyncIterator<SDKMessage> {
 }
 
 describe("Process", () => {
+  it("releases a live idle worker while retaining its native session ID", async () => {
+    const abort = vi.fn();
+    const process = new Process(
+      createMockIterator([{ type: "result", session_id: "native-idle" }]),
+      {
+        projectPath: "/test",
+        projectId: "project",
+        sessionId: "native-idle",
+        idleTimeoutMs: 20,
+        abortFn: abort,
+        isProcessAlive: () => true,
+      },
+    );
+    await expect.poll(() => process.state.type).toBe("terminated");
+    expect(abort).toHaveBeenCalledOnce();
+    expect(process.sessionId).toBe("native-idle");
+    expect(process.queueMessage({ text: "continue" }).success).toBe(false);
+  });
   describe("event subscription", () => {
     it("emits message events", async () => {
       const messages: SDKMessage[] = [

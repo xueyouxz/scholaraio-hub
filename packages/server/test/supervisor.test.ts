@@ -562,7 +562,7 @@ describe("Supervisor", () => {
       });
     });
 
-    it("keeps idle sessions owned while the underlying process is still alive", async () => {
+    it("releases live idle workers after the configured timeout", async () => {
       vi.useFakeTimers();
       try {
         let aborted = false;
@@ -607,13 +607,12 @@ describe("Supervisor", () => {
 
         await vi.advanceTimersByTimeAsync(150);
 
-        expect(supervisorWithAliveProcess.getProcessForSession("idle-alive-session-1")).toBe(
-          process,
-        );
-
-        const abortPromise = supervisorWithAliveProcess.abortProcess(process.id);
-        await vi.advanceTimersByTimeAsync(20);
-        await expect(abortPromise).resolves.toBe(true);
+        expect(
+          supervisorWithAliveProcess.getProcessForSession("idle-alive-session-1"),
+        ).toBeUndefined();
+        expect(aborted).toBe(true);
+        expect(process.sessionId).toBe("idle-alive-session-1");
+        await supervisorWithAliveProcess.close();
       } finally {
         vi.useRealTimers();
       }

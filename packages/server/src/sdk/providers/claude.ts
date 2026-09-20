@@ -18,7 +18,6 @@ import {
   getModelContextWindow,
 } from "@scholaraio-hub/shared";
 import { normalizeClaudeOAuthUsage } from "../../services/ProviderUsageLimitService.js";
-import { detectClaudeCli } from "../cli-detection.js";
 import { logSDKMessage } from "../messageLogger.js";
 import { MessageQueue } from "../messageQueue.js";
 import type { ContentBlock, SDKMessage } from "../types.js";
@@ -40,6 +39,9 @@ import type {
 const USE_SPAWN_WRAPPER = true;
 const execFileAsync = promisify(execFile);
 const requireFromHere = createRequire(import.meta.url);
+const requireFromClaudeSdk = createRequire(
+  requireFromHere.resolve("@anthropic-ai/claude-agent-sdk"),
+);
 const CLAUDE_CODE_KEYCHAIN_SERVICE = "Claude Code-credentials";
 const CLAUDE_OAUTH_USAGE_URL = "https://api.anthropic.com/api/oauth/usage";
 const CLAUDE_OAUTH_BETA_HEADER = "oauth-2025-04-20";
@@ -113,7 +115,7 @@ function resolveClaudeSdkNativeExecutable(): string | undefined {
   const binaryName = process.platform === "win32" ? "claude.exe" : "claude";
   for (const packageName of getClaudeSdkNativePackageNames()) {
     try {
-      const executable = requireFromHere.resolve(`${packageName}/${binaryName}`);
+      const executable = requireFromClaudeSdk.resolve(`${packageName}/${binaryName}`);
       if (isExecutableFile(executable)) {
         return executable;
       }
@@ -124,16 +126,15 @@ function resolveClaudeSdkNativeExecutable(): string | undefined {
   return undefined;
 }
 
-function resolveLocalClaudeCodeExecutable(): string | undefined {
+export function resolveLocalClaudeCodeExecutable(): string | undefined {
   if (cachedLocalClaudeCodeExecutable !== undefined) {
     return cachedLocalClaudeCodeExecutable ?? undefined;
   }
 
   const envExecutable = process.env.CLAUDE_CODE_EXECUTABLE ?? process.env.CLAUDE_CODE_PATH;
-  const executable =
-    resolvePathExecutable(envExecutable ?? "") ??
-    resolveClaudeSdkNativeExecutable() ??
-    resolvePathExecutable("claude");
+  const executable = envExecutable
+    ? resolvePathExecutable(envExecutable)
+    : (resolveClaudeSdkNativeExecutable() ?? resolvePathExecutable("claude"));
 
   cachedLocalClaudeCodeExecutable = executable ?? null;
   return executable;
@@ -241,11 +242,10 @@ export class ClaudeProvider implements AgentProvider {
   readonly supportsSlashCommands = true;
 
   /**
-   * Check if Claude SDK is available.
-   * Since we bundle the SDK, this is always true.
+   * Check the executable selected for the SDK, including its platform binary.
    */
   async isInstalled(): Promise<boolean> {
-    return true;
+    return this.isClaudeCliInstalled();
   }
 
   /**
@@ -306,8 +306,8 @@ export class ClaudeProvider implements AgentProvider {
    */
   private async getCliAuthStatus(): Promise<AuthStatus | null> {
     try {
-      const cliInfo = detectClaudeCli();
-      const claudePath = cliInfo.path ?? "claude";
+      const claudePath = resolveLocalClaudeCodeExecutable();
+      if (!claudePath) return null;
       const { stdout } = await execFileAsync(claudePath, ["auth", "status"], {
         encoding: "utf-8",
         timeout: 5000,
@@ -370,11 +370,21 @@ export class ClaudeProvider implements AgentProvider {
 
   /**
    * Check if Claude CLI is installed.
-   * Uses detectClaudeCli() which checks PATH and common installation locations.
+   * Resolve with the same precedence used to start a session, then execute it.
    */
   private async isClaudeCliInstalled(): Promise<boolean> {
-    const cliInfo = detectClaudeCli();
-    return cliInfo.found;
+    const executable = resolveLocalClaudeCodeExecutable();
+    if (!executable) return false;
+    try {
+      await execFileAsync(executable, ["--version"], { encoding: "utf8", timeout: 10000 });
+      return true;
+    } catch (error) {
+      console.warn(
+        "[Claude] CLI cannot run:",
+        error instanceof Error ? error.message : String(error),
+      );
+      return false;
+    }
   }
 
   /**

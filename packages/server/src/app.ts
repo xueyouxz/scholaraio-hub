@@ -1,371 +1,94 @@
 import type { HttpBindings } from "@hono/node-server";
 import { Hono } from "hono";
-import { etag } from "hono/etag";
+import { getDataDir } from "./data-dir.js";
 import { createStaticRoutes } from "./frontend/static.js";
-import type { SessionIndexService } from "./indexes/index.js";
-import type { ProjectMetadataService, SessionMetadataService } from "./metadata/index.js";
 import { hostCheckMiddleware, requireCustomHeader } from "./middleware/security.js";
-import type { NotificationService } from "./notifications/index.js";
-import { CODEX_SESSIONS_DIR, CodexSessionScanner } from "./projects/codex-scanner.js";
-import { ProjectScanner } from "./projects/scanner.js";
-import { createFilesRoutes } from "./routes/files.js";
-import { createFsRoutes } from "./routes/fs.js";
+import { createAppSessionRoutes } from "./routes/app-sessions.js";
 import { health } from "./routes/health.js";
 import { createLibraryRoutes } from "./routes/library.js";
-import { createProcessesRoutes } from "./routes/processes.js";
-import { createProjectsRoutes } from "./routes/projects.js";
 import { createProvidersRoutes } from "./routes/providers.js";
-import { createScholarRoutes } from "./routes/scholar.js";
-import { createGlobalSessionsRoute } from "./routes/sessions-global.js";
-import { createSessionsRoutes } from "./routes/sessions.js";
 import { createSettingsRoutes } from "./routes/settings.js";
-import { createSkillsRoutes } from "./routes/skills.js";
-import { createStreamsRoutes } from "./routes/streams.js";
-import { type UploadDeps, createUploadRoutes } from "./routes/upload.js";
 import { createVersionRoutes } from "./routes/version.js";
+import type { AgentProvider } from "./sdk/providers/types.js";
 import type { ClaudeSDK, PermissionMode, RealClaudeSDKInterface } from "./sdk/types.js";
-import type { LibraryService } from "./services/LibraryService.js";
+import { LibraryService } from "./services/LibraryService.js";
 import type { ModelInfoService } from "./services/ModelInfoService.js";
 import { ProviderUsageLimitService } from "./services/ProviderUsageLimitService.js";
 import type { ServerSettingsService } from "./services/ServerSettingsService.js";
-import { CodexSessionReader } from "./sessions/codex-reader.js";
-import { findSessionSummaryAcrossProviders } from "./sessions/provider-resolution.js";
-import { ClaudeSessionReader } from "./sessions/reader.js";
-import type { ISessionReader } from "./sessions/types.js";
-import { ExternalSessionTracker } from "./supervisor/ExternalSessionTracker.js";
+import { SessionService } from "./services/SessionService.js";
+import { SessionStore } from "./sessions/SessionStore.js";
 import { Supervisor } from "./supervisor/Supervisor.js";
-import type { Project } from "./supervisor/types.js";
-import type { EventBus } from "./watcher/index.js";
 
 export interface AppOptions {
-  libraryService?: LibraryService;
+  dataDir?: string;
   sdk?: ClaudeSDK;
-  scholarAioApiUrl?: string;
   realSdk?: RealClaudeSDKInterface;
-  projectsDir?: string;
+  provider?: AgentProvider;
+  libraryService?: LibraryService;
   idleTimeoutMs?: number;
   defaultPermissionMode?: PermissionMode;
-  eventBus?: EventBus;
-  upgradeWebSocket?: UploadDeps["upgradeWebSocket"];
-  projectScanCacheTtlMs?: number;
-  maxWorkers?: number;
-  idlePreemptThresholdMs?: number;
-  maxUploadSizeBytes?: number;
-  maxQueueSize?: number;
   serverSettingsService?: ServerSettingsService;
   modelInfoService?: ModelInfoService;
-  providerUsageLimitService?: ProviderUsageLimitService;
   enabledProviders?: string[];
   installId?: string;
-  voiceInputEnabled?: boolean;
-  sessionMetadataService?: SessionMetadataService;
-  projectMetadataService?: ProjectMetadataService;
-  notificationService?: NotificationService;
-  sessionIndexService?: SessionIndexService;
   frontendDistPath?: string;
-  scholaraioSkillsDir?: string;
 }
 
-export interface AppResult {
-  app: Hono<{ Bindings: HttpBindings }>;
-  supervisor: Supervisor;
-  scanner: ProjectScanner;
-  readerFactory: (project: Project) => ISessionReader;
-}
-
-export function createApp(options: AppOptions): AppResult {
+export function createApp(options: AppOptions) {
   const app = new Hono<{ Bindings: HttpBindings }>();
-
-  const scanner = new ProjectScanner({
-    projectsDir: options.projectsDir,
-    projectMetadataService: options.projectMetadataService,
-    eventBus: options.eventBus,
-    cacheTtlMs: options.projectScanCacheTtlMs,
-  });
-  const codexScanner = new CodexSessionScanner();
-  const providerUsageLimitService =
-    options.providerUsageLimitService ?? new ProviderUsageLimitService();
-  const readerCache = new Map<string, ISessionReader>();
-  const maxReaderCacheSize = 500;
-
-  const getOrCreateReader = <T extends ISessionReader>(key: string, factory: () => T): T => {
-    const cached = readerCache.get(key);
-    if (cached) return cached as T;
-
-    const reader = factory();
-    readerCache.set(key, reader);
-
-    while (readerCache.size > maxReaderCacheSize) {
-      const oldestKey = readerCache.keys().next().value;
-      if (!oldestKey) break;
-      readerCache.delete(oldestKey);
-    }
-
-    return reader;
-  };
-
-  const readerFactory = (project: Project): ISessionReader => {
-    const modelInfoService = options.modelInfoService;
-    const mergedKey =
-      project.mergedSessionDirs && project.mergedSessionDirs.length > 0
-        ? `::merged=${project.mergedSessionDirs.join(",")}`
-        : "";
-
-    switch (project.provider) {
-      case "codex":
-      case "codex-oss":
-        return getOrCreateReader(
-          `codex::${project.sessionDir}::${project.path}`,
-          () =>
-            new CodexSessionReader({
-              sessionsDir: project.sessionDir,
-              projectPath: project.path,
-            }),
-        );
-      default:
-        return getOrCreateReader(
-          `claude::${project.sessionDir}${mergedKey}`,
-          () =>
-            new ClaudeSessionReader({
-              sessionDir: project.sessionDir,
-              additionalDirs: project.mergedSessionDirs,
-              getContextWindow: modelInfoService
-                ? (model, provider) => modelInfoService.getContextWindow(model, provider)
-                : undefined,
-            }),
-        );
-    }
-  };
-
-  const codexReaderFactory = (projectPath: string): CodexSessionReader =>
-    getOrCreateReader(
-      `codex-extra::${CODEX_SESSIONS_DIR}::${projectPath}`,
-      () =>
-        new CodexSessionReader({
-          sessionsDir: CODEX_SESSIONS_DIR,
-          projectPath,
-        }),
-    );
-
-  const getSessionSummary = async (sessionId: string, projectId: string) => {
-    const project = await scanner.getProject(projectId);
-    if (!project) return null;
-
-    const resolved = await findSessionSummaryAcrossProviders(project, sessionId, project.id, {
-      readerFactory,
-      codexSessionsDir: CODEX_SESSIONS_DIR,
-      codexReaderFactory,
-    });
-
-    return resolved?.summary ?? null;
-  };
-
+  const dataDir = options.dataDir ?? getDataDir();
+  const store = new SessionStore(dataDir);
+  const library = options.libraryService ?? new LibraryService(dataDir);
+  const usage = new ProviderUsageLimitService();
   const supervisor = new Supervisor({
     sdk: options.sdk,
     realSdk: options.realSdk,
+    provider: options.provider,
     idleTimeoutMs: options.idleTimeoutMs,
     defaultPermissionMode: options.defaultPermissionMode,
-    eventBus: options.eventBus,
-    maxWorkers: options.maxWorkers,
-    idlePreemptThresholdMs: options.idlePreemptThresholdMs,
-    maxQueueSize: options.maxQueueSize,
-    onSessionSummary: getSessionSummary,
-    onProviderSDKMessage: (provider, message) =>
-      providerUsageLimitService.recordSDKMessage(provider, message),
+    onProcessCreated: (process) => sessions.attach(process),
+    onProviderSDKMessage: (provider, message) => usage.recordSDKMessage(provider, message),
   });
-
-  const externalTracker = options.eventBus
-    ? new ExternalSessionTracker({
-        eventBus: options.eventBus,
-        supervisor,
-        scanner,
-        decayMs: 30000,
-        getSessionSummary,
-      })
-    : undefined;
-
-  app.use("/health/*", (c, next) => next());
-  app.route("/health", health);
-
-  // Security middleware for the sensitive surfaces (API + filesystem browse).
-  // hostCheck guards against DNS rebinding; requireCustomHeader guards mutating
-  // requests against CSRF. /health and the static frontend are intentionally exempt.
-  // Mounted before the route registrations below so they run first.
+  const sessions = new SessionService(store, supervisor, library);
+  const ready = store.initialize();
   app.use("/api/*", hostCheckMiddleware);
   app.use("/api/*", requireCustomHeader);
-  app.use("/hub/fs", hostCheckMiddleware);
-  app.use("/hub/fs/*", hostCheckMiddleware);
-  app.use("/hub/fs", requireCustomHeader);
-  app.use("/hub/fs/*", requireCustomHeader);
-
-  // Apply ETag/304 negotiation to read-mostly JSON aggregate endpoints.
-  // SSE/stream and SDK message routes are excluded because their responses
-  // are not body-stable (or are streaming).
-  const etagMw = etag();
-  app.use("/api/version", etagMw);
-  app.use("/api/projects", etagMw);
-  app.use("/api/projects/:projectId", etagMw);
-  app.use("/api/projects/:projectId/sessions", etagMw);
-  app.use("/api/sessions", etagMw);
-  app.use("/api/processes", etagMw);
-  app.use("/api/providers", etagMw);
-  app.use("/api/providers/usage-limits", etagMw);
-
-  app.route(
-    "/api/version",
-    createVersionRoutes({
-      installId: options.installId,
-      voiceInputEnabled: options.voiceInputEnabled,
-    }),
-  );
-
-  app.route(
-    "/api/projects",
-    createProjectsRoutes({
-      scanner,
-      readerFactory,
-      supervisor,
-      externalTracker,
-      codexScanner,
-      notificationService: options.notificationService,
-      sessionMetadataService: options.sessionMetadataService,
-      projectMetadataService: options.projectMetadataService,
-      sessionIndexService: options.sessionIndexService,
-      codexSessionsDir: CODEX_SESSIONS_DIR,
-      codexReaderFactory,
-    }),
-  );
-
-  app.route(
-    "/api/projects",
-    createFilesRoutes({
-      scanner,
-    }),
-  );
-
-  app.route(
-    "/api/sessions",
-    createGlobalSessionsRoute({
-      scanner,
-      readerFactory,
-      supervisor,
-      externalTracker,
-      notificationService: options.notificationService,
-      sessionMetadataService: options.sessionMetadataService,
-      sessionIndexService: options.sessionIndexService,
-      codexSessionsDir: CODEX_SESSIONS_DIR,
-      codexReaderFactory,
-    }),
-  );
-
-  app.route(
-    "/api",
-    createSessionsRoutes({
-      supervisor,
-      scanner,
-      readerFactory,
-      externalTracker,
-      codexScanner,
-      codexSessionsDir: CODEX_SESSIONS_DIR,
-      codexReaderFactory,
-      notificationService: options.notificationService,
-      sessionMetadataService: options.sessionMetadataService,
-      eventBus: options.eventBus,
-      serverSettingsService: options.serverSettingsService,
-      modelInfoService: options.modelInfoService,
-      scholaraioSkillsDir: options.scholaraioSkillsDir,
-    }),
-  );
-
-  app.route(
-    "/api",
-    createStreamsRoutes({
-      supervisor,
-      eventBus: options.eventBus,
-    }),
-  );
-
-  app.route(
-    "/api/processes",
-    createProcessesRoutes({
-      supervisor,
-      scanner,
-      readerFactory,
-      processSessionSourceFactory: (process, project) => {
-        switch (process.provider) {
-          case "codex":
-          case "codex-oss":
-            return {
-              reader: codexReaderFactory(project.path),
-              sessionDir: CODEX_SESSIONS_DIR,
-            };
-          default:
-            return {
-              reader: readerFactory(project),
-              sessionDir: project.sessionDir,
-            };
-        }
-      },
-      sessionIndexService: options.sessionIndexService,
-      sessionMetadataService: options.sessionMetadataService,
-    }),
-  );
-
+  app.use("/api/*", async (_c, next) => {
+    await ready;
+    await next();
+  });
+  app.route("/health", health);
+  app.route("/api/version", createVersionRoutes({ installId: options.installId }));
+  app.route("/api/library", createLibraryRoutes(library));
+  app.route("/api/sessions", createAppSessionRoutes(sessions));
   app.route(
     "/api/providers",
     createProvidersRoutes({
       modelInfoService: options.modelInfoService,
-      providerUsageLimitService,
-      enabledProviders: options.enabledProviders ?? ["claude", "codex"],
+      providerUsageLimitService: usage,
+      enabledProviders: options.enabledProviders,
     }),
   );
-
-  if (options.serverSettingsService) {
+  app.get("/api/status", (c) =>
+    c.json({
+      dataDir,
+      profile: process.env.SCHOLARAIO_HUB_PROFILE ?? process.env.NODE_ENV,
+      library: library.available,
+    }),
+  );
+  if (options.serverSettingsService)
     app.route(
       "/api/settings",
-      createSettingsRoutes({
-        serverSettingsService: options.serverSettingsService,
-      }),
+      createSettingsRoutes({ serverSettingsService: options.serverSettingsService }),
     );
-  }
-
-  if (options.upgradeWebSocket) {
-    app.route(
-      "/api",
-      createUploadRoutes({
-        scanner,
-        upgradeWebSocket: options.upgradeWebSocket,
-        maxUploadSizeBytes: options.maxUploadSizeBytes,
-      }),
-    );
-  }
-
-  if (options.libraryService)
-    app.route("/api/library", createLibraryRoutes(options.libraryService));
-
-  app.route(
-    "/api/scholar",
-    createScholarRoutes({
-      scholarAioApiUrl: options.scholarAioApiUrl ?? "http://127.0.0.1:8765",
-    }),
-  );
-
-  app.route(
-    "/api/skills",
-    createSkillsRoutes({
-      scholaraioSkillsDir:
-        options.scholaraioSkillsDir ?? `${process.env.HOME ?? ""}/scholaraio/skills`,
-    }),
-  );
-
-  app.route("/hub/fs", createFsRoutes());
-
-  if (options.frontendDistPath) {
+  // Unknown APIs must never be served the SPA index.
+  app.all("/api/*", (c) => c.json({ error: "Not found" }, 404));
+  if (options.frontendDistPath)
     app.route("/", createStaticRoutes({ distPath: options.frontendDistPath }));
-  }
-
-  return { app, supervisor, scanner, readerFactory };
+  const close = async () => {
+    await supervisor.close();
+    await sessions.close();
+    await library.close();
+  };
+  return { app, supervisor, sessions, ready, close };
 }
-
-export const app = new Hono();
-app.route("/health", health);

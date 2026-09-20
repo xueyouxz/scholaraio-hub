@@ -9,6 +9,7 @@ export function createLibraryRoutes(service: LibraryService) {
     ["GET", "/search"],
     ["GET", "/papers/:id"],
     ["GET", "/papers/:id/pdf"],
+    ["GET", "/papers/:id/attachments/*"],
     ["GET", "/papers/:id/position"],
     ["PUT", "/papers/:id/position"],
     ["GET", "/imports"],
@@ -30,7 +31,7 @@ export function createLibraryRoutes(service: LibraryService) {
         if (value) headers.set(name, value);
       }
       const url = new URL(c.req.url);
-      const upstreamPath = resource.replace(":id", encodeURIComponent(c.req.param("id") ?? ""));
+      const upstreamPath = url.pathname.slice("/api/library".length);
       const init: RequestInit & { duplex?: "half" } = { method, headers, signal: c.req.raw.signal };
       if (method !== "GET" && method !== "HEAD") {
         init.body = c.req.raw.body;
@@ -47,9 +48,14 @@ export function createLibraryRoutes(service: LibraryService) {
           "cache-control",
           "content-range",
           "accept-ranges",
+          "x-content-type-options",
         ]) {
           const value = response.headers.get(name);
           if (value) output.set(name, value);
+        }
+        if (response.status === 200 && c.req.header("if-none-match") === output.get("etag")) {
+          await response.body?.cancel();
+          return new Response(null, { status: 304, headers: output });
         }
         return new Response(response.body, { status: response.status, headers: output });
       } catch (error) {

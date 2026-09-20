@@ -203,6 +203,7 @@ def chunk_search(
     year: str | None = None,
     journal: str | None = None,
     paper_type: str | None = None,
+    match_any: bool = False,
 ) -> list[dict]:
     """Search indexed paper chunks and return line-addressable snippets."""
 
@@ -225,7 +226,7 @@ def chunk_search(
             ORDER BY rank
             LIMIT ?
             """,
-            [_safe_query(query), *filter_params, top_k],
+            [_safe_query(query, match_any=match_any), *filter_params, top_k],
         ).fetchall()
         return [_row_to_result(row) for row in rows]
     finally:
@@ -432,9 +433,9 @@ def _build_filter_clause(
     return "".join(f" AND {clause}" for clause in clauses), params
 
 
-def _safe_query(query: str) -> str:
+def _safe_query(query: str, *, match_any: bool = False) -> str:
     terms = [term for term in re.split(r"\s+", query.strip()) if term]
-    return " ".join(f'"{term.replace(chr(34), chr(34) + chr(34))}"' for term in terms)
+    return (" OR " if match_any else " ").join(f'"{term.replace(chr(34), chr(34) + chr(34))}"' for term in terms)
 
 
 def _row_to_result(row: sqlite3.Row) -> dict:

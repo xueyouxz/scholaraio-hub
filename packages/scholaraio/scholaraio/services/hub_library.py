@@ -3,6 +3,9 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
+import re
+from itertools import zip_longest
 import threading
 import uuid
 from concurrent.futures import ThreadPoolExecutor
@@ -19,7 +22,11 @@ def atomic_json(path: Path, value: object) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     temporary = path.with_name(f".{path.name}.{uuid.uuid4().hex}.tmp")
     try:
-        temporary.write_text(json.dumps(value, ensure_ascii=False, indent=2), encoding="utf-8")
+        with temporary.open("x", encoding="utf-8") as output:
+            temporary.chmod(0o600)
+            output.write(json.dumps(value, ensure_ascii=False, indent=2))
+            output.flush()
+            os.fsync(output.fileno())
         temporary.replace(path)
     finally:
         temporary.unlink(missing_ok=True)
@@ -97,6 +104,9 @@ class HubLibrary:
     def search(self, query: str, limit: int = 50):
         if not query.strip():
             return [{"paper": paper, "matches": []} for paper in self.papers()][:limit]
+        query = " ".join(re.findall(r"\w+", query.casefold()))
+        if not query:
+            return []
         with self.lock:
             metadata = search(query, self.cfg.index_db, top_k=limit)
             chunks = chunk_search(query, self.cfg.index_db, top_k=limit)
@@ -105,9 +115,11 @@ class HubLibrary:
             matches.setdefault(chunk["paper_id"], []).append(chunk)
         # unicode61 does not segment CJK. Substring matching also covers author/DOI.
         query_lower = query.casefold()
+        rows = {}
         for directory in iter_paper_dirs(self.cfg.papers_dir):
             meta = read_meta(directory)
             pid = str(meta.get("id") or directory.name)
+            rows[pid] = (directory, meta)
             if query_lower in " ".join(str(meta.get(k) or "") for k in ("title", "authors", "doi", "abstract")).casefold():
                 matches.setdefault(pid, [])
             if any('\u3400' <= c <= '\u9fff' for c in query):
@@ -116,7 +128,7 @@ class HubLibrary:
                         existing = matches.setdefault(pid, [])
                         if not any(c["chunk_id"] == chunk.chunk_id for c in existing):
                             existing.append(asdict(chunk))
-        return [{"paper": self.row(*self.find(pid)), "matches": parts[:3]} for pid, parts in list(matches.items())[:limit]]
+        return [{"paper": self.row(*rows[pid]), "matches": parts[:3]} for pid, parts in list(matches.items())[:limit] if pid in rows]
 
     def context(self, query: str, paper_ids: list[str]):
         selected = set(paper_ids)
@@ -131,24 +143,43 @@ class HubLibrary:
                 if match["chunk_id"] not in seen:
                     seen.add(match["chunk_id"])
                     chunks.append(match)
-        # Selected papers remain useful for requests like "summarize this paper".
+        # Natural questions rarely match every word. Fall back to OR-ranked
+        # keyword chunks, while explicit paper selection stays authoritative.
+        if not chunks:
+            terms = re.findall(r"[a-zA-Z][a-zA-Z0-9_-]{2,}", query.casefold())
+            stopwords = {"the", "and", "what", "does", "how", "this", "that", "are", "can", "with", "from", "about", "please"}
+            keywords = " ".join(term for term in terms if term not in stopwords)[:500]
+            if keywords:
+                with self.lock:
+                    candidates = chunk_search(keywords, self.cfg.index_db, top_k=100, match_any=True)
+                for chunk in candidates:
+                    if (not selected or chunk["paper_id"] in selected) and chunk["chunk_id"] not in seen:
+                        chunks.append(chunk)
+                        seen.add(chunk["chunk_id"])
+        # Round-robin selected papers for broad requests such as summaries.
+        groups = []
         for pid in paper_ids:
             directory, meta = self.find(pid)
-            for chunk in iter_paper_chunks(directory, meta=meta):
-                if chunk.chunk_id not in seen:
+            groups.append(iter_paper_chunks(directory, meta=meta))
+        for group in zip_longest(*groups):
+            for chunk in group:
+                if chunk and chunk.chunk_id not in seen:
                     chunks.append(asdict(chunk))
                     seen.add(chunk.chunk_id)
         budget = 24000
         citations = []
+        truncated = False
         for chunk in chunks:
             text = chunk["text"][:min(4800, budget)]
             if not text:
+                truncated = True
                 break
+            truncated |= len(text) < len(chunk["text"])
             citations.append({"id": f"ref-{len(citations) + 1}", "paperId": chunk["paper_id"],
                               "chunkId": chunk["chunk_id"], "title": chunk["title"],
                               "startLine": int(chunk["start_line"]), "endLine": int(chunk["end_line"]), "text": text})
             budget -= len(text)
-        return {"citations": citations, "truncated": budget <= 0}
+        return {"citations": citations, "truncated": truncated}
 
     def save_job(self, job):
         atomic_json(self.jobs_dir / f'{job["id"]}.json', job)
@@ -200,18 +231,23 @@ class HubLibrary:
             finally:
                 with self.lock:
                     self.save_job(job)
+                if item["status"] in ("completed", "duplicate"):
+                    source = Path(item["source"])
+                    if source.is_relative_to(self.cfg.inbox_dir):
+                        source.unlink(missing_ok=True)
 
     def import_pdf(self, source: Path, name: str):
         import pymupdf
         import shutil
 
         fingerprint = content_hash(source)
+        source_size = source.stat().st_size
         existing = None
         for directory in iter_paper_dirs(self.cfg.papers_dir):
             meta = read_meta(directory)
             pdf = find_pdf(directory)
-            if meta.get("hub", {}).get("sha256") == fingerprint or (pdf and content_hash(pdf) == fingerprint):
-                if meta.get("hub", {}).get("parseStatus") == "ready" or (directory / "paper.md").exists():
+            if meta.get("hub", {}).get("sha256") == fingerprint or (pdf and pdf.stat().st_size == source_size and content_hash(pdf) == fingerprint):
+                if meta.get("hub", {}).get("parseStatus") != "failed" and (directory / "paper.md").exists():
                     return str(meta.get("id") or directory.name), True
                 existing = (directory, meta)
                 break

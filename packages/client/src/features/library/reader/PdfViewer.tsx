@@ -29,9 +29,11 @@ const DEBOUNCE_MS = 150;
 
 interface Props {
   url: string;
+  initialPage?: number;
+  onPageChange?: (page: number) => void;
 }
 
-export function PdfViewer({ url }: Props) {
+export function PdfViewer({ url, initialPage = 1, onPageChange }: Props) {
   // PDF 总页数，由 react-pdf 的 onLoadSuccess 回调提供。
   const [numPages, setNumPages] = useState(0);
   // 当前可见的第一页页码，用于工具栏显示 "当前页 / 总页数"。
@@ -125,6 +127,20 @@ export function PdfViewer({ url }: Props) {
       observerRef.current = null;
     };
   }, [numPages]);
+
+  useEffect(() => {
+    onPageChange?.(currentPage);
+  }, [currentPage, onPageChange]);
+  useEffect(() => {
+    if (!numPages) return;
+    const target = Math.min(Math.max(1, initialPage), numPages);
+    const frame = requestAnimationFrame(() => {
+      scrollContainerRef.current
+        ?.querySelector(`[data-page="${target}"]`)
+        ?.scrollIntoView({ block: "start" });
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [initialPage, numPages]);
 
   // 缩放后重新挂载被观察的 DOM 节点。
   // 缩放改变 scale 后，react-pdf 会卸载旧的 <Page> 并挂载新的，

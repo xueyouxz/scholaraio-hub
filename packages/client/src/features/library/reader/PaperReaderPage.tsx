@@ -9,7 +9,7 @@ export function PaperReaderPage() {
   const { setTitle } = usePageTitle();
 
   useEffect(() => {
-    setTitle("Reader");
+    setTitle("阅读");
     return () => setTitle("");
   }, [setTitle]);
 

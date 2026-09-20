@@ -8,6 +8,7 @@ import socket
 import uuid
 from contextlib import asynccontextmanager
 from pathlib import Path
+from typing import Literal
 
 import uvicorn
 from fastapi import FastAPI, File, HTTPException, Request, UploadFile
@@ -26,7 +27,7 @@ class ContextInput(BaseModel):
 class ReadingPosition(BaseModel):
     page: int = Field(default=1, ge=1)
     line: int = Field(default=1, ge=1)
-    mode: str = "pdf"
+    mode: Literal["pdf", "markdown"] = "pdf"
 
 
 def create_app(root: Path, token: str) -> FastAPI:
@@ -82,6 +83,16 @@ def create_app(root: Path, token: str) -> FastAPI:
         if file is None:
             raise HTTPException(404, "PDF unavailable")
         return FileResponse(file, media_type="application/pdf", headers={"cache-control": "private, max-age=0, must-revalidate"})
+
+    @app.get("/papers/{paper_id}/attachments/{relative:path}")
+    def attachment(paper_id: str, relative: str):
+        directory, _ = app.state.library.find(paper_id)
+        file = (directory / relative).resolve()
+        if not file.is_relative_to(directory.resolve()) or not file.is_file():
+            raise HTTPException(404, "Attachment unavailable")
+        if file.suffix.lower() not in {".png", ".jpg", ".jpeg", ".webp", ".gif", ".pdf"}:
+            raise HTTPException(400, "Unsupported attachment type")
+        return FileResponse(file, headers={"cache-control": "private, max-age=0, must-revalidate", "x-content-type-options": "nosniff"})
 
     @app.get("/papers/{paper_id}/position")
     def get_position(paper_id: str):

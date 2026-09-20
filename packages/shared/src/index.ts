@@ -126,3 +126,6 @@ export type {
 } from "./codex-schema/types.js";
 export { parseCodexSessionEntry } from "./codex-schema/session.js";
 export * from "./claude-sdk-schema/tool/ToolResultSchemas.js";
+
+export * from "./library.js";
+export * from "./session/StoredSession.js";

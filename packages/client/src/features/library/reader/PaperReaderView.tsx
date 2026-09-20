@@ -1,191 +1,210 @@
-import { useQuery } from "@tanstack/react-query";
-import { X } from "lucide-react";
-import { useEffect, useState } from "react";
-import { scholar } from "../../../core/api";
-import { queryKeys } from "../../../core/queryKeys";
-import { buildPdfUrl, canReadPdf, toPaperRef } from "../paperUtils";
-import type { PaperDetail, ReadingTab } from "../types";
-import { LayerReader } from "./LayerReader";
+import type { LibraryPaperDetail, ReadingPosition } from "@scholaraio-hub/shared";
+import { useMutation, useQuery } from "@tanstack/react-query";
+import { useEffect, useRef, useState } from "react";
+import { Link, useSearchParams } from "react-router-dom";
+import { libraryApi } from "../../../core/library";
+import { Markdown } from "../../../shared/components/Markdown";
 import { PdfViewer } from "./PdfViewer";
-
-const TABS: { id: ReadingTab; label: string }[] = [
-  { id: "overview", label: "概览" },
-  { id: "l4", label: "全文" },
-  { id: "pdf", label: "PDF" },
-];
-const L3_CONTENT_PARAMS = { layer: 3 } as const;
-const L4_CONTENT_PARAMS = { layer: 4 } as const;
-
-function contentToText(content: unknown): string | undefined {
-  return typeof content === "string" ? content : undefined;
-}
 
 interface PaperReaderViewProps {
   paperId: string | undefined;
-  /** When provided, an inline close (×) button is rendered in the content area. */
   onClose?: () => void;
-  /** Optional leading element rendered before the tab buttons (e.g. a back button). */
   leading?: React.ReactNode;
 }
-
 export function PaperReaderView({ paperId, onClose, leading }: PaperReaderViewProps) {
-  const [activeTab, setActiveTab] = useState<ReadingTab>("overview");
-
-  useEffect(() => {
-    if (paperId !== undefined) {
-      setActiveTab("overview");
-    }
-  }, [paperId]);
-
-  const paperQuery = useQuery({
-    queryKey: paperId ? queryKeys.scholar.paper(paperId) : ["scholar", "paper", "idle"],
-    queryFn: ({ signal }) => {
-      if (!paperId) throw new Error("Missing paper id");
-      return scholar.getPaper(paperId, { signal });
-    },
+  const paper = useQuery({
+    queryKey: ["library", "paper", paperId],
+    queryFn: ({ signal }) => libraryApi.detail(paperId ?? "", signal),
     enabled: !!paperId,
-    staleTime: 5 * 60_000,
   });
-
-  const l3Query = useQuery({
-    queryKey: paperId
-      ? queryKeys.scholar.paperContent(paperId, L3_CONTENT_PARAMS)
-      : ["scholar", "paper", "idle", "content", L3_CONTENT_PARAMS],
-    queryFn: ({ signal }) => {
-      if (!paperId) throw new Error("Missing paper id");
-      return scholar.getPaperContent(paperId, L3_CONTENT_PARAMS, { signal });
-    },
-    enabled: !!paperId && activeTab === "overview",
-    staleTime: Number.POSITIVE_INFINITY,
+  const position = useQuery({
+    queryKey: ["library", "position", paperId],
+    queryFn: ({ signal }) => libraryApi.position(paperId ?? "", signal),
+    enabled: !!paperId,
   });
-
-  const l4Query = useQuery({
-    queryKey: paperId
-      ? queryKeys.scholar.paperContent(paperId, L4_CONTENT_PARAMS)
-      : ["scholar", "paper", "idle", "content", L4_CONTENT_PARAMS],
-    queryFn: ({ signal }) => {
-      if (!paperId) throw new Error("Missing paper id");
-      return scholar.getPaperContent(paperId, L4_CONTENT_PARAMS, { signal });
-    },
-    enabled: !!paperId && activeTab === "l4",
-    staleTime: Number.POSITIVE_INFINITY,
-  });
-
-  const loadingPapers = paperQuery.isLoading;
-  const papersError =
-    paperQuery.error instanceof Error
-      ? paperQuery.error.message
-      : paperQuery.error
-        ? "加载失败，请确认 scholaraio serve 已启动"
-        : null;
-  const currentPaper = paperQuery.data?.paper ? toPaperRef(paperQuery.data.paper) : undefined;
-  const hasPdfFile = currentPaper ? canReadPdf(currentPaper) : false;
-  const pdfUrl = paperId ? buildPdfUrl(paperId) : null;
-  const detail: PaperDetail | null =
-    activeTab === "overview"
-      ? { l3Conclusion: contentToText(l3Query.data?.content) }
-      : activeTab === "l4"
-        ? { content: contentToText(l4Query.data?.content) }
-        : null;
-  const loadingDetail =
-    activeTab === "overview" ? l3Query.isFetching : activeTab === "l4" && l4Query.isFetching;
-
-  const renderContent = () => {
-    if (loadingPapers) {
-      return (
-        <div className="flex-1 flex items-center justify-center">
-          <span className="text-xs font-mono text-on-surface-variant animate-pulse">加载中…</span>
-        </div>
-      );
-    }
-
-    if (papersError) {
-      return (
-        <div className="flex-1 flex items-center justify-center px-8">
-          <div className="rounded-xl bg-error-container/10 border border-error/20 p-6 text-center text-sm text-error max-w-md">
-            {papersError}
-          </div>
-        </div>
-      );
-    }
-
-    if (!paperId || !currentPaper) {
-      return (
-        <div className="flex-1 flex items-center justify-center">
-          <p className="text-sm text-on-surface-variant">未找到该文献</p>
-        </div>
-      );
-    }
-
-    if (activeTab === "pdf") {
-      return pdfUrl ? <PdfViewer url={pdfUrl} /> : null;
-    }
-
+  if (paper.error || position.error)
     return (
-      <LayerReader
-        paper={currentPaper}
-        paperId={paperId}
-        activeLayer={activeTab}
-        detail={detail}
-        loadingDetail={loadingDetail}
-      />
+      <p role="alert" className="p-6 text-error">
+        {(paper.error ?? position.error)?.message}
+      </p>
     );
-  };
-
-  const showTabBar = !!currentPaper || !loadingPapers;
-
+  if (!paper.data || !position.data) return <output className="p-6">正在加载文献…</output>;
   return (
-    <div className="flex-1 min-w-0 flex flex-col overflow-hidden h-full">
-      {showTabBar ? (
-        <div className="shrink-0 flex items-center gap-2 px-5 border-b border-outline-variant/15 bg-surface-container-low h-12 overflow-x-auto no-scrollbar">
-          {leading}
-          {leading ? <div className="shrink-0 w-px h-4 bg-outline-variant/30" /> : null}
-          {TABS.map((tab) => {
-            const isActive = activeTab === tab.id;
-            const isPdfDisabled = tab.id === "pdf" && !hasPdfFile && !!currentPaper;
-            const label = isPdfDisabled ? "无PDF" : tab.label;
+    <Reader
+      key={paper.data.id}
+      paper={paper.data}
+      saved={position.data}
+      leading={leading}
+      onClose={onClose}
+    />
+  );
+}
 
-            if (isPdfDisabled) {
-              return (
-                <span
-                  key={tab.id}
-                  className="shrink-0 px-3 py-1.5 rounded-full text-xs font-medium border border-outline-variant/10 bg-surface-container-low text-on-surface-variant/30 cursor-not-allowed select-none"
-                >
-                  {label}
-                </span>
-              );
-            }
-
-            return (
-              <button
-                key={tab.id}
-                type="button"
-                onClick={() => setActiveTab(tab.id)}
-                className={[
-                  "shrink-0 px-3 py-1.5 rounded-full text-xs font-medium transition-colors border cursor-pointer",
-                  isActive
-                    ? "bg-primary text-on-primary border-primary"
-                    : "bg-surface-container-high text-on-surface-variant border-outline-variant/30 hover:bg-surface-container",
-                ].join(" ")}
-              >
-                {label}
-              </button>
-            );
-          })}
-          {onClose ? (
-            <button
-              type="button"
-              onClick={onClose}
-              title="关闭"
-              className="ml-auto shrink-0 p-1.5 rounded-full text-on-surface-variant hover:text-on-surface hover:bg-surface-container transition-colors cursor-pointer"
-            >
-              <X size={14} />
-            </button>
-          ) : null}
-        </div>
+function Reader({
+  paper,
+  saved,
+  leading,
+  onClose,
+}: {
+  paper: LibraryPaperDetail;
+  saved: ReadingPosition;
+  leading?: React.ReactNode;
+  onClose?: () => void;
+}) {
+  const [params, setParams] = useSearchParams();
+  const targetLine = Number(params.get("line") ?? saved.line);
+  const [mode, setMode] = useState(
+    params.get("mode") === "markdown" || !paper.hasPdf ? "markdown" : saved.mode,
+  );
+  const [line, setLine] = useState(targetLine);
+  const [page, setPage] = useState(saved.page);
+  const [jumpPage, setJumpPage] = useState(saved.page);
+  const [pageInput, setPageInput] = useState(String(saved.page));
+  const save = useMutation({
+    mutationFn: (value: ReadingPosition) => libraryApi.savePosition(paper.id, value),
+  });
+  const saveRef = useRef(save.mutate);
+  saveRef.current = save.mutate;
+  const viewport = useRef<HTMLDivElement>(null);
+  const pendingSave = useRef<ReadingPosition | null>(null);
+  useEffect(() => {
+    pendingSave.current = { page, line, mode: mode === "pdf" ? "pdf" : "markdown" };
+    const timer = setTimeout(() => {
+      if (pendingSave.current) saveRef.current(pendingSave.current);
+      pendingSave.current = null;
+    }, 600);
+    return () => clearTimeout(timer);
+  }, [page, line, mode]);
+  useEffect(
+    () => () => {
+      if (pendingSave.current) saveRef.current(pendingSave.current);
+    },
+    [],
+  );
+  useEffect(() => {
+    const root = viewport.current;
+    if (mode !== "markdown" || !root) return;
+    const observer = new IntersectionObserver(
+      (entries) => {
+        const visible = entries
+          .filter((entry) => entry.isIntersecting)
+          .sort((a, b) => a.boundingClientRect.top - b.boundingClientRect.top);
+        const first = visible[0];
+        if (first) setLine(Number(first.target.getAttribute("data-line")));
+      },
+      { root, rootMargin: "0px 0px -70% 0px", threshold: 0 },
+    );
+    for (const section of root.querySelectorAll("[data-line]")) observer.observe(section);
+    return () => observer.disconnect();
+  }, [mode]);
+  useEffect(() => {
+    if (mode !== "markdown") return;
+    const chunk = paper.chunks.find(
+      (chunk) => chunk.start_line <= targetLine && chunk.end_line >= targetLine,
+    );
+    if (chunk)
+      viewport.current
+        ?.querySelector(`[id="line-${chunk.start_line}"]`)
+        ?.scrollIntoView({ block: "start" });
+  }, [mode, targetLine, paper.chunks]);
+  return (
+    <div className="flex-1 min-w-0 min-h-0 flex flex-col">
+      <div className="flex flex-wrap items-center gap-2 border-b border-outline-variant/15 p-3">
+        {leading}
+        <h1 className="text-base text-primary truncate flex-1 min-w-40">{paper.title}</h1>
+        <button
+          type="button"
+          className="hub-button"
+          aria-pressed={mode === "pdf"}
+          disabled={!paper.hasPdf}
+          onClick={() => setMode("pdf")}
+        >
+          PDF
+        </button>
+        <button
+          type="button"
+          className="hub-button"
+          aria-pressed={mode === "markdown"}
+          disabled={!paper.hasMarkdown}
+          onClick={() => setMode("markdown")}
+        >
+          全文
+        </button>
+        <Link className="hub-button" to={`/sessions?papers=${encodeURIComponent(paper.id)}`}>
+          询问本文
+        </Link>
+        {onClose ? (
+          <button className="hub-button" type="button" aria-label="关闭阅读器" onClick={onClose}>
+            关闭
+          </button>
+        ) : null}
+      </div>
+      {save.error ? (
+        <p role="alert" className="text-error px-4">
+          阅读位置保存失败：{save.error.message}
+        </p>
       ) : null}
-
-      <div className="flex-1 min-h-0 flex flex-col overflow-hidden">{renderContent()}</div>
+      {mode === "pdf" ? (
+        <>
+          <form
+            className="flex items-center gap-2 px-4 py-2 text-xs"
+            onSubmit={(event) => {
+              event.preventDefault();
+              setJumpPage(Math.max(1, Number(pageInput) || 1));
+            }}
+          >
+            <label htmlFor="reader-page">跳转页码</label>
+            <input
+              id="reader-page"
+              className="hub-input w-20"
+              type="number"
+              min="1"
+              value={pageInput}
+              onChange={(event) => setPageInput(event.target.value)}
+            />
+            <button className="hub-button" type="submit">
+              跳转
+            </button>
+            <span>当前第 {page} 页</span>
+          </form>
+          <PdfViewer
+            url={`/api/library/papers/${encodeURIComponent(paper.id)}/pdf`}
+            initialPage={jumpPage}
+            onPageChange={setPage}
+          />
+        </>
+      ) : (
+        <div ref={viewport} className="flex-1 overflow-auto p-6 lg:px-12">
+          {paper.hasMarkdown ? (
+            paper.chunks.map((chunk) => (
+              <section
+                key={chunk.chunk_id}
+                id={`line-${chunk.start_line}`}
+                data-line={chunk.start_line}
+                className={`max-w-4xl mx-auto py-3 scroll-mt-4 ${params.has("line") && chunk.start_line <= targetLine && chunk.end_line >= targetLine ? "bg-secondary-container/30 rounded-xl px-4" : ""}`}
+              >
+                <button
+                  type="button"
+                  className="text-xs text-on-surface-variant mb-2 hover:text-primary"
+                  onClick={() => {
+                    setParams({ mode: "markdown", line: String(chunk.start_line) });
+                  }}
+                >
+                  第 {chunk.start_line}–{chunk.end_line} 行
+                </button>
+                <Markdown
+                  text={chunk.text}
+                  imageBase={`/api/library/papers/${encodeURIComponent(paper.id)}/attachments/`}
+                />
+              </section>
+            ))
+          ) : (
+            <p className="text-on-surface-variant">
+              {paper.error || "尚未提取全文，可以先阅读 PDF。"}
+            </p>
+          )}
+        </div>
+      )}
     </div>
   );
 }

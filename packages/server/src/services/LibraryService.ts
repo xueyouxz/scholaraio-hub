@@ -25,6 +25,10 @@ export class LibraryService {
 
   constructor(readonly dataDir: string) {}
 
+  get available(): boolean {
+    return this.baseUrl !== undefined;
+  }
+
   async start(): Promise<void> {
     const python = libraryPythonPath(this.dataDir);
     if (!existsSync(python)) throw new Error("文献运行环境尚未安装，请先运行 pnpm run setup。");

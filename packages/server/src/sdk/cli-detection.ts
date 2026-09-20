@@ -115,13 +115,13 @@ export async function findCodexCliPath(): Promise<string | null> {
       encoding: "utf-8",
     });
     const codexPath = stdout.split("\n")[0]?.trim();
-    if (codexPath) return codexPath;
+    if (codexPath && (await getCodexVersion(codexPath))) return codexPath;
   } catch {
     // Not in PATH
   }
 
   for (const path of getCodexCommonPaths()) {
-    if (existsSync(path)) return path;
+    if (existsSync(path) && (await getCodexVersion(path))) return path;
   }
 
   return null;
@@ -134,6 +134,7 @@ async function getCodexVersion(codexPath: string): Promise<string | undefined> {
   try {
     const { stdout } = await execFileAsync(codexPath, ["--version"], {
       encoding: "utf-8",
+      timeout: 10000,
     });
     const output = stdout.trim();
     return output;

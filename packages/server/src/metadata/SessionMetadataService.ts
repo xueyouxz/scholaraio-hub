@@ -1,3 +1,4 @@
+import { getDataDir } from "../data-dir.js";
 /**
  * SessionMetadataService manages custom session metadata (titles, archive status).
  * This enables renaming sessions and archiving them to hide from default view.
@@ -44,9 +45,7 @@ export class SessionMetadataService {
   private pendingSave = false;
 
   constructor(options: SessionMetadataServiceOptions = {}) {
-    this.dataDir =
-      options.dataDir ??
-      path.join(process.env.HOME ?? process.env.USERPROFILE ?? ".", ".scholaraio-hub");
+    this.dataDir = options.dataDir ?? getDataDir();
     this.filePath = path.join(this.dataDir, "session-metadata.json");
     this.state = { sessions: {}, version: CURRENT_VERSION };
   }

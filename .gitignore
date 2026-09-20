@@ -18,3 +18,11 @@ test-results/
 
 # macOS
 .DS_Store
+
+# Local dependency caches and Python build artifacts
+.pnpm-store/
+__pycache__/
+*.pyc
+*.egg-info/
+.pytest_cache/
+.venv/

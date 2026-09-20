@@ -1,3 +1,4 @@
+import { getDataDir } from "../data-dir.js";
 /**
  * NotificationService manages session notification state (last seen timestamps).
  * This enables "unread" badge tracking across all devices/tabs.
@@ -43,9 +44,7 @@ export class NotificationService {
   private pendingSave = false;
 
   constructor(options: NotificationServiceOptions = {}) {
-    this.dataDir =
-      options.dataDir ??
-      path.join(process.env.HOME ?? process.env.USERPROFILE ?? ".", ".scholaraio-hub");
+    this.dataDir = options.dataDir ?? getDataDir();
     this.filePath = path.join(this.dataDir, "notifications.json");
     this.eventBus = options.eventBus;
     this.state = { lastSeen: {}, version: CURRENT_VERSION };

@@ -11,6 +11,7 @@ import { ProjectScanner } from "./projects/scanner.js";
 import { createFilesRoutes } from "./routes/files.js";
 import { createFsRoutes } from "./routes/fs.js";
 import { health } from "./routes/health.js";
+import { createLibraryRoutes } from "./routes/library.js";
 import { createProcessesRoutes } from "./routes/processes.js";
 import { createProjectsRoutes } from "./routes/projects.js";
 import { createProvidersRoutes } from "./routes/providers.js";
@@ -23,6 +24,7 @@ import { createStreamsRoutes } from "./routes/streams.js";
 import { type UploadDeps, createUploadRoutes } from "./routes/upload.js";
 import { createVersionRoutes } from "./routes/version.js";
 import type { ClaudeSDK, PermissionMode, RealClaudeSDKInterface } from "./sdk/types.js";
+import type { LibraryService } from "./services/LibraryService.js";
 import type { ModelInfoService } from "./services/ModelInfoService.js";
 import { ProviderUsageLimitService } from "./services/ProviderUsageLimitService.js";
 import type { ServerSettingsService } from "./services/ServerSettingsService.js";
@@ -36,6 +38,7 @@ import type { Project } from "./supervisor/types.js";
 import type { EventBus } from "./watcher/index.js";
 
 export interface AppOptions {
+  libraryService?: LibraryService;
   sdk?: ClaudeSDK;
   scholarAioApiUrl?: string;
   realSdk?: RealClaudeSDKInterface;
@@ -336,6 +339,9 @@ export function createApp(options: AppOptions): AppResult {
       }),
     );
   }
+
+  if (options.libraryService)
+    app.route("/api/library", createLibraryRoutes(options.libraryService));
 
   app.route(
     "/api/scholar",

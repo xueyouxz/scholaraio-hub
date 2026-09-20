@@ -46,6 +46,7 @@ export function loadConfig(): Config {
   const env = loadRuntimeEnv();
   const dataDir = getDataDir();
   const ports = resolveDerivedPorts({
+    NODE_ENV: env.NODE_ENV,
     PORT: env.PORT?.toString(),
     CLIENT_PORT: env.CLIENT_PORT?.toString(),
     CLIENT_PREVIEW_PORT: env.CLIENT_PREVIEW_PORT?.toString(),
@@ -90,7 +91,7 @@ export function loadConfig(): Config {
     voiceInputEnabled: env.VOICE_INPUT_ENABLED ?? true,
     httpsSelfSigned: env.HTTPS_SELF_SIGNED ?? false,
     scholaraioSkillsDir:
-      env.SCHOLARAIO_SKILLS_DIR ?? path.join(os.homedir(), "scholaraio", "skills"),
+      env.SCHOLARAIO_SKILLS_DIR ?? path.resolve(__dirname, "../../scholaraio/skills"),
   };
 }
 

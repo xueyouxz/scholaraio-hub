@@ -21,7 +21,10 @@
     "ci:local": "node scripts/ci-local.mjs",
     "prepare": "husky",
     "release:web": "node scripts/release-web.mjs",
-    "skills:sync": "node scripts/sync-scholaraio-skills.mjs"
+    "skills:sync": "node scripts/sync-scholaraio-skills.mjs",
+    "setup": "node scripts/hub.mjs setup",
+    "start": "node scripts/hub.mjs start",
+    "doctor": "node scripts/hub.mjs doctor"
   },
   "devDependencies": {
     "@biomejs/biome": "^1.9.4",

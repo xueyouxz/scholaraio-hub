@@ -1,6 +1,9 @@
+import { mkdtempSync } from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 import { loadRuntimeEnv } from "./env.js";
+
+let testDataDir: string | undefined;
 
 export function getDataDir(): string {
   const env = loadRuntimeEnv();
@@ -9,16 +12,17 @@ export function getDataDir(): string {
     return env.SCHOLARAIO_HUB_DATA_DIR;
   }
 
+  if (env.NODE_ENV === "test") {
+    testDataDir ??= mkdtempSync(path.join(os.tmpdir(), "scholaraio-hub-test-"));
+    return testDataDir;
+  }
+
   const profile = env.SCHOLARAIO_HUB_PROFILE?.trim();
   if (profile) {
     return path.join(
       os.homedir(),
       profile === "production" ? ".scholaraio-hub" : `.scholaraio-hub-${profile}`,
     );
-  }
-
-  if (env.NODE_ENV === "test") {
-    return path.join(os.tmpdir(), ".scholaraio-hub-test");
   }
 
   return path.join(

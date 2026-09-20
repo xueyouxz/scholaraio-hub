@@ -3,6 +3,13 @@ import * as path from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 describe("loadConfig codex paths", () => {
+  it("isolates tests from profile and home data", async () => {
+    vi.stubEnv("NODE_ENV", "test");
+    vi.stubEnv("SCHOLARAIO_HUB_PROFILE", "production");
+    const { getDataDir } = await import("../src/config.js");
+    expect(getDataDir()).toContain("scholaraio-hub-test-");
+    expect(getDataDir()).not.toContain(os.homedir());
+  });
   afterEach(() => {
     vi.unstubAllEnvs();
     vi.resetModules();
@@ -51,6 +58,7 @@ describe("loadConfig codex paths", () => {
   });
 
   it("uses profile-specific data directories when SCHOLARAIO_HUB_PROFILE is set", async () => {
+    vi.stubEnv("NODE_ENV", "development");
     vi.stubEnv("SCHOLARAIO_HUB_PROFILE", "staging");
 
     const { getDataDir } = await import("../src/config.js");

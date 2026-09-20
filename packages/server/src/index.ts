@@ -16,6 +16,7 @@ import { createUploadRoutes } from "./routes/upload.js";
 import { detectClaudeCli, detectCodexCli } from "./sdk/cli-detection.js";
 import { initMessageLogger } from "./sdk/messageLogger.js";
 import { RealClaudeSDK } from "./sdk/real.js";
+import { LibraryService } from "./services/LibraryService.js";
 import { InstallService, ModelInfoService, ServerSettingsService } from "./services/index.js";
 import { EventBus, FileWatcher } from "./watcher/index.js";
 
@@ -41,6 +42,7 @@ process.on("unhandledRejection", (reason) => {
 });
 
 const config = loadConfig();
+const libraryService = new LibraryService(config.dataDir);
 
 let supervisorForShutdown: Awaited<ReturnType<typeof createApp>>["supervisor"] | null = null;
 let isShuttingDown = false;
@@ -71,6 +73,7 @@ async function gracefulShutdown(signal: string): Promise<void> {
     }
   }
 
+  await libraryService.close();
   console.log("[Shutdown] Cleanup complete, exiting");
   process.exit(0);
 }
@@ -157,6 +160,7 @@ const sessionIndexService = new SessionIndexService({
 const modelInfoService = new ModelInfoService();
 
 async function startServer() {
+  await libraryService.start();
   let tlsOptions: { key: Buffer; cert: Buffer } | undefined;
   if (config.httpsSelfSigned) {
     const certResult = ensureSelfSignedCertificate({
@@ -196,6 +200,7 @@ async function startServer() {
 
   const { app, supervisor, scanner } = createApp({
     realSdk,
+    libraryService,
     projectsDir: config.claudeProjectsDir,
     idleTimeoutMs: config.idleTimeoutMs,
     defaultPermissionMode: config.defaultPermissionMode,

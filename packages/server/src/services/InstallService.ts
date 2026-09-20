@@ -1,3 +1,4 @@
+import { getDataDir } from "../data-dir.js";
 /**
  * InstallService manages a unique installation identifier for this scholaraio-hub instance.
  * The install ID is used by the relay server to verify username ownership - if an
@@ -32,9 +33,7 @@ export class InstallService {
   private filePath: string;
 
   constructor(options: InstallServiceOptions = {}) {
-    this.dataDir =
-      options.dataDir ??
-      path.join(process.env.HOME ?? process.env.USERPROFILE ?? ".", ".scholaraio-hub");
+    this.dataDir = options.dataDir ?? getDataDir();
     this.filePath = path.join(this.dataDir, "install.json");
   }
 

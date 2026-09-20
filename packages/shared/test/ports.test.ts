@@ -2,6 +2,10 @@ import { describe, expect, it } from "vitest";
 import { DEFAULT_PORT, resolveBasePort, resolveDerivedPorts } from "../src/ports.js";
 
 describe("ports", () => {
+  it("separates development from production ports", () => {
+    expect(resolveDerivedPorts({ NODE_ENV: "development" }).app).toBe(3500);
+    expect(resolveDerivedPorts({ NODE_ENV: "production" }).app).toBe(3400);
+  });
   it("uses 3400 as the default base port", () => {
     expect(resolveBasePort({})).toBe(DEFAULT_PORT);
   });

@@ -1,3 +1,4 @@
+import { getDataDir } from "../data-dir.js";
 /**
  * ProjectMetadataService manages custom project metadata (added projects).
  * This enables adding new projects before any Claude sessions exist.
@@ -38,9 +39,7 @@ export class ProjectMetadataService {
   private pendingSave = false;
 
   constructor(options: ProjectMetadataServiceOptions = {}) {
-    this.dataDir =
-      options.dataDir ??
-      path.join(process.env.HOME ?? process.env.USERPROFILE ?? ".", ".scholaraio-hub");
+    this.dataDir = options.dataDir ?? getDataDir();
     this.filePath = path.join(this.dataDir, "project-metadata.json");
     this.state = { projects: {}, version: CURRENT_VERSION };
   }

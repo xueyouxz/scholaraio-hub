@@ -1,70 +1,6 @@
-import { spawn, spawnSync } from "node:child_process";
-import { existsSync, readFileSync } from "node:fs";
-import path from "node:path";
-import { fileURLToPath } from "node:url";
+import { spawn } from "node:child_process";
 
-const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
-
-// Load .env.local from repo root so SCHOLARAIO_CONFIG (and others) can be
-// forwarded to the scholaraio serve child process without requiring shell-level exports.
-function loadDotenvLocal() {
-  const envPath = path.join(repoRoot, ".env.local");
-  if (!existsSync(envPath)) return {};
-
-  const vars = {};
-  for (const line of readFileSync(envPath, "utf-8").split("\n")) {
-    const trimmed = line.trim();
-    if (!trimmed || trimmed.startsWith("#")) continue;
-    const eq = trimmed.indexOf("=");
-    if (eq === -1) continue;
-    const key = trimmed.slice(0, eq).trim();
-    const val = trimmed
-      .slice(eq + 1)
-      .trim()
-      .replace(/^["']|["']$/g, "");
-    vars[key] = val;
-  }
-  return vars;
-}
-
-const dotenvLocal = loadDotenvLocal();
-
-// Merge .env.local into the inherited env, giving precedence to already-set
-// shell vars so explicit exports always win over the file.
-const scholarEnv = { ...process.env };
-for (const [k, v] of Object.entries(dotenvLocal)) {
-  if (scholarEnv[k] === undefined) scholarEnv[k] = v;
-}
-
-const children = [];
-
-function spawnChild(cmd, args, label, opts = {}) {
-  const child = spawn(cmd, args, { stdio: "inherit", shell: false, ...opts });
-
-  child.on("error", (err) => {
-    if (err.code === "ENOENT") {
-      console.warn(`[${label}] command not found — skipping`);
-    } else {
-      console.error(`[${label}] error: ${err.message}`);
-    }
-  });
-
-  children.push(child);
-  return child;
-}
-
-const isWindows = process.platform === "win32";
-const whichCmd = isWindows ? "where" : "which";
-const hasScholaraio = spawnSync(whichCmd, ["scholaraio"], { stdio: "ignore" }).status === 0;
-
-if (hasScholaraio) {
-  spawnChild("scholaraio", ["serve"], "scholaraio", { env: scholarEnv });
-} else {
-  console.log("[scholaraio] not installed — /api/scholar/* routes will be unavailable.");
-  console.log("[scholaraio] see: https://github.com/ZimoLiao/scholaraio");
-}
-
-const hub = spawnChild(
+const child = spawn(
   "pnpm",
   [
     "-r",
@@ -76,20 +12,20 @@ const hub = spawnChild(
     "@scholaraio-hub/client",
     "dev",
   ],
-  "hub",
+  {
+    stdio: "inherit",
+    env: { ...process.env, NODE_ENV: "development", SCHOLARAIO_HUB_PROFILE: "dev" },
+  },
 );
-
-for (const sig of ["SIGINT", "SIGTERM"]) {
-  process.on(sig, () => {
-    for (const child of children) {
-      if (!child.killed) child.kill(sig);
-    }
-  });
-}
-
-hub.on("exit", (code) => {
-  for (const child of children) {
-    if (!child.killed) child.kill();
-  }
-  process.exit(code ?? 0);
+const stop = (signal) => child.kill(signal);
+process.on("SIGINT", stop);
+process.on("SIGTERM", stop);
+child.on("error", (error) => {
+  console.error(error);
+  process.exitCode = 1;
+});
+child.on("exit", (code) => {
+  process.off("SIGINT", stop);
+  process.off("SIGTERM", stop);
+  process.exitCode = code ?? 0;
 });

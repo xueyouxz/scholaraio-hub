@@ -9,7 +9,7 @@ const commands = vi.hoisted(() => ({
   calls: [] as Array<{ provider: string; sessionId?: string }>,
 }));
 
-vi.mock("../../../../core/library", () => ({
+vi.mock("../../../../../core/library", () => ({
   sessionApi: {
     commands: async (provider: string, sessionId?: string) => {
       commands.calls.push({ provider, sessionId });
@@ -68,16 +68,6 @@ function render(overrides: Partial<Props> = {}) {
     ),
   );
   return current;
-}
-
-function rerender(next: Props) {
-  act(() =>
-    root?.render(
-      <QueryClientProvider client={queryClient}>
-        <Composer {...next} />
-      </QueryClientProvider>,
-    ),
-  );
 }
 
 async function flush() {
@@ -460,15 +450,60 @@ describe("Composer send/stop actions", () => {
     expect(button("停止")).toBeNull();
   });
 
-  it("renders injected toolbar and trailing controls", () => {
-    const next = props({
-      toolbar: <span data-testid="toolbar">mode</span>,
-      trailing: <span data-testid="trailing">model</span>,
+  it("renders the provider's option pills when given controls", () => {
+    render({
+      controls: {
+        provider: "claude",
+        info: {
+          name: "claude",
+          displayName: "Claude",
+          installed: true,
+          authenticated: true,
+          enabled: true,
+          models: [{ id: "opus", name: "Opus", isDefault: true }],
+          capabilities: {
+            permissionModes: [{ id: "default", label: "Default" }],
+            thinkingModes: [],
+            slashCommands: "leading",
+            contextUsage: "used",
+            attachments: { maxBytes: 10, maxCount: 1 },
+          },
+        },
+        options: {},
+        onChange: () => {},
+      },
     });
-    render();
-    rerender(next);
-    expect(container?.querySelector('[data-testid="toolbar"]')).not.toBeNull();
-    expect(container?.querySelector('[data-testid="trailing"]')).not.toBeNull();
+    const labels = Array.from(container?.querySelectorAll("button") ?? []).map(
+      (node) => node.textContent,
+    );
+    expect(labels).toContain("Default");
+    expect(labels).toContain("Opus");
+  });
+
+  it("applies the provider's attachment limits", () => {
+    render({
+      controls: {
+        provider: "codex",
+        info: {
+          name: "codex",
+          displayName: "Codex",
+          installed: true,
+          authenticated: true,
+          enabled: true,
+          capabilities: {
+            permissionModes: [],
+            thinkingModes: [],
+            slashCommands: "anywhere",
+            contextUsage: "remaining",
+            attachments: { maxBytes: 1024 * 1024, maxCount: 1 },
+          },
+        },
+        options: {},
+        onChange: () => {},
+      },
+    });
+    chooseFiles([file("a.txt"), file("b.txt")]);
+    expect(alerts()).toContain("每条消息最多添加 1 个附件");
   });
 });
 

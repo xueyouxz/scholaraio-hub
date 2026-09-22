@@ -1,37 +1,29 @@
 import type { StoredSession } from "@scholaraio-hub/shared";
-import { useQuery } from "@tanstack/react-query";
 import { ArrowDown } from "lucide-react";
 import { useState } from "react";
 import { useNavigationLayout } from "../../app/components/NavigationLayout";
-import { settingsApi } from "../../core/library";
 import { PaperReaderView } from "../library/reader/PaperReaderView";
-import { Composer } from "./components/Composer";
-import { ExecutionControls } from "./components/ExecutionControls";
 import { InputRequestPanel } from "./components/InputRequestPanel";
-import { ModelSwitcher } from "./components/ModelSwitcher";
 import { ResizableProjectFilesPanel } from "./components/ProjectFilesPanel";
 import { SessionHeader, type SessionPanel } from "./components/SessionHeader";
 import { SessionMessages } from "./components/SessionMessages";
 import { ResizableWorkspacePapersPanel } from "./components/WorkspacePapersPanel";
+import { useProviders } from "./composer/hooks/useProviders";
+import { Composer } from "./composer/ui/Composer";
+import type { ComposerControls } from "./composer/ui/ComposerOptions";
 import { useSessionChat } from "./hooks/useSessionChat";
 import { useStickToBottom } from "./hooks/useStickToBottom";
-import { modelOptions } from "./modelOptions";
 
 /** An open session: header, transcript, composer and the side panels. */
 export function SessionChatView({ initial }: { initial: StoredSession }) {
   const { isDesktop } = useNavigationLayout();
-  const providers = useQuery({
-    queryKey: ["providers"],
-    queryFn: ({ signal }) => settingsApi.providers(signal),
-    staleTime: 60_000,
-  });
+  const providers = useProviders();
   const session = useSessionChat(initial);
   const { snapshot, running } = session;
   const scroll = useStickToBottom(running);
   const [panel, setPanel] = useState<SessionPanel | undefined>();
   const [selectedPaper, setSelectedPaper] = useState<string | null>(null);
 
-  const currentTool = providers.data?.providers.find((tool) => tool.name === initial.provider);
   const pending = snapshot?.pendingInput;
   // Ask on the tool call's own row when it is on screen; otherwise (no call id,
   // or the paper reader is covering the transcript) fall back to the panel.
@@ -44,11 +36,21 @@ export function SessionChatView({ initial }: { initial: StoredSession }) {
         (part) => part.type === "dynamic-tool" && part.toolCallId === pending.toolCallId,
       );
   const model = snapshot?.model;
-  const modelInfo = currentTool?.models?.find((item) =>
-    model ? item.id === model : item.isDefault,
-  );
   // Options may change mid-turn; the server applies them when the next turn starts.
-  const optionsLocked = session.changeOptions.isPending;
+  const controls: ComposerControls = {
+    provider: initial.provider,
+    info: providers.find(initial.provider),
+    options: {
+      model: snapshot?.model,
+      permissionMode: snapshot?.permissionMode,
+      thinking: snapshot?.thinking,
+      effort: snapshot?.effort,
+    },
+    onChange: (patch) => session.changeOptions.mutate(patch),
+    disabled: session.changeOptions.isPending,
+    pending: !!snapshot?.pendingOptions?.length,
+    error: session.changeOptions.error?.message,
+  };
   return (
     <div className="flex flex-1 h-full min-h-0 overflow-hidden">
       <section className="session-page flex-1 min-w-0">
@@ -167,52 +169,7 @@ export function SessionChatView({ initial }: { initial: StoredSession }) {
                     scroll.scrollToBottom();
                     return session.send(text, files);
                   }}
-                  toolbar={
-                    <ExecutionControls
-                      permissionMode={snapshot?.permissionMode ?? "default"}
-                      thinking={snapshot?.thinking ?? "adaptive"}
-                      effort={snapshot?.effort}
-                      efforts={modelInfo?.efforts}
-                      defaultEffort={modelInfo?.defaultEffort}
-                      onChange={(value) => session.changeOptions.mutate(value)}
-                      disabled={optionsLocked}
-                      capabilities={currentTool?.capabilities}
-                    />
-                  }
-                  trailing={
-                    <>
-                      {snapshot?.pendingOptions?.length ? (
-                        <span className="text-[11px] text-on-surface-variant whitespace-nowrap">
-                          下一轮生效
-                        </span>
-                      ) : null}
-                      {session.changeOptions.error ? (
-                        <span role="alert" className="text-error text-xs">
-                          {session.changeOptions.error.message}
-                        </span>
-                      ) : null}
-                      <ModelSwitcher
-                        model={model || "default"}
-                        models={modelOptions(currentTool?.models)}
-                        disabled={optionsLocked}
-                        onModelChange={(value) => {
-                          const next = currentTool?.models?.find((item) =>
-                            value === "default" ? item.isDefault : item.id === value,
-                          );
-                          const effort = snapshot?.effort;
-                          // Keep the effort when the next model offers it; else its own default.
-                          const keepsEffort =
-                            !effort || next?.efforts?.some((option) => option.id === effort);
-                          return session.changeOptions
-                            .mutateAsync({
-                              model: value === "default" ? "" : value,
-                              ...(keepsEffort ? {} : { effort: "" }),
-                            })
-                            .then(() => {});
-                        }}
-                      />
-                    </>
-                  }
+                  controls={controls}
                 />
               )}
             </div>

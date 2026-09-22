@@ -1,4 +1,4 @@
-import type { StoredSession } from "@scholaraio-hub/shared";
+import type { ProviderName, StoredSession } from "@scholaraio-hub/shared";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { X } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
@@ -12,10 +12,10 @@ import {
   skillsApi,
 } from "../../core/library";
 import { queryKeys } from "../../core/queryKeys";
-import { Composer, readComposerDraft } from "./components/Composer";
-import { ExecutionControls } from "./components/ExecutionControls";
-import { ModelSwitcher } from "./components/ModelSwitcher";
-import { modelOptions } from "./modelOptions";
+import { useProviders } from "./composer/hooks/useProviders";
+import { optionsForProvider } from "./composer/model/options";
+import { Composer, readComposerDraft } from "./composer/ui/Composer";
+import type { ComposerControls } from "./composer/ui/ComposerOptions";
 import {
   describeCardinalityRequirement,
   filterReadingContextSkills,
@@ -73,11 +73,7 @@ function NewSessionForm({
     queryKey: ["app-settings"],
     queryFn: ({ signal }) => settingsApi.get(signal),
   });
-  const providers = useQuery({
-    queryKey: ["providers"],
-    queryFn: ({ signal }) => settingsApi.providers(signal),
-    staleTime: 60_000,
-  });
+  const providers = useProviders();
   const projects = useQuery({
     queryKey: ["library", "projects"],
     queryFn: ({ signal }) => libraryApi.projects(signal),
@@ -111,16 +107,25 @@ function NewSessionForm({
   const [text, setText] = useState(() =>
     skillName ? `/${skillName} ` : readComposerDraft(draftKey),
   );
-  const [execution, setExecution] = useState<Omit<SessionOptions, "model">>({
-    permissionMode: "default",
-    thinking: "adaptive",
-  });
-  const [modelChoice, setModelChoice] = useState<string>();
-  const provider =
-    defaults.data?.settings.newSessionDefaults?.provider === "codex" ? "codex" : "claude";
-  const model = modelChoice ?? defaults.data?.settings.newSessionDefaults?.model ?? "";
-  const tool = providers.data?.providers.find((p) => p.name === provider);
-  const modelInfo = tool?.models?.find((item) => (model ? item.id === model : item.isDefault));
+  const newSessionDefaults = defaults.data?.settings.newSessionDefaults;
+  const [providerChoice, setProviderChoice] = useState<ProviderName>();
+  const [choices, setChoices] = useState<SessionOptions>({});
+  const provider: ProviderName =
+    providerChoice ?? (newSessionDefaults?.provider === "codex" ? "codex" : "claude");
+  // The settings' default model belongs to the settings' provider, until a model is picked.
+  const options: SessionOptions = {
+    ...choices,
+    model:
+      choices.model ??
+      (provider === newSessionDefaults?.provider ? newSessionDefaults.model : undefined),
+  };
+  const model = options.model ?? "";
+  const execution = {
+    permissionMode: options.permissionMode,
+    thinking: options.thinking,
+    // "" means the provider default, which a new session gets by leaving it unset.
+    effort: options.effort || undefined,
+  };
   useEffect(() => {
     setTitle(project?.name ?? "New Chat");
     return () => setTitle("");
@@ -208,6 +213,20 @@ function NewSessionForm({
     } finally {
       setSubmitting(false);
     }
+  };
+  const controls: ComposerControls = {
+    provider,
+    info: providers.find(provider),
+    options,
+    onChange: (patch) => setChoices((previous) => ({ ...previous, ...patch })),
+    disabled: submitting,
+    providers: providers.providers,
+    onProviderChange: (next) => {
+      if (next === provider) return;
+      const nextInfo = providers.find(next);
+      setProviderChoice(next);
+      if (nextInfo) setChoices(optionsForProvider(nextInfo.capabilities, options));
+    },
   };
   const invalidProject = !!projectId && !!projects.data && !project;
   const disabled =
@@ -360,32 +379,7 @@ function NewSessionForm({
           provider={provider}
           extraCommands={extraCommands}
           onSend={start}
-          toolbar={
-            <ExecutionControls
-              permissionMode={execution.permissionMode ?? "default"}
-              thinking={execution.thinking ?? "adaptive"}
-              effort={execution.effort || undefined}
-              efforts={modelInfo?.efforts}
-              defaultEffort={modelInfo?.defaultEffort}
-              onChange={(value) => setExecution((previous) => ({ ...previous, ...value }))}
-              disabled={submitting}
-              capabilities={
-                tool && { permissionModes: [], thinkingModes: tool.capabilities.thinkingModes }
-              }
-            />
-          }
-          trailing={
-            <ModelSwitcher
-              model={model || "default"}
-              models={modelOptions(tool?.models)}
-              disabled={submitting}
-              onModelChange={(value) => {
-                setModelChoice(value === "default" ? "" : value);
-                // Efforts belong to a model; the next one starts at its own default.
-                setExecution((previous) => ({ ...previous, effort: undefined }));
-              }}
-            />
-          }
+          controls={controls}
         />
       </div>
     </div>

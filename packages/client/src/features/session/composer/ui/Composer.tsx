@@ -3,7 +3,6 @@ import { useQuery } from "@tanstack/react-query";
 import { Paperclip, X } from "lucide-react";
 import {
   type Dispatch,
-  type ReactNode,
   type SetStateAction,
   useId,
   useLayoutEffect,
@@ -11,31 +10,27 @@ import {
   useRef,
   useState,
 } from "react";
-import { sessionApi } from "../../../core/library";
-import { useComposerDraft } from "../composer/hooks/useComposerDraft";
-import { useSlashCommandPicker } from "../composer/hooks/useSlashCommandPicker";
-import { rejectAttachments } from "../composer/model/attachments";
+import { sessionApi } from "../../../../core/library";
+import { useComposerDraft } from "../hooks/useComposerDraft";
+import { useSlashCommandPicker } from "../hooks/useSlashCommandPicker";
+import { rejectAttachments } from "../model/attachments";
+import { commandInsertion, joinLeadingCommand, mergeCommands } from "../model/slashCommands";
+import { appendTranscript, hasContent, routeSubmission, withInterim } from "../model/submission";
 import {
-  commandInsertion,
-  joinLeadingCommand,
-  mergeCommands,
-} from "../composer/model/slashCommands";
-import {
-  appendTranscript,
-  hasContent,
-  routeSubmission,
-  withInterim,
-} from "../composer/model/submission";
+  type ComposerControls,
+  ComposerLeadingOptions,
+  ComposerTrailingOptions,
+} from "./ComposerOptions";
+import { SendActionButton } from "./SendActionButton";
+import { SlashCommandBadge } from "./SlashCommandBadge";
+import { SlashCommandSuggestions } from "./SlashCommandSuggestions";
 import { VoiceInputButton, type VoiceInputButtonRef } from "./VoiceInputButton";
-import { SendActionButton } from "./composer/SendActionButton";
-import { SlashCommandBadge } from "./composer/SlashCommandBadge";
-import { SlashCommandSuggestions } from "./composer/SlashCommandSuggestions";
 
-export { readComposerDraft } from "../composer/hooks/useComposerDraft";
+export { readComposerDraft } from "../hooks/useComposerDraft";
 
 /**
- * Shared message input with the pre-refactor MessageInput layout:
- * attachments + execution pills + voice on the left, model + send on the right.
+ * Shared message input:
+ * attachments + provider option pills + voice on the left, model + send on the right.
  */
 export function Composer({
   draftKey,
@@ -49,8 +44,7 @@ export function Composer({
   stopPending = false,
   disabled = false,
   placeholder = "您想更改或创建什么内容？",
-  toolbar,
-  trailing,
+  controls,
   extraCommands,
   text: controlledText,
   onTextChange,
@@ -66,10 +60,8 @@ export function Composer({
   stopPending?: boolean;
   disabled?: boolean;
   placeholder?: string;
-  /** Execution pills rendered after the attachment button. */
-  toolbar?: ReactNode;
-  /** Controls rendered before the send button (model switcher). */
-  trailing?: ReactNode;
+  /** Provider-described option pills; omitted, the composer shows none. */
+  controls?: ComposerControls;
   extraCommands?: SlashCommand[];
   text?: string;
   onTextChange?: Dispatch<SetStateAction<string>>;
@@ -107,7 +99,11 @@ export function Composer({
   };
   const addFiles = (incoming: File[]) => {
     if (disabled || sending) return;
-    const rejection = rejectAttachments(files.length, incoming);
+    const rejection = rejectAttachments(
+      files.length,
+      incoming,
+      controls?.info?.capabilities.attachments,
+    );
     setError(rejection);
     if (rejection) return;
     setFiles((current) => [...current, ...incoming]);
@@ -304,7 +300,7 @@ export function Composer({
               ) : null}
             </button>
             <div className="flex items-center gap-0.5 flex-wrap">
-              {toolbar}
+              {controls ? <ComposerLeadingOptions controls={controls} /> : null}
               <VoiceInputButton
                 ref={voice}
                 disabled={disabled || sending}
@@ -318,7 +314,7 @@ export function Composer({
             </div>
           </div>
           <div className="flex items-center gap-2 shrink-0">
-            {trailing}
+            {controls ? <ComposerTrailingOptions controls={controls} /> : null}
             <SendActionButton
               busy={sending || stopPending}
               canSend={

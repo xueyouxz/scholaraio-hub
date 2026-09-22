@@ -329,13 +329,13 @@ test("composer keeps project drafts, handles IME and recovers failed sends", asy
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
 });
 
-test("original composer permission menu saves settings and is not clipped", async ({
+test("composer permission menu uses the provider's modes and saves settings", async ({
   page,
   request,
 }) => {
   await page.goto("/sessions");
-  // As before the refactor, a new chat only offers thinking; the mode belongs to the session.
-  await expect(page.getByRole("button", { name: "Default", exact: true })).toHaveCount(0);
+  // A new chat offers the provider's own permission modes before the first turn.
+  await expect(page.getByRole("button", { name: "Default", exact: true })).toBeVisible();
   await page.getByRole("textbox", { name: "输入问题" }).fill("验证原权限控件");
   await page.getByRole("button", { name: "发送", exact: true }).click();
   await expect(page).toHaveURL(/\/sessions\/[\w-]+$/);

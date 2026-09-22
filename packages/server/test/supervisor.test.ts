@@ -1,57 +1,23 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { MessageQueue } from "../src/sdk/messageQueue.js";
-import { MockClaudeSDK, createMockScenario } from "../src/sdk/mock.js";
-import type { RealClaudeSDKInterface, StartSessionOptions } from "../src/sdk/types.js";
+import type { StartSessionOptions } from "../src/sdk/providers/types.js";
 import { Supervisor } from "../src/supervisor/Supervisor.js";
 import type { SessionSummary } from "../src/supervisor/types.js";
 import { type BusEvent, EventBus } from "../src/watcher/EventBus.js";
-
-function createCapturingRealSdk(startCalls: StartSessionOptions[]): RealClaudeSDKInterface {
-  let nextSession = 1;
-
-  return {
-    startSession: vi.fn(async (options) => {
-      startCalls.push(options);
-      const sessionId = `queued-real-${nextSession}`;
-      nextSession += 1;
-      let aborted = false;
-
-      async function* iterator() {
-        yield {
-          type: "system",
-          subtype: "init",
-          session_id: sessionId,
-        } as const;
-
-        while (!aborted) {
-          await new Promise((resolve) => setTimeout(resolve, 10));
-        }
-      }
-
-      return {
-        iterator: iterator(),
-        queue: new MessageQueue(),
-        abort: () => {
-          aborted = true;
-        },
-      };
-    }),
-  };
-}
+import { createScriptedProvider, providerFromSessionFactory } from "./helpers/scriptedProvider.js";
 
 describe("Supervisor", () => {
-  let mockSdk: MockClaudeSDK;
   let supervisor: Supervisor;
 
   beforeEach(() => {
-    mockSdk = new MockClaudeSDK();
-    supervisor = new Supervisor({ sdk: mockSdk, idleTimeoutMs: 100 });
+    supervisor = new Supervisor({
+      provider: createScriptedProvider({ reply: "Hello!" }),
+      idleTimeoutMs: 100,
+    });
   });
 
   describe("startSession", () => {
     it("starts a session and returns a process", async () => {
-      mockSdk.addScenario(createMockScenario("sess-123", "Hello!"));
-
       const process = await supervisor.startSession("/tmp/test", {
         text: "hi",
       });
@@ -61,16 +27,12 @@ describe("Supervisor", () => {
     });
 
     it("tracks process in getAllProcesses", async () => {
-      mockSdk.addScenario(createMockScenario("sess-123", "Hello!"));
-
       await supervisor.startSession("/tmp/test", { text: "hi" });
 
       expect(supervisor.getAllProcesses()).toHaveLength(1);
     });
 
     it("encodes projectId correctly", async () => {
-      mockSdk.addScenario(createMockScenario("sess-123", "Hello!"));
-
       const process = await supervisor.startSession("/tmp/test", {
         text: "hi",
       });
@@ -80,8 +42,6 @@ describe("Supervisor", () => {
     });
 
     it("queues the initial message", async () => {
-      mockSdk.addScenario(createMockScenario("sess-123", "Hello!"));
-
       const process = await supervisor.startSession("/tmp/test", {
         text: "hi",
       });
@@ -93,8 +53,6 @@ describe("Supervisor", () => {
 
   describe("resumeSession", () => {
     it("resumes an existing session", async () => {
-      mockSdk.addScenario(createMockScenario("sess-123", "Resumed!"));
-
       const process = await supervisor.resumeSession("sess-123", "/tmp/test", {
         text: "continue",
       });
@@ -103,8 +61,6 @@ describe("Supervisor", () => {
     });
 
     it("reuses existing process for same session", async () => {
-      mockSdk.addScenario(createMockScenario("sess-123", "First"));
-
       const process1 = await supervisor.resumeSession("sess-123", "/tmp/test", {
         text: "first",
       });
@@ -117,9 +73,6 @@ describe("Supervisor", () => {
     });
 
     it("creates new process for different session", async () => {
-      mockSdk.addScenario(createMockScenario("sess-123", "First"));
-      mockSdk.addScenario(createMockScenario("sess-456", "Second"));
-
       const process1 = await supervisor.resumeSession("sess-123", "/tmp/test", {
         text: "first",
       });
@@ -135,9 +88,8 @@ describe("Supervisor", () => {
   describe("capacity queue launch options", () => {
     it("preserves model settings for queued new sessions", async () => {
       const startCalls: StartSessionOptions[] = [];
-      const realSdk = createCapturingRealSdk(startCalls);
       const supervisorWithQueue = new Supervisor({
-        realSdk,
+        provider: createScriptedProvider({ startCalls, holdOpen: true }),
         maxWorkers: 1,
         idleTimeoutMs: 60_000,
       });
@@ -184,9 +136,8 @@ describe("Supervisor", () => {
 
     it("preserves model settings and resume id for queued resumes", async () => {
       const startCalls: StartSessionOptions[] = [];
-      const realSdk = createCapturingRealSdk(startCalls);
       const supervisorWithQueue = new Supervisor({
-        realSdk,
+        provider: createScriptedProvider({ startCalls, holdOpen: true }),
         maxWorkers: 1,
         idleTimeoutMs: 60_000,
       });
@@ -229,9 +180,8 @@ describe("Supervisor", () => {
 
     it("preserves create-only semantics for queued session creation", async () => {
       const startCalls: StartSessionOptions[] = [];
-      const realSdk = createCapturingRealSdk(startCalls);
       const supervisorWithQueue = new Supervisor({
-        realSdk,
+        provider: createScriptedProvider({ startCalls, holdOpen: true }),
         maxWorkers: 1,
         idleTimeoutMs: 60_000,
       });
@@ -266,8 +216,6 @@ describe("Supervisor", () => {
 
   describe("getProcess", () => {
     it("returns process by id", async () => {
-      mockSdk.addScenario(createMockScenario("sess-123", "Hello!"));
-
       const process = await supervisor.startSession("/tmp/test", {
         text: "hi",
       });
@@ -284,8 +232,6 @@ describe("Supervisor", () => {
 
   describe("getProcessForSession", () => {
     it("returns process by session id", async () => {
-      mockSdk.addScenario(createMockScenario("sess-123", "Hello!"));
-
       const process = await supervisor.resumeSession("sess-123", "/tmp/test", {
         text: "hi",
       });
@@ -302,9 +248,6 @@ describe("Supervisor", () => {
 
   describe("getProcessInfoList", () => {
     it("returns info for all processes", async () => {
-      mockSdk.addScenario(createMockScenario("sess-1", "First"));
-      mockSdk.addScenario(createMockScenario("sess-2", "Second"));
-
       await supervisor.startSession("/tmp/test1", { text: "one" });
       await supervisor.startSession("/tmp/test2", { text: "two" });
 
@@ -318,8 +261,6 @@ describe("Supervisor", () => {
 
   describe("abortProcess", () => {
     it("aborts and removes process", async () => {
-      mockSdk.addScenario(createMockScenario("sess-123", "Hello!"));
-
       const process = await supervisor.startSession("/tmp/test", {
         text: "hi",
       });
@@ -336,8 +277,6 @@ describe("Supervisor", () => {
     });
 
     it("removes session mapping on abort", async () => {
-      mockSdk.addScenario(createMockScenario("sess-123", "Hello!"));
-
       const process = await supervisor.resumeSession("sess-123", "/tmp/test", {
         text: "hi",
       });
@@ -355,12 +294,10 @@ describe("Supervisor", () => {
       eventBus.subscribe((event) => events.push(event));
 
       const supervisorWithBus = new Supervisor({
-        sdk: mockSdk,
+        provider: createScriptedProvider({ reply: "Hello!" }),
         idleTimeoutMs: 100,
         eventBus,
       });
-
-      mockSdk.addScenario(createMockScenario("sess-123", "Hello!"));
 
       await supervisorWithBus.startSession("/tmp/test", { text: "hi" });
 
@@ -386,12 +323,10 @@ describe("Supervisor", () => {
       eventBus.subscribe((event) => events.push(event));
 
       const supervisorWithBus = new Supervisor({
-        sdk: mockSdk,
+        provider: createScriptedProvider({ reply: "Hello!" }),
         idleTimeoutMs: 100,
         eventBus,
       });
-
-      mockSdk.addScenario(createMockScenario("sess-123", "Hello!"));
 
       await supervisorWithBus.startSession("/tmp/test", { text: "hi" });
 
@@ -410,7 +345,7 @@ describe("Supervisor", () => {
       const events: BusEvent[] = [];
       eventBus.subscribe((event) => events.push(event));
 
-      const realSdk: RealClaudeSDKInterface = {
+      const realSdk = {
         startSession: async () => {
           async function* iterator() {
             yield {
@@ -429,7 +364,7 @@ describe("Supervisor", () => {
       };
 
       const supervisorWithBus = new Supervisor({
-        realSdk,
+        provider: providerFromSessionFactory(realSdk.startSession),
         idleTimeoutMs: 100,
         eventBus,
       });
@@ -453,7 +388,7 @@ describe("Supervisor", () => {
         const events: BusEvent[] = [];
         eventBus.subscribe((event) => events.push(event));
 
-        const realSdk: RealClaudeSDKInterface = {
+        const realSdk = {
           startSession: async () => {
             async function* iterator() {
               yield {
@@ -485,7 +420,7 @@ describe("Supervisor", () => {
         );
 
         const supervisorWithBus = new Supervisor({
-          realSdk,
+          provider: providerFromSessionFactory(realSdk.startSession),
           idleTimeoutMs: 100,
           eventBus,
           onSessionSummary,
@@ -518,7 +453,7 @@ describe("Supervisor", () => {
       const events: BusEvent[] = [];
       eventBus.subscribe((event) => events.push(event));
 
-      const realSdk: RealClaudeSDKInterface = {
+      const realSdk = {
         startSession: async () => {
           async function* iterator() {
             yield {
@@ -538,7 +473,7 @@ describe("Supervisor", () => {
       };
 
       const supervisorWithBus = new Supervisor({
-        realSdk,
+        provider: providerFromSessionFactory(realSdk.startSession),
         idleTimeoutMs: 100,
         eventBus,
       });
@@ -567,7 +502,7 @@ describe("Supervisor", () => {
       try {
         let aborted = false;
 
-        const realSdk: RealClaudeSDKInterface = {
+        const realSdk = {
           startSession: async () => {
             async function* iterator() {
               yield {
@@ -594,7 +529,7 @@ describe("Supervisor", () => {
         };
 
         const supervisorWithAliveProcess = new Supervisor({
-          realSdk,
+          provider: providerFromSessionFactory(realSdk.startSession),
           idleTimeoutMs: 100,
         });
 

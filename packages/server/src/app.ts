@@ -1,3 +1,5 @@
+import { homedir } from "node:os";
+import path from "node:path";
 import type { HttpBindings } from "@hono/node-server";
 import { Hono } from "hono";
 import { getDataDir } from "./data-dir.js";
@@ -8,9 +10,11 @@ import { health } from "./routes/health.js";
 import { createLibraryRoutes } from "./routes/library.js";
 import { createProvidersRoutes } from "./routes/providers.js";
 import { createSettingsRoutes } from "./routes/settings.js";
+import { createSkillsRoutes } from "./routes/skills.js";
 import { createVersionRoutes } from "./routes/version.js";
+import { claudeProvider } from "./sdk/providers/claude.js";
 import type { AgentProvider } from "./sdk/providers/types.js";
-import type { ClaudeSDK, PermissionMode, RealClaudeSDKInterface } from "./sdk/types.js";
+import type { PermissionMode } from "./sdk/types.js";
 import { LibraryService } from "./services/LibraryService.js";
 import type { ModelInfoService } from "./services/ModelInfoService.js";
 import { ProviderUsageLimitService } from "./services/ProviderUsageLimitService.js";
@@ -21,8 +25,7 @@ import { Supervisor } from "./supervisor/Supervisor.js";
 
 export interface AppOptions {
   dataDir?: string;
-  sdk?: ClaudeSDK;
-  realSdk?: RealClaudeSDKInterface;
+  /** Agent provider used when a session does not name one (defaults to Claude) */
   provider?: AgentProvider;
   libraryService?: LibraryService;
   idleTimeoutMs?: number;
@@ -32,6 +35,7 @@ export interface AppOptions {
   enabledProviders?: string[];
   installId?: string;
   frontendDistPath?: string;
+  scholaraioSkillsDir?: string;
 }
 
 export function createApp(options: AppOptions) {
@@ -41,15 +45,14 @@ export function createApp(options: AppOptions) {
   const library = options.libraryService ?? new LibraryService(dataDir);
   const usage = new ProviderUsageLimitService();
   const supervisor = new Supervisor({
-    sdk: options.sdk,
-    realSdk: options.realSdk,
-    provider: options.provider,
+    provider: options.provider ?? claudeProvider,
     idleTimeoutMs: options.idleTimeoutMs,
     defaultPermissionMode: options.defaultPermissionMode,
     onProcessCreated: (process) => sessions.attach(process),
     onProviderSDKMessage: (provider, message) => usage.recordSDKMessage(provider, message),
   });
-  const sessions = new SessionService(store, supervisor, library);
+  const skillsDir = options.scholaraioSkillsDir ?? path.join(homedir(), "scholaraio", "skills");
+  const sessions = new SessionService(store, supervisor, library, skillsDir);
   const ready = store.initialize();
   app.use("/api/*", hostCheckMiddleware);
   app.use("/api/*", requireCustomHeader);
@@ -60,7 +63,14 @@ export function createApp(options: AppOptions) {
   app.route("/health", health);
   app.route("/api/version", createVersionRoutes({ installId: options.installId }));
   app.route("/api/library", createLibraryRoutes(library));
-  app.route("/api/sessions", createAppSessionRoutes(sessions));
+  app.route("/api/sessions", createAppSessionRoutes(sessions, options.serverSettingsService));
+  app.route(
+    "/api/skills",
+    createSkillsRoutes({
+      scholaraioSkillsDir:
+        options.scholaraioSkillsDir ?? path.join(homedir(), "scholaraio", "skills"),
+    }),
+  );
   app.route(
     "/api/providers",
     createProvidersRoutes({

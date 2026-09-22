@@ -27,14 +27,12 @@ export { BaseMockProvider } from "./base.js";
 // Mock providers
 export {
   MockClaudeProvider,
-  MockClaudeOllamaProvider,
   createClaudeScenario,
   createClaudeToolScenario,
   createClaudeApprovalScenario,
 } from "./claude.js";
 export {
   MockCodexProvider,
-  MockCodexOSSProvider,
   createCodexScenario,
   createCodexToolScenario,
   createCodexErrorScenario,

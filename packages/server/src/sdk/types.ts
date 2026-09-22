@@ -89,19 +89,6 @@ export interface UserMessage {
   tempId?: string;
 }
 
-export interface SDKSessionOptions {
-  cwd: string;
-  resume?: string; // session ID to resume
-}
-
-// Legacy interface for mock SDK compatibility
-export interface ClaudeSDK {
-  startSession(options: SDKSessionOptions): AsyncIterableIterator<SDKMessage>;
-}
-
-// New interface for real SDK with full features
-import type { MessageQueue } from "./messageQueue.js";
-
 export interface ToolApprovalResult {
   behavior: "allow" | "deny";
   updatedInput?: unknown;
@@ -119,65 +106,3 @@ export type CanUseTool = (
   input: unknown,
   options: { signal: AbortSignal },
 ) => Promise<ToolApprovalResult>;
-
-export interface StartSessionOptions {
-  cwd: string;
-  initialMessage?: UserMessage;
-  resumeSessionId?: string;
-  permissionMode?: PermissionMode;
-  /** Model to use (e.g., "sonnet", "opus", "haiku"). undefined = use CLI default */
-  model?: string;
-  /** Thinking configuration (undefined = thinking disabled) */
-  thinking?: import("@scholaraio-hub/shared").ThinkingConfig;
-  /** Effort level for response quality (undefined = SDK default) */
-  effort?: import("@scholaraio-hub/shared").EffortLevel;
-  onToolApproval?: CanUseTool;
-  /** Global instructions to append to system prompt (from server settings) */
-  globalInstructions?: string;
-  /** Optional remote executor identifier */
-  executor?: string;
-  /** Optional environment overrides for remote execution */
-  remoteEnv?: Record<string, string>;
-}
-
-export interface StartSessionResult {
-  iterator: AsyncIterableIterator<SDKMessage>;
-  queue: MessageQueue;
-  abort: () => void;
-  /** Check if the underlying CLI process is still alive (undefined = not available) */
-  isProcessAlive?: () => boolean;
-  /** OS PID of the spawned agent child process (undefined if not available) */
-  pid?: number | (() => number | undefined);
-  /**
-   * Change max thinking tokens without restarting the session.
-   * Pass null to disable thinking mode.
-   * Only supported by Claude SDK 0.2.7+.
-   */
-  setMaxThinkingTokens?: (tokens: number | null) => Promise<void>;
-  /**
-   * Interrupt the current turn gracefully without killing the process.
-   * Only supported by Claude SDK 0.2.7+.
-   */
-  interrupt?: () => Promise<void>;
-  /**
-   * Get the list of available models from the SDK.
-   * Only supported by Claude SDK 0.2.7+.
-   */
-  supportedModels?: () => Promise<Array<{ id: string; name: string; description?: string }>>;
-  /**
-   * Get the list of available slash commands from the SDK.
-   * Only supported by Claude SDK 0.2.7+.
-   */
-  supportedCommands?: () => Promise<
-    Array<{ name: string; description: string; argumentHint?: string }>
-  >;
-  /**
-   * Change the model mid-session without restarting.
-   * Only supported by Claude SDK 0.2.7+.
-   */
-  setModel?: (model?: string) => Promise<void>;
-}
-
-export interface RealClaudeSDKInterface {
-  startSession(options: StartSessionOptions): Promise<StartSessionResult>;
-}

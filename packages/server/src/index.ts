@@ -1,10 +1,14 @@
 import { createServer as createHttpsServer } from "node:https";
 import { serve } from "@hono/node-server";
 import { createApp } from "./app.js";
+import {
+  closeCodexCorrelationDebugLogger,
+  initCodexCorrelationDebugLogger,
+} from "./codex/correlationDebugLogger.js";
 import { loadConfig } from "./config.js";
 import { ensureSelfSignedCertificate } from "./https/self-signed.js";
 import { initLogger, interceptConsole } from "./logging/index.js";
-import { RealClaudeSDK } from "./sdk/real.js";
+import { closeMessageLogger, initMessageLogger } from "./sdk/messageLogger.js";
 import { LibraryService } from "./services/LibraryService.js";
 import { InstallService, ModelInfoService, ServerSettingsService } from "./services/index.js";
 
@@ -18,6 +22,9 @@ initLogger({
   prettyPrint: config.logPretty,
 });
 interceptConsole();
+// Opt-in raw protocol logs for debugging providers (LOG_SDK_MESSAGES / CODEX_CORRELATION_DEBUG).
+initMessageLogger();
+initCodexCorrelationDebugLogger();
 console.log(`[Config] Data directory: ${config.dataDir}`);
 const library = new LibraryService(config.dataDir);
 const settings = new ServerSettingsService({ dataDir: config.dataDir });
@@ -31,6 +38,8 @@ async function shutdown() {
   server?.close();
   await application?.close();
   await library.close();
+  closeMessageLogger();
+  closeCodexCorrelationDebugLogger();
 }
 for (const signal of ["SIGINT", "SIGTERM"])
   process.once(signal, () => {
@@ -47,7 +56,6 @@ try {
   application = createApp({
     dataDir: config.dataDir,
     libraryService: library,
-    realSdk: new RealClaudeSDK(),
     idleTimeoutMs: config.idleTimeoutMs,
     defaultPermissionMode: config.defaultPermissionMode,
     serverSettingsService: settings,
@@ -55,6 +63,7 @@ try {
     enabledProviders: config.enabledProviders,
     installId: install.getInstallId(),
     frontendDistPath: config.clientDistDir,
+    scholaraioSkillsDir: config.scholaraioSkillsDir,
   });
   await application.ready;
   const tls = config.httpsSelfSigned

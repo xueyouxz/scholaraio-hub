@@ -254,10 +254,7 @@ export class ProviderUsageLimitService {
   private readonly cache = new Map<ProviderName, ProviderUsageLimits>();
 
   recordSDKMessage(provider: ProviderName, message: SDKMessage): void {
-    const limits =
-      provider === "claude" || provider === "claude-ollama"
-        ? normalizeClaudeRateLimitEvent(provider, message)
-        : null;
+    const limits = provider === "claude" ? normalizeClaudeRateLimitEvent(provider, message) : null;
     if (!limits) return;
     this.record(limits);
   }

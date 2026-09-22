@@ -15,7 +15,7 @@ function providerSkillDirs(
   const globalAgentSkills = join(homedir(), ".agents", "skills");
   const projectAgentSkills = join(projectPath, ".agents", "skills");
 
-  if (provider === "claude" || provider === "claude-ollama") {
+  if (provider === "claude") {
     return [
       { path: globalAgentSkills, source: "global" },
       { path: join(homedir(), ".claude", "skills"), source: "global" },
@@ -23,7 +23,7 @@ function providerSkillDirs(
       { path: join(projectPath, ".claude", "skills"), source: "project" },
     ];
   }
-  if (provider === "codex" || provider === "codex-oss") {
+  if (provider === "codex") {
     return [
       { path: globalAgentSkills, source: "global" },
       { path: join(homedir(), ".codex", "skills"), source: "global" },

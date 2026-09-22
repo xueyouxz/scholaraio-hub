@@ -1,19 +1,12 @@
 /**
  * Provider name - which AI agent provider to use.
- * - "claude": Claude via Anthropic SDK
- * - "codex": OpenAI Codex via SDK (cloud models)
- * - "codex-oss": Codex via CLI with --oss (local models via Ollama)
- * - "gemini": Google Gemini via CLI
- * - "opencode": OpenCode via HTTP server (multi-provider agent)
+ * - "claude": Claude Code via the Anthropic Agent SDK
+ * - "codex": OpenAI Codex via the codex app-server
+ *
+ * Every name here must have an implementation in
+ * `packages/server/src/sdk/providers/index.ts`.
  */
-export type ProviderName =
-  | "claude"
-  | "claude-ollama"
-  | "codex"
-  | "codex-oss"
-  | "gemini"
-  | "gemini-acp"
-  | "opencode";
+export type ProviderName = "claude" | "codex";
 
 /**
  * The default provider when none is specified.

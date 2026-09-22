@@ -28,6 +28,6 @@ describe("getModelContextWindow", () => {
   });
 
   it("keeps non-codex provider fallback at default", () => {
-    expect(getModelContextWindow(undefined, "codex-oss")).toBe(DEFAULT_CONTEXT_WINDOW);
+    expect(getModelContextWindow(undefined, "claude")).toBe(DEFAULT_CONTEXT_WINDOW);
   });
 });

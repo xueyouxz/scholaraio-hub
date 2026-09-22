@@ -6,7 +6,7 @@ import { filterEnvForChildProcess } from "./env-filter.js";
  * server-initiated permission requests (command/file approval).
  */
 
-import { type ChildProcess, exec, execFile, spawn } from "node:child_process";
+import { type ChildProcess, execFile, spawn } from "node:child_process";
 import { promisify } from "node:util";
 import type { ModelInfo, ProviderUsageLimits } from "@scholaraio-hub/shared";
 import {
@@ -21,7 +21,7 @@ import {
 } from "../../codex/normalization.js";
 import { getLogger } from "../../logging/logger.js";
 import { normalizeCodexRateLimits } from "../../services/ProviderUsageLimitService.js";
-import { findCodexCliPath, whichCommand } from "../cli-detection.js";
+import { findCodexCliPath } from "../cli-detection.js";
 import { logSDKMessage } from "../messageLogger.js";
 import { MessageQueue } from "../messageQueue.js";
 import type { SDKMessage, TimestampedSDKMessage, UserMessage } from "../types.js";
@@ -51,7 +51,6 @@ import type {
 import type { AgentProvider, AgentSession, AuthStatus, StartSessionOptions } from "./types.js";
 
 const log = getLogger().child({ component: "codex-provider" });
-const execAsync = promisify(exec);
 
 function logSdkCorrelationDebug(
   sessionId: string,
@@ -95,28 +94,6 @@ const USAGE_LIMITS_TIMEOUT_MS = 8000;
 const APP_SERVER_INIT_REQUEST_ID = 1;
 const APP_SERVER_MODEL_LIST_REQUEST_ID = 2;
 const APP_SERVER_SHUTDOWN_GRACE_MS = 1500;
-
-/**
- * Local debug knobs for Codex app-server policy behavior.
- *
- * Set `approvalPolicy` to `"untrusted"` to force Codex to request approval for
- * command/file actions more aggressively, even when `"on-request"` would not.
- * Leave as `null` for normal behavior.
- */
-const CODEX_POLICY_OVERRIDES: {
-  approvalPolicy: CodexAskForApproval | null;
-  sandbox: CodexSandboxMode | null;
-} = {
-  approvalPolicy: null,
-  sandbox: null,
-};
-
-/**
- * When enabled, declare Codex session originator as "Codex Desktop"
- * when initializing app-server sessions.
- */
-const DECLARE_CODEX_ORIGINATOR = false;
-const DECLARED_CODEX_ORIGINATOR = "Codex Desktop";
 
 const PREFERRED_MODEL_ORDER = [
   "gpt-5.3-codex",
@@ -659,7 +636,7 @@ export class CodexProvider implements AgentProvider {
   }
 
   private getCodexClientName(): string {
-    return DECLARE_CODEX_ORIGINATOR ? DECLARED_CODEX_ORIGINATOR : "scholaraio-hub";
+    return "scholaraio-hub";
   }
 
   /**
@@ -997,32 +974,24 @@ export class CodexProvider implements AgentProvider {
     approvalPolicy: CodexAskForApproval;
     sandbox: CodexSandboxMode;
   } {
-    const applyOverrides = (policy: {
-      approvalPolicy: CodexAskForApproval;
-      sandbox: CodexSandboxMode;
-    }) => ({
-      approvalPolicy: CODEX_POLICY_OVERRIDES.approvalPolicy ?? policy.approvalPolicy,
-      sandbox: CODEX_POLICY_OVERRIDES.sandbox ?? policy.sandbox,
-    });
-
     if (permissionMode === "bypassPermissions") {
-      return applyOverrides({
+      return {
         approvalPolicy: "never",
         sandbox: "danger-full-access",
-      });
+      };
     }
 
     if (permissionMode === "plan") {
-      return applyOverrides({
+      return {
         approvalPolicy: "on-request",
         sandbox: "read-only",
-      });
+      };
     }
 
-    return applyOverrides({
+    return {
       approvalPolicy: "on-request",
       sandbox: "workspace-write",
-    });
+    };
   }
 
   /**
@@ -1176,10 +1145,6 @@ export class CodexProvider implements AgentProvider {
           permissionMode: options.permissionMode ?? "default",
           approvalPolicy: policy.approvalPolicy,
           sandbox: policy.sandbox,
-          policyOverrides: {
-            approvalPolicy: CODEX_POLICY_OVERRIDES.approvalPolicy,
-            sandbox: CODEX_POLICY_OVERRIDES.sandbox,
-          },
           model: options.model ?? null,
         },
         "Started Codex app-server session thread",

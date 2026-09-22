@@ -24,19 +24,6 @@ export class MockCodexProvider extends BaseMockProvider {
 }
 
 /**
- * Mock Codex OSS provider.
- * Same as MockCodexProvider but with codex-oss name.
- */
-export class MockCodexOSSProvider extends BaseMockProvider {
-  readonly name: ProviderName = "codex-oss";
-  readonly displayName = "CodexOSS";
-
-  constructor(config: MockProviderConfig = {}) {
-    super(config);
-  }
-}
-
-/**
  * Create a simple Codex response scenario.
  * Messages are already normalized to SDKMessage format.
  */

@@ -4,8 +4,9 @@ import { join } from "node:path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { detectClaudeCli } from "../../src/sdk/cli-detection.js";
 import { MessageQueue } from "../../src/sdk/messageQueue.js";
-import { RealClaudeSDK } from "../../src/sdk/real.js";
-import type { SDKMessage, StartSessionOptions, UserMessage } from "../../src/sdk/types.js";
+import { ClaudeProvider } from "../../src/sdk/providers/claude.js";
+import type { StartSessionOptions } from "../../src/sdk/providers/types.js";
+import type { SDKMessage, UserMessage } from "../../src/sdk/types.js";
 import { Process } from "../../src/supervisor/Process.js";
 
 /**
@@ -55,7 +56,7 @@ function logMessage(message: SDKMessage) {
 }
 
 describe("Real SDK E2E", () => {
-  let sdk: RealClaudeSDK;
+  let sdk: ClaudeProvider;
   let testDir: string;
   let cliAvailable = false;
 
@@ -83,7 +84,7 @@ describe("Real SDK E2E", () => {
     // Create a simple test file
     writeFileSync(join(testDir, "test.txt"), "Hello from test file");
 
-    sdk = new RealClaudeSDK();
+    sdk = new ClaudeProvider();
   });
 
   afterAll(() => {

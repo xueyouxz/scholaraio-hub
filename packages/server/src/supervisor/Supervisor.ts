@@ -1,25 +1,13 @@
 import { randomUUID } from "node:crypto";
-import {
-  type ProviderName,
-  SESSION_TITLE_MAX_LENGTH,
-  type UrlProjectId,
-} from "@scholaraio-hub/shared";
-import type { AgentActivity, PendingInputType } from "@scholaraio-hub/shared";
+import type { ProviderName, UrlProjectId } from "@scholaraio-hub/shared";
+import type { PendingInputType } from "@scholaraio-hub/shared";
 import { getLogger } from "../logging/logger.js";
 import { getProvider } from "../sdk/providers/index.js";
 import type { AgentProvider } from "../sdk/providers/types.js";
 import type { PermissionMode, SDKMessage, UserMessage } from "../sdk/types.js";
-import type {
-  EventBus,
-  ProcessStateEvent,
-  ProcessTerminatedEvent,
-  SessionAbortedEvent,
-  SessionCreatedEvent,
-  SessionStatusEvent,
-  SessionUpdatedEvent,
-  WorkerActivityEvent,
-} from "../watcher/EventBus.js";
+import type { EventBus } from "../watcher/EventBus.js";
 import { Process, type ProcessConstructorOptions } from "./Process.js";
+import { SupervisorEvents } from "./SupervisorEvents.js";
 import { type QueuedRequestInfo, WorkerQueue, isQueueFullError } from "./WorkerQueue.js";
 import {
   DEFAULT_IDLE_PREEMPT_THRESHOLD_MS,
@@ -90,9 +78,6 @@ export type OnSessionSummaryCallback = (
 export type OnSessionExecutorCallback = (sessionId: string, executor: string) => Promise<void>;
 export type OnProviderSDKMessageCallback = (provider: ProviderName, message: SDKMessage) => void;
 
-/** Delays for initial title/messageCount reconciliation after session creation */
-const INITIAL_RECONCILE_DELAYS_MS = [1000, 3000] as const;
-
 export interface SupervisorOptions {
   onProcessCreated?: (process: Process) => void;
   /** Agent provider used when a request does not name one */
@@ -133,6 +118,7 @@ export class Supervisor {
   private onSessionExecutor?: OnSessionExecutorCallback;
   private onProviderSDKMessage?: OnProviderSDKMessageCallback;
   private staleCheckTimer: ReturnType<typeof setInterval>;
+  private readonly events: SupervisorEvents;
 
   constructor(options: SupervisorOptions) {
     this.onProcessCreated = options.onProcessCreated;
@@ -148,6 +134,7 @@ export class Supervisor {
       maxQueueSize: options.maxQueueSize,
     });
     this.onSessionSummary = options.onSessionSummary;
+    this.events = new SupervisorEvents(options.eventBus, options.onSessionSummary);
     this.onSessionExecutor = options.onSessionExecutor;
     this.onProviderSDKMessage = options.onProviderSDKMessage;
     this.staleCheckTimer = setInterval(
@@ -706,7 +693,7 @@ export class Supervisor {
 
     // Emit session-aborted event BEFORE aborting, so ExternalSessionTracker
     // can set up the grace period before any file changes arrive
-    this.emitSessionAborted(process.sessionId, process.projectId);
+    this.events.emitSessionAborted(process.sessionId, process.projectId);
 
     await process.abort();
     this.unregisterProcess(process);
@@ -744,18 +731,6 @@ export class Supervisor {
     return { success: interrupted, supported: true };
   }
 
-  private emitSessionAborted(sessionId: string, projectId: UrlProjectId): void {
-    if (!this.eventBus) return;
-
-    const event: SessionAbortedEvent = {
-      type: "session-aborted",
-      sessionId,
-      projectId,
-      timestamp: new Date().toISOString(),
-    };
-    this.eventBus.emit(event);
-  }
-
   private registerProcess(process: Process, isNewSession: boolean): void {
     const log = getLogger();
     log.info(
@@ -784,12 +759,12 @@ export class Supervisor {
 
     // Emit session created event for new sessions
     if (isNewSession) {
-      this.emitSessionCreated(process, ownership);
-      this.scheduleInitialSessionReconciliation(process.sessionId, process.projectId);
+      this.events.emitSessionCreated(process, ownership);
+      this.events.scheduleInitialSessionReconciliation(process.sessionId, process.projectId);
     }
 
     // Emit ownership change event
-    this.emitOwnershipChange(process.sessionId, process.projectId, ownership);
+    this.events.emitOwnershipChange(process.sessionId, process.projectId, ownership);
 
     // Emit initial agent activity (process starts in in-turn state)
     const initialState = process.state;
@@ -800,7 +775,7 @@ export class Supervisor {
         const requestType = initialState.request.type;
         pendingInputType = requestType === "tool-approval" ? "tool-approval" : "user-question";
       }
-      this.emitAgentActivityChange(
+      this.events.emitAgentActivityChange(
         process.sessionId,
         process.projectId,
         initialState.type,
@@ -809,7 +784,13 @@ export class Supervisor {
     }
 
     // Emit worker activity after registering (new worker added)
-    this.emitWorkerActivity();
+    this.events.emitWorkerActivity({
+      activeWorkers: this.processes.size,
+      queueLength: this.workerQueue.length,
+      hasActiveWork: this.getAllProcesses().some(
+        (p) => p.state.type === "in-turn" || p.state.type === "waiting-input",
+      ),
+    });
 
     // Listen for completion to auto-cleanup, and state changes for process state events
     process.subscribe((event) => {
@@ -862,10 +843,10 @@ export class Supervisor {
           permissionMode: process.permissionMode,
           modeVersion: process.modeVersion,
         };
-        this.emitOwnershipChange(event.newSessionId, process.projectId, ownership);
+        this.events.emitOwnershipChange(event.newSessionId, process.projectId, ownership);
 
         // Retry early metadata reconciliation with authoritative session ID.
-        this.scheduleInitialSessionReconciliation(event.newSessionId, process.projectId);
+        this.events.scheduleInitialSessionReconciliation(event.newSessionId, process.projectId);
       } else if (event.type === "state-change") {
         // Emit agent activity change for all states that clients need to track
         // This includes in-turn/waiting-input (active) and idle (inactive)
@@ -881,7 +862,7 @@ export class Supervisor {
             const requestType = event.state.request.type;
             pendingInputType = requestType === "tool-approval" ? "tool-approval" : "user-question";
           }
-          this.emitAgentActivityChange(
+          this.events.emitAgentActivityChange(
             process.sessionId,
             process.projectId,
             event.state.type,
@@ -889,9 +870,15 @@ export class Supervisor {
           );
         }
         // Emit worker activity on any state change (affects hasActiveWork)
-        this.emitWorkerActivity();
+        this.events.emitWorkerActivity({
+          activeWorkers: this.processes.size,
+          queueLength: this.workerQueue.length,
+          hasActiveWork: this.getAllProcesses().some(
+            (p) => p.state.type === "in-turn" || p.state.type === "waiting-input",
+          ),
+        });
       } else if (event.type === "terminated") {
-        this.emitProcessTerminated(
+        this.events.emitProcessTerminated(
           process.sessionId,
           process.projectId,
           process.id,
@@ -938,16 +925,22 @@ export class Supervisor {
     }
 
     // Emit ownership change event (back to none)
-    this.emitOwnershipChange(process.sessionId, process.projectId, {
+    this.events.emitOwnershipChange(process.sessionId, process.projectId, {
       owner: "none",
     });
 
     // Emit agent activity change to notify clients that this session is no longer running
     // This is needed for real-time updates (e.g., AgentsNavItem indicator)
-    this.emitAgentActivityChange(process.sessionId, process.projectId, "idle");
+    this.events.emitAgentActivityChange(process.sessionId, process.projectId, "idle");
 
     // Emit worker activity after unregistering (worker removed)
-    this.emitWorkerActivity();
+    this.events.emitWorkerActivity({
+      activeWorkers: this.processes.size,
+      queueLength: this.workerQueue.length,
+      hasActiveWork: this.getAllProcesses().some(
+        (p) => p.state.type === "in-turn" || p.state.type === "waiting-input",
+      ),
+    });
 
     // Process queue when a worker becomes available
     void this.processQueue();
@@ -981,166 +974,6 @@ export class Supervisor {
     });
 
     return [...this.terminatedProcesses];
-  }
-
-  private emitOwnershipChange(
-    sessionId: string,
-    projectId: UrlProjectId,
-    ownership: SessionOwnership,
-  ): void {
-    if (!this.eventBus) return;
-
-    const event: SessionStatusEvent = {
-      type: "session-status-changed",
-      sessionId,
-      projectId,
-      ownership,
-      timestamp: new Date().toISOString(),
-    };
-    this.eventBus.emit(event);
-  }
-
-  private emitSessionCreated(process: Process, ownership: SessionOwnership): void {
-    if (!this.eventBus) return;
-
-    const now = new Date().toISOString();
-    const optimistic = this.buildOptimisticSessionSeed(process);
-    const session: SessionSummary = {
-      id: process.sessionId,
-      projectId: process.projectId,
-      title: optimistic.title,
-      fullTitle: optimistic.fullTitle,
-      createdAt: now,
-      updatedAt: now,
-      messageCount: optimistic.messageCount,
-      ownership,
-      provider: process.provider,
-    };
-
-    const event: SessionCreatedEvent = {
-      type: "session-created",
-      session,
-      timestamp: now,
-    };
-    this.eventBus.emit(event);
-  }
-
-  private buildOptimisticSessionSeed(process: Process): {
-    title: string | null;
-    fullTitle: string | null;
-    messageCount: number;
-  } {
-    const history = process.getMessageHistory();
-    const firstUser = history.find(
-      (msg) => msg.type === "user" && typeof msg.message?.content === "string",
-    );
-    const firstContent = firstUser?.message?.content;
-    const fullTitle = typeof firstContent === "string" ? firstContent.trim() : "";
-    if (!fullTitle) {
-      return { title: null, fullTitle: null, messageCount: 0 };
-    }
-
-    const title =
-      fullTitle.length <= SESSION_TITLE_MAX_LENGTH
-        ? fullTitle
-        : `${fullTitle.slice(0, SESSION_TITLE_MAX_LENGTH - 3)}...`;
-
-    return { title, fullTitle, messageCount: 1 };
-  }
-
-  private scheduleInitialSessionReconciliation(sessionId: string, projectId: UrlProjectId): void {
-    if (!this.eventBus || !this.onSessionSummary) return;
-
-    for (const delayMs of INITIAL_RECONCILE_DELAYS_MS) {
-      const timer = setTimeout(() => {
-        void this.emitReconciledSessionUpdate(sessionId, projectId);
-      }, delayMs);
-      timer.unref();
-    }
-  }
-
-  private async emitReconciledSessionUpdate(
-    sessionId: string,
-    projectId: UrlProjectId,
-  ): Promise<void> {
-    if (!this.eventBus || !this.onSessionSummary) return;
-
-    const summary = await this.onSessionSummary(sessionId, projectId);
-    if (!summary) return;
-
-    const event: SessionUpdatedEvent = {
-      type: "session-updated",
-      sessionId,
-      projectId,
-      title: summary.title,
-      messageCount: summary.messageCount,
-      updatedAt: summary.updatedAt,
-      contextUsage: summary.contextUsage,
-      model: summary.model,
-      timestamp: new Date().toISOString(),
-    };
-    this.eventBus.emit(event);
-  }
-
-  private emitAgentActivityChange(
-    sessionId: string,
-    projectId: UrlProjectId,
-    activity: AgentActivity,
-    pendingInputType?: PendingInputType,
-  ): void {
-    if (!this.eventBus) return;
-
-    const event: ProcessStateEvent = {
-      type: "process-state-changed",
-      sessionId,
-      projectId,
-      activity,
-      pendingInputType,
-      timestamp: new Date().toISOString(),
-    };
-    this.eventBus.emit(event);
-  }
-
-  private emitProcessTerminated(
-    sessionId: string,
-    projectId: UrlProjectId,
-    processId: string,
-    provider: ProviderName,
-    reason: string,
-  ): void {
-    if (!this.eventBus) return;
-
-    const event: ProcessTerminatedEvent = {
-      type: "process-terminated",
-      sessionId,
-      projectId,
-      processId,
-      provider,
-      reason,
-      timestamp: new Date().toISOString(),
-    };
-    this.eventBus.emit(event);
-  }
-
-  /**
-   * Emit worker activity event for safe restart indicator.
-   * Called when workers are added, removed, or change state.
-   */
-  private emitWorkerActivity(): void {
-    if (!this.eventBus) return;
-
-    const hasActiveWork = Array.from(this.processes.values()).some(
-      (p) => p.state.type === "in-turn" || p.state.type === "waiting-input",
-    );
-
-    const event: WorkerActivityEvent = {
-      type: "worker-activity-changed",
-      activeWorkers: this.processes.size,
-      queueLength: this.workerQueue.length,
-      hasActiveWork,
-      timestamp: new Date().toISOString(),
-    };
-    this.eventBus.emit(event);
   }
 
   // ============ Staleness Detection ============

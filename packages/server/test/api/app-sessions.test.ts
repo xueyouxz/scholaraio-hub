@@ -363,6 +363,24 @@ describe.each(["claude", "codex"] as const)("%s application sessions", (name) =>
     expect(provider.commandCwds.at(-1)).toBe(join(root, "draft-workspace"));
   });
 
+  it("runs the next turn when a changed effort makes the supervisor replace the process", async () => {
+    const id = await create();
+    await (await send(id, "first")).text();
+    await expect.poll(() => server.sessions.detail(id).state).toBe("idle");
+    const options = await server.app.request(`/api/sessions/${id}/options`, {
+      method: "PATCH",
+      headers,
+      body: JSON.stringify({ thinking: "adaptive", effort: "high" }),
+    });
+    expect(options.status).toBe(200);
+    await (await send(id, "second")).text();
+    await expect.poll(() => server.sessions.detail(id).state).toBe("idle");
+    const detail = server.sessions.detail(id);
+    expect(detail.error).toBeUndefined();
+    expect(provider.calls.at(-1)).toMatchObject({ effort: "high" });
+    expect(detail.messages).toHaveLength(4);
+  });
+
   it("accepts only efforts the chosen model offers", async () => {
     provider.models = [
       { id: "fast", name: "Fast", isDefault: true, efforts: [{ id: "low" }] },

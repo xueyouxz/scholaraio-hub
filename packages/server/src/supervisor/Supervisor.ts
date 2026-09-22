@@ -432,6 +432,8 @@ export class Supervisor {
           const thinkingChanged =
             existingProcess.thinking?.type !== (modelSettings?.thinking?.type ?? undefined);
           const effortChanged = existingProcess.effort !== modelSettings?.effort;
+          // abort() does not mark the process terminated, so remember the restart.
+          let restarted = false;
 
           if (thinkingChanged || effortChanged) {
             if (thinkingChanged && !effortChanged && existingProcess.supportsThinkingModeChange) {
@@ -473,15 +475,16 @@ export class Supervisor {
               );
               await existingProcess.abort();
               this.unregisterProcess(existingProcess);
+              restarted = true;
               // Fall through to start a new session with the updated settings
             }
           }
           // Update permission mode if specified
-          if (permissionMode) {
+          if (permissionMode && !restarted) {
             existingProcess.setPermissionMode(permissionMode);
           }
           // Queue message to existing process (if we didn't fall through to restart)
-          if (!existingProcess.isTerminated) {
+          if (!restarted && !existingProcess.isTerminated) {
             const result = existingProcess.queueMessage(message);
             if (result.success) {
               return { kind: "started", process: existingProcess };

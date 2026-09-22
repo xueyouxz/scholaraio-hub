@@ -41,4 +41,25 @@ describe("Codex skills", () => {
   it("sends a repeated mention once", () => {
     expect(codexUserInput("$cite and $cite", [skill("cite")])).toHaveLength(2);
   });
+
+  it("sends uploaded images as local images the model sees", () => {
+    const image = {
+      id: "i",
+      originalName: "fig.png",
+      name: "i.png",
+      size: 10,
+      mimeType: "image/png",
+      path: "/ws/.attachments/i.png",
+    };
+    const pdf = {
+      ...image,
+      originalName: "paper.pdf",
+      mimeType: "application/pdf",
+      path: "/ws/p.pdf",
+    };
+    expect(codexUserInput("see", [], [image, pdf])).toEqual([
+      { type: "text", text: "see", text_elements: [] },
+      { type: "localImage", path: "/ws/.attachments/i.png" },
+    ]);
+  });
 });

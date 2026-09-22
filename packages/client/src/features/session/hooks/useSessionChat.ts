@@ -1,5 +1,5 @@
 import { useChat } from "@ai-sdk/react";
-import type { SessionMessage, StoredSession } from "@scholaraio-hub/shared";
+import type { SessionAttachment, SessionMessage, StoredSession } from "@scholaraio-hub/shared";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { DefaultChatTransport } from "ai";
 import { useCallback, useEffect, useMemo, useRef } from "react";
@@ -144,10 +144,9 @@ export function useSessionChat(initial: StoredSession) {
     },
   });
 
-  const send = async (text: string, files: File[]) => {
+  const send = async (text: string, attachments: SessionAttachment[]) => {
     sendError.current = undefined;
     chat.clearError();
-    const attachments = await sessionApi.upload(id, files);
     await chat.sendMessage({
       text,
       files: attachments.map((file) => ({
@@ -162,8 +161,7 @@ export function useSessionChat(initial: StoredSession) {
 
   // Reuse the message id when a lost enqueue response is retried with the same content.
   const queueSubmission = useRef<{ signature: string; id: string } | undefined>(undefined);
-  const enqueue = async (text: string, files: File[]) => {
-    const attachments = await sessionApi.upload(id, files);
+  const enqueue = async (text: string, attachments: SessionAttachment[]) => {
     const attachmentIds = attachments.map((file) => file.id);
     const signature = JSON.stringify([text, attachmentIds]);
     if (queueSubmission.current?.signature !== signature)

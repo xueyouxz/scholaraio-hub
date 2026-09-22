@@ -1,4 +1,4 @@
-import type { ProviderName, StoredSession } from "@scholaraio-hub/shared";
+import type { ProviderName, SessionAttachment, StoredSession } from "@scholaraio-hub/shared";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { X } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
@@ -168,7 +168,8 @@ function NewSessionForm({
   >(undefined);
   const [submitting, setSubmitting] = useState(false);
   const [createError, setCreateError] = useState<string>();
-  const start = async (message: string, files: File[] = []) => {
+  const start = async (message: string, attachments: SessionAttachment[] = []) => {
+    const attachmentIds = attachments.map((file) => file.id);
     const composed = composePrompt(message);
     setSubmitting(true);
     setCreateError(undefined);
@@ -180,7 +181,7 @@ function NewSessionForm({
         model,
         execution,
         composed,
-        files.map((file) => [file.name, file.size, file.lastModified]),
+        attachmentIds,
       ]);
       if (created.current?.signature !== signature) {
         created.current = {
@@ -191,19 +192,14 @@ function NewSessionForm({
             model,
             projectId || undefined,
             execution,
+            attachmentIds,
           ),
           messageId: crypto.randomUUID(),
         };
       }
       const { session, messageId } = created.current;
-      if (composed || files.length) {
-        const attachments = await sessionApi.upload(session.id, files);
-        await sessionApi.begin(
-          session.id,
-          messageId,
-          composed,
-          attachments.map((file) => file.id),
-        );
+      if (composed || attachmentIds.length) {
+        await sessionApi.begin(session.id, messageId, composed, attachmentIds);
       }
       void client.invalidateQueries({ queryKey: ["sessions"] });
       navigate(`/sessions/${session.id}`);

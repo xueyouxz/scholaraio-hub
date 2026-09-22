@@ -137,6 +137,8 @@ export const CreateSessionSchema = SessionOptionsSchema.extend({
   paperIds: z.array(z.string().min(1).max(200)).max(100).default([]),
   projectId: z.string().min(1).max(120).optional(),
   title: z.string().trim().min(1).max(200).default("新会话"),
+  /** Draft uploads the new session takes over (see draft attachments). */
+  attachmentIds: z.array(z.string().uuid()).max(ATTACHMENT_LIMITS.maxCount).default([]),
 });
 export const SendSessionMessageSchema = z
   .object({

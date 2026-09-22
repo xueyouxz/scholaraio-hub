@@ -166,9 +166,9 @@ export function SessionChatView({ initial }: { initial: StoredSession }) {
                   onStop={() => session.stop.mutate()}
                   stopPending={session.stop.isPending}
                   onQueue={session.enqueue}
-                  onSend={(text, files) => {
+                  onSend={(text, attachments) => {
                     scroll.scrollToBottom();
-                    return session.send(text, files);
+                    return session.send(text, attachments);
                   }}
                   controls={controls}
                 />

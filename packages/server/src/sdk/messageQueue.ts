@@ -1,5 +1,31 @@
+import { readFile } from "node:fs/promises";
 import type { SDKUserMessage } from "@anthropic-ai/claude-agent-sdk";
+import type { UploadedFile } from "@scholaraio-hub/shared";
 import type { UserMessage } from "./types.js";
+
+/** Image types and size a model accepts inline; larger or other files are read from disk. */
+const INLINE_IMAGE_TYPES = new Set(["image/png", "image/jpeg", "image/gif", "image/webp"]);
+const INLINE_IMAGE_MAX_BYTES = 5 * 1024 * 1024;
+
+export function isInlineImage(file: UploadedFile): boolean {
+  return INLINE_IMAGE_TYPES.has(file.mimeType) && file.size <= INLINE_IMAGE_MAX_BYTES;
+}
+
+function formatSize(bytes: number): string {
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  if (bytes < 1024 * 1024 * 1024) return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+  return `${(bytes / (1024 * 1024 * 1024)).toFixed(1)} GB`;
+}
+
+/** The text an agent reads about uploaded files: where each one is, to open with its tools. */
+export function describeAttachments(attachments: UploadedFile[] = []): string {
+  if (attachments.length === 0) return "";
+  const lines = attachments.map(
+    (file) => `- ${file.originalName} (${formatSize(file.size)}, ${file.mimeType}): ${file.path}`,
+  );
+  return `\n\nUser uploaded files:\n${lines.join("\n")}`;
+}
 
 /**
  * Detect the media type from base64 image data.
@@ -96,7 +122,14 @@ export class MessageQueue {
   async *generator(): AsyncGenerator<SDKUserMessage> {
     while (true) {
       const message = await this.next();
-      yield this.toSDKMessage(message);
+      yield await this.toSDKMessage(message);
+    }
+  }
+
+  /** The queued messages as pushed, for providers that build their own input. */
+  async *messages(): AsyncGenerator<UserMessage> {
+    while (true) {
+      yield await this.next();
     }
   }
 
@@ -114,31 +147,24 @@ export class MessageQueue {
   }
 
   /**
-   * Format file size in human-readable form.
-   */
-  private formatSize(bytes: number): string {
-    if (bytes < 1024) return `${bytes} B`;
-    if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
-    if (bytes < 1024 * 1024 * 1024) return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
-    return `${(bytes / (1024 * 1024 * 1024)).toFixed(1)} GB`;
-  }
-
-  /**
    * Convert a UserMessage to the SDK's SDKUserMessage format.
    */
-  private toSDKMessage(msg: UserMessage): SDKUserMessage {
-    let text = msg.text;
-
-    // Append attachment paths for agent to access via Read tool
-    if (msg.attachments?.length) {
-      const lines = msg.attachments.map(
-        (f) => `- ${f.originalName} (${this.formatSize(f.size)}, ${f.mimeType}): ${f.path}`,
-      );
-      text += `\n\nUser uploaded files:\n${lines.join("\n")}`;
-    }
+  private async toSDKMessage(msg: UserMessage): Promise<SDKUserMessage> {
+    // Every file stays listed by path so the agent can reopen it with its tools.
+    const text = msg.text + describeAttachments(msg.attachments);
+    // Uploaded images also go inline, as Claude Code sends a pasted image.
+    const uploadedImages = await Promise.all(
+      (msg.attachments ?? [])
+        .filter(isInlineImage)
+        .map(
+          async (file) =>
+            `data:${file.mimeType};base64,${(await readFile(file.path)).toString("base64")}`,
+        ),
+    );
+    const images = [...(msg.images ?? []), ...uploadedImages];
 
     // If message has images or documents, use array content format
-    if (msg.images?.length || msg.documents?.length) {
+    if (images.length || msg.documents?.length) {
       const content: Array<
         | { type: "text"; text: string }
         | {
@@ -148,7 +174,7 @@ export class MessageQueue {
       > = [{ type: "text", text }];
 
       // Add images as base64 content blocks
-      for (const image of msg.images ?? []) {
+      for (const image of images) {
         // Detect media type from the image data
         const mediaType = detectImageMediaType(image);
         // Strip data URL prefix if present to get raw base64

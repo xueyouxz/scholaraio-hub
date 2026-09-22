@@ -13,19 +13,19 @@ import {
   type ModelInfo,
   type ProviderUsageLimits,
   type SlashCommand,
+  type UploadedFile,
 } from "@scholaraio-hub/shared";
 import type { AgentEvent } from "../../agent/events.js";
 import { getLogger } from "../../logging/logger.js";
 import { normalizeCodexRateLimits } from "../../services/ProviderUsageLimitService.js";
 import { findCodexCliPath } from "../cli-detection.js";
-import { MessageQueue } from "../messageQueue.js";
+import { MessageQueue, describeAttachments, isInlineImage } from "../messageQueue.js";
 import type { ToolApprovalResult } from "../types.js";
 import {
   CodexEventAdapter,
   asCommandExecutionRequestApprovalParams,
   asFileChangeRequestApprovalParams,
   asToolRequestUserInputParams,
-  extractTextFromMessage,
   getOptionalString,
   isTurnTerminalNotification,
 } from "./codex-events.js";
@@ -540,13 +540,18 @@ export class CodexProvider implements AgentProvider {
         if (!activeClient) return false;
         if (!runtimeState.threadId || !runtimeState.activeTurnId) return false;
 
-        const userPrompt = extractTextFromMessage(message);
+        const userPrompt = message.text + describeAttachments(message.attachments);
         if (!userPrompt) return true;
 
         try {
           await activeClient.request<{ turnId: string }>("turn/steer", {
             threadId: runtimeState.threadId,
-            input: await withSkillMentions(activeClient, options.cwd, userPrompt),
+            input: await withSkillMentions(
+              activeClient,
+              options.cwd,
+              userPrompt,
+              message.attachments,
+            ),
             expectedTurnId: runtimeState.activeTurnId,
           });
           return true;
@@ -633,7 +638,7 @@ export class CodexProvider implements AgentProvider {
 
       yield* adapter.started(sessionId);
 
-      const messageGen = queue.generator();
+      const messageGen = queue.messages();
       let isFirstMessage = !options.resumeSessionId;
 
       for await (const message of messageGen) {
@@ -641,7 +646,7 @@ export class CodexProvider implements AgentProvider {
           break;
         }
 
-        let userPrompt = extractTextFromMessage(message);
+        let userPrompt = message.text + describeAttachments(message.attachments);
         if (!userPrompt) {
           continue;
         }
@@ -656,7 +661,7 @@ export class CodexProvider implements AgentProvider {
 
         const turnStartParams: TurnStartParams = {
           threadId: sessionId,
-          input: await withSkillMentions(appServer, options.cwd, userPrompt),
+          input: await withSkillMentions(appServer, options.cwd, userPrompt, message.attachments),
           effort: toReasoningEffort(options.effort),
         };
         const turnResult = await appServer.request<TurnStartResponse>(
@@ -1062,10 +1067,16 @@ export function toCodexSkillCommand(skill: AppServerSkill): SlashCommand {
 const SKILL_MENTION = /(^|\s)\$([A-Za-z0-9_.:-]+)/g;
 
 /**
- * The turn input for `text`: the text itself plus one native skill item per
- * `$name` it mentions, as the Codex TUI sends them. Unknown names stay text.
+ * The turn input for `text`: the text itself, one native skill item per
+ * `$name` it mentions (unknown names stay text), and each uploaded image as a
+ * `localImage` the model sees, as the Codex TUI sends them. Other files are
+ * listed by path in the text for the agent to open.
  */
-export function codexUserInput(text: string, skills: AppServerSkill[]): UserInput[] {
+export function codexUserInput(
+  text: string,
+  skills: AppServerSkill[],
+  attachments: UploadedFile[] = [],
+): UserInput[] {
   const byName = new Map(skills.map((skill) => [skill.name, skill]));
   const mentioned = new Map<string, AppServerSkill>();
   for (const match of text.matchAll(SKILL_MENTION)) {
@@ -1079,6 +1090,9 @@ export function codexUserInput(text: string, skills: AppServerSkill[]): UserInpu
       name: skill.name,
       path: skill.path,
     })),
+    ...attachments
+      .filter(isInlineImage)
+      .map((file) => ({ type: "localImage" as const, path: file.path })),
   ];
 }
 
@@ -1086,7 +1100,8 @@ async function withSkillMentions(
   appServer: Pick<CodexAppServerClient, "request">,
   cwd: string,
   text: string,
+  attachments?: UploadedFile[],
 ): Promise<UserInput[]> {
-  if (!text.includes("$")) return codexUserInput(text, []);
-  return codexUserInput(text, await listCodexSkills(appServer, cwd));
+  const skills = text.includes("$") ? await listCodexSkills(appServer, cwd) : [];
+  return codexUserInput(text, skills, attachments);
 }

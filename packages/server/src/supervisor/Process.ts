@@ -10,7 +10,7 @@ import type {
 } from "@scholaraio-hub/shared";
 import type { AgentEvent } from "../agent/events.js";
 import { getLogger } from "../logging/logger.js";
-import type { MessageQueue } from "../sdk/messageQueue.js";
+import { type MessageQueue, describeAttachments } from "../sdk/messageQueue.js";
 import { decidePermission } from "../sdk/providers/permission-policy.js";
 import {
   type ResolvedSessionControls,
@@ -642,31 +642,11 @@ export class Process {
   }
 
   /**
-   * Format file size for display.
-   */
-  private formatSize(bytes: number): string {
-    if (bytes < 1024) return `${bytes} B`;
-    if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
-    if (bytes < 1024 * 1024 * 1024) return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
-    return `${(bytes / (1024 * 1024 * 1024)).toFixed(1)} GB`;
-  }
-
-  /**
    * Build user message content that matches what MessageQueue sends to the SDK.
    * This ensures SSE/history messages can be deduplicated against JSONL.
    */
   private buildUserMessageContent(message: UserMessage): string {
-    let text = message.text;
-
-    // Append attachment paths (same format MessageQueue sends to the provider)
-    if (message.attachments?.length) {
-      const lines = message.attachments.map(
-        (f) => `- ${f.originalName} (${this.formatSize(f.size)}, ${f.mimeType}): ${f.path}`,
-      );
-      text += `\n\nUser uploaded files:\n${lines.join("\n")}`;
-    }
-
-    return text;
+    return message.text + describeAttachments(message.attachments);
   }
 
   /**

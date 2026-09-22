@@ -80,41 +80,54 @@ export const libraryApi = {
       body: JSON.stringify(position),
     }),
 };
-const uploadedFiles = new WeakMap<File, Map<string, Promise<SessionAttachment>>>();
+/** Where a composer's files go: an existing session, or the draft area of a new chat. */
+export type AttachmentTarget = { sessionId: string } | "draft";
+
+const attachmentsPath = (target: AttachmentTarget) =>
+  target === "draft"
+    ? "/api/sessions/draft-attachments"
+    : `/api/sessions/${pathSegment(target.sessionId)}/attachments`;
 
 export const sessionApi = {
-  async upload(id: string, files: File[]): Promise<SessionAttachment[]> {
-    return Promise.all(
-      files.map((file) => {
-        let sessions = uploadedFiles.get(file);
-        if (!sessions) {
-          sessions = new Map();
-          uploadedFiles.set(file, sessions);
+  /**
+   * Upload one file, reporting progress (0–1). XHR rather than fetch because
+   * fetch cannot report upload progress.
+   */
+  uploadAttachment(
+    target: AttachmentTarget,
+    file: File,
+    onProgress?: (fraction: number) => void,
+    signal?: AbortSignal,
+  ): Promise<SessionAttachment> {
+    return new Promise((resolve, reject) => {
+      const request = new XMLHttpRequest();
+      request.open("POST", attachmentsPath(target));
+      request.setRequestHeader("ScholarAIO-Hub", "true");
+      request.responseType = "json";
+      request.upload.onprogress = (event) => {
+        if (event.lengthComputable) onProgress?.(event.loaded / event.total);
+      };
+      request.onload = () => {
+        if (request.status >= 200 && request.status < 300) {
+          resolve(request.response as SessionAttachment);
+          return;
         }
-        let pending = sessions.get(id);
-        if (!pending) {
-          const body = new FormData();
-          body.set("file", file);
-          pending = fetch(`/api/sessions/${pathSegment(id)}/attachments`, {
-            method: "POST",
-            headers: { "ScholarAIO-Hub": "true" },
-            body,
-          })
-            .then(async (response) => {
-              if (!response.ok)
-                throw new Error(`附件上传失败 (${response.status})：${await response.text()}`);
-              return response.json() as Promise<SessionAttachment>;
-            })
-            .catch((error) => {
-              sessions.delete(id);
-              throw error;
-            });
-          sessions.set(id, pending);
-        }
-        return pending;
-      }),
-    );
+        const payload = request.response as { error?: string } | null;
+        reject(new Error(payload?.error ?? `附件上传失败 (${request.status})`));
+      };
+      request.onerror = () => reject(new Error("附件上传失败：网络错误"));
+      request.onabort = () => reject(new DOMException("上传已取消", "AbortError"));
+      signal?.addEventListener("abort", () => request.abort(), { once: true });
+      const body = new FormData();
+      body.set("file", file);
+      request.send(body);
+    });
   },
+  /** Take back an uploaded file that has not been sent. */
+  removeAttachment: (target: AttachmentTarget, attachmentId: string) =>
+    requestJson<void>(`${attachmentsPath(target)}/${pathSegment(attachmentId)}`, {
+      method: "DELETE",
+    }),
   async begin(
     id: string,
     messageId: string,
@@ -165,10 +178,12 @@ export const sessionApi = {
     model?: string,
     projectId?: string,
     execution?: Omit<SessionOptions, "model">,
+    /** Draft uploads the new session takes over. */
+    attachmentIds: string[] = [],
   ) =>
     requestJson<StoredSession>("/api/sessions", {
       method: "POST",
-      body: JSON.stringify({ provider, paperIds, model, projectId, ...execution }),
+      body: JSON.stringify({ provider, paperIds, model, projectId, ...execution, attachmentIds }),
     }),
   options: (id: string, options: SessionOptions) =>
     requestJson<StoredSession>(`/api/sessions/${pathSegment(id)}/options`, {

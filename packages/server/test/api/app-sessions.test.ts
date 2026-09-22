@@ -238,6 +238,94 @@ describe.each(["claude", "codex"] as const)("%s application sessions", (name) =>
     expect(server.sessions.detail(id).pendingOptions).toBeUndefined();
   });
 
+  it("lets a new chat upload before its session exists and claims the files on create", async () => {
+    const form = new FormData();
+    form.set("file", new File(["draft notes"], "草稿.txt", { type: "text/plain" }));
+    const upload = await server.app.request("/api/sessions/draft-attachments", {
+      method: "POST",
+      headers: { "ScholarAIO-Hub": "true" },
+      body: form,
+    });
+    expect(upload.status).toBe(201);
+    const draft = await upload.json();
+    expect(draft.url).toBe(`/api/sessions/draft-attachments/${draft.id}`);
+
+    const created = await server.app.request("/api/sessions", {
+      method: "POST",
+      headers,
+      body: JSON.stringify({ provider: name, paperIds: [], attachmentIds: [draft.id] }),
+    });
+    expect(created.status).toBe(201);
+    const session = await created.json();
+    expect(session).not.toHaveProperty("attachmentIds");
+    const read = await server.app.request(`/api/sessions/${session.id}/attachments/${draft.id}`, {
+      headers,
+    });
+    expect(await read.text()).toBe("draft notes");
+    // A claimed draft is gone from the draft area.
+    const again = await server.app.request(`/api/sessions/draft-attachments/${draft.id}`, {
+      method: "DELETE",
+      headers,
+    });
+    expect(again.status).toBe(400);
+
+    await (
+      await server.app.request(`/api/sessions/${session.id}/messages`, {
+        method: "POST",
+        headers,
+        body: JSON.stringify({
+          id: crypto.randomUUID(),
+          text: "看附件",
+          attachmentIds: [draft.id],
+        }),
+      })
+    ).text();
+    await expect.poll(() => server.sessions.detail(session.id).state).toBe("idle");
+    expect(provider.calls.at(-1)?.initialMessage?.attachments?.[0]?.originalName).toBe("草稿.txt");
+  });
+
+  it("removes an unsent attachment but keeps one a message refers to", async () => {
+    const id = await create();
+    const upload = async (text: string) => {
+      const form = new FormData();
+      form.set("file", new File([text], `${text}.txt`, { type: "text/plain" }));
+      const response = await server.app.request(`/api/sessions/${id}/attachments`, {
+        method: "POST",
+        headers: { "ScholarAIO-Hub": "true" },
+        body: form,
+      });
+      return (await response.json()).id as string;
+    };
+    const unsent = await upload("unsent");
+    const sent = await upload("sent");
+    const remove = (attachmentId: string) =>
+      server.app.request(`/api/sessions/${id}/attachments/${attachmentId}`, {
+        method: "DELETE",
+        headers,
+      });
+    expect((await remove(unsent)).status).toBe(204);
+    expect(
+      (await server.app.request(`/api/sessions/${id}/attachments/${unsent}`, { headers })).status,
+    ).toBe(400);
+    await (
+      await server.app.request(`/api/sessions/${id}/messages`, {
+        method: "POST",
+        headers,
+        body: JSON.stringify({ id: crypto.randomUUID(), text: "带附件", attachmentIds: [sent] }),
+      })
+    ).text();
+    await expect.poll(() => server.sessions.detail(id).state).toBe("idle");
+    expect((await remove(sent)).status).toBe(400);
+  });
+
+  it("sweeps draft uploads nobody claimed within a day", async () => {
+    const draft = await server.sessions.attachments.uploadDraft(
+      new File(["old"], "old.txt", { type: "text/plain" }),
+    );
+    await server.sessions.attachments.sweepDrafts(Date.now() + 25 * 60 * 60 * 1000);
+    await expect(server.sessions.attachments.resolveDraft(draft.id)).rejects.toThrow("已被移除");
+  });
+
   it("lists the provider's own commands for the workspace, then research skills", async () => {
     provider.commands = [
       {

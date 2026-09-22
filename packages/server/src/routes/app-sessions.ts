@@ -39,7 +39,25 @@ export function createAppSessionRoutes(service: SessionService, settings?: Serve
     });
     await service.validateScope(input);
     await service.validateExecution(input.provider, input);
-    return c.json(service.store.public(await service.store.create(input)), 201);
+    const { attachmentIds, ...fields } = input;
+    const record = await service.store.create(fields);
+    await service.attachments.claimDrafts(record.id, attachmentIds);
+    return c.json(service.store.public(record), 201);
+  });
+  // A new chat's files upload before its session exists; creating it claims them.
+  routes.post(
+    "/draft-attachments",
+    bodyLimit({ maxSize: MAX_ATTACHMENT_BYTES + 65536 }),
+    async (c) => {
+      const form = await c.req.formData();
+      const file = form.get("file");
+      if (!(file instanceof File)) throw new AttachmentError("请选择附件文件");
+      return c.json(await service.attachments.uploadDraft(file), 201);
+    },
+  );
+  routes.delete("/draft-attachments/:attachmentId", async (c) => {
+    await service.attachments.removeDraft(c.req.param("attachmentId"));
+    return c.body(null, 204);
   });
   routes.post("/import", async (c) => {
     const input = z
@@ -70,6 +88,10 @@ export function createAppSessionRoutes(service: SessionService, settings?: Serve
       return c.json(await service.attachments.upload(c.req.param("id"), file), 201);
     },
   );
+  routes.delete("/:id/attachments/:attachmentId", async (c) => {
+    await service.attachments.remove(c.req.param("id"), c.req.param("attachmentId"));
+    return c.body(null, 204);
+  });
   routes.get("/:id/attachments/:attachmentId", async (c) => {
     const { visible, file } = await service.attachments.resolve(
       c.req.param("id"),

@@ -1,6 +1,6 @@
-import type { SlashCommand } from "@scholaraio-hub/shared";
+import type { SessionAttachment, SlashCommand } from "@scholaraio-hub/shared";
 import { useQuery } from "@tanstack/react-query";
-import { Paperclip, X } from "lucide-react";
+import { Paperclip } from "lucide-react";
 import {
   type Dispatch,
   type SetStateAction,
@@ -13,6 +13,7 @@ import {
 import { sessionApi } from "../../../../core/library";
 import { useComposerDraft } from "../hooks/useComposerDraft";
 import { useSlashCommandPicker } from "../hooks/useSlashCommandPicker";
+import { useStagedAttachments } from "../hooks/useStagedAttachments";
 import { rejectAttachments } from "../model/attachments";
 import { type ClientCommandName, clientCommands, isClientCommand } from "../model/clientCommands";
 import {
@@ -30,6 +31,7 @@ import {
   routeSubmission,
   withInterim,
 } from "../model/submission";
+import { AttachmentTray } from "./AttachmentTray";
 import {
   type ComposerControls,
   ComposerLeadingOptions,
@@ -68,8 +70,9 @@ export function Composer({
   draftKey: string;
   provider: "claude" | "codex";
   sessionId?: string;
-  onQueue?: (text: string, files: File[]) => Promise<void>;
-  onSend: (text: string, files: File[]) => Promise<void>;
+  /** Receives the uploaded attachments; files upload as soon as they are added. */
+  onQueue?: (text: string, attachments: SessionAttachment[]) => Promise<void>;
+  onSend: (text: string, attachments: SessionAttachment[]) => Promise<void>;
   running?: boolean;
   thinking?: boolean;
   onStop?: () => void;
@@ -111,7 +114,8 @@ export function Composer({
   const [menuRequest, setMenuRequest] = useState<MenuRequest>();
   const picker = useSlashCommandPicker(text, commands, caret);
   const fileInput = useRef<HTMLInputElement>(null);
-  const [files, setFiles] = useState<File[]>([]);
+  // A new chat has no session yet; its files go to the draft area until it is created.
+  const staged = useStagedAttachments(sessionId ? { sessionId } : "draft");
   const voice = useRef<VoiceInputButtonRef>(null);
   const [interim, setInterim] = useState("");
   const [sending, setSending] = useState(false);
@@ -161,13 +165,13 @@ export function Composer({
   const addFiles = (incoming: File[]) => {
     if (disabled || sending) return;
     const rejection = rejectAttachments(
-      files.length,
+      staged.items.length,
       incoming,
       controls?.info?.capabilities.attachments,
     );
     setError(rejection);
     if (rejection) return;
-    setFiles((current) => [...current, ...incoming]);
+    staged.add(incoming);
   };
   useLayoutEffect(() => {
     const element = textarea.current;
@@ -178,7 +182,7 @@ export function Composer({
   const submit = async (queue = false) => {
     const route = routeSubmission({ running, wantsQueue: queue, canQueue: !!onQueue });
     if (
-      !hasContent(text, interim, files.length) ||
+      !hasContent(text, interim, staged.items.length) ||
       !route ||
       submitting.current ||
       disabled ||
@@ -196,8 +200,9 @@ export function Composer({
     setSending(true);
     setError(undefined);
     try {
-      await (route === "queue" && onQueue ? onQueue : onSend)(submitted, files);
-      setFiles([]);
+      const attachments = await staged.settle();
+      await (route === "queue" && onQueue ? onQueue : onSend)(submitted, attachments);
+      staged.clear();
       if (latest.current === submitted) {
         setText("");
         // New-session submission unmounts this composer, so clear storage here too.
@@ -211,7 +216,7 @@ export function Composer({
       setSending(false);
     }
   };
-  const attachmentCount = files.length;
+  const attachmentCount = staged.items.length;
   return (
     <div className="relative w-full" aria-label="会话输入区">
       {picker.showList && picker.filter ? (
@@ -236,29 +241,12 @@ export function Composer({
           void submit();
         }}
       >
-        {files.length > 0 ? (
-          <div className="flex flex-wrap gap-2 px-4 pt-3 pb-1" aria-label="附件">
-            {files.map((file, index) => (
-              <div
-                key={`${file.name}-${index}`}
-                className="inline-flex items-center gap-1.5 max-w-[180px] px-2.5 py-1 bg-surface-container border border-outline-variant/20 rounded-lg text-xs text-on-surface-variant"
-              >
-                <span className="truncate" title={file.name}>
-                  {file.name}
-                </span>
-                <button
-                  type="button"
-                  disabled={sending}
-                  onClick={() => setFiles((current) => current.filter((_, i) => i !== index))}
-                  aria-label={`移除 ${file.name}`}
-                  className="text-on-surface-variant hover:text-error transition-colors shrink-0"
-                >
-                  <X size={11} />
-                </button>
-              </div>
-            ))}
-          </div>
-        ) : null}
+        <AttachmentTray
+          items={staged.items}
+          disabled={sending}
+          onRemove={staged.remove}
+          onRetry={staged.retry}
+        />
         {picker.showBadge && picker.selectedCommand ? (
           <SlashCommandBadge token={picker.selectedToken} command={picker.selectedCommand} />
         ) : null}
@@ -391,7 +379,10 @@ export function Composer({
             <SendActionButton
               busy={sending || stopPending}
               canSend={
-                !disabled && (!running || !!onQueue) && hasContent(text, interim, files.length)
+                !disabled &&
+                (!running || !!onQueue) &&
+                !staged.failed &&
+                hasContent(text, interim, staged.items.length)
               }
               isRunning={running}
               isThinking={thinking}

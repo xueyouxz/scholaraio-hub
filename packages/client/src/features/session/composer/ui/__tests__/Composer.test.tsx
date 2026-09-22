@@ -9,14 +9,41 @@ const commands = vi.hoisted(() => ({
   calls: [] as Array<{ provider: string; sessionId?: string }>,
 }));
 
+/** Upload fakes: each file resolves when its test says so, or fails if listed. */
+const uploads = vi.hoisted(() => ({
+  targets: [] as unknown[],
+  removed: [] as string[],
+  failing: new Set<string>(),
+  holding: new Map<string, () => void>(),
+  hold: false,
+}));
+
 vi.mock("../../../../../core/library", () => ({
   sessionApi: {
     commands: async (provider: string, sessionId?: string) => {
       commands.calls.push({ provider, sessionId });
       return { commands: commands.list };
     },
+    uploadAttachment: async (target: unknown, file: File) => {
+      uploads.targets.push(target);
+      if (uploads.hold)
+        await new Promise<void>((resolve) => uploads.holding.set(file.name, resolve));
+      if (uploads.failing.has(file.name)) throw new Error(`上传失败：${file.name}`);
+      return {
+        id: `id-${file.name}`,
+        filename: file.name,
+        mediaType: file.type,
+        size: file.size,
+        url: `/api/x/${file.name}`,
+      };
+    },
+    removeAttachment: async (_target: unknown, id: string) => {
+      uploads.removed.push(id);
+    },
   },
 }));
+
+const uploaded = (name: string) => expect.objectContaining({ id: `id-${name}`, filename: name });
 
 import { Composer, readComposerDraft } from "../Composer";
 
@@ -31,6 +58,11 @@ let container: HTMLDivElement | undefined;
 let queryClient: QueryClient;
 
 beforeEach(() => {
+  uploads.targets = [];
+  uploads.removed = [];
+  uploads.failing.clear();
+  uploads.holding.clear();
+  uploads.hold = false;
   sessionStorage.clear();
   commands.list = [];
   commands.calls = [];
@@ -123,8 +155,12 @@ function chooseFiles(files: File[]) {
 }
 
 const chips = () =>
-  Array.from(container?.querySelectorAll('[aria-label="附件"] span') ?? []).map(
-    (node) => node.textContent,
+  Array.from(container?.querySelectorAll('[aria-label="附件"] li') ?? []).map(
+    (node) => node.querySelector("span")?.textContent,
+  );
+const chipStatus = () =>
+  Array.from(container?.querySelectorAll('[aria-label="附件"] li') ?? []).map((node) =>
+    node.getAttribute("data-status"),
   );
 
 describe("Composer keyboard submission", () => {
@@ -451,22 +487,69 @@ describe("Composer slash commands", () => {
 });
 
 describe("Composer attachments", () => {
-  it("adds chosen files and sends them with the message", async () => {
+  it("uploads files as soon as they are added and sends the uploaded attachments", async () => {
     const { onSend } = render();
-    const notes = file("notes.txt");
-    chooseFiles([notes]);
+    chooseFiles([file("notes.txt")]);
     expect(chips()).toEqual(["notes.txt"]);
+    await flush();
+    expect(uploads.targets).toEqual([{ sessionId: "s1" }]);
+    expect(chipStatus()).toEqual(["uploaded"]);
 
     await press({ key: "Enter" });
-    expect(onSend).toHaveBeenCalledWith("", [notes]);
+    expect(onSend).toHaveBeenCalledWith("", [uploaded("notes.txt")]);
     expect(chips()).toEqual([]);
   });
 
-  it("removes a chosen file", () => {
+  it("uploads a new chat's files to the draft area", async () => {
+    render({ sessionId: undefined, draftKey: "new:" });
+    chooseFiles([file("draft.txt")]);
+    await flush();
+    expect(uploads.targets).toEqual(["draft"]);
+  });
+
+  it("keeps typing free while uploading and sends once the upload lands", async () => {
+    uploads.hold = true;
+    const { onSend } = render();
+    chooseFiles([file("big.txt")]);
+    type("still typing");
+    expect(textarea().value).toBe("still typing");
+    expect(chipStatus()).toEqual(["uploading"]);
+    key({ key: "Enter" });
+    await flush();
+    expect(onSend).not.toHaveBeenCalled();
+    await act(async () => uploads.holding.get("big.txt")?.());
+    await flush();
+    expect(onSend).toHaveBeenCalledWith("still typing", [uploaded("big.txt")]);
+  });
+
+  it("will not send while an upload failed, until it is retried", async () => {
+    uploads.failing.add("bad.txt");
+    const { onSend } = render();
+    chooseFiles([file("bad.txt")]);
+    await flush();
+    expect(chipStatus()).toEqual(["failed"]);
+    type("with file");
+    expect(button("发送")?.disabled).toBe(true);
+    await press({ key: "Enter" });
+    expect(onSend).not.toHaveBeenCalled();
+    expect(alerts()).toContain("有附件上传失败，请重试或移除后再发送");
+
+    uploads.failing.clear();
+    act(() => button("重试上传 bad.txt")?.click());
+    await flush();
+    expect(chipStatus()).toEqual(["uploaded"]);
+    await press({ key: "Enter" });
+    expect(onSend).toHaveBeenCalledWith("with file", [uploaded("bad.txt")]);
+  });
+
+  it("removes a chosen file and deletes its upload", async () => {
     render();
     chooseFiles([file("a.txt"), file("b.txt")]);
+    await flush();
     act(() => button("移除 a.txt")?.click());
     expect(chips()).toEqual(["b.txt"]);
+    await flush();
+    expect(uploads.removed).toEqual(["id-a.txt"]);
   });
 
   it("rejects empty and oversized files", () => {

@@ -1,3 +1,6 @@
+import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { describe, expect, it, vi } from "vitest";
 import type { AgentEvent } from "../src/agent/events.js";
 import { MessageQueue } from "../src/sdk/messageQueue.js";
@@ -937,6 +940,9 @@ describe("Process", () => {
     it("records exactly what the provider receives, attachments included", async () => {
       const queue = new MessageQueue();
       const process = newProcess(queue);
+      const dir = await mkdtemp(join(tmpdir(), "hub-queue-"));
+      const screenshot = join(dir, "screenshot.png");
+      await writeFile(screenshot, Buffer.from("png-bytes"));
       process.queueMessage({
         text: "Here is a screenshot",
         attachments: [
@@ -945,7 +951,7 @@ describe("Process", () => {
             originalName: "screenshot.png",
             size: 1024,
             mimeType: "image/png",
-            path: "/uploads/screenshot.png",
+            path: screenshot,
           },
           {
             id: "file-2",
@@ -958,9 +964,26 @@ describe("Process", () => {
       });
 
       const sent = await queue.generator().next();
-      expect(process.firstUserText).toBe(sent.value?.message?.content);
+      const content = sent.value?.message?.content as Array<{
+        type: string;
+        text?: string;
+        source?: { media_type: string; data: string };
+      }>;
+      // The text lists every file by path; the image also goes inline.
+      expect(process.firstUserText).toBe(content[0]?.text);
       expect(process.firstUserText).toContain("User uploaded files:");
       expect(process.firstUserText).toContain("1.0 KB");
+      expect(content.slice(1)).toEqual([
+        {
+          type: "image",
+          source: {
+            type: "base64",
+            media_type: "image/png",
+            data: Buffer.from("png-bytes").toString("base64"),
+          },
+        },
+      ]);
+      await rm(dir, { recursive: true, force: true });
     });
 
     it("does not echo user input onto the agent event stream", () => {

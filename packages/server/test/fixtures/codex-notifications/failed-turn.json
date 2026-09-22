@@ -1,0 +1,40 @@
+{
+  "sessionId": "thread-golden",
+  "notifications": [
+    {
+      "method": "item/completed",
+      "params": {
+        "threadId": "thread-golden",
+        "turnId": "turn-3",
+        "item": {
+          "id": "item-cmd-fail",
+          "type": "commandExecution",
+          "command": "pnpm test",
+          "aggregatedOutput": "1 test failed",
+          "exitCode": 1,
+          "status": "failed"
+        }
+      }
+    },
+    {
+      "method": "item/completed",
+      "params": {
+        "threadId": "thread-golden",
+        "turnId": "turn-3",
+        "item": { "id": "item-error", "type": "error", "message": "模型调用超时" }
+      }
+    },
+    {
+      "method": "account/rateLimits/updated",
+      "params": { "threadId": "thread-golden", "rateLimits": { "remaining": 3 } }
+    },
+    {
+      "method": "error",
+      "params": {
+        "threadId": "thread-golden",
+        "turnId": "turn-3",
+        "error": { "message": "Codex turn aborted" }
+      }
+    }
+  ]
+}

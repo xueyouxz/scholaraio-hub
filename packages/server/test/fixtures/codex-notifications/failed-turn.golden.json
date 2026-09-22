@@ -1,0 +1,66 @@
+{
+  "messages": [
+    {
+      "type": "assistant",
+      "session_id": "thread-golden",
+      "uuid": "item-cmd-fail-turn-3",
+      "message": {
+        "role": "assistant",
+        "content": [
+          {
+            "type": "tool_use",
+            "id": "item-cmd-fail",
+            "name": "Bash",
+            "input": {
+              "command": "pnpm test"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "type": "user",
+      "session_id": "thread-golden",
+      "uuid": "item-cmd-fail-turn-3-result",
+      "message": {
+        "role": "user",
+        "content": [
+          {
+            "type": "tool_result",
+            "tool_use_id": "item-cmd-fail",
+            "content": "Exit code: 1\n1 test failed",
+            "is_error": true
+          }
+        ]
+      }
+    },
+    {
+      "type": "error",
+      "session_id": "thread-golden",
+      "uuid": "item-error-turn-3",
+      "error": "模型调用超时"
+    },
+    {
+      "type": "error",
+      "session_id": "thread-golden",
+      "error": "Codex turn failed"
+    }
+  ],
+  "chunks": [
+    {
+      "type": "tool-input-available",
+      "toolCallId": "item-cmd-fail",
+      "toolName": "Bash",
+      "input": {
+        "command": "pnpm test"
+      },
+      "dynamic": true
+    },
+    {
+      "type": "tool-output-error",
+      "toolCallId": "item-cmd-fail",
+      "errorText": "Exit code: 1\n1 test failed",
+      "dynamic": true
+    }
+  ]
+}

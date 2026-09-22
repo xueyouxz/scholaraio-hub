@@ -1,0 +1,264 @@
+{
+  "messages": [
+    {
+      "type": "assistant",
+      "session_id": "thread-golden",
+      "uuid": "item-cmd-turn-2",
+      "message": {
+        "role": "assistant",
+        "content": [
+          {
+            "type": "tool_use",
+            "id": "item-cmd",
+            "name": "Grep",
+            "input": {
+              "pattern": "packages",
+              "output_mode": "content"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "type": "assistant",
+      "session_id": "thread-golden",
+      "uuid": "item-cmd-turn-2",
+      "message": {
+        "role": "assistant",
+        "content": [
+          {
+            "type": "tool_use",
+            "id": "item-cmd",
+            "name": "Grep",
+            "input": {
+              "pattern": "packages",
+              "output_mode": "content"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "type": "user",
+      "session_id": "thread-golden",
+      "uuid": "item-cmd-turn-2-result",
+      "message": {
+        "role": "user",
+        "content": [
+          {
+            "type": "tool_result",
+            "tool_use_id": "item-cmd",
+            "content": "packages/server/src/app.ts\npackages/client/src/main.tsx"
+          }
+        ]
+      },
+      "toolUseResult": {
+        "mode": "files_with_matches",
+        "filenames": ["packages/server/src/app.ts", "packages/client/src/main.tsx"],
+        "numFiles": 2
+      }
+    },
+    {
+      "type": "assistant",
+      "session_id": "thread-golden",
+      "uuid": "item-edit-turn-2",
+      "message": {
+        "role": "assistant",
+        "content": [
+          {
+            "type": "tool_use",
+            "id": "item-edit",
+            "name": "Edit",
+            "input": {
+              "changes": [
+                {
+                  "path": "packages/server/src/app.ts",
+                  "kind": "update",
+                  "diff": "@@ -1 +1 @@\n-old\n+new\n"
+                }
+              ],
+              "file_path": "packages/server/src/app.ts"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "type": "user",
+      "session_id": "thread-golden",
+      "uuid": "item-edit-turn-2-result",
+      "message": {
+        "role": "user",
+        "content": [
+          {
+            "type": "tool_result",
+            "tool_use_id": "item-edit",
+            "content": "File changes applied:\nupdate: packages/server/src/app.ts"
+          }
+        ]
+      }
+    },
+    {
+      "type": "assistant",
+      "session_id": "thread-golden",
+      "uuid": "item-mcp-turn-2",
+      "message": {
+        "role": "assistant",
+        "content": [
+          {
+            "type": "tool_use",
+            "id": "item-mcp",
+            "name": "library:search",
+            "input": {
+              "query": "diffusion"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "type": "user",
+      "session_id": "thread-golden",
+      "uuid": "item-mcp-turn-2-result",
+      "message": {
+        "role": "user",
+        "content": [
+          {
+            "type": "tool_result",
+            "tool_use_id": "item-mcp",
+            "content": "{\"hits\":2}"
+          }
+        ]
+      }
+    },
+    {
+      "type": "system",
+      "subtype": "todo_list",
+      "session_id": "thread-golden",
+      "uuid": "item-todo-turn-2",
+      "items": [
+        {
+          "text": "读论文",
+          "completed": true
+        },
+        {
+          "text": "写总结",
+          "completed": false
+        }
+      ]
+    },
+    {
+      "type": "assistant",
+      "session_id": "thread-golden",
+      "uuid": "item-search-turn-2",
+      "message": {
+        "role": "assistant",
+        "content": [
+          {
+            "type": "tool_use",
+            "id": "item-search",
+            "name": "WebSearch",
+            "input": {
+              "query": "codex app-server"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "type": "user",
+      "session_id": "thread-golden",
+      "uuid": "item-search-turn-2-result",
+      "message": {
+        "role": "user",
+        "content": [
+          {
+            "type": "tool_result",
+            "tool_use_id": "item-search",
+            "content": "Search completed for: codex app-server"
+          }
+        ]
+      },
+      "toolUseResult": {
+        "query": "codex app-server",
+        "results": [],
+        "durationSeconds": 0
+      }
+    },
+    {
+      "type": "system",
+      "subtype": "turn_complete",
+      "session_id": "thread-golden"
+    }
+  ],
+  "chunks": [
+    {
+      "type": "tool-input-available",
+      "toolCallId": "item-cmd",
+      "toolName": "Grep",
+      "input": {
+        "pattern": "packages",
+        "output_mode": "content"
+      },
+      "dynamic": true
+    },
+    {
+      "type": "tool-output-available",
+      "toolCallId": "item-cmd",
+      "output": "packages/server/src/app.ts\npackages/client/src/main.tsx",
+      "dynamic": true
+    },
+    {
+      "type": "tool-input-available",
+      "toolCallId": "item-edit",
+      "toolName": "Edit",
+      "input": {
+        "changes": [
+          {
+            "path": "packages/server/src/app.ts",
+            "kind": "update",
+            "diff": "@@ -1 +1 @@\n-old\n+new\n"
+          }
+        ],
+        "file_path": "packages/server/src/app.ts"
+      },
+      "dynamic": true
+    },
+    {
+      "type": "tool-output-available",
+      "toolCallId": "item-edit",
+      "output": "File changes applied:\nupdate: packages/server/src/app.ts",
+      "dynamic": true
+    },
+    {
+      "type": "tool-input-available",
+      "toolCallId": "item-mcp",
+      "toolName": "library:search",
+      "input": {
+        "query": "diffusion"
+      },
+      "dynamic": true
+    },
+    {
+      "type": "tool-output-available",
+      "toolCallId": "item-mcp",
+      "output": "{\"hits\":2}",
+      "dynamic": true
+    },
+    {
+      "type": "tool-input-available",
+      "toolCallId": "item-search",
+      "toolName": "WebSearch",
+      "input": {
+        "query": "codex app-server"
+      },
+      "dynamic": true
+    },
+    {
+      "type": "tool-output-available",
+      "toolCallId": "item-search",
+      "output": "Search completed for: codex app-server",
+      "dynamic": true
+    }
+  ]
+}

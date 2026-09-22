@@ -91,6 +91,8 @@ export interface StoredSession {
   thinking?: ThinkingMode;
   /** One of the model's `efforts` ids; unset means the provider's default. */
   effort?: string;
+  /** Options changed while a turn was running; they take effect when the next turn starts. */
+  pendingOptions?: Array<"model" | "permissionMode" | "thinking" | "effort">;
   paperIds: string[];
   projectId?: string;
   createdAt: string;

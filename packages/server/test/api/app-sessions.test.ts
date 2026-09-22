@@ -220,10 +220,22 @@ describe.each(["claude", "codex"] as const)("%s application sessions", (name) =>
     });
     expect(server.sessions.detail(id).messages).toHaveLength(4);
     const running = await send(id, "approval slow");
-    expect((await options({ model: "during-run" })).status).toBe(409);
+    await expect.poll(() => server.sessions.detail(id).state).toBe("waiting-input");
+    const callsBefore = provider.calls.length;
+    const changed = await options({ model: "during-run", permissionMode: "plan" });
+    expect(changed.status).toBe(200);
+    expect(await changed.json()).toMatchObject({
+      model: "during-run",
+      pendingOptions: ["model", "permissionMode"],
+    });
+    // The running turn keeps the process it started with.
+    expect(provider.calls).toHaveLength(callsBefore);
     await server.sessions.stop(id);
     await running.text();
-    expect(server.sessions.detail(id).model).toBe("second-model");
+    await (await send(id, "third")).text();
+    await expect.poll(() => server.sessions.detail(id).state).toBe("idle");
+    expect(provider.calls.at(-1)).toMatchObject({ model: "during-run", permissionMode: "plan" });
+    expect(server.sessions.detail(id).pendingOptions).toBeUndefined();
   });
 
   it("accepts only efforts the chosen model offers", async () => {

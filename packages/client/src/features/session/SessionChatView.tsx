@@ -47,7 +47,8 @@ export function SessionChatView({ initial }: { initial: StoredSession }) {
   const modelInfo = currentTool?.models?.find((item) =>
     model ? item.id === model : item.isDefault,
   );
-  const optionsLocked = running || session.changeOptions.isPending;
+  // Options may change mid-turn; the server applies them when the next turn starts.
+  const optionsLocked = session.changeOptions.isPending;
   return (
     <div className="flex flex-1 h-full min-h-0 overflow-hidden">
       <section className="session-page flex-1 min-w-0">
@@ -180,6 +181,11 @@ export function SessionChatView({ initial }: { initial: StoredSession }) {
                   }
                   trailing={
                     <>
+                      {snapshot?.pendingOptions?.length ? (
+                        <span className="text-[11px] text-on-surface-variant whitespace-nowrap">
+                          下一轮生效
+                        </span>
+                      ) : null}
                       {session.changeOptions.error ? (
                         <span role="alert" className="text-error text-xs">
                           {session.changeOptions.error.message}

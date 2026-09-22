@@ -5,7 +5,6 @@ import {
   type Dispatch,
   type ReactNode,
   type SetStateAction,
-  useEffect,
   useId,
   useLayoutEffect,
   useMemo,
@@ -13,23 +12,26 @@ import {
   useState,
 } from "react";
 import { sessionApi } from "../../../core/library";
-
-import { useSlashCommandPicker } from "../hooks/useSlashCommandPicker";
+import { useComposerDraft } from "../composer/hooks/useComposerDraft";
+import { useSlashCommandPicker } from "../composer/hooks/useSlashCommandPicker";
+import { rejectAttachments } from "../composer/model/attachments";
+import {
+  commandInsertion,
+  joinLeadingCommand,
+  mergeCommands,
+} from "../composer/model/slashCommands";
+import {
+  appendTranscript,
+  hasContent,
+  routeSubmission,
+  withInterim,
+} from "../composer/model/submission";
 import { VoiceInputButton, type VoiceInputButtonRef } from "./VoiceInputButton";
 import { SendActionButton } from "./composer/SendActionButton";
 import { SlashCommandBadge } from "./composer/SlashCommandBadge";
 import { SlashCommandSuggestions } from "./composer/SlashCommandSuggestions";
 
-const draftStorageKey = (draftKey: string) => `hub-composer:${draftKey}`;
-
-export function readComposerDraft(draftKey: string): string {
-  try {
-    return sessionStorage.getItem(draftStorageKey(draftKey)) ?? "";
-  } catch (error) {
-    console.warn("无法读取会话草稿", error);
-    return "";
-  }
-}
+export { readComposerDraft } from "../composer/hooks/useComposerDraft";
 
 /**
  * Shared message input with the pre-refactor MessageInput layout:
@@ -72,23 +74,19 @@ export function Composer({
   text?: string;
   onTextChange?: Dispatch<SetStateAction<string>>;
 }) {
-  const storageKey = draftStorageKey(draftKey);
-  const [innerText, setInnerText] = useState(() =>
-    controlledText === undefined ? readComposerDraft(draftKey) : "",
-  );
-  const text = controlledText ?? innerText;
-  const setText = onTextChange ?? setInnerText;
+  const { text, setText, forget } = useComposerDraft(draftKey, {
+    text: controlledText,
+    onTextChange,
+  });
   const skills = useQuery({
     queryKey: ["session-commands", provider, sessionId],
     queryFn: ({ signal }) => sessionApi.commands(provider, sessionId, signal),
     staleTime: 60000,
   });
-  const commands = useMemo(() => {
-    const base = skills.data?.commands ?? [];
-    if (!extraCommands?.length) return base;
-    const known = new Set(base.map((command) => command.name));
-    return [...base, ...extraCommands.filter((command) => !known.has(command.name))];
-  }, [skills.data, extraCommands]);
+  const commands = useMemo(
+    () => mergeCommands(skills.data?.commands ?? [], extraCommands),
+    [skills.data, extraCommands],
+  );
   const picker = useSlashCommandPicker(text, commands);
   const fileInput = useRef<HTMLInputElement>(null);
   const [files, setFiles] = useState<File[]>([]);
@@ -103,21 +101,15 @@ export function Composer({
   const latest = useRef(text);
   latest.current = text;
   const selectCommand = (command: SlashCommand) => {
-    setText(`/${command.name} `);
+    setText(commandInsertion(command));
     picker.dismiss();
     window.requestAnimationFrame(() => textarea.current?.focus());
   };
   const addFiles = (incoming: File[]) => {
     if (disabled || sending) return;
-    if (incoming.some((file) => !file.size || file.size > 25 * 1024 * 1024)) {
-      setError("附件不能为空，且单个文件不能超过 25 MB");
-      return;
-    }
-    if (files.length + incoming.length > 10) {
-      setError("每条消息最多添加 10 个附件");
-      return;
-    }
-    setError(undefined);
+    const rejection = rejectAttachments(files.length, incoming);
+    setError(rejection);
+    if (rejection) return;
     setFiles((current) => [...current, ...incoming]);
   };
   useLayoutEffect(() => {
@@ -126,26 +118,18 @@ export function Composer({
     element.style.height = "auto";
     element.style.height = `${element.scrollHeight}px`;
   });
-  useEffect(() => {
-    try {
-      if (text) sessionStorage.setItem(storageKey, text);
-      else sessionStorage.removeItem(storageKey);
-    } catch (error) {
-      console.warn("无法保存会话草稿", error);
-    }
-  }, [text, storageKey]);
   const submit = async (queue = false) => {
+    const route = routeSubmission({ running, wantsQueue: queue, canQueue: !!onQueue });
     if (
-      (!(text + interim).trim() && files.length === 0) ||
-      (running && !onQueue) ||
-      (queue && !onQueue) ||
+      !hasContent(text, interim, files.length) ||
+      !route ||
       submitting.current ||
       disabled ||
       composing.current
     )
       return;
     const pendingVoice = voice.current?.stopAndFinalize() ?? "";
-    const submitted = pendingVoice ? `${text.trimEnd()} ${pendingVoice}`.trim() : text;
+    const submitted = pendingVoice ? appendTranscript(text, pendingVoice).trim() : text;
     if (pendingVoice) {
       setText(submitted);
       latest.current = submitted;
@@ -155,16 +139,12 @@ export function Composer({
     setSending(true);
     setError(undefined);
     try {
-      await ((queue || running) && onQueue ? onQueue : onSend)(submitted, files);
+      await (route === "queue" && onQueue ? onQueue : onSend)(submitted, files);
       setFiles([]);
       if (latest.current === submitted) {
         setText("");
         // New-session submission unmounts this composer, so clear storage here too.
-        try {
-          sessionStorage.removeItem(storageKey);
-        } catch (error) {
-          console.warn("无法清除会话草稿", error);
-        }
+        forget();
       }
       textarea.current?.focus();
     } catch (error) {
@@ -236,14 +216,12 @@ export function Composer({
           rows={2}
           maxLength={50000}
           readOnly={disabled}
-          value={
-            interim ? `${picker.messageBody.trimEnd()} ${interim}`.trimStart() : picker.messageBody
-          }
+          value={withInterim(picker.messageBody, interim)}
           onChange={(e) => {
             setInterim("");
             picker.resume();
             const next = e.target.value;
-            setText(picker.showBadge ? `${picker.selectedToken}${next ? ` ${next}` : " "}` : next);
+            setText(joinLeadingCommand(picker.selectedToken, next));
           }}
           onPaste={(event) => {
             if (event.clipboardData.files.length) {
@@ -333,7 +311,7 @@ export function Composer({
                 onListeningStart={() => textarea.current?.focus()}
                 onInterimTranscript={setInterim}
                 onFinalTranscript={(transcript) => {
-                  setText((previous) => `${previous.trimEnd()} ${transcript}`.trimStart());
+                  setText((previous) => appendTranscript(previous, transcript));
                   setInterim("");
                 }}
               />
@@ -344,9 +322,7 @@ export function Composer({
             <SendActionButton
               busy={sending || stopPending}
               canSend={
-                !disabled &&
-                (!running || !!onQueue) &&
-                (!!(text + interim).trim() || files.length > 0)
+                !disabled && (!running || !!onQueue) && hasContent(text, interim, files.length)
               }
               isRunning={running}
               isThinking={thinking}

@@ -19,7 +19,10 @@ import type {
   ToolApprovalResult,
   UserMessage,
 } from "../sdk/types.js";
+import { ApprovalQueue } from "./ApprovalQueue.js";
 import { normalizeProviderStreamMessage } from "./messageNormalization.js";
+import { matchPermissionRules } from "./permissionRules.js";
+import { StreamingCatchUp } from "./streamingCatchUp.js";
 import type {
   AgentActivity,
   InputRequest,
@@ -51,58 +54,10 @@ export function shouldEmitMessage(_message: SDKMessage): boolean {
   return true;
 }
 
-function getStreamEvent(message: SDKMessage): Record<string, unknown> | null {
-  if (message.type !== "stream_event") return null;
-  const event = (message as { event?: unknown }).event;
-  return event && typeof event === "object" ? (event as Record<string, unknown>) : null;
-}
-
-function extractStreamingMessageId(message: SDKMessage): string | null {
-  const event = getStreamEvent(message);
-  if (event?.type === "message_start") {
-    const startedMessage = event.message as Record<string, unknown> | undefined;
-    return typeof startedMessage?.id === "string" ? startedMessage.id : null;
-  }
-
-  if (message.type === "assistant" && typeof message.uuid === "string") {
-    return message.uuid;
-  }
-
-  return null;
-}
-
-function extractStreamingText(message: SDKMessage): string | null {
-  const event = getStreamEvent(message);
-  if (event?.type === "content_block_delta") {
-    const delta = event.delta as Record<string, unknown> | undefined;
-    if (delta?.type === "text_delta" && typeof delta.text === "string") {
-      return delta.text;
-    }
-  }
-
-  if (message.type === "assistant") {
-    const content =
-      (message as { message?: { content?: unknown }; content?: unknown }).message?.content ??
-      (message as { content?: unknown }).content;
-    return typeof content === "string" ? content : null;
-  }
-
-  return null;
-}
-
-function isStreamingCompleteMessage(message: SDKMessage): boolean {
-  const event = getStreamEvent(message);
-  return event?.type === "message_stop" || message.type === "result";
-}
-
 /**
  * Pending tool approval request.
  * The SDK's canUseTool callback creates this and waits for respondToInput.
  */
-interface PendingToolApproval {
-  request: InputRequest;
-  resolve: (result: ToolApprovalResult) => void;
-}
 
 export interface ProcessConstructorOptions extends ProcessOptions {
   /** MessageQueue for real SDK, undefined for mock SDK */
@@ -162,14 +117,13 @@ export class Process {
   private static readonly BUCKET_SWAP_INTERVAL_MS = 15_000;
 
   /** Accumulated streaming text for catch-up when clients connect mid-stream */
-  private _streamingText = "";
-  /** Message ID for current streaming response */
-  private _streamingMessageId: string | null = null;
+  private readonly streamingCatchUp = new StreamingCatchUp();
 
-  /** Pending tool approval requests (from canUseTool callback) - supports concurrent approvals */
-  private pendingToolApprovals: Map<string, PendingToolApproval> = new Map();
-  /** Order of pending approval request IDs for FIFO processing */
-  private pendingToolApprovalQueue: string[] = [];
+  /** Tool approvals waiting on the user, in the order they were asked. */
+  private readonly approvals = new ApprovalQueue({
+    onShow: (request) => this.setState({ type: "waiting-input", request }),
+    onDrained: () => this.setState({ type: "in-turn" }),
+  });
 
   /** Current permission mode for tool approvals */
   private _permissionMode: PermissionMode = "default";
@@ -654,7 +608,7 @@ export class Process {
 
     const log = getLogger();
     const durationMs = Date.now() - this.startedAt.getTime();
-    const pendingApprovalCount = this.pendingToolApprovals.size;
+    const pendingApprovalCount = this.approvals.size;
 
     log.warn(
       {
@@ -683,16 +637,7 @@ export class Process {
     }
     this._isHeld = false;
 
-    // Resolve all pending tool approvals with denial
-    for (const pending of this.pendingToolApprovals.values()) {
-      pending.resolve({
-        behavior: "deny",
-        message: `Process terminated: ${reason}`,
-        interrupt: true,
-      });
-    }
-    this.pendingToolApprovals.clear();
-    this.pendingToolApprovalQueue = [];
+    this.approvals.denyAll(`Process terminated: ${reason}`);
 
     this.setState({ type: "terminated", reason, error });
     this.emit({ type: "terminated", reason, error });
@@ -782,49 +727,10 @@ export class Process {
   }
 
   /**
-   * Get accumulated streaming text for catch-up when clients connect mid-stream.
-   * Returns the message ID and accumulated text, or null if not streaming.
+   * Accumulated streaming text, for clients that connect mid-stream.
    */
   getStreamingContent(): { messageId: string; text: string } | null {
-    if (!this._streamingMessageId || !this._streamingText) {
-      return null;
-    }
-    return {
-      messageId: this._streamingMessageId,
-      text: this._streamingText,
-    };
-  }
-
-  private accumulateStreamingText(messageId: string, text: string): void {
-    if (this._streamingMessageId !== messageId) {
-      // New streaming message, reset accumulator
-      this._streamingMessageId = messageId;
-      this._streamingText = text;
-    } else {
-      this._streamingText += text;
-    }
-  }
-
-  private clearStreamingText(): void {
-    this._streamingText = "";
-    this._streamingMessageId = null;
-  }
-
-  private trackStreamingCatchUp(message: SDKMessage): void {
-    const startedMessageId = extractStreamingMessageId(message);
-    if (startedMessageId && this._streamingMessageId !== startedMessageId) {
-      this._streamingMessageId = startedMessageId;
-      this._streamingText = "";
-    }
-
-    const text = extractStreamingText(message);
-    if (text && this._streamingMessageId) {
-      this.accumulateStreamingText(this._streamingMessageId, text);
-    }
-
-    if (isStreamingCompleteMessage(message)) {
-      this.clearStreamingText();
-    }
+    return this.streamingCatchUp.snapshot();
   }
 
   /**
@@ -1061,81 +967,6 @@ export class Process {
   }
 
   /**
-   * Convert a simple glob pattern (with * wildcards) to a RegExp.
-   * Only supports * as wildcard (matches any characters).
-   */
-  private static globToRegex(glob: string): RegExp {
-    const escaped = glob.replace(/[.+^${}()|[\]\\]/g, "\\$&");
-    const pattern = escaped.replace(/\*/g, ".*");
-    return new RegExp(`^${pattern}$`);
-  }
-
-  /**
-   * Check if a tool invocation matches a permission pattern like "Bash(curl *)".
-   * Returns true if the pattern matches the tool name and input.
-   */
-  private static matchesPermissionPattern(
-    pattern: string,
-    toolName: string,
-    input: unknown,
-  ): boolean {
-    // Parse "ToolName(glob)" pattern
-    const match = pattern.match(/^(\w+)\((.+)\)$/);
-    if (!match) return false;
-    const patternTool = match[1];
-    const glob = match[2];
-    if (!patternTool || !glob || patternTool !== toolName) return false;
-
-    // Extract the string to match against from the tool input
-    let commandStr = "";
-    if (toolName === "Bash") {
-      commandStr = (input as { command?: string })?.command ?? "";
-    } else {
-      // For non-Bash tools, match against JSON-stringified input
-      commandStr = typeof input === "string" ? input : JSON.stringify(input);
-    }
-
-    return Process.globToRegex(glob).test(commandStr);
-  }
-
-  /**
-   * Check permission rules (deny/allow patterns) against a tool invocation.
-   * Returns a ToolApprovalResult if a rule matches, or undefined to fall through.
-   * Evaluation order: deny first, then allow.
-   */
-  private checkPermissionRules(toolName: string, input: unknown): ToolApprovalResult | undefined {
-    if (!this._permissions) return undefined;
-
-    // Check deny rules first
-    if (this._permissions.deny) {
-      for (const pattern of this._permissions.deny) {
-        if (Process.matchesPermissionPattern(pattern, toolName, input)) {
-          const command =
-            toolName === "Bash" ? ((input as { command?: string })?.command ?? "") : "";
-          getLogger().warn(
-            `[permissions] Denied ${toolName}: "${command}" matched deny pattern "${pattern}"`,
-          );
-          return {
-            behavior: "deny",
-            message: `Blocked by permission rule: ${pattern}`,
-          };
-        }
-      }
-    }
-
-    // Check allow rules
-    if (this._permissions.allow) {
-      for (const pattern of this._permissions.allow) {
-        if (Process.matchesPermissionPattern(pattern, toolName, input)) {
-          return { behavior: "allow" };
-        }
-      }
-    }
-
-    return undefined;
-  }
-
-  /**
    * Handle a tool approval request from the provider.
    *
    * Session-specific allow/deny rules win, then the shared permission contract
@@ -1160,8 +991,8 @@ export class Process {
       };
     }
 
-    // Check permission rules (deny/allow patterns) before mode-based logic
-    const permissionResult = this.checkPermissionRules(toolName, input);
+    // Session allow/deny rules win over the mode.
+    const permissionResult = matchPermissionRules(this._permissions, toolName, input);
     if (permissionResult) {
       return permissionResult;
     }
@@ -1181,58 +1012,7 @@ export class Process {
       timestamp: new Date().toISOString(),
     };
 
-    // Add to the pending approvals map and queue
-    // The first pending approval is shown to the user, others wait in queue
-    const isFirstPending = this.pendingToolApprovals.size === 0;
-
-    // Create a promise that will be resolved by respondToInput
-    return new Promise<ToolApprovalResult>((resolve) => {
-      this.pendingToolApprovals.set(request.id, { request, resolve });
-      this.pendingToolApprovalQueue.push(request.id);
-
-      // Handle abort signal
-      const onAbort = () => {
-        if (this.pendingToolApprovals.has(request.id)) {
-          this.pendingToolApprovals.delete(request.id);
-          this.pendingToolApprovalQueue = this.pendingToolApprovalQueue.filter(
-            (id) => id !== request.id,
-          );
-          // If this was the current request being shown, emit the next one
-          if (isFirstPending) {
-            this.emitNextPendingApproval();
-          }
-          resolve({
-            behavior: "deny",
-            message: "Operation aborted",
-            interrupt: true,
-          });
-        }
-      };
-
-      options.signal.addEventListener("abort", onAbort, { once: true });
-
-      // Only emit state change for the first pending approval
-      // Subsequent approvals wait in queue until the first is resolved
-      if (isFirstPending) {
-        this.setState({ type: "waiting-input", request });
-      }
-    });
-  }
-
-  /**
-   * Emit the next pending approval to the client, or transition to running if none left.
-   */
-  private emitNextPendingApproval(): void {
-    const nextId = this.pendingToolApprovalQueue[0];
-    if (nextId !== undefined) {
-      const next = this.pendingToolApprovals.get(nextId);
-      if (next) {
-        this.setState({ type: "waiting-input", request: next.request });
-        return;
-      }
-    }
-    // No more pending approvals
-    this.setState({ type: "in-turn" });
+    return this.approvals.ask(request, options.signal);
   }
 
   /**
@@ -1248,10 +1028,9 @@ export class Process {
     answers?: Record<string, string>,
     feedback?: string,
   ): boolean {
-    const pending = this.pendingToolApprovals.get(requestId);
+    const pendingRequest = this.approvals.get(requestId);
 
-    // For mock SDK: check if requestId matches the state's request
-    if (!pending) {
+    if (!pendingRequest) {
       if (this._state.type === "waiting-input" && this._state.request.id === requestId) {
         // Mock SDK case - just transition back to idle/running
         this.setState({ type: "in-turn" });
@@ -1275,7 +1054,7 @@ export class Process {
 
     // If answers provided (AskUserQuestion), pass them as updatedInput
     if (answers && response === "approve") {
-      const originalInput = pending.request.toolInput as {
+      const originalInput = pendingRequest.toolInput as {
         questions?: unknown[];
       };
       result.updatedInput = {
@@ -1285,19 +1064,16 @@ export class Process {
     }
 
     // If EnterPlanMode is approved, switch to plan mode
-    if (response === "approve" && pending.request.toolName === "EnterPlanMode") {
+    if (response === "approve" && pendingRequest.toolName === "EnterPlanMode") {
       this.setPermissionMode("plan");
     }
 
     // If ExitPlanMode is approved, switch back to default mode
-    if (response === "approve" && pending.request.toolName === "ExitPlanMode") {
+    if (response === "approve" && pendingRequest.toolName === "ExitPlanMode") {
       this.setPermissionMode("default");
     }
 
-    // Resolve the promise and remove from tracking
-    pending.resolve(result);
-    this.pendingToolApprovals.delete(requestId);
-    this.pendingToolApprovalQueue = this.pendingToolApprovalQueue.filter((id) => id !== requestId);
+    this.approvals.settle(requestId, result);
 
     // Codex app-server decline decisions do not currently include a rejection
     // reason in-protocol. Queue the feedback as a follow-up user message.
@@ -1317,9 +1093,6 @@ export class Process {
       }
     }
 
-    // Emit the next pending approval, or transition to running if none left
-    this.emitNextPendingApproval();
-
     return true;
   }
 
@@ -1328,12 +1101,8 @@ export class Process {
    * Works for both real SDK (canUseTool callback) and mock SDK (input_request message).
    */
   getPendingInputRequest(): InputRequest | null {
-    // Check real SDK pending approvals queue first
-    const firstId = this.pendingToolApprovalQueue[0];
-    if (firstId !== undefined) {
-      return this.pendingToolApprovals.get(firstId)?.request ?? null;
-    }
-    // For mock SDK, check state directly
+    const waiting = this.approvals.peek();
+    if (waiting) return waiting;
     if (this._state.type === "waiting-input") {
       return this._state.request;
     }
@@ -1641,7 +1410,7 @@ export class Process {
 
   private emit(event: ProcessEvent): void {
     if (event.type === "message") {
-      this.trackStreamingCatchUp(event.message);
+      this.streamingCatchUp.accept(event.message);
     }
 
     if (event.type === "state-change") {

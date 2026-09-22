@@ -4,7 +4,11 @@ import type { StartSessionOptions } from "../src/sdk/providers/types.js";
 import { Supervisor } from "../src/supervisor/Supervisor.js";
 import type { SessionSummary } from "../src/supervisor/types.js";
 import { type BusEvent, EventBus } from "../src/watcher/EventBus.js";
-import { createScriptedProvider, providerFromSessionFactory } from "./helpers/scriptedProvider.js";
+import {
+  createScriptedProvider,
+  expectStarted,
+  providerFromSessionFactory,
+} from "./helpers/scriptedProvider.js";
 
 describe("Supervisor", () => {
   let supervisor: Supervisor;
@@ -18,33 +22,48 @@ describe("Supervisor", () => {
 
   describe("startSession", () => {
     it("starts a session and returns a process", async () => {
-      const process = await supervisor.startSession("/tmp/test", {
-        text: "hi",
-      });
+      const process = expectStarted(
+        await supervisor.startSession({
+          projectPath: "/tmp/test",
+          message: {
+            text: "hi",
+          },
+        }),
+      );
 
       expect(process.id).toBeDefined();
       expect(process.projectPath).toBe("/tmp/test");
     });
 
     it("tracks process in getAllProcesses", async () => {
-      await supervisor.startSession("/tmp/test", { text: "hi" });
+      await supervisor.startSession({ projectPath: "/tmp/test", message: { text: "hi" } });
 
       expect(supervisor.getAllProcesses()).toHaveLength(1);
     });
 
     it("encodes projectId correctly", async () => {
-      const process = await supervisor.startSession("/tmp/test", {
-        text: "hi",
-      });
+      const process = expectStarted(
+        await supervisor.startSession({
+          projectPath: "/tmp/test",
+          message: {
+            text: "hi",
+          },
+        }),
+      );
 
       // /tmp/test in base64url
       expect(process.projectId).toBe(Buffer.from("/tmp/test").toString("base64url"));
     });
 
     it("queues the initial message", async () => {
-      const process = await supervisor.startSession("/tmp/test", {
-        text: "hi",
-      });
+      const process = expectStarted(
+        await supervisor.startSession({
+          projectPath: "/tmp/test",
+          message: {
+            text: "hi",
+          },
+        }),
+      );
 
       // The message was queued
       expect(process.queueDepth).toBeGreaterThanOrEqual(0);
@@ -53,33 +72,63 @@ describe("Supervisor", () => {
 
   describe("resumeSession", () => {
     it("resumes an existing session", async () => {
-      const process = await supervisor.resumeSession("sess-123", "/tmp/test", {
-        text: "continue",
-      });
+      const process = expectStarted(
+        await supervisor.resumeSession({
+          sessionId: "sess-123",
+          projectPath: "/tmp/test",
+          message: {
+            text: "continue",
+          },
+        }),
+      );
 
       expect(process.sessionId).toBe("sess-123");
     });
 
     it("reuses existing process for same session", async () => {
-      const process1 = await supervisor.resumeSession("sess-123", "/tmp/test", {
-        text: "first",
-      });
+      const process1 = expectStarted(
+        await supervisor.resumeSession({
+          sessionId: "sess-123",
+          projectPath: "/tmp/test",
+          message: {
+            text: "first",
+          },
+        }),
+      );
 
-      const process2 = await supervisor.resumeSession("sess-123", "/tmp/test", {
-        text: "second",
-      });
+      const process2 = expectStarted(
+        await supervisor.resumeSession({
+          sessionId: "sess-123",
+          projectPath: "/tmp/test",
+          message: {
+            text: "second",
+          },
+        }),
+      );
 
       expect(process1.id).toBe(process2.id);
     });
 
     it("creates new process for different session", async () => {
-      const process1 = await supervisor.resumeSession("sess-123", "/tmp/test", {
-        text: "first",
-      });
+      const process1 = expectStarted(
+        await supervisor.resumeSession({
+          sessionId: "sess-123",
+          projectPath: "/tmp/test",
+          message: {
+            text: "first",
+          },
+        }),
+      );
 
-      const process2 = await supervisor.resumeSession("sess-456", "/tmp/test", {
-        text: "second",
-      });
+      const process2 = expectStarted(
+        await supervisor.resumeSession({
+          sessionId: "sess-456",
+          projectPath: "/tmp/test",
+          message: {
+            text: "second",
+          },
+        }),
+      );
 
       expect(process1.id).not.toBe(process2.id);
     });
@@ -94,15 +143,17 @@ describe("Supervisor", () => {
         idleTimeoutMs: 60_000,
       });
 
-      const active = await supervisorWithQueue.startSession("/tmp/test", { text: "first" });
-      expect("queued" in active).toBe(false);
-      expect("error" in active).toBe(false);
-
-      const queued = await supervisorWithQueue.startSession(
-        "/tmp/test",
-        { text: "second" },
-        "plan",
-        {
+      const active = expectStarted(
+        await supervisorWithQueue.startSession({
+          projectPath: "/tmp/test",
+          message: { text: "first" },
+        }),
+      );
+      const queued = await supervisorWithQueue.startSession({
+        projectPath: "/tmp/test",
+        message: { text: "second" },
+        permissionMode: "plan",
+        modelSettings: {
           model: "opus",
           thinking: { type: "adaptive" },
           effort: "high",
@@ -110,11 +161,9 @@ describe("Supervisor", () => {
           executor: "remote-runner",
           remoteEnv: { REGION: "test-region" },
         },
-      );
+      });
 
-      expect("queued" in queued && queued.queued).toBe(true);
-      if ("queued" in active || "error" in active)
-        throw new Error("active session was not started");
+      expect(queued.kind).toBe("queued");
       await supervisorWithQueue.abortProcess(active.id);
 
       await vi.waitFor(() => expect(startCalls).toHaveLength(2));
@@ -142,24 +191,27 @@ describe("Supervisor", () => {
         idleTimeoutMs: 60_000,
       });
 
-      const active = await supervisorWithQueue.startSession("/tmp/test", { text: "first" });
-      if ("queued" in active || "error" in active)
-        throw new Error("active session was not started");
+      const active = expectStarted(
+        await supervisorWithQueue.startSession({
+          projectPath: "/tmp/test",
+          message: { text: "first" },
+        }),
+      );
 
-      const queued = await supervisorWithQueue.resumeSession(
-        "resume-target",
-        "/tmp/test",
-        { text: "continue" },
-        "acceptEdits",
-        {
+      const queued = await supervisorWithQueue.resumeSession({
+        sessionId: "resume-target",
+        projectPath: "/tmp/test",
+        message: { text: "continue" },
+        permissionMode: "acceptEdits",
+        modelSettings: {
           model: "sonnet",
           thinking: { type: "disabled" },
           effort: "medium",
           executor: "resume-executor",
         },
-      );
+      });
 
-      expect("queued" in queued && queued.queued).toBe(true);
+      expect(queued.kind).toBe("queued");
       await supervisorWithQueue.abortProcess(active.id);
 
       await vi.waitFor(() => expect(startCalls).toHaveLength(2));
@@ -186,17 +238,24 @@ describe("Supervisor", () => {
         idleTimeoutMs: 60_000,
       });
 
-      const active = await supervisorWithQueue.startSession("/tmp/test", { text: "first" });
-      if ("queued" in active || "error" in active)
-        throw new Error("active session was not started");
+      const active = expectStarted(
+        await supervisorWithQueue.startSession({
+          projectPath: "/tmp/test",
+          message: { text: "first" },
+        }),
+      );
 
-      const queued = await supervisorWithQueue.createSession("/tmp/test", "plan", {
-        model: "haiku",
-        thinking: { type: "adaptive" },
-        effort: "low",
+      const queued = await supervisorWithQueue.createSession({
+        projectPath: "/tmp/test",
+        permissionMode: "plan",
+        modelSettings: {
+          model: "haiku",
+          thinking: { type: "adaptive" },
+          effort: "low",
+        },
       });
 
-      expect("queued" in queued && queued.queued).toBe(true);
+      expect(queued.kind).toBe("queued");
       await supervisorWithQueue.abortProcess(active.id);
 
       await vi.waitFor(() => expect(startCalls).toHaveLength(2));
@@ -216,9 +275,14 @@ describe("Supervisor", () => {
 
   describe("getProcess", () => {
     it("returns process by id", async () => {
-      const process = await supervisor.startSession("/tmp/test", {
-        text: "hi",
-      });
+      const process = expectStarted(
+        await supervisor.startSession({
+          projectPath: "/tmp/test",
+          message: {
+            text: "hi",
+          },
+        }),
+      );
       const found = supervisor.getProcess(process.id);
 
       expect(found).toBe(process);
@@ -232,9 +296,15 @@ describe("Supervisor", () => {
 
   describe("getProcessForSession", () => {
     it("returns process by session id", async () => {
-      const process = await supervisor.resumeSession("sess-123", "/tmp/test", {
-        text: "hi",
-      });
+      const process = expectStarted(
+        await supervisor.resumeSession({
+          sessionId: "sess-123",
+          projectPath: "/tmp/test",
+          message: {
+            text: "hi",
+          },
+        }),
+      );
       const found = supervisor.getProcessForSession("sess-123");
 
       expect(found).toBe(process);
@@ -248,8 +318,8 @@ describe("Supervisor", () => {
 
   describe("getProcessInfoList", () => {
     it("returns info for all processes", async () => {
-      await supervisor.startSession("/tmp/test1", { text: "one" });
-      await supervisor.startSession("/tmp/test2", { text: "two" });
+      await supervisor.startSession({ projectPath: "/tmp/test1", message: { text: "one" } });
+      await supervisor.startSession({ projectPath: "/tmp/test2", message: { text: "two" } });
 
       const infoList = supervisor.getProcessInfoList();
 
@@ -261,9 +331,14 @@ describe("Supervisor", () => {
 
   describe("abortProcess", () => {
     it("aborts and removes process", async () => {
-      const process = await supervisor.startSession("/tmp/test", {
-        text: "hi",
-      });
+      const process = expectStarted(
+        await supervisor.startSession({
+          projectPath: "/tmp/test",
+          message: {
+            text: "hi",
+          },
+        }),
+      );
 
       const result = await supervisor.abortProcess(process.id);
 
@@ -277,9 +352,15 @@ describe("Supervisor", () => {
     });
 
     it("removes session mapping on abort", async () => {
-      const process = await supervisor.resumeSession("sess-123", "/tmp/test", {
-        text: "hi",
-      });
+      const process = expectStarted(
+        await supervisor.resumeSession({
+          sessionId: "sess-123",
+          projectPath: "/tmp/test",
+          message: {
+            text: "hi",
+          },
+        }),
+      );
 
       await supervisor.abortProcess(process.id);
 
@@ -299,7 +380,7 @@ describe("Supervisor", () => {
         eventBus,
       });
 
-      await supervisorWithBus.startSession("/tmp/test", { text: "hi" });
+      await supervisorWithBus.startSession({ projectPath: "/tmp/test", message: { text: "hi" } });
 
       // Find process-state-changed events
       const processStateEvents = events.filter((e) => e.type === "process-state-changed");
@@ -328,7 +409,7 @@ describe("Supervisor", () => {
         eventBus,
       });
 
-      await supervisorWithBus.startSession("/tmp/test", { text: "hi" });
+      await supervisorWithBus.startSession({ projectPath: "/tmp/test", message: { text: "hi" } });
 
       // Find session-status-changed events
       const statusEvents = events.filter((e) => e.type === "session-status-changed");
@@ -369,8 +450,11 @@ describe("Supervisor", () => {
         eventBus,
       });
 
-      await supervisorWithBus.startSession("/tmp/test", {
-        text: "Optimistic title from request",
+      await supervisorWithBus.startSession({
+        projectPath: "/tmp/test",
+        message: {
+          text: "Optimistic title from request",
+        },
       });
 
       const created = events.find(
@@ -426,8 +510,11 @@ describe("Supervisor", () => {
           onSessionSummary,
         });
 
-        await supervisorWithBus.startSession("/tmp/test", {
-          text: "Seed title",
+        await supervisorWithBus.startSession({
+          projectPath: "/tmp/test",
+          message: {
+            text: "Seed title",
+          },
         });
 
         // Allow init event and first reconciliation window.
@@ -478,8 +565,11 @@ describe("Supervisor", () => {
         eventBus,
       });
 
-      await supervisorWithBus.startSession("/tmp/test", {
-        text: "Trigger failure",
+      await supervisorWithBus.startSession({
+        projectPath: "/tmp/test",
+        message: {
+          text: "Trigger failure",
+        },
       });
 
       await vi.waitFor(() => {
@@ -533,9 +623,14 @@ describe("Supervisor", () => {
           idleTimeoutMs: 100,
         });
 
-        const process = await supervisorWithAliveProcess.startSession("/tmp/test", {
-          text: "Keep this session alive",
-        });
+        const process = expectStarted(
+          await supervisorWithAliveProcess.startSession({
+            projectPath: "/tmp/test",
+            message: {
+              text: "Keep this session alive",
+            },
+          }),
+        );
 
         await vi.advanceTimersByTimeAsync(0);
         expect(process.state.type).toBe("idle");

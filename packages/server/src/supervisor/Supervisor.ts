@@ -20,12 +20,7 @@ import type {
   WorkerActivityEvent,
 } from "../watcher/EventBus.js";
 import { Process, type ProcessConstructorOptions } from "./Process.js";
-import {
-  type QueuedRequestInfo,
-  type QueuedResponse,
-  WorkerQueue,
-  isQueueFullError,
-} from "./WorkerQueue.js";
+import { type QueuedRequestInfo, WorkerQueue, isQueueFullError } from "./WorkerQueue.js";
 import {
   DEFAULT_IDLE_PREEMPT_THRESHOLD_MS,
   type ModelSettings,
@@ -55,10 +50,35 @@ function getStaleInTurnThresholdMs(provider: ProviderName): number {
     : DEFAULT_STALE_IN_TURN_THRESHOLD_MS;
 }
 
-/** Error response when queue is full */
-export interface QueueFullResponse {
-  error: "queue_full";
-  maxQueueSize: number;
+/**
+ * Outcome of asking the supervisor for a session.
+ *
+ * A tagged union: callers switch on `kind` instead of sniffing for the
+ * presence of a property to tell the three outcomes apart.
+ */
+export type SessionLaunch =
+  | { kind: "started"; process: Process }
+  | { kind: "queued"; queueId: string; position: number }
+  | { kind: "rejected"; reason: "queue_full"; maxQueueSize: number };
+
+/** Ask for a new session, sending the first message with it. */
+export interface StartSessionRequest {
+  projectPath: string;
+  message: UserMessage;
+  permissionMode?: PermissionMode;
+  modelSettings?: ModelSettings;
+}
+
+/** Ask to continue a session the provider already knows about. */
+export interface ResumeSessionRequest extends StartSessionRequest {
+  sessionId: string;
+}
+
+/** Ask for a session that waits for its first message (two-phase flow). */
+export interface CreateSessionRequest {
+  projectPath: string;
+  permissionMode?: PermissionMode;
+  modelSettings?: ModelSettings;
 }
 
 /** Optional callback to fetch authoritative session summary for reconciliation */
@@ -154,53 +174,53 @@ export class Supervisor {
     await Promise.all(this.getAllProcesses().map((process) => process.abort()));
   }
 
-  async startSession(
-    projectPath: string,
-    message: UserMessage,
-    permissionMode?: PermissionMode,
-    modelSettings?: ModelSettings,
-  ): Promise<Process | QueuedResponse | QueueFullResponse> {
+  async startSession(request: StartSessionRequest): Promise<SessionLaunch> {
+    const { projectPath, message, permissionMode, modelSettings } = request;
     const projectId = encodeProjectId(projectPath);
 
-    // Check if at capacity
-    if (this.isAtCapacity()) {
-      // Try to preempt an idle worker
-      const preemptable = this.findPreemptableWorker();
-      if (preemptable) {
-        await this.preemptWorker(preemptable);
-        // Fall through to start session normally
-      } else {
-        // Queue the request
-        const result = this.workerQueue.enqueue({
-          type: "new-session",
-          projectPath,
-          projectId,
-          message,
-          permissionMode,
-          modelSettings,
-        });
-        if (isQueueFullError(result)) {
-          return result;
-        }
-        return {
-          queued: true,
-          queueId: result.queueId,
-          position: result.position,
-        };
-      }
+    if (!(await this.makeRoomForSession())) {
+      return this.enqueue({
+        type: "new-session",
+        projectPath,
+        projectId,
+        message,
+        permissionMode,
+        modelSettings,
+      });
     }
 
-    const provider = this.resolveProvider(modelSettings);
+    return {
+      kind: "started",
+      process: await this.startProviderSession(
+        projectPath,
+        projectId,
+        message,
+        undefined,
+        permissionMode,
+        modelSettings,
+        this.resolveProvider(modelSettings),
+      ),
+    };
+  }
 
-    return this.startProviderSession(
-      projectPath,
-      projectId,
-      message,
-      undefined,
-      permissionMode,
-      modelSettings,
-      provider,
-    );
+  /**
+   * Free a worker slot when the pool is full, by preempting an idle worker.
+   * Returns false when the caller must queue instead.
+   */
+  private async makeRoomForSession(): Promise<boolean> {
+    if (!this.isAtCapacity()) return true;
+    const preemptable = this.findPreemptableWorker();
+    if (!preemptable) return false;
+    await this.preemptWorker(preemptable);
+    return true;
+  }
+
+  private enqueue(request: Parameters<WorkerQueue["enqueue"]>[0]): SessionLaunch {
+    const result = this.workerQueue.enqueue(request);
+    if (isQueueFullError(result)) {
+      return { kind: "rejected", reason: "queue_full", maxQueueSize: result.maxQueueSize };
+    }
+    return { kind: "queued", queueId: result.queueId, position: result.position };
   }
 
   /**
@@ -208,48 +228,30 @@ export class Supervisor {
    * Used for two-phase flow: create session first, upload files, then send message.
    * The agent will wait for a message to be pushed to the queue.
    */
-  async createSession(
-    projectPath: string,
-    permissionMode?: PermissionMode,
-    modelSettings?: ModelSettings,
-  ): Promise<Process | QueuedResponse | QueueFullResponse> {
+  async createSession(request: CreateSessionRequest): Promise<SessionLaunch> {
+    const { projectPath, permissionMode, modelSettings } = request;
     const projectId = encodeProjectId(projectPath);
 
-    // Check if at capacity
-    if (this.isAtCapacity()) {
-      // Try to preempt an idle worker
-      const preemptable = this.findPreemptableWorker();
-      if (preemptable) {
-        await this.preemptWorker(preemptable);
-        // Fall through to create session normally
-      } else {
-        const result = this.workerQueue.enqueue({
-          type: "create-session",
-          projectPath,
-          projectId,
-          permissionMode,
-          modelSettings,
-        });
-        if (isQueueFullError(result)) {
-          return result;
-        }
-        return {
-          queued: true,
-          queueId: result.queueId,
-          position: result.position,
-        };
-      }
+    if (!(await this.makeRoomForSession())) {
+      return this.enqueue({
+        type: "create-session",
+        projectPath,
+        projectId,
+        permissionMode,
+        modelSettings,
+      });
     }
 
-    const provider = this.resolveProvider(modelSettings);
-
-    return this.createProviderSession(
-      projectPath,
-      projectId,
-      permissionMode,
-      modelSettings,
-      provider,
-    );
+    return {
+      kind: "started",
+      process: await this.createProviderSession(
+        projectPath,
+        projectId,
+        permissionMode,
+        modelSettings,
+        this.resolveProvider(modelSettings),
+      ),
+    };
   }
 
   /**
@@ -451,13 +453,8 @@ export class Supervisor {
     return process;
   }
 
-  async resumeSession(
-    sessionId: string,
-    projectPath: string,
-    message: UserMessage,
-    permissionMode?: PermissionMode,
-    modelSettings?: ModelSettings,
-  ): Promise<Process | QueuedResponse | QueueFullResponse> {
+  async resumeSession(request: ResumeSessionRequest): Promise<SessionLaunch> {
+    const { sessionId, projectPath, message, permissionMode, modelSettings } = request;
     // Check if already have a process for this session
     const existingProcessId = this.sessionToProcess.get(sessionId);
     if (existingProcessId) {
@@ -523,7 +520,7 @@ export class Supervisor {
           if (!existingProcess.isTerminated) {
             const result = existingProcess.queueMessage(message);
             if (result.success) {
-              return existingProcess;
+              return { kind: "started", process: existingProcess };
             }
             // Failed to queue - process likely terminated, clean up and start fresh
             this.unregisterProcess(existingProcess);
@@ -537,55 +534,35 @@ export class Supervisor {
     if (existingQueued) {
       // Already queued - return current position
       const position = this.workerQueue.getPosition(existingQueued.id);
-      return {
-        queued: true,
-        queueId: existingQueued.id,
-        position: position ?? 1,
-      };
+      return { kind: "queued", queueId: existingQueued.id, position: position ?? 1 };
     }
 
     const projectId = encodeProjectId(projectPath);
 
-    // Check if at capacity
-    if (this.isAtCapacity()) {
-      // Try to preempt an idle worker
-      const preemptable = this.findPreemptableWorker();
-      if (preemptable) {
-        await this.preemptWorker(preemptable);
-        // Fall through to start session normally
-      } else {
-        // Queue the request
-        const result = this.workerQueue.enqueue({
-          type: "resume-session",
-          projectPath,
-          projectId,
-          sessionId,
-          message,
-          permissionMode,
-          modelSettings,
-        });
-        if (isQueueFullError(result)) {
-          return result;
-        }
-        return {
-          queued: true,
-          queueId: result.queueId,
-          position: result.position,
-        };
-      }
+    if (!(await this.makeRoomForSession())) {
+      return this.enqueue({
+        type: "resume-session",
+        projectPath,
+        projectId,
+        sessionId,
+        message,
+        permissionMode,
+        modelSettings,
+      });
     }
 
-    const provider = this.resolveProvider(modelSettings);
-
-    return this.startProviderSession(
-      projectPath,
-      projectId,
-      message,
-      sessionId,
-      permissionMode,
-      modelSettings,
-      provider,
-    );
+    return {
+      kind: "started",
+      process: await this.startProviderSession(
+        projectPath,
+        projectId,
+        message,
+        sessionId,
+        permissionMode,
+        modelSettings,
+        this.resolveProvider(modelSettings),
+      ),
+    };
   }
 
   getProcess(processId: string): Process | undefined {
@@ -666,16 +643,16 @@ export class Supervisor {
         await process.abort();
         this.unregisterProcess(process);
 
-        const result = await this.resumeSession(
+        const result = await this.resumeSession({
           sessionId,
           projectPath,
           message,
           permissionMode,
           modelSettings,
-        );
+        });
 
-        if ("id" in result) {
-          return { success: true, process: result, restarted: true };
+        if (result.kind === "started") {
+          return { success: true, process: result.process, restarted: true };
         }
         return { success: false, error: "Request was queued or failed" };
       }

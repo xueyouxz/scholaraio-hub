@@ -6,6 +6,8 @@ import type {
   StartSessionOptions,
 } from "../../src/sdk/providers/types.js";
 import type { SDKMessage } from "../../src/sdk/types.js";
+import type { Process } from "../../src/supervisor/Process.js";
+import type { SessionLaunch } from "../../src/supervisor/Supervisor.js";
 
 export interface ScriptedProviderOptions {
   /** Recorded start options, in call order. */
@@ -101,4 +103,12 @@ export function providerFromSessionFactory(
     getAvailableModels: async () => [],
     startSession,
   };
+}
+
+/** Unwrap a launch the test expects to have started immediately. */
+export function expectStarted(launch: SessionLaunch): Process {
+  if (launch.kind !== "started") {
+    throw new Error(`expected a started session, got ${launch.kind}`);
+  }
+  return launch.process;
 }

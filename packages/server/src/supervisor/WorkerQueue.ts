@@ -37,13 +37,6 @@ export interface QueuedRequestInfo {
   queuedAt: string;
 }
 
-/** Status returned when request is queued instead of started immediately */
-export interface QueuedResponse {
-  queued: true;
-  queueId: string;
-  position: number;
-}
-
 /** Result when enqueue fails due to queue being full */
 export interface QueueFullError {
   error: "queue_full";

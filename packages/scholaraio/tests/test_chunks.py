@@ -343,3 +343,16 @@ def test_build_chunk_index_incrementally_removes_stale_chunks(tmp_path: Path) ->
 
     assert chunk_search("oldmarker", db_path, top_k=3) == []
     assert chunk_search("newmarker", db_path, top_k=3)
+
+
+def test_chunk_scope_filters_before_limit_and_handles_large_projects(tmp_path):
+    papers_dir = tmp_path / "papers"
+    for pid in ["outside", "inside"]:
+        _write_paper(papers_dir, pid, paper_id=pid, title="Molecular research", md_text="# Results\nMolecular transitions were measured.")
+    db = tmp_path / "index.db"
+    build_index(papers_dir, db)
+    build_chunk_index(papers_dir, db)
+    assert chunk_search("molecular", db, paper_ids=set()) == []
+    allowed = {"inside", *(f"missing-{i}" for i in range(1200))}
+    assert [r["paper_id"] for r in chunk_search("molecular", db, top_k=1, paper_ids=allowed)] == ["inside"]
+    assert [r["paper_id"] for r in chunk_search("molecular unknown", db, top_k=1, paper_ids=allowed, match_any=True)] == ["inside"]

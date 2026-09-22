@@ -9,6 +9,7 @@ import sqlite3
 from dataclasses import dataclass
 from pathlib import Path
 
+from scholaraio.services.index import _prepare_allowed_paper_ids
 from scholaraio.stores.papers import iter_paper_dirs, normalize_paper_type, parse_year_range, read_meta
 
 
@@ -204,6 +205,7 @@ def chunk_search(
     journal: str | None = None,
     paper_type: str | None = None,
     match_any: bool = False,
+    paper_ids: set[str] | None = None,
 ) -> list[dict]:
     """Search indexed paper chunks and return line-addressable snippets."""
 
@@ -215,6 +217,7 @@ def chunk_search(
         _ensure_chunk_schema(conn)
         conn.row_factory = sqlite3.Row
         filter_sql, filter_params = _build_filter_clause(year=year, journal=journal, paper_type=paper_type)
+        allowed_sql = _prepare_allowed_paper_ids(conn, paper_ids, table="paper_chunks")
         rows = conn.execute(
             f"""
             SELECT chunk_id, paper_id, dir_name, title, year, journal, paper_type,
@@ -222,7 +225,7 @@ def chunk_search(
                    text, start_line, end_line,
                    snippet(paper_chunks, 9, '', '', ' ... ', 16) AS snippet
             FROM paper_chunks
-            WHERE paper_chunks MATCH ?{filter_sql}
+            WHERE paper_chunks MATCH ?{filter_sql}{allowed_sql}
             ORDER BY rank
             LIMIT ?
             """,

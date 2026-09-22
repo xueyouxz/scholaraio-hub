@@ -13,6 +13,7 @@ from dataclasses import asdict
 from pathlib import Path
 
 from scholaraio.core.config import Config, load_config
+from scholaraio.services.hub_projects import HubProjects
 from scholaraio.services.chunks import build_chunk_index, chunk_search, iter_paper_chunks
 from scholaraio.services.index import build_index, search
 from scholaraio.stores.papers import authors_text, find_pdf, iter_paper_dirs, read_meta, write_meta
@@ -52,6 +53,7 @@ class HubLibrary:
                 raise ValueError(f"Library path is outside the application data directory: {directory}")
             directory.mkdir(parents=True, exist_ok=True)
         self.lock = threading.RLock()
+        self.projects = HubProjects(self)
         self.executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix="library-import")
         self.jobs_dir = self.cfg.state_root / "imports"
         self.jobs_dir.mkdir(parents=True, exist_ok=True)
@@ -80,6 +82,8 @@ class HubLibrary:
 
     def row(self, directory: Path, meta: dict):
         hub = meta.get("hub", {})
+        images = directory / "images"
+        cover = next((p for p in sorted(images.iterdir()) if p.suffix.lower() in {".png", ".jpg", ".jpeg", ".webp"}), None) if images.is_dir() else None
         return {
             "id": str(meta.get("id") or directory.name),
             "title": meta.get("title") or directory.name,
@@ -90,7 +94,40 @@ class HubLibrary:
             "hasMarkdown": (directory / "paper.md").exists(),
             "parseStatus": hub.get("parseStatus", "ready" if (directory / "paper.md").exists() else "pending"),
             "error": hub.get("error"),
+            "coverImage": f"images/{cover.name}" if cover else None,
+            "citationCount": meta.get("citation_count") if isinstance(meta.get("citation_count"), int) else None,
+            "citationCounts": {key: value for key, value in meta.get("citation_count", {}).items() if isinstance(value, int)} if isinstance(meta.get("citation_count"), dict) else None,
+            "paperType": meta.get("paper_type") or "",
         }
+
+    def analytics(self, project_id: str | None = None):
+        """Read existing analysis artifacts without loading or rebuilding ML models."""
+        def artifact(relative, fallback):
+            path = (self.cfg.state_root / relative).resolve()
+            if not path.is_relative_to(self.root):
+                raise ValueError("分析数据超出应用目录")
+            if not path.exists():
+                return fallback
+            data = json.loads(path.read_text(encoding="utf-8"))
+            if not isinstance(data, dict):
+                raise ValueError("分析数据格式无效")
+            return data
+
+        with self.lock:
+            ids = self.projects.scope(project_id, [])
+            available = set(ids) if ids is not None else {p["id"] for p in self.papers()}
+            projection = artifact("projection/projection.json", {"built": False, "points": []})
+            points = [p for p in projection.get("points", []) if p.get("id") in available]
+            projection = {**projection, "points": points, "stale": len({p["id"] for p in points}) != len(available)}
+            topics = artifact("topics/overview.json", {"built": False, "topics": []})
+            if project_id:
+                counts = {}
+                for point in points:
+                    counts[point["topicId"]] = counts.get(point["topicId"], 0) + 1
+                scoped = [{**t, "paperCount": counts[t["id"]]} for t in topics.get("topics", []) if counts.get(t["id"], 0)]
+                topics = {**topics, "topics": scoped, "topicCount": len(scoped)}
+            similarity = artifact("topics/similarity.json", {"built": False, "topics": [], "matrix": []})
+            return {"topics": topics, "projection": projection, "similarity": similarity}
 
     def papers(self):
         return [self.row(d, read_meta(d)) for d in iter_paper_dirs(self.cfg.papers_dir)]
@@ -99,17 +136,27 @@ class HubLibrary:
         directory, meta = self.find(paper_id)
         md = directory / "paper.md"
         return {**self.row(directory, meta), "markdown": md.read_text(encoding="utf-8") if md.exists() else "",
+                "l3Conclusion": meta.get("l3_conclusion") if isinstance(meta.get("l3_conclusion"), str) else "",
                 "chunks": [asdict(c) for c in iter_paper_chunks(directory, meta=meta)]}
 
-    def search(self, query: str, limit: int = 50):
+    def images(self, paper_id: str):
+        directory, _ = self.find(paper_id)
+        images = directory / "images"
+        if not images.resolve().is_relative_to(directory.resolve()) or not images.is_dir():
+            return []
+        return [p.name for p in sorted(images.iterdir()) if p.is_file()
+                and p.resolve().is_relative_to(directory.resolve())
+                and p.suffix.lower() in {".png", ".jpg", ".jpeg", ".webp", ".gif"}]
+
+    def search(self, query: str, limit: int = 50, paper_ids: set[str] | None = None):
         if not query.strip():
-            return [{"paper": paper, "matches": []} for paper in self.papers()][:limit]
+            return [{"paper": paper, "matches": []} for paper in self.papers() if paper_ids is None or paper["id"] in paper_ids][:limit]
         query = " ".join(re.findall(r"\w+", query.casefold()))
         if not query:
             return []
         with self.lock:
-            metadata = search(query, self.cfg.index_db, top_k=limit)
-            chunks = chunk_search(query, self.cfg.index_db, top_k=limit)
+            metadata = search(query, self.cfg.index_db, top_k=limit, paper_ids=paper_ids)
+            chunks = chunk_search(query, self.cfg.index_db, top_k=limit, paper_ids=paper_ids)
         matches: dict[str, list] = {row["paper_id"]: [] for row in metadata}
         for chunk in chunks:
             matches.setdefault(chunk["paper_id"], []).append(chunk)
@@ -119,6 +166,8 @@ class HubLibrary:
         for directory in iter_paper_dirs(self.cfg.papers_dir):
             meta = read_meta(directory)
             pid = str(meta.get("id") or directory.name)
+            if paper_ids is not None and pid not in paper_ids:
+                continue
             rows[pid] = (directory, meta)
             if query_lower in " ".join(str(meta.get(k) or "") for k in ("title", "authors", "doi", "abstract")).casefold():
                 matches.setdefault(pid, [])
@@ -130,9 +179,47 @@ class HubLibrary:
                             existing.append(asdict(chunk))
         return [{"paper": self.row(*rows[pid]), "matches": parts[:3]} for pid, parts in list(matches.items())[:limit] if pid in rows]
 
-    def context(self, query: str, paper_ids: list[str]):
+    def browse_search(self, query: str, mode: str, limit: int, paper_ids: set[str] | None = None):
+        """Original Library search modes, scoped before ranking and limiting."""
+        from scholaraio.services.index import unified_search
+
+        if mode not in {"unified", "keyword", "author", "semantic"}:
+            raise ValueError("Unknown search mode")
+        if not query.strip() or paper_ids == set():
+            return {"results": []}
+        if mode == "keyword":
+            return {"results": self.search(query, limit, paper_ids)}
+        notice = None
+        if mode == "author":
+            # Literal matching also supports CJK author names without FTS tokenization.
+            results = [p for p in self.papers() if (paper_ids is None or p["id"] in paper_ids)
+                       and query.casefold() in p["authors"].casefold()]
+            return {"results": [{"paper": p, "matches": []} for p in results[:limit]]}
+        if mode == "semantic":
+            try:
+                from scholaraio.services.vectors import vsearch
+                ranked = vsearch(query, self.cfg.index_db, top_k=limit, cfg=self.cfg, paper_ids=paper_ids)
+            except (ImportError, FileNotFoundError, RuntimeError, ValueError) as error:
+                raise ValueError(f"语义检索不可用，请检查原向量索引与嵌入配置：{error}") from error
+        else:
+            ranked, diagnostics = unified_search(query, self.cfg.index_db, top_k=limit,
+                                                  cfg=self.cfg, paper_ids=paper_ids, return_diagnostics=True)
+            if diagnostics["vector_degraded"]:
+                notice = "语义索引暂不可用，本次综合检索使用关键词结果。"
+            if not ranked:
+                return {"results": self.search(query, limit, paper_ids), "notice": notice}
+        rows = {p["id"]: p for p in self.papers()}
+        return {"results": [{"paper": rows[r["paper_id"]], "matches": []} for r in ranked
+                            if r["paper_id"] in rows and (paper_ids is None or r["paper_id"] in paper_ids)],
+                "notice": notice}
+
+    def context(self, query: str, paper_ids: list[str], project_id: str | None = None):
+        scoped = self.projects.scope(project_id, paper_ids)
+        if scoped == []:
+            return {"citations": [], "truncated": False}
+        paper_ids = scoped or []
         selected = set(paper_ids)
-        results = self.search(query, 100)
+        results = self.search(query, 100, set(scoped) if scoped is not None else None)
         chunks = []
         seen = set()
         for result in results:
@@ -151,7 +238,7 @@ class HubLibrary:
             keywords = " ".join(term for term in terms if term not in stopwords)[:500]
             if keywords:
                 with self.lock:
-                    candidates = chunk_search(keywords, self.cfg.index_db, top_k=100, match_any=True)
+                    candidates = chunk_search(keywords, self.cfg.index_db, top_k=100, match_any=True, paper_ids=set(scoped) if scoped is not None else None)
                 for chunk in candidates:
                     if (not selected or chunk["paper_id"] in selected) and chunk["chunk_id"] not in seen:
                         chunks.append(chunk)

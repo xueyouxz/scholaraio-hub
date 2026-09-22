@@ -770,7 +770,7 @@ def _enrich_dir_names(results: list[dict], conn: sqlite3.Connection) -> list[dic
     return results
 
 
-def _prepare_allowed_paper_ids(conn: sqlite3.Connection, paper_ids: set[str] | None) -> str:
+def _prepare_allowed_paper_ids(conn: sqlite3.Connection, paper_ids: set[str] | None, *, table: str = "papers") -> str:
     """Install a connection-local ID whitelist and return its SQL predicate.
 
     A temporary table avoids SQLite's bound-parameter limit for large workspaces
@@ -784,7 +784,9 @@ def _prepare_allowed_paper_ids(conn: sqlite3.Connection, paper_ids: set[str] | N
         "INSERT INTO allowed_paper_ids (paper_id) VALUES (?)",
         ((paper_id,) for paper_id in paper_ids),
     )
-    return " AND EXISTS (SELECT 1 FROM allowed_paper_ids WHERE allowed_paper_ids.paper_id = papers.paper_id)"
+    if table not in {"papers", "paper_chunks"}:
+        raise ValueError("Unsupported paper search table")
+    return f" AND EXISTS (SELECT 1 FROM allowed_paper_ids WHERE allowed_paper_ids.paper_id = {table}.paper_id)"
 
 
 def lookup_paper(db_path: Path, user_input: str) -> dict | None:

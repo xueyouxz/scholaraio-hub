@@ -5,6 +5,8 @@ import hmac
 import json
 import os
 import socket
+import sys
+import threading
 import uuid
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -22,6 +24,16 @@ from scholaraio.stores.papers import find_pdf
 class ContextInput(BaseModel):
     query: str = Field(max_length=20000)
     paperIds: list[str] = Field(default_factory=list, max_length=100)
+    projectId: str | None = Field(default=None, min_length=1, max_length=120)
+
+
+class ProjectInput(BaseModel):
+    name: str = Field(min_length=1, max_length=120)
+
+
+class ProjectPapersInput(BaseModel):
+    paperIds: list[str] = Field(max_length=100)
+    action: Literal["add", "remove"] = "add"
 
 
 class ReadingPosition(BaseModel):
@@ -50,7 +62,11 @@ def create_app(root: Path, token: str) -> FastAPI:
 
     @app.exception_handler(KeyError)
     async def not_found(request, exc):
-        return JSONResponse({"error": "Resource not found"}, status_code=404)
+        return JSONResponse({"error": str(exc)}, status_code=404)
+
+    @app.exception_handler(RuntimeError)
+    async def invalid_storage(request, exc):
+        return JSONResponse({"error": str(exc)}, status_code=500)
 
     @app.exception_handler(ValueError)
     async def invalid(request, exc):
@@ -65,12 +81,43 @@ def create_app(root: Path, token: str) -> FastAPI:
         return {"papers": app.state.library.papers()}
 
     @app.get("/search")
-    def search(q: str = "", limit: int = 50):
-        return {"results": app.state.library.search(q, min(max(limit, 1), 200))}
+    def search(q: str = "", limit: int = 50, projectId: str | None = None, mode: str | None = None):
+        ids = app.state.library.projects.scope(projectId, []) if projectId else None
+        if mode:
+            return app.state.library.browse_search(q, mode, min(max(limit, 1), 200), set(ids) if ids is not None else None)
+        return {"results": app.state.library.search(q, min(max(limit, 1), 200), set(ids) if ids is not None else None)}
+
+    @app.get("/analytics")
+    def analytics(projectId: str | None = None):
+        return app.state.library.analytics(projectId)
+
+    @app.get("/papers/{paper_id}/images")
+    def images(paper_id: str):
+        return {"images": app.state.library.images(paper_id)}
 
     @app.post("/context")
     def context(body: ContextInput):
-        return app.state.library.context(body.query, body.paperIds)
+        return app.state.library.context(body.query, body.paperIds, body.projectId)
+
+    @app.post("/scope")
+    def scope(body: ContextInput):
+        return {"paperIds": app.state.library.projects.scope(body.projectId, body.paperIds)}
+
+    @app.get("/projects")
+    def projects():
+        return {"projects": app.state.library.projects.list()}
+
+    @app.post("/projects", status_code=201)
+    def create_project(body: ProjectInput):
+        return app.state.library.projects.create(body.name)
+
+    @app.get("/projects/{project_id}")
+    def project(project_id: str):
+        return app.state.library.projects.get(project_id)
+
+    @app.post("/projects/{project_id}/papers")
+    def project_papers(project_id: str, body: ProjectPapersInput):
+        return app.state.library.projects.update_papers(project_id, body.paperIds, body.action)
 
     @app.get("/papers/{paper_id}")
     def detail(paper_id: str):
@@ -144,9 +191,26 @@ def create_app(root: Path, token: str) -> FastAPI:
     return app
 
 
+def watch_parent(server: uvicorn.Server, stopped: threading.Event):
+    """An EOF on the Node-owned pipe also covers SIGKILL and watch restarts."""
+    try:
+        while os.read(sys.stdin.fileno(), 1024):
+            pass
+    except OSError as exc:
+        print(f"Parent pipe failed: {exc}", file=sys.stderr, flush=True)
+    if stopped.is_set():
+        return
+    server.should_exit = True
+    # An import worker or a request may block graceful shutdown. Once the owner
+    # is gone, bound cleanup time; persisted imports are recovered on next start.
+    if not stopped.wait(5):
+        os._exit(1)
+
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--data-dir", type=Path, required=True)
+    parser.add_argument("--watch-stdin", action="store_true")
     args = parser.parse_args()
     token = os.environ.get("SCHOLARAIO_HUB_INTERNAL_TOKEN", "")
     if not token:
@@ -154,9 +218,16 @@ def main():
     sock = socket.socket()
     sock.bind(("127.0.0.1", 0))
     print(json.dumps({"port": sock.getsockname()[1]}), flush=True)
+    server = uvicorn.Server(uvicorn.Config(create_app(args.data_dir, token), log_level="warning"))
+    stopped = threading.Event()
+    if args.watch_stdin:
+        # Process-owned daemon: a normal server exit ends a pending pipe read;
+        # stopped cancels the forced-exit deadline if graceful cleanup completes.
+        threading.Thread(target=watch_parent, args=(server, stopped), daemon=True).start()
     try:
-        uvicorn.Server(uvicorn.Config(create_app(args.data_dir, token), log_level="warning")).run(sockets=[sock])
+        server.run(sockets=[sock])
     finally:
+        stopped.set()
         sock.close()
 
 

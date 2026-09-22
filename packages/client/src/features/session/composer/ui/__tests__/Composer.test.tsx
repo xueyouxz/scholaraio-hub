@@ -361,11 +361,74 @@ describe("Composer slash commands", () => {
     await flush();
     type("/");
     expect(suggestions().map((item) => item.text)).toEqual([
+      "/attach",
       "/review",
       "/research <q>",
       "/commit",
       "/summarize",
     ]);
+  });
+
+  it("completes a Codex skill anywhere in the message as a $mention", async () => {
+    commands.list = [
+      { name: "cite", description: "Cite", trigger: "$", position: "anywhere" },
+      { name: "compact", description: "Compact", position: "leading" },
+    ];
+    const { onSend } = render({ provider: "codex" });
+    await flush();
+    type("please /c");
+    expect(suggestions().map((item) => item.text)).toEqual(["$cite"]);
+    key({ key: "Enter" });
+    await flush();
+    expect(textarea().value).toBe("please $cite ");
+    type("please $cite these papers");
+    await press({ key: "Enter" });
+    expect(onSend).toHaveBeenCalledWith("please $cite these papers", []);
+  });
+
+  it("runs client commands in the browser without sending them", async () => {
+    const click = vi.spyOn(HTMLInputElement.prototype, "click").mockImplementation(() => {});
+    const { onSend } = render();
+    await flush();
+    type("/att");
+    expect(suggestions().map((item) => item.text)).toEqual(["/attach"]);
+    key({ key: "Enter" });
+    await flush();
+    expect(click).toHaveBeenCalled();
+    expect(textarea().value).toBe("");
+    expect(onSend).not.toHaveBeenCalled();
+    click.mockRestore();
+  });
+
+  it("opens the model menu for /model when the provider lists models", async () => {
+    render({
+      controls: {
+        provider: "claude",
+        info: {
+          name: "claude",
+          displayName: "Claude",
+          installed: true,
+          authenticated: true,
+          enabled: true,
+          models: [{ id: "opus", name: "Opus", isDefault: true }],
+          capabilities: {
+            permissionModes: [],
+            thinkingModes: [],
+            slashCommands: "leading",
+            contextUsage: "used",
+            attachments: { maxBytes: 10, maxCount: 1 },
+          },
+        },
+        options: {},
+        onChange: () => {},
+      },
+    });
+    await flush();
+    type("/mod");
+    key({ key: "Enter" });
+    await flush();
+    expect(container?.querySelector('[role="menu"]')?.textContent).toContain("Opus (默认)");
+    expect(textarea().value).toBe("");
   });
 });
 

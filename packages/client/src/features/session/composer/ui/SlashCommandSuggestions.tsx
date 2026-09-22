@@ -33,7 +33,8 @@ export function SlashCommandSuggestions({ commands, activeIndex, onHover, onSele
           }`}
         >
           <span className="font-mono text-[11px] text-primary font-bold whitespace-nowrap">
-            /{cmd.name}
+            {cmd.trigger ?? "/"}
+            {cmd.name}
             {cmd.argumentHint ? ` ${cmd.argumentHint}` : ""}
           </span>
         </button>

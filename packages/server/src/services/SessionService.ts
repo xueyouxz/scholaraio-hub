@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { mkdir } from "node:fs/promises";
 import path from "node:path";
 import type {
   LibraryContext,
@@ -14,7 +15,7 @@ import { UIChunkWriter, appendReplayChunk } from "../agent/uiChunks.js";
 import { SessionAttachments } from "../sessions/SessionAttachments.js";
 import type { SessionRecord, SessionStore } from "../sessions/SessionStore.js";
 import { getScholaraioSkill } from "../skills/scholaraioSkills.js";
-import { getSkillSlashCommands } from "../skills/skillCommands.js";
+import { getResearchSlashCommands } from "../skills/skillCommands.js";
 import type { Process } from "../supervisor/Process.js";
 import type { Supervisor } from "../supervisor/Supervisor.js";
 import type { ProcessEvent } from "../supervisor/types.js";
@@ -66,17 +67,29 @@ export class SessionService {
     this.attachments = new SessionAttachments(store);
   }
 
+  /**
+   * The commands a composer can offer: the provider's own (listed by the CLI
+   * for this session's workspace), then the hub's research skills, which the
+   * hub itself expands when a message starts with one.
+   */
   async commands(id?: string, provider: "claude" | "codex" = "claude") {
     const record = id ? this.store.get(id) : undefined;
     const workspace = record
       ? path.join(this.store.directory(record.id), "workspace")
       : path.join(this.store.dataDir, "draft-workspace");
-    const commands = await getSkillSlashCommands(
-      workspace,
-      record?.provider ?? provider,
-      this.skillsDir,
-    );
-    return [...new Map(commands.map((command) => [command.name, command])).values()];
+    await mkdir(workspace, { recursive: true });
+    const agent = this.supervisor.providerFor(record?.provider ?? provider);
+    const [native, research] = await Promise.all([
+      agent.listCommands?.(workspace) ?? [],
+      this.skillsDir ? getResearchSlashCommands(this.skillsDir) : [],
+    ]);
+    const seen = new Set<string>();
+    return [...native, ...research].filter((command) => {
+      const key = `${command.trigger ?? "/"}${command.name}`;
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
   }
 
   async validateScope(input: { projectId?: string; paperIds: string[] }): Promise<void> {

@@ -1,20 +1,23 @@
 import type { SlashCommand } from "@scholaraio-hub/shared";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
-  filterCommands,
+  type SlashToken,
+  commandsForToken,
   findLeadingCommand,
-  leadingSlashQuery,
+  slashTokenAt,
   splitLeadingCommand,
 } from "../model/slashCommands";
 
 /**
- * Slash-command picker state: which suggestions show, the active one, and the
- * command already chosen at the start of the message (rendered as a badge, so
- * `messageBody` is what the textarea shows).
+ * Slash-command picker state: which suggestions show for the `/word` at the
+ * caret, the active one, and the command already chosen at the start of the
+ * message (rendered as a badge, so `messageBody` is what the textarea shows).
  */
 export interface SlashPickerState {
-  /** Commands matching the `/query` being typed, or null when not typing one. */
+  /** Commands matching the token being typed, or null when not typing one. */
   filter: SlashCommand[] | null;
+  /** The `/word` being completed, in `messageBody` coordinates. */
+  token: SlashToken | null;
   showList: boolean;
   showBadge: boolean;
   selectedCommand: SlashCommand | null;
@@ -29,18 +32,33 @@ export interface SlashPickerState {
   resume: () => void;
 }
 
+/**
+ * @param caret Caret offset in the displayed body; null means its end.
+ */
 export function useSlashCommandPicker(
   message: string,
   commands: SlashCommand[] | undefined,
+  caret: number | null = null,
 ): SlashPickerState {
   const [dismissed, setDismissed] = useState(false);
   const [activeIndex, setActiveIndex] = useState(0);
 
-  const filter = useMemo(() => {
-    const query = leadingSlashQuery(message);
-    if (query === null || !commands?.length) return null;
-    return filterCommands(commands, query);
-  }, [message, commands]);
+  // Only `/name` commands can open the message as a badge; `$` mentions stay inline.
+  const leadingCommands = useMemo(
+    () => (commands ?? []).filter((command) => (command.trigger ?? "/") === "/"),
+    [commands],
+  );
+  const selectedCommand = useMemo(
+    () => (leadingCommands.length ? findLeadingCommand(message, leadingCommands) : null),
+    [message, leadingCommands],
+  );
+  const { token: selectedToken, body } = splitLeadingCommand(message, selectedCommand, dismissed);
+
+  const position = Math.min(caret ?? body.length, body.length);
+  const found = slashTokenAt(body, position);
+  // After a badge the body no longer opens the message.
+  const token = found && selectedToken ? { ...found, leading: false } : found;
+  const filter = token && commands?.length ? commandsForToken(commands, token) : null;
 
   const showList = Boolean(!dismissed && filter && filter.length > 0);
   const filterSignature = filter?.map((command) => command.name).join("\n") ?? "";
@@ -50,21 +68,16 @@ export function useSlashCommandPicker(
     setActiveIndex(0);
   }, [filterSignature]);
 
-  const selectedCommand = useMemo(
-    () => (commands?.length ? findLeadingCommand(message, commands) : null),
-    [message, commands],
-  );
-  const { token, body } = splitLeadingCommand(message, selectedCommand, dismissed);
-
   const dismiss = useCallback(() => setDismissed(true), []);
   const resume = useCallback(() => setDismissed(false), []);
 
   return {
     filter,
+    token,
     showList,
-    showBadge: !!token,
+    showBadge: !!selectedToken,
     selectedCommand,
-    selectedToken: token,
+    selectedToken,
     activeIndex,
     messageBody: body,
     setActiveIndex,

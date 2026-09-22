@@ -14,12 +14,21 @@ import { sessionApi } from "../../../../core/library";
 import { useComposerDraft } from "../hooks/useComposerDraft";
 import { useSlashCommandPicker } from "../hooks/useSlashCommandPicker";
 import { rejectAttachments } from "../model/attachments";
-import { commandInsertion, joinLeadingCommand, mergeCommands } from "../model/slashCommands";
+import { type ClientCommandName, clientCommands, isClientCommand } from "../model/clientCommands";
+import {
+  dedupeCommands,
+  joinLeadingCommand,
+  mergeCommands,
+  replaceToken,
+  tokenReplacement,
+} from "../model/slashCommands";
 import { appendTranscript, hasContent, routeSubmission, withInterim } from "../model/submission";
 import {
   type ComposerControls,
   ComposerLeadingOptions,
   ComposerTrailingOptions,
+  type MenuRequest,
+  availableMenus,
 } from "./ComposerOptions";
 import { SendActionButton } from "./SendActionButton";
 import { SlashCommandBadge } from "./SlashCommandBadge";
@@ -75,11 +84,25 @@ export function Composer({
     queryFn: ({ signal }) => sessionApi.commands(provider, sessionId, signal),
     staleTime: 60000,
   });
+  const menus = controls ? availableMenus(controls) : new Set<MenuRequest["menu"]>();
+  const available: ClientCommandName[] = [
+    ...(menus.has("model") ? (["model"] as const) : []),
+    ...(menus.has("effort") ? (["effort"] as const) : []),
+    ...(menus.has("permissions") ? (["permissions"] as const) : []),
+    "attach",
+    ...(running && onStop ? (["stop"] as const) : []),
+  ];
+  const clientKey = available.join(",");
+  // biome-ignore lint/correctness/useExhaustiveDependencies: the key stands for `available`.
+  const localCommands = useMemo(() => clientCommands(available), [clientKey]);
   const commands = useMemo(
-    () => mergeCommands(skills.data?.commands ?? [], extraCommands),
-    [skills.data, extraCommands],
+    () => dedupeCommands(localCommands, mergeCommands(skills.data?.commands ?? [], extraCommands)),
+    [localCommands, skills.data, extraCommands],
   );
-  const picker = useSlashCommandPicker(text, commands);
+  /** Caret offset in the textarea's value; null keeps it at the end. */
+  const [caret, setCaret] = useState<number | null>(null);
+  const [menuRequest, setMenuRequest] = useState<MenuRequest>();
+  const picker = useSlashCommandPicker(text, commands, caret);
   const fileInput = useRef<HTMLInputElement>(null);
   const [files, setFiles] = useState<File[]>([]);
   const voice = useRef<VoiceInputButtonRef>(null);
@@ -92,10 +115,41 @@ export function Composer({
   const submitting = useRef(false);
   const latest = useRef(text);
   latest.current = text;
+  const placeCaret = (position: number) => {
+    setCaret(position);
+    window.requestAnimationFrame(() => {
+      const element = textarea.current;
+      if (!element) return;
+      element.focus();
+      element.setSelectionRange(position, position);
+    });
+  };
+  const runClientCommand = (name: ClientCommandName) => {
+    if (name === "attach") fileInput.current?.click();
+    else if (name === "stop") onStop?.();
+    else setMenuRequest((previous) => ({ menu: name, seq: (previous?.seq ?? 0) + 1 }));
+  };
+  /**
+   * Complete the token at the caret: client commands run here and leave no
+   * text; provider commands become `/name` (a leading badge) or `$name`.
+   */
   const selectCommand = (command: SlashCommand) => {
-    setText(commandInsertion(command));
+    const token = picker.token;
+    if (!token) return;
     picker.dismiss();
-    window.requestAnimationFrame(() => textarea.current?.focus());
+    const body = picker.messageBody;
+    if (isClientCommand(command)) {
+      const next = replaceToken(body, token, "");
+      setText(joinLeadingCommand(picker.selectedToken, next.text));
+      placeCaret(next.caret);
+      runClientCommand(command.name);
+      return;
+    }
+    const next = replaceToken(body, token, tokenReplacement(command));
+    setText(joinLeadingCommand(picker.selectedToken, next.text));
+    // A leading command turns into the badge; the caret goes to the start of the body.
+    const becomesBadge = token.leading && (command.trigger ?? "/") === "/";
+    placeCaret(becomesBadge ? 0 : next.caret);
   };
   const addFiles = (incoming: File[]) => {
     if (disabled || sending) return;
@@ -216,9 +270,11 @@ export function Composer({
           onChange={(e) => {
             setInterim("");
             picker.resume();
+            setCaret(e.target.selectionStart);
             const next = e.target.value;
             setText(joinLeadingCommand(picker.selectedToken, next));
           }}
+          onSelect={(e) => setCaret(e.currentTarget.selectionStart)}
           onPaste={(event) => {
             if (event.clipboardData.files.length) {
               event.preventDefault();
@@ -300,7 +356,9 @@ export function Composer({
               ) : null}
             </button>
             <div className="flex items-center gap-0.5 flex-wrap">
-              {controls ? <ComposerLeadingOptions controls={controls} /> : null}
+              {controls ? (
+                <ComposerLeadingOptions controls={controls} request={menuRequest} />
+              ) : null}
               <VoiceInputButton
                 ref={voice}
                 disabled={disabled || sending}
@@ -314,7 +372,9 @@ export function Composer({
             </div>
           </div>
           <div className="flex items-center gap-2 shrink-0">
-            {controls ? <ComposerTrailingOptions controls={controls} /> : null}
+            {controls ? (
+              <ComposerTrailingOptions controls={controls} request={menuRequest} />
+            ) : null}
             <SendActionButton
               busy={sending || stopPending}
               canSend={

@@ -27,6 +27,7 @@ export function MenuButton({
   sections,
   disabled,
   align = "left",
+  openRequest,
 }: {
   icon?: ReactNode;
   /** Visible pill text; also the button's accessible name. */
@@ -35,8 +36,13 @@ export function MenuButton({
   sections: MenuSection[];
   disabled?: boolean;
   align?: "left" | "right";
+  /** Opens the menu whenever this changes to a new number (e.g. from a /command). */
+  openRequest?: number;
 }) {
   const [open, setOpen] = useState(false);
+  useEffect(() => {
+    if (openRequest) setOpen(true);
+  }, [openRequest]);
   const rootRef = useRef<HTMLDivElement | null>(null);
   const menuId = useId();
 

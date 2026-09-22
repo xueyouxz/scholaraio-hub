@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import type { ModelInfo } from "@scholaraio-hub/shared";
+import type { ModelInfo, SlashCommand } from "@scholaraio-hub/shared";
 import type { AgentEvent } from "../../src/agent/events.js";
 import { MessageQueue } from "../../src/sdk/messageQueue.js";
 import { ClaudeEventAdapter } from "../../src/sdk/providers/claude-events.js";
@@ -37,6 +37,13 @@ export class WorkbenchProvider implements AgentProvider {
   }
   async getAvailableModels() {
     return this.models;
+  }
+  /** What `listCommands` reports; the cwds it was asked about are recorded. */
+  commands: SlashCommand[] = [];
+  readonly commandCwds: string[] = [];
+  async listCommands(cwd: string) {
+    this.commandCwds.push(cwd);
+    return this.commands;
   }
   async startSession(options: StartSessionOptions) {
     this.calls.push(options);

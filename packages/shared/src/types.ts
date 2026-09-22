@@ -60,8 +60,15 @@ export interface SlashCommand {
   description: string;
   /** Hint for command arguments (e.g., "<file>") */
   argumentHint?: string;
-  /** Where the skill command was discovered. */
-  source?: "project" | "global" | "research";
+  /** Where the command comes from: the provider, the hub's research skills, or the composer itself. */
+  source?: "provider" | "project" | "global" | "research" | "client";
+  /**
+   * How the composer invokes it: `/name` for commands, `$name` for Codex skill
+   * mentions. Defaults to "/".
+   */
+  trigger?: "/" | "$";
+  /** Only at the very start of the message (default), or at any word. */
+  position?: "leading" | "anywhere";
 }
 
 /**

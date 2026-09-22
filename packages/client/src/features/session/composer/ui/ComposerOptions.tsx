@@ -28,6 +28,27 @@ export interface ComposerControls {
 
 const DEFAULT_LABEL = "默认";
 
+/** A request, e.g. from a /command, to open one of the option menus. */
+export interface MenuRequest {
+  menu: "model" | "effort" | "permissions";
+  seq: number;
+}
+
+const requested = (request: MenuRequest | undefined, menu: MenuRequest["menu"]) =>
+  request?.menu === menu ? request.seq : undefined;
+
+/** Which option menus the provider gives this composer something to choose in. */
+export function availableMenus(controls: ComposerControls): Set<MenuRequest["menu"]> {
+  const menus = new Set<MenuRequest["menu"]>();
+  const capabilities = controls.info?.capabilities;
+  if (!capabilities) return menus;
+  if (capabilities.permissionModes.length > 0) menus.add("permissions");
+  const model = resolveModel(controls.info?.models ?? [], controls.options.model || undefined);
+  if (capabilities.thinkingModes.length > 0 || model?.efforts?.length) menus.add("effort");
+  if (controls.info?.models?.length || controls.options.model) menus.add("model");
+  return menus;
+}
+
 export function ProviderMenu({ controls }: { controls: ComposerControls }) {
   const { providers, onProviderChange } = controls;
   if (!providers?.length || !onProviderChange) return null;
@@ -54,7 +75,10 @@ export function ProviderMenu({ controls }: { controls: ComposerControls }) {
   );
 }
 
-export function PermissionMenu({ controls }: { controls: ComposerControls }) {
+export function PermissionMenu({
+  controls,
+  request,
+}: { controls: ComposerControls; request?: MenuRequest }) {
   const modes = controls.info?.capabilities.permissionModes ?? [];
   if (modes.length === 0) return null;
   const selected = controls.options.permissionMode ?? "default";
@@ -65,6 +89,7 @@ export function PermissionMenu({ controls }: { controls: ComposerControls }) {
       label={current?.label ?? selected}
       title={current?.description}
       disabled={controls.disabled}
+      openRequest={requested(request, "permissions")}
       sections={[
         {
           selected,
@@ -84,7 +109,10 @@ export function PermissionMenu({ controls }: { controls: ComposerControls }) {
  * Thinking and effort as the provider layers them: a thinking switch (when the
  * provider has one) over the current model's effort levels.
  */
-export function EffortMenu({ controls }: { controls: ComposerControls }) {
+export function EffortMenu({
+  controls,
+  request,
+}: { controls: ComposerControls; request?: MenuRequest }) {
   const capabilities = controls.info?.capabilities;
   if (!capabilities) return null;
   const model = resolveModel(controls.info?.models ?? [], controls.options.model || undefined);
@@ -129,12 +157,16 @@ export function EffortMenu({ controls }: { controls: ComposerControls }) {
       label={label}
       title="思考与推理强度"
       disabled={controls.disabled}
+      openRequest={requested(request, "effort")}
       sections={sections}
     />
   );
 }
 
-export function ModelMenu({ controls }: { controls: ComposerControls }) {
+export function ModelMenu({
+  controls,
+  request,
+}: { controls: ComposerControls; request?: MenuRequest }) {
   const models = controls.info?.models ?? [];
   const selected = controls.options.model ?? "";
   if (models.length === 0 && !selected) return null;
@@ -155,6 +187,7 @@ export function ModelMenu({ controls }: { controls: ComposerControls }) {
       title="模型"
       align="right"
       disabled={controls.disabled}
+      openRequest={requested(request, "model")}
       sections={[
         {
           selected,
@@ -167,18 +200,24 @@ export function ModelMenu({ controls }: { controls: ComposerControls }) {
 }
 
 /** Option pills left of the voice button. */
-export function ComposerLeadingOptions({ controls }: { controls: ComposerControls }) {
+export function ComposerLeadingOptions({
+  controls,
+  request,
+}: { controls: ComposerControls; request?: MenuRequest }) {
   return (
     <>
       <ProviderMenu controls={controls} />
-      <PermissionMenu controls={controls} />
-      <EffortMenu controls={controls} />
+      <PermissionMenu controls={controls} request={request} />
+      <EffortMenu controls={controls} request={request} />
     </>
   );
 }
 
 /** Context meter, model pill and change status left of the send button. */
-export function ComposerTrailingOptions({ controls }: { controls: ComposerControls }) {
+export function ComposerTrailingOptions({
+  controls,
+  request,
+}: { controls: ComposerControls; request?: MenuRequest }) {
   return (
     <>
       {controls.contextUsage ? <ContextMeter usage={controls.contextUsage} /> : null}
@@ -190,7 +229,7 @@ export function ComposerTrailingOptions({ controls }: { controls: ComposerContro
           {controls.error}
         </span>
       ) : null}
-      <ModelMenu controls={controls} />
+      <ModelMenu controls={controls} request={request} />
     </>
   );
 }

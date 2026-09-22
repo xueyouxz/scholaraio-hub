@@ -1,38 +1,11 @@
 import { readFile, readdir } from "node:fs/promises";
-import { homedir } from "node:os";
 import { join } from "node:path";
-import type { ProviderName, SlashCommand } from "@scholaraio-hub/shared";
+import type { SlashCommand } from "@scholaraio-hub/shared";
 
 type SkillDir = {
   path: string;
   source: NonNullable<SlashCommand["source"]>;
 };
-
-function providerSkillDirs(
-  projectPath: string,
-  provider: ProviderName | string | undefined,
-): SkillDir[] {
-  const globalAgentSkills = join(homedir(), ".agents", "skills");
-  const projectAgentSkills = join(projectPath, ".agents", "skills");
-
-  if (provider === "claude") {
-    return [
-      { path: globalAgentSkills, source: "global" },
-      { path: join(homedir(), ".claude", "skills"), source: "global" },
-      { path: projectAgentSkills, source: "project" },
-      { path: join(projectPath, ".claude", "skills"), source: "project" },
-    ];
-  }
-  if (provider === "codex") {
-    return [
-      { path: globalAgentSkills, source: "global" },
-      { path: join(homedir(), ".codex", "skills"), source: "global" },
-      { path: projectAgentSkills, source: "project" },
-      { path: join(projectPath, ".codex", "skills"), source: "project" },
-    ];
-  }
-  return [];
-}
 
 function readFrontmatterValue(frontmatter: string, key: string): string | null {
   const match = frontmatter.match(new RegExp(`^${key}:\\s*(.+?)\\s*$`, "m"));
@@ -88,32 +61,13 @@ async function readSkillDir(dir: SkillDir): Promise<SlashCommand[]> {
   return commands.filter((command): command is SlashCommand => command !== null);
 }
 
-export async function getSkillSlashCommands(
-  projectPath: string,
-  provider: ProviderName | string | undefined,
-  scholaraioSkillsDir?: string,
-): Promise<SlashCommand[]> {
-  const byName = new Map<string, SlashCommand>();
-
-  for (const dir of providerSkillDirs(projectPath, provider)) {
-    const commands = await readSkillDir(dir);
-    for (const command of commands) {
-      byName.set(command.name, command);
-    }
-  }
-
-  const merged: SlashCommand[] = [...byName.values()];
-
-  if (scholaraioSkillsDir) {
-    const researchCommands = await readSkillDir({
-      path: scholaraioSkillsDir,
-      source: "research",
-    });
-    for (const command of researchCommands) {
-      // Keep duplicates across sources so users see both (with source tag).
-      merged.push(command);
-    }
-  }
-
-  return merged.sort((a, b) => a.name.localeCompare(b.name));
+/**
+ * The hub's scholaraio research skills as leading `/name` commands; the hub
+ * expands them itself (see SessionService.launch), so every provider gets them.
+ */
+export async function getResearchSlashCommands(skillsDir: string): Promise<SlashCommand[]> {
+  const commands = await readSkillDir({ path: skillsDir, source: "research" });
+  return commands
+    .map((command) => ({ ...command, trigger: "/" as const, position: "leading" as const }))
+    .sort((a, b) => a.name.localeCompare(b.name));
 }

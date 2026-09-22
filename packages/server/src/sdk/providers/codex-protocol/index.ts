@@ -20,3 +20,4 @@ export type { ThreadTokenUsageUpdatedNotification } from "./generated/v2/ThreadT
 export type { TurnCompletedNotification } from "./generated/v2/TurnCompletedNotification.js";
 export type { ErrorNotification } from "./generated/v2/ErrorNotification.js";
 export type { ThreadItem } from "./generated/v2/ThreadItem.js";
+export type { UserInput } from "./generated/v2/UserInput.js";

@@ -156,6 +156,12 @@ export interface AgentProvider {
   getAvailableModels(): Promise<ModelInfo[]>;
 
   /**
+   * Slash commands / skills the provider itself offers in `cwd`, in its own
+   * terms. Providers without any omit this.
+   */
+  listCommands?(cwd: string): Promise<SlashCommand[]>;
+
+  /**
    * Get account-level usage limits for providers that expose them.
    */
   getUsageLimits?(): Promise<ProviderUsageLimits>;

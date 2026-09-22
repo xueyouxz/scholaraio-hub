@@ -12,6 +12,7 @@ import {
   ATTACHMENT_LIMITS,
   type ModelInfo,
   type ProviderUsageLimits,
+  type SlashCommand,
 } from "@scholaraio-hub/shared";
 import type { AgentEvent } from "../../agent/events.js";
 import { getLogger } from "../../logging/logger.js";
@@ -40,6 +41,7 @@ import type {
   ToolRequestUserInputResponse,
   TurnStartParams,
   TurnStartResponse,
+  UserInput,
 } from "./codex-protocol/index.js";
 import {
   CodexAppServerClient,
@@ -242,6 +244,37 @@ export class CodexProvider implements AgentProvider {
     }
 
     return models;
+  }
+
+  /**
+   * Skills Codex offers in `cwd`, as app-server `skills/list` reports them.
+   * Codex invokes a skill by mentioning `$name` anywhere in the message.
+   */
+  async listCommands(cwd: string): Promise<SlashCommand[]> {
+    const codexCommand = await this.resolveCodexCommand();
+    const appServer = new CodexAppServerClient(codexCommand, cwd, this.getCodexEnv());
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    try {
+      await appServer.connect();
+      await appServer.request<{ userAgent: string }>("initialize", {
+        clientInfo: { name: this.getCodexClientName(), version: "dev" },
+        capabilities: null,
+      });
+      appServer.notify("initialized");
+      const skills = await Promise.race([
+        listCodexSkills(appServer, cwd),
+        new Promise<never>((_, reject) => {
+          timer = setTimeout(
+            () => reject(new Error("Timed out listing Codex skills")),
+            MODEL_LIST_TIMEOUT_MS,
+          );
+        }),
+      ]);
+      return skills.map(toCodexSkillCommand);
+    } finally {
+      clearTimeout(timer);
+      appServer.close();
+    }
   }
 
   async getUsageLimits(): Promise<ProviderUsageLimits> {
@@ -513,7 +546,7 @@ export class CodexProvider implements AgentProvider {
         try {
           await activeClient.request<{ turnId: string }>("turn/steer", {
             threadId: runtimeState.threadId,
-            input: [{ type: "text", text: userPrompt, text_elements: [] }],
+            input: await withSkillMentions(activeClient, options.cwd, userPrompt),
             expectedTurnId: runtimeState.activeTurnId,
           });
           return true;
@@ -623,7 +656,7 @@ export class CodexProvider implements AgentProvider {
 
         const turnStartParams: TurnStartParams = {
           threadId: sessionId,
-          input: [{ type: "text", text: userPrompt, text_elements: [] }],
+          input: await withSkillMentions(appServer, options.cwd, userPrompt),
           effort: toReasoningEffort(options.effort),
         };
         const turnResult = await appServer.request<TurnStartResponse>(
@@ -992,4 +1025,68 @@ const REASONING_EFFORTS = ["none", "minimal", "low", "medium", "high", "xhigh"] 
 /** Codex has no thinking switch; its effort ids are passed through as the app-server names them. */
 function toReasoningEffort(effort?: string): (typeof REASONING_EFFORTS)[number] | undefined {
   return REASONING_EFFORTS.find((known) => known === effort);
+}
+
+/** The fields of app-server `skills/list` entries the hub reads (see generated v2 `SkillMetadata`). */
+export interface AppServerSkill {
+  name: string;
+  description: string;
+  shortDescription?: string;
+  interface?: { shortDescription?: string };
+  path: string;
+  scope: "user" | "repo" | "system" | "admin";
+  enabled: boolean;
+}
+
+async function listCodexSkills(
+  appServer: Pick<CodexAppServerClient, "request">,
+  cwd: string,
+): Promise<AppServerSkill[]> {
+  const response = await appServer.request<{ data: Array<{ skills: AppServerSkill[] }> }>(
+    "skills/list",
+    { cwds: [cwd] },
+  );
+  return response.data.flatMap((entry) => entry.skills).filter((skill) => skill.enabled);
+}
+
+export function toCodexSkillCommand(skill: AppServerSkill): SlashCommand {
+  return {
+    name: skill.name,
+    description: skill.interface?.shortDescription ?? skill.shortDescription ?? skill.description,
+    source: skill.scope === "repo" ? "project" : "global",
+    trigger: "$",
+    position: "anywhere",
+  };
+}
+
+const SKILL_MENTION = /(^|\s)\$([A-Za-z0-9_.:-]+)/g;
+
+/**
+ * The turn input for `text`: the text itself plus one native skill item per
+ * `$name` it mentions, as the Codex TUI sends them. Unknown names stay text.
+ */
+export function codexUserInput(text: string, skills: AppServerSkill[]): UserInput[] {
+  const byName = new Map(skills.map((skill) => [skill.name, skill]));
+  const mentioned = new Map<string, AppServerSkill>();
+  for (const match of text.matchAll(SKILL_MENTION)) {
+    const skill = byName.get(match[2] ?? "");
+    if (skill) mentioned.set(skill.name, skill);
+  }
+  return [
+    { type: "text", text, text_elements: [] },
+    ...[...mentioned.values()].map((skill) => ({
+      type: "skill" as const,
+      name: skill.name,
+      path: skill.path,
+    })),
+  ];
+}
+
+async function withSkillMentions(
+  appServer: Pick<CodexAppServerClient, "request">,
+  cwd: string,
+  text: string,
+): Promise<UserInput[]> {
+  if (!text.includes("$")) return codexUserInput(text, []);
+  return codexUserInput(text, await listCodexSkills(appServer, cwd));
 }

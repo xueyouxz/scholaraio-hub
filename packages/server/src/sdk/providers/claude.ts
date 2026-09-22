@@ -159,6 +159,25 @@ export function toModelInfo(model: SdkModelInfo): ModelInfo {
   };
 }
 
+/** Claude Code honours a slash command only at the start of a message. */
+function toClaudeCommand(command: {
+  name: string;
+  description: string;
+  argumentHint?: string;
+}): SlashCommand {
+  return {
+    name: command.name,
+    description: command.description,
+    ...(command.argumentHint ? { argumentHint: command.argumentHint } : {}),
+    source: "provider",
+    trigger: "/",
+    position: "leading",
+  };
+}
+
+const COMMAND_CACHE_TTL_MS = 60_000;
+const commandCache = new Map<string, { commands: SlashCommand[]; expiresAt: number }>();
+
 /** Cached models from SDK probe */
 let cachedModels: ModelInfo[] | null = null;
 
@@ -471,38 +490,42 @@ export class ClaudeProvider implements AgentProvider {
   }
 
   /**
-   * Probe for available models by starting a minimal session.
-   * The session doesn't send any messages - it just calls supportedModels()
-   * on the SDK query and then aborts.
+   * Ask a throwaway CLI session something it answers during its initialize
+   * handshake (models, commands), then abort it. No message is ever sent.
    */
-  private async probeModels(): Promise<ModelInfo[]> {
+  private async probe<T>(
+    cwd: string,
+    ask: (sdkQuery: Query) => Promise<T>,
+    what: string,
+  ): Promise<T> {
     const abortController = new AbortController();
 
-    // Generator that waits indefinitely — keeps the SDK process alive
-    // while we query supportedModels() from the initialization handshake.
-    // Resolves (rather than rejects) on abort to avoid unhandled rejections.
+    // Generator that waits indefinitely — keeps the SDK process alive while we
+    // ask. Resolves (rather than rejects) on abort to avoid unhandled rejections.
     async function* waitForever(): AsyncGenerator<never> {
       await new Promise<never>((resolve) => {
         abortController.signal.addEventListener("abort", () => resolve(undefined as never));
       });
     }
 
+    let timer: ReturnType<typeof setTimeout> | undefined;
     try {
       const sdkQuery = query({
         prompt: waitForever(),
         options: {
-          cwd: homedir(),
+          cwd,
           abortController,
           permissionMode: "default",
           persistSession: false,
+          // Same sources as a real session, so project commands and skills are listed.
+          settingSources: ["user", "project", "local"],
           pathToClaudeCodeExecutable: resolveLocalClaudeCodeExecutable(),
           env: this.getEnv(),
         },
       });
 
-      // The SDK's internal readMessages loop must be running for
-      // the initialize control_response to be processed. Start
-      // consuming the async iterator in the background.
+      // The SDK's internal readMessages loop must be running for the
+      // initialize control_response to be processed.
       void (async () => {
         try {
           for await (const _ of sdkQuery) {
@@ -513,19 +536,35 @@ export class ClaudeProvider implements AgentProvider {
         }
       })();
 
-      // supportedModels() resolves once the initialize handshake completes.
-      // Race against a timeout in case the process hangs.
-      const models = await Promise.race([
-        sdkQuery.supportedModels(),
-        new Promise<never>((_, reject) =>
-          setTimeout(() => reject(new Error("Model probe timed out")), 15000),
-        ),
+      return await Promise.race([
+        ask(sdkQuery),
+        new Promise<never>((_, reject) => {
+          timer = setTimeout(() => reject(new Error(`${what} probe timed out`)), 15000);
+        }),
       ]);
-
-      return models.map(toModelInfo);
     } finally {
+      clearTimeout(timer);
       abortController.abort();
     }
+  }
+
+  private async probeModels(): Promise<ModelInfo[]> {
+    const models = await this.probe(homedir(), (sdkQuery) => sdkQuery.supportedModels(), "Model");
+    return models.map(toModelInfo);
+  }
+
+  /**
+   * Slash commands Claude Code offers in `cwd` (built-ins, custom commands,
+   * skills), as its `supportedCommands()` lists them. Cached briefly per cwd.
+   */
+  async listCommands(cwd: string): Promise<SlashCommand[]> {
+    const cached = commandCache.get(cwd);
+    if (cached && cached.expiresAt > Date.now()) return cached.commands;
+    const commands = (
+      await this.probe(cwd, (sdkQuery) => sdkQuery.supportedCommands(), "Command")
+    ).map(toClaudeCommand);
+    commandCache.set(cwd, { commands, expiresAt: Date.now() + COMMAND_CACHE_TTL_MS });
+    return commands;
   }
 
   /**
@@ -662,13 +701,7 @@ export class ClaudeProvider implements AgentProvider {
         return mappedModels;
       },
       supportedCommands: async (): Promise<SlashCommand[]> => {
-        const commands = await sdkQuery.supportedCommands();
-        // Map SDK SlashCommand to our SlashCommand (same fields, just normalize)
-        return commands.map((c) => ({
-          name: c.name,
-          description: c.description,
-          argumentHint: c.argumentHint || undefined,
-        }));
+        return (await sdkQuery.supportedCommands()).map(toClaudeCommand);
       },
       setModel: (model?: string) => sdkQuery.setModel(model),
     };

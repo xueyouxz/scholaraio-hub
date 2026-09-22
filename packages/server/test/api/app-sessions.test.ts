@@ -238,6 +238,43 @@ describe.each(["claude", "codex"] as const)("%s application sessions", (name) =>
     expect(server.sessions.detail(id).pendingOptions).toBeUndefined();
   });
 
+  it("lists the provider's own commands for the workspace, then research skills", async () => {
+    provider.commands = [
+      {
+        name: "compact",
+        description: "Compact",
+        source: "provider",
+        trigger: "/",
+        position: "leading",
+      },
+      {
+        name: "review-fixture",
+        description: "Provider skill",
+        source: "provider",
+        trigger: "$",
+        position: "anywhere",
+      },
+    ];
+    const id = await create();
+    const response = await server.app.request(`/api/sessions/${id}/commands`, { headers });
+    expect(response.status).toBe(200);
+    const { commands } = await response.json();
+    expect(commands).toEqual([
+      ...provider.commands,
+      {
+        name: "review-fixture",
+        description: "Test research skill",
+        source: "research",
+        trigger: "/",
+        position: "leading",
+      },
+    ]);
+    expect(provider.commandCwds.at(-1)).toBe(join(root, "sessions", id, "workspace"));
+    const draft = await server.app.request(`/api/sessions/commands?provider=${name}`, { headers });
+    expect(draft.status).toBe(200);
+    expect(provider.commandCwds.at(-1)).toBe(join(root, "draft-workspace"));
+  });
+
   it("accepts only efforts the chosen model offers", async () => {
     provider.models = [
       { id: "fast", name: "Fast", isDefault: true, efforts: [{ id: "low" }] },

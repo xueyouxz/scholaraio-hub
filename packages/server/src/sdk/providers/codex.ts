@@ -8,7 +8,11 @@ import { filterEnvForChildProcess } from "./env-filter.js";
 
 import { execFile, spawn } from "node:child_process";
 import { promisify } from "node:util";
-import type { ModelInfo, ProviderUsageLimits } from "@scholaraio-hub/shared";
+import {
+  ATTACHMENT_LIMITS,
+  type ModelInfo,
+  type ProviderUsageLimits,
+} from "@scholaraio-hub/shared";
 import type { AgentEvent } from "../../agent/events.js";
 import { getLogger } from "../../logging/logger.js";
 import { normalizeCodexRateLimits } from "../../services/ProviderUsageLimitService.js";
@@ -96,9 +100,32 @@ export class CodexProvider implements AgentProvider {
   readonly name = "codex" as const;
   readonly displayName = "Codex";
   readonly capabilities: ProviderCapabilities = {
-    permissionMode: true,
-    thinkingToggle: true,
-    slashCommands: true,
+    // Codex's approval presets; each is the sandbox providerPosture() gives that mode.
+    permissionModes: [
+      {
+        id: "plan",
+        label: "Read Only",
+        description:
+          "Codex can read files in the current workspace. Approval is required to edit files or access the internet.",
+      },
+      {
+        id: "default",
+        label: "Default",
+        description:
+          "Codex can read and edit files in the current workspace, and run commands. Approval is required to access the internet or edit other files.",
+      },
+      {
+        id: "bypassPermissions",
+        label: "Full Access",
+        description:
+          "Codex can edit files outside this workspace and access the internet without asking for approval.",
+      },
+    ],
+    // Codex has no thinking switch: reasoning effort alone ("none" turns it off).
+    thinkingModes: [],
+    slashCommands: "anywhere",
+    contextUsage: "remaining",
+    attachments: ATTACHMENT_LIMITS,
   };
 
   private readonly config: CodexProviderConfig;

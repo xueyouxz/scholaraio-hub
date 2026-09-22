@@ -106,12 +106,43 @@ export interface ProviderInfo {
   user?: { email?: string; name?: string };
   /** Available models for this provider */
   models?: ModelInfo[];
-  /** Whether this provider supports permission modes (default: true for backward compat) */
-  supportsPermissionMode?: boolean;
-  /** Whether this provider supports extended thinking toggle (default: true for backward compat) */
-  supportsThinkingToggle?: boolean;
-  /** Whether this provider supports slash commands (default: false) */
-  supportsSlashCommands?: boolean;
+  /** What the composer offers for this provider, in the provider's own terms. */
+  capabilities: ProviderCapabilities;
+}
+
+/** One permission choice as the provider names it, and the hub mode it maps to. */
+export interface PermissionModeOption {
+  id: PermissionMode;
+  label: string;
+  description?: string;
+}
+
+/** One thinking choice as the provider names it. */
+export interface ThinkingModeOption {
+  id: ThinkingMode;
+  label: string;
+}
+
+/** Hub-wide limits on files attached to one message. */
+export const ATTACHMENT_LIMITS = { maxBytes: 25 * 1024 * 1024, maxCount: 10 } as const;
+
+/**
+ * What a provider offers, as one descriptor instead of `supportsX` booleans.
+ * Choices carry the provider's own names; the UI renders them and hard-codes none.
+ */
+export interface ProviderCapabilities {
+  /** Permission choices in the provider's order; empty when it has none. */
+  permissionModes: PermissionModeOption[];
+  /** Thinking switch choices; empty when the provider only has effort levels. */
+  thinkingModes: ThinkingModeOption[];
+  /**
+   * Where the provider honours a slash command: only at the start of the
+   * message, or at any word (skills referenced mid-sentence).
+   */
+  slashCommands: "leading" | "anywhere";
+  /** Whether the provider reports context as the share used or the share left. */
+  contextUsage: "used" | "remaining";
+  attachments: { maxBytes: number; maxCount: number };
 }
 
 export type ProviderUsageLimitWindowName =

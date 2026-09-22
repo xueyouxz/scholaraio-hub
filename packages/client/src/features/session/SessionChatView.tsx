@@ -175,8 +175,7 @@ export function SessionChatView({ initial }: { initial: StoredSession }) {
                       defaultEffort={modelInfo?.defaultEffort}
                       onChange={(value) => session.changeOptions.mutate(value)}
                       disabled={optionsLocked}
-                      supportsThinking={currentTool?.supportsThinkingToggle ?? true}
-                      supportsPermission={currentTool?.supportsPermissionMode ?? true}
+                      capabilities={currentTool?.capabilities}
                     />
                   }
                   trailing={

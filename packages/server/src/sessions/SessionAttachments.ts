@@ -1,11 +1,15 @@
 import { randomUUID } from "node:crypto";
 import { mkdir, readFile, realpath, stat, writeFile } from "node:fs/promises";
 import path from "node:path";
-import type { SessionAttachment, UploadedFile } from "@scholaraio-hub/shared";
+import {
+  ATTACHMENT_LIMITS,
+  type SessionAttachment,
+  type UploadedFile,
+} from "@scholaraio-hub/shared";
 import type { SessionStore } from "./SessionStore.js";
 
 export class AttachmentError extends Error {}
-export const MAX_ATTACHMENT_BYTES = 25 * 1024 * 1024;
+export const MAX_ATTACHMENT_BYTES = ATTACHMENT_LIMITS.maxBytes;
 
 /** Only opaque IDs cross the HTTP boundary; CLI paths are resolved inside the owned workspace. */
 export class SessionAttachments {

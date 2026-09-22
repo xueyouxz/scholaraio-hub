@@ -1,3 +1,4 @@
+import { ATTACHMENT_LIMITS, type ProviderCapabilities } from "@scholaraio-hub/shared";
 import type { AgentEvent } from "../../src/agent/events.js";
 import { MessageQueue } from "../../src/sdk/messageQueue.js";
 import type {
@@ -28,12 +29,26 @@ export interface ScriptedProviderOptions {
  * This replaces the old bespoke mock SDK interfaces — tests now exercise the
  * same provider path as production.
  */
+/** Capabilities for fake providers: every hub permission mode, no thinking switch. */
+export const TEST_CAPABILITIES: ProviderCapabilities = {
+  permissionModes: [
+    { id: "default", label: "Default" },
+    { id: "acceptEdits", label: "Accept edits" },
+    { id: "plan", label: "Plan Mode" },
+    { id: "bypassPermissions", label: "Bypass Permissions" },
+  ],
+  thinkingModes: [],
+  slashCommands: "leading",
+  contextUsage: "used",
+  attachments: ATTACHMENT_LIMITS,
+};
+
 export function createScriptedProvider(options: ScriptedProviderOptions = {}): AgentProvider {
   let nextSession = 1;
   return {
     name: "claude",
     displayName: "Scripted",
-    capabilities: { permissionMode: true, thinkingToggle: true, slashCommands: false },
+    capabilities: TEST_CAPABILITIES,
     isInstalled: async () => true,
     isAuthenticated: async () => true,
     getAuthStatus: async (): Promise<AuthStatus> => ({
@@ -84,7 +99,7 @@ export function providerFromSessionFactory(
   return {
     name,
     displayName: "Scripted",
-    capabilities: { permissionMode: true, thinkingToggle: true, slashCommands: false },
+    capabilities: TEST_CAPABILITIES,
     isInstalled: async () => true,
     isAuthenticated: async () => true,
     getAuthStatus: async (): Promise<AuthStatus> => ({

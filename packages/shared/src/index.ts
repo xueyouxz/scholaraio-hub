@@ -19,6 +19,9 @@ export type {
   ProviderUsageLimitWindowName,
   ModelInfo,
   EffortOption,
+  PermissionModeOption,
+  ThinkingModeOption,
+  ProviderCapabilities,
   SlashCommand,
   ScholaraioSkill,
   ScholaraioSkillDetail,
@@ -35,6 +38,7 @@ export type {
 } from "./types.js";
 export {
   ALL_PERMISSION_MODES,
+  ATTACHMENT_LIMITS,
   thinkingModeToConfig,
   readLegacyThinking,
 } from "./types.js";

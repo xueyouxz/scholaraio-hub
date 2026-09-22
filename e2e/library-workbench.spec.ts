@@ -343,12 +343,12 @@ test("original composer permission menu saves settings and is not clipped", asyn
   await expect(page.getByRole("button", { name: "发送", exact: true })).toBeVisible();
   const id = new URL(page.url()).pathname.split("/").at(-1);
   await page.getByRole("button", { name: "Default", exact: true }).click();
-  await page.getByRole("button", { name: "Plan", exact: true }).click();
+  await page.getByRole("menuitemradio", { name: "Plan Mode", exact: true }).click();
   await expect
     .poll(async () => (await (await request.get(`/api/sessions/${id}`)).json()).permissionMode)
     .toBe("plan");
-  await page.getByRole("button", { name: "Plan", exact: true }).click();
-  const option = page.getByRole("button", { name: "Accept edits", exact: true });
+  await page.getByRole("button", { name: "Plan Mode", exact: true }).click();
+  const option = page.getByRole("menuitemradio", { name: "Accept edits", exact: true });
   await expect(option).toBeVisible();
   await option.click();
   await expect

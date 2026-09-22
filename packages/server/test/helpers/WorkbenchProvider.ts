@@ -5,6 +5,7 @@ import { MessageQueue } from "../../src/sdk/messageQueue.js";
 import { ClaudeEventAdapter } from "../../src/sdk/providers/claude-events.js";
 import type { AgentProvider, StartSessionOptions } from "../../src/sdk/providers/types.js";
 import type { SDKMessage } from "../../src/sdk/types.js";
+import { TEST_CAPABILITIES } from "./scriptedProvider.js";
 
 /** The fake speaks Agent SDK wire format; translate it as the real provider does. */
 async function* replayThroughAdapter(
@@ -17,11 +18,7 @@ async function* replayThroughAdapter(
 /** Deterministic CLI boundary for protocol and browser tests. */
 export class WorkbenchProvider implements AgentProvider {
   readonly displayName = "Test provider";
-  readonly capabilities = {
-    permissionMode: true,
-    thinkingToggle: false,
-    slashCommands: false,
-  };
+  readonly capabilities = TEST_CAPABILITIES;
   readonly calls: StartSessionOptions[] = [];
   readonly inputs: string[] = [];
   interruptions = 0;

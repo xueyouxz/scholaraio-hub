@@ -2,7 +2,7 @@ import type { UIMessage } from "ai";
 import { z } from "zod";
 import type { InputRequest } from "../app-types.js";
 import type { LibraryCitation } from "../library.js";
-import type { PermissionMode, ThinkingMode } from "../types.js";
+import { ATTACHMENT_LIMITS, type PermissionMode, type ThinkingMode } from "../types.js";
 
 /**
  * Something the user should see that is not part of the answer.
@@ -124,7 +124,7 @@ export const SendSessionMessageSchema = z
   .object({
     id: z.string().min(1).max(200),
     text: z.string().trim().max(50000),
-    attachmentIds: z.array(z.string().uuid()).max(10).default([]),
+    attachmentIds: z.array(z.string().uuid()).max(ATTACHMENT_LIMITS.maxCount).default([]),
   })
   .refine(
     (input) => input.text.length > 0 || input.attachmentIds.length > 0,

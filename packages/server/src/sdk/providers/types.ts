@@ -110,19 +110,7 @@ export interface AgentSession {
   setModel?: (model?: string) => Promise<void>;
 }
 
-/**
- * What a provider supports, as a single descriptor rather than a growing list
- * of `supportsX` booleans spread across the interface, the HTTP payload and
- * the UI. Add a capability here and every consumer has to acknowledge it.
- */
-export interface ProviderCapabilities {
-  /** Permission modes (default / acceptEdits / plan / bypass) are meaningful. */
-  permissionMode: boolean;
-  /** Extended thinking can be toggled per session. */
-  thinkingToggle: boolean;
-  /** Slash commands can be listed and invoked. */
-  slashCommands: boolean;
-}
+export type { ProviderCapabilities } from "@scholaraio-hub/shared";
 
 /**
  * Agent provider interface.
@@ -134,7 +122,7 @@ export interface AgentProvider {
   /** Human-readable display name */
   readonly displayName: string;
   /** What this provider can do, declared in one place. */
-  readonly capabilities: ProviderCapabilities;
+  readonly capabilities: import("@scholaraio-hub/shared").ProviderCapabilities;
 
   /**
    * Check if this provider is installed and available.

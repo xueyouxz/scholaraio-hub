@@ -369,8 +369,9 @@ function NewSessionForm({
               defaultEffort={modelInfo?.defaultEffort}
               onChange={(value) => setExecution((previous) => ({ ...previous, ...value }))}
               disabled={submitting}
-              supportsPermission={false}
-              supportsThinking={tool?.supportsThinkingToggle ?? true}
+              capabilities={
+                tool && { permissionModes: [], thinkingModes: tool.capabilities.thinkingModes }
+              }
             />
           }
           trailing={

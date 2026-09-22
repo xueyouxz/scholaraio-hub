@@ -12,7 +12,12 @@ import {
   type SpawnedProcess,
   query,
 } from "@anthropic-ai/claude-agent-sdk";
-import type { ModelInfo, ProviderUsageLimits, SlashCommand } from "@scholaraio-hub/shared";
+import {
+  ATTACHMENT_LIMITS,
+  type ModelInfo,
+  type ProviderUsageLimits,
+  type SlashCommand,
+} from "@scholaraio-hub/shared";
 import type { AgentEvent } from "../../agent/events.js";
 import { normalizeClaudeOAuthUsage } from "../../services/ProviderUsageLimitService.js";
 import { logSDKMessage } from "../messageLogger.js";
@@ -172,9 +177,20 @@ export class ClaudeProvider implements AgentProvider {
   readonly name: ProviderName = "claude";
   readonly displayName: string = "Claude";
   readonly capabilities: ProviderCapabilities = {
-    permissionMode: true,
-    thinkingToggle: true,
-    slashCommands: true,
+    // Claude Code's own mode titles, in its Shift+Tab order.
+    permissionModes: [
+      { id: "default", label: "Default" },
+      { id: "acceptEdits", label: "Accept edits" },
+      { id: "plan", label: "Plan Mode" },
+      { id: "bypassPermissions", label: "Bypass Permissions" },
+    ],
+    thinkingModes: [
+      { id: "adaptive", label: "Thinking on" },
+      { id: "off", label: "Thinking off" },
+    ],
+    slashCommands: "leading",
+    contextUsage: "used",
+    attachments: ATTACHMENT_LIMITS,
   };
 
   /**

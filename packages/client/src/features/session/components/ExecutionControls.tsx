@@ -1,4 +1,9 @@
-import type { EffortOption, PermissionMode, ThinkingMode } from "@scholaraio-hub/shared";
+import type {
+  EffortOption,
+  PermissionMode,
+  ProviderCapabilities,
+  ThinkingMode,
+} from "@scholaraio-hub/shared";
 import { Brain, ChevronDown, Gauge } from "lucide-react";
 import type { SessionOptions } from "../../../core/library";
 import { ModeSelector } from "./ModeSelector";
@@ -52,8 +57,7 @@ export function ExecutionControls({
   defaultEffort,
   onChange,
   disabled,
-  supportsThinking = true,
-  supportsPermission = true,
+  capabilities,
 }: {
   permissionMode: PermissionMode;
   thinking: ThinkingMode;
@@ -63,34 +67,35 @@ export function ExecutionControls({
   defaultEffort?: string;
   onChange: (value: SessionOptions) => void;
   disabled?: boolean;
-  supportsThinking?: boolean;
-  supportsPermission?: boolean;
+  /** Unknown until the provider list loads; nothing provider-specific shows before. */
+  capabilities?: Pick<ProviderCapabilities, "permissionModes" | "thinkingModes">;
 }) {
+  const permissionModes = capabilities?.permissionModes ?? [];
+  const thinkingModes = capabilities?.thinkingModes ?? [];
+  const thinkingLabel = thinkingModes.find((option) => option.id === thinking)?.label;
   const defaultLabel = defaultEffort ? `默认 (${defaultEffort})` : "默认";
   return (
     <>
-      {supportsPermission ? (
+      {permissionModes.length > 0 ? (
         <ModeSelector
           mode={permissionMode}
+          options={permissionModes}
           disabled={disabled}
           onModeChange={(permissionMode) => onChange({ permissionMode })}
         />
       ) : null}
-      {supportsThinking ? (
+      {thinkingModes.length > 0 ? (
         <PillSelect
           label="Thinking mode"
           icon={<Brain size={12} />}
-          text={thinking === "off" ? "No thinking" : "Adaptive"}
+          text={thinkingLabel ?? thinking}
           value={thinking}
           disabled={disabled}
-          options={[
-            { value: "adaptive", label: "Adaptive" },
-            { value: "off", label: "No thinking" },
-          ]}
+          options={thinkingModes.map((option) => ({ value: option.id, label: option.label }))}
           onChange={(value) => onChange({ thinking: value as ThinkingMode })}
         />
       ) : null}
-      {efforts.length > 0 && thinking !== "off" ? (
+      {efforts.length > 0 && !(thinkingModes.length > 0 && thinking === "off") ? (
         <PillSelect
           label="Effort"
           icon={<Gauge size={12} />}

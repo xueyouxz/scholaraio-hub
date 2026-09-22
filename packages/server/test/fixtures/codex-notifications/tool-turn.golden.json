@@ -1,194 +1,85 @@
 {
-  "messages": [
+  "events": [
     {
-      "type": "assistant",
-      "session_id": "thread-golden",
-      "uuid": "item-cmd-turn-2",
-      "message": {
-        "role": "assistant",
-        "content": [
-          {
-            "type": "tool_use",
-            "id": "item-cmd",
-            "name": "Grep",
-            "input": {
-              "pattern": "packages",
-              "output_mode": "content"
-            }
-          }
-        ]
+      "type": "session.started",
+      "sessionId": "thread-golden"
+    },
+    {
+      "type": "tool.call",
+      "callId": "item-cmd",
+      "name": "Grep",
+      "input": {
+        "pattern": "packages",
+        "output_mode": "content"
       }
     },
     {
-      "type": "assistant",
-      "session_id": "thread-golden",
-      "uuid": "item-cmd-turn-2",
-      "message": {
-        "role": "assistant",
-        "content": [
-          {
-            "type": "tool_use",
-            "id": "item-cmd",
-            "name": "Grep",
-            "input": {
-              "pattern": "packages",
-              "output_mode": "content"
-            }
-          }
-        ]
-      }
-    },
-    {
-      "type": "user",
-      "session_id": "thread-golden",
-      "uuid": "item-cmd-turn-2-result",
-      "message": {
-        "role": "user",
-        "content": [
-          {
-            "type": "tool_result",
-            "tool_use_id": "item-cmd",
-            "content": "packages/server/src/app.ts\npackages/client/src/main.tsx"
-          }
-        ]
-      },
-      "toolUseResult": {
+      "type": "tool.result",
+      "callId": "item-cmd",
+      "output": "packages/server/src/app.ts\npackages/client/src/main.tsx",
+      "isError": false,
+      "detail": {
         "mode": "files_with_matches",
         "filenames": ["packages/server/src/app.ts", "packages/client/src/main.tsx"],
         "numFiles": 2
       }
     },
     {
-      "type": "assistant",
-      "session_id": "thread-golden",
-      "uuid": "item-edit-turn-2",
-      "message": {
-        "role": "assistant",
-        "content": [
+      "type": "tool.call",
+      "callId": "item-edit",
+      "name": "Edit",
+      "input": {
+        "changes": [
           {
-            "type": "tool_use",
-            "id": "item-edit",
-            "name": "Edit",
-            "input": {
-              "changes": [
-                {
-                  "path": "packages/server/src/app.ts",
-                  "kind": "update",
-                  "diff": "@@ -1 +1 @@\n-old\n+new\n"
-                }
-              ],
-              "file_path": "packages/server/src/app.ts"
-            }
+            "path": "packages/server/src/app.ts",
+            "kind": "update",
+            "diff": "@@ -1 +1 @@\n-old\n+new\n"
           }
-        ]
+        ],
+        "file_path": "packages/server/src/app.ts"
       }
     },
     {
-      "type": "user",
-      "session_id": "thread-golden",
-      "uuid": "item-edit-turn-2-result",
-      "message": {
-        "role": "user",
-        "content": [
-          {
-            "type": "tool_result",
-            "tool_use_id": "item-edit",
-            "content": "File changes applied:\nupdate: packages/server/src/app.ts"
-          }
-        ]
+      "type": "tool.result",
+      "callId": "item-edit",
+      "output": "File changes applied:\nupdate: packages/server/src/app.ts",
+      "isError": false
+    },
+    {
+      "type": "tool.call",
+      "callId": "item-mcp",
+      "name": "library:search",
+      "input": {
+        "query": "diffusion"
       }
     },
     {
-      "type": "assistant",
-      "session_id": "thread-golden",
-      "uuid": "item-mcp-turn-2",
-      "message": {
-        "role": "assistant",
-        "content": [
-          {
-            "type": "tool_use",
-            "id": "item-mcp",
-            "name": "library:search",
-            "input": {
-              "query": "diffusion"
-            }
-          }
-        ]
+      "type": "tool.result",
+      "callId": "item-mcp",
+      "output": "{\"hits\":2}",
+      "isError": false
+    },
+    {
+      "type": "tool.call",
+      "callId": "item-search",
+      "name": "WebSearch",
+      "input": {
+        "query": "codex app-server"
       }
     },
     {
-      "type": "user",
-      "session_id": "thread-golden",
-      "uuid": "item-mcp-turn-2-result",
-      "message": {
-        "role": "user",
-        "content": [
-          {
-            "type": "tool_result",
-            "tool_use_id": "item-mcp",
-            "content": "{\"hits\":2}"
-          }
-        ]
-      }
-    },
-    {
-      "type": "system",
-      "subtype": "todo_list",
-      "session_id": "thread-golden",
-      "uuid": "item-todo-turn-2",
-      "items": [
-        {
-          "text": "读论文",
-          "completed": true
-        },
-        {
-          "text": "写总结",
-          "completed": false
-        }
-      ]
-    },
-    {
-      "type": "assistant",
-      "session_id": "thread-golden",
-      "uuid": "item-search-turn-2",
-      "message": {
-        "role": "assistant",
-        "content": [
-          {
-            "type": "tool_use",
-            "id": "item-search",
-            "name": "WebSearch",
-            "input": {
-              "query": "codex app-server"
-            }
-          }
-        ]
-      }
-    },
-    {
-      "type": "user",
-      "session_id": "thread-golden",
-      "uuid": "item-search-turn-2-result",
-      "message": {
-        "role": "user",
-        "content": [
-          {
-            "type": "tool_result",
-            "tool_use_id": "item-search",
-            "content": "Search completed for: codex app-server"
-          }
-        ]
-      },
-      "toolUseResult": {
+      "type": "tool.result",
+      "callId": "item-search",
+      "output": "Search completed for: codex app-server",
+      "isError": false,
+      "detail": {
         "query": "codex app-server",
         "results": [],
         "durationSeconds": 0
       }
     },
     {
-      "type": "system",
-      "subtype": "turn_complete",
-      "session_id": "thread-golden"
+      "type": "turn.completed"
     }
   ],
   "chunks": [

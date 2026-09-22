@@ -33,6 +33,7 @@
       "params": {
         "threadId": "thread-golden",
         "turnId": "turn-3",
+        "willRetry": false,
         "error": { "message": "Codex turn aborted" }
       }
     }

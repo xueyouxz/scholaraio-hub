@@ -1,12 +1,12 @@
 import { describe, expect, it, vi } from "vitest";
+import type { AgentEvent } from "../src/agent/events.js";
 import { MessageQueue } from "../src/sdk/messageQueue.js";
 import { resolveSessionControls } from "../src/sdk/providers/session-capabilities.js";
 import type { AgentSession } from "../src/sdk/providers/types.js";
-import type { SDKMessage } from "../src/sdk/types.js";
 import { Process } from "../src/supervisor/Process.js";
 import type { ProcessEvent } from "../src/supervisor/types.js";
 
-function createMockIterator(messages: SDKMessage[]): AsyncIterator<SDKMessage> {
+function createMockIterator(messages: AgentEvent[]): AsyncIterator<AgentEvent> {
   let index = 0;
   return {
     async next() {
@@ -21,17 +21,14 @@ function createMockIterator(messages: SDKMessage[]): AsyncIterator<SDKMessage> {
 describe("Process", () => {
   it("releases a live idle worker while retaining its native session ID", async () => {
     const abort = vi.fn();
-    const process = new Process(
-      createMockIterator([{ type: "result", session_id: "native-idle" }]),
-      {
-        projectPath: "/test",
-        projectId: "project",
-        sessionId: "native-idle",
-        idleTimeoutMs: 20,
-        abortFn: abort,
-        isProcessAlive: () => true,
-      },
-    );
+    const process = new Process(createMockIterator([{ type: "turn.completed" }]), {
+      projectPath: "/test",
+      projectId: "project",
+      sessionId: "native-idle",
+      idleTimeoutMs: 20,
+      abortFn: abort,
+      isProcessAlive: () => true,
+    });
     await expect.poll(() => process.state.type).toBe("terminated");
     expect(abort).toHaveBeenCalledOnce();
     expect(process.sessionId).toBe("native-idle");
@@ -39,10 +36,10 @@ describe("Process", () => {
   });
   describe("event subscription", () => {
     it("emits message events", async () => {
-      const messages: SDKMessage[] = [
-        { type: "system", subtype: "init", session_id: "sess-1" },
-        { type: "assistant", message: { content: "Hi" } },
-        { type: "result", session_id: "sess-1" },
+      const messages: AgentEvent[] = [
+        { type: "session.started", sessionId: "sess-1" },
+        { type: "text.delta", blockId: "b1", delta: "Hi" },
+        { type: "turn.completed" },
       ];
 
       const iterator = createMockIterator(messages);
@@ -53,10 +50,10 @@ describe("Process", () => {
         idleTimeoutMs: 100,
       });
 
-      const received: SDKMessage[] = [];
+      const received: AgentEvent[] = [];
       process.subscribe((event) => {
-        if (event.type === "message") {
-          received.push(event.message);
+        if (event.type === "agent") {
+          received.push(event.event);
         }
       });
 
@@ -64,15 +61,17 @@ describe("Process", () => {
       await new Promise((resolve) => setTimeout(resolve, 50));
 
       expect(received).toHaveLength(3);
-      expect(received[0]?.type).toBe("system");
-      expect(received[1]?.type).toBe("assistant");
-      expect(received[2]?.type).toBe("result");
+      expect(received.map((event) => event.type)).toEqual([
+        "session.started",
+        "text.delta",
+        "turn.completed",
+      ]);
     });
 
     it("transitions to idle after result", async () => {
-      const messages: SDKMessage[] = [
-        { type: "system", subtype: "init", session_id: "sess-1" },
-        { type: "result", session_id: "sess-1" },
+      const messages: AgentEvent[] = [
+        { type: "session.started", sessionId: "sess-1" },
+        { type: "turn.completed" },
       ];
 
       const iterator = createMockIterator(messages);
@@ -89,9 +88,9 @@ describe("Process", () => {
     });
 
     it("emits state-change events", async () => {
-      const messages: SDKMessage[] = [
-        { type: "system", subtype: "init", session_id: "sess-1" },
-        { type: "result", session_id: "sess-1" },
+      const messages: AgentEvent[] = [
+        { type: "session.started", sessionId: "sess-1" },
+        { type: "turn.completed" },
       ];
 
       const iterator = createMockIterator(messages);
@@ -119,81 +118,11 @@ describe("Process", () => {
         expect(lastChange.state.type).toBe("idle");
       }
     });
-
-    it("accumulates streaming text once at the process source", async () => {
-      const messages: SDKMessage[] = [
-        {
-          type: "stream_event",
-          event: { type: "message_start", message: { id: "msg-stream-1" } },
-        },
-        {
-          type: "stream_event",
-          event: {
-            type: "content_block_delta",
-            delta: { type: "text_delta", text: "Hel" },
-          },
-        },
-        {
-          type: "stream_event",
-          event: {
-            type: "content_block_delta",
-            delta: { type: "text_delta", text: "lo" },
-          },
-        },
-      ];
-
-      const iterator = createMockIterator(messages);
-      const process = new Process(iterator, {
-        projectPath: "/test",
-        projectId: "proj-1",
-        sessionId: "sess-1",
-        idleTimeoutMs: 100,
-      });
-
-      process.subscribe(() => {});
-      process.subscribe(() => {});
-
-      await new Promise((resolve) => setTimeout(resolve, 50));
-
-      expect(process.getStreamingContent()).toEqual({
-        messageId: "msg-stream-1",
-        text: "Hello",
-      });
-    });
-
-    it("clears streaming catch-up text when the stream stops", async () => {
-      const messages: SDKMessage[] = [
-        {
-          type: "stream_event",
-          event: { type: "message_start", message: { id: "msg-stream-1" } },
-        },
-        {
-          type: "stream_event",
-          event: {
-            type: "content_block_delta",
-            delta: { type: "text_delta", text: "Hello" },
-          },
-        },
-        { type: "stream_event", event: { type: "message_stop" } },
-      ];
-
-      const iterator = createMockIterator(messages);
-      const process = new Process(iterator, {
-        projectPath: "/test",
-        projectId: "proj-1",
-        sessionId: "sess-1",
-        idleTimeoutMs: 100,
-      });
-
-      await new Promise((resolve) => setTimeout(resolve, 50));
-
-      expect(process.getStreamingContent()).toBeNull();
-    });
   });
 
   describe("message queue", () => {
     it("queues messages and returns position", async () => {
-      const iterator = createMockIterator([{ type: "system", session_id: "sess-1" }]);
+      const iterator = createMockIterator([{ type: "session.started", sessionId: "sess-1" }]);
 
       const process = new Process(iterator, {
         projectPath: "/test",
@@ -212,7 +141,7 @@ describe("Process", () => {
     });
 
     it("reports queue depth", async () => {
-      const iterator = createMockIterator([{ type: "system", session_id: "sess-1" }]);
+      const iterator = createMockIterator([{ type: "session.started", sessionId: "sess-1" }]);
 
       const process = new Process(iterator, {
         projectPath: "/test",
@@ -229,7 +158,7 @@ describe("Process", () => {
 
     it("prefers steerFn for in-turn messages when available", async () => {
       let resolveIterator: () => void;
-      const iterator: AsyncIterator<SDKMessage> = {
+      const iterator: AsyncIterator<AgentEvent> = {
         next: () =>
           new Promise((resolve) => {
             resolveIterator = () => resolve({ done: true, value: undefined });
@@ -261,7 +190,7 @@ describe("Process", () => {
 
     it("falls back to queue when steerFn returns false", async () => {
       let resolveIterator: () => void;
-      const iterator: AsyncIterator<SDKMessage> = {
+      const iterator: AsyncIterator<AgentEvent> = {
         next: () =>
           new Promise((resolve) => {
             resolveIterator = () => resolve({ done: true, value: undefined });
@@ -357,40 +286,6 @@ describe("Process", () => {
 
       // Listener should have been called once for complete event
       expect(completeCount).toBe(1);
-    });
-  });
-
-  describe("input request handling", () => {
-    it("transitions to waiting-input on input_request message", async () => {
-      const messages: SDKMessage[] = [
-        { type: "system", subtype: "init", session_id: "sess-1" },
-        {
-          type: "system",
-          subtype: "input_request",
-          input_request: {
-            id: "req-123",
-            type: "tool-approval",
-            prompt: "Allow file write?",
-          },
-        },
-      ];
-
-      const iterator = createMockIterator(messages);
-      const process = new Process(iterator, {
-        projectPath: "/test",
-        projectId: "proj-1",
-        sessionId: "sess-1",
-        idleTimeoutMs: 100,
-      });
-
-      await new Promise((resolve) => setTimeout(resolve, 50));
-
-      expect(process.state.type).toBe("waiting-input");
-      if (process.state.type === "waiting-input") {
-        expect(process.state.request.id).toBe("req-123");
-        expect(process.state.request.type).toBe("tool-approval");
-        expect(process.state.request.prompt).toBe("Allow file write?");
-      }
     });
   });
 
@@ -999,90 +894,9 @@ describe("Process", () => {
     });
   });
 
-  describe("messageHistory", () => {
-    it("should add user messages to history for real SDK sessions (with queue)", async () => {
-      const iterator = createMockIterator([
-        { type: "system", subtype: "init", session_id: "sess-1" },
-      ]);
-      const queue = new MessageQueue();
-
-      const process = new Process(iterator, {
-        projectPath: "/test",
-        projectId: "proj-1",
-        sessionId: "sess-1",
-        idleTimeoutMs: 100,
-        queue, // Real SDK provides queue
-      });
-
-      // Queue a user message
-      process.queueMessage({ text: "test message" });
-
-      // User message SHOULD be in history for replay to late-joining clients.
-      // Client-side deduplication (mergeStreamMessage, mergeJSONLMessages) handles
-      // any duplicates when JSONL is eventually fetched.
-      const userMessages = process.getMessageHistory().filter((m) => m.type === "user");
-      expect(userMessages).toHaveLength(1);
-      expect(userMessages[0]?.message?.content).toBe("test message");
-    });
-
-    it("should add user messages to history for mock SDK sessions (no queue)", async () => {
-      const iterator = createMockIterator([
-        { type: "system", subtype: "init", session_id: "sess-1" },
-      ]);
-
-      const process = new Process(iterator, {
-        projectPath: "/test",
-        projectId: "proj-1",
-        sessionId: "sess-1",
-        idleTimeoutMs: 100,
-        // No queue = mock SDK
-      });
-
-      // Queue a user message
-      process.queueMessage({ text: "test message" });
-
-      // User message SHOULD be in history (mock SDK needs replay)
-      const userMessages = process.getMessageHistory().filter((m) => m.type === "user");
-      expect(userMessages).toHaveLength(1);
-      expect(userMessages[0]?.message?.content).toBe("test message");
-    });
-
-    it("should always emit user messages via stream regardless of SDK type", async () => {
-      const iterator = createMockIterator([
-        { type: "system", subtype: "init", session_id: "sess-1" },
-      ]);
-      const queue = new MessageQueue();
-
-      const process = new Process(iterator, {
-        projectPath: "/test",
-        projectId: "proj-1",
-        sessionId: "sess-1",
-        idleTimeoutMs: 100,
-        queue, // Real SDK
-      });
-
-      const emittedMessages: SDKMessage[] = [];
-      process.subscribe((event) => {
-        if (event.type === "message") {
-          emittedMessages.push(event.message);
-        }
-      });
-
-      // Queue a user message
-      process.queueMessage({ text: "test message" });
-
-      // Message should still be emitted for live stream subscribers
-      const userEmits = emittedMessages.filter((m) => m.type === "user");
-      expect(userEmits).toHaveLength(1);
-    });
-
-    it("should include attachment info in user message content", async () => {
-      const iterator = createMockIterator([
-        { type: "system", subtype: "init", session_id: "sess-1" },
-      ]);
-      const queue = new MessageQueue();
-
-      const process = new Process(iterator, {
+  describe("first user message", () => {
+    const newProcess = (queue?: MessageQueue) =>
+      new Process(createMockIterator([{ type: "session.started", sessionId: "sess-1" }]), {
         projectPath: "/test",
         projectId: "proj-1",
         sessionId: "sess-1",
@@ -1090,47 +904,17 @@ describe("Process", () => {
         queue,
       });
 
-      // Queue a user message with attachments
+    it("remembers only the first message, for the optimistic session title", () => {
+      const process = newProcess(new MessageQueue());
+      process.queueMessage({ text: "first question" });
+      process.queueMessage({ text: "follow-up" });
+      expect(process.firstUserText).toBe("first question");
+    });
+
+    it("records exactly what the provider receives, attachments included", async () => {
+      const queue = new MessageQueue();
+      const process = newProcess(queue);
       process.queueMessage({
-        text: "Here is a screenshot",
-        attachments: [
-          {
-            id: "file-1",
-            originalName: "screenshot.png",
-            size: 1024,
-            mimeType: "image/png",
-            path: "/uploads/screenshot.png",
-          },
-        ],
-      });
-
-      // User message should include attachment info in content
-      const userMessages = process.getMessageHistory().filter((m) => m.type === "user");
-      expect(userMessages).toHaveLength(1);
-      const content = userMessages[0]?.message?.content as string;
-      expect(content).toContain("Here is a screenshot");
-      expect(content).toContain("User uploaded files:");
-      expect(content).toContain("screenshot.png");
-      expect(content).toContain("1.0 KB");
-      expect(content).toContain("image/png");
-      expect(content).toContain("/uploads/screenshot.png");
-    });
-
-    it("should produce identical content format as MessageQueue for deduplication", async () => {
-      const iterator = createMockIterator([
-        { type: "system", subtype: "init", session_id: "sess-1" },
-      ]);
-      const queue = new MessageQueue();
-
-      const process = new Process(iterator, {
-        projectPath: "/test",
-        projectId: "proj-1",
-        sessionId: "sess-1",
-        idleTimeoutMs: 100,
-        queue,
-      });
-
-      const testMessage = {
         text: "Here is a screenshot",
         attachments: [
           {
@@ -1143,34 +927,33 @@ describe("Process", () => {
           {
             id: "file-2",
             originalName: "document.pdf",
-            size: 2048576, // ~2 MB
+            size: 2048576,
             mimeType: "application/pdf",
             path: "/uploads/document.pdf",
           },
         ],
-      };
+      });
 
-      // Queue the message through Process
-      process.queueMessage(testMessage);
+      const sent = await queue.generator().next();
+      expect(process.firstUserText).toBe(sent.value?.message?.content);
+      expect(process.firstUserText).toContain("User uploaded files:");
+      expect(process.firstUserText).toContain("1.0 KB");
+    });
 
-      // Get what Process put in history
-      const historyContent = process.getMessageHistory()[0]?.message?.content as string;
-
-      // Get what MessageQueue would send to SDK via its generator
-      const gen = queue.generator();
-      const sdkMessage = await gen.next();
-      const sdkContent = sdkMessage.value?.message?.content as string;
-
-      // Both should produce identical content for deduplication to work
-      expect(historyContent).toBe(sdkContent);
+    it("does not echo user input onto the agent event stream", () => {
+      const process = newProcess(new MessageQueue());
+      const agentEvents: AgentEvent[] = [];
+      process.subscribe((event) => {
+        if (event.type === "agent") agentEvents.push(event.event);
+      });
+      process.queueMessage({ text: "test message" });
+      expect(agentEvents).toEqual([]);
     });
   });
 
   describe("process termination", () => {
     it("isTerminated returns false for new process", async () => {
-      const iterator = createMockIterator([
-        { type: "system", subtype: "init", session_id: "sess-1" },
-      ]);
+      const iterator = createMockIterator([{ type: "session.started", sessionId: "sess-1" }]);
 
       const process = new Process(iterator, {
         projectPath: "/test",
@@ -1186,8 +969,8 @@ describe("Process", () => {
     it("queueMessage returns error when process is terminated", async () => {
       // Create an iterator that throws a process termination error
       const error = new Error("ProcessTransport is not ready for writing");
-      async function* failingIterator(): AsyncIterator<SDKMessage> {
-        yield { type: "system", subtype: "init", session_id: "sess-1" };
+      async function* failingIterator(): AsyncIterator<AgentEvent> {
+        yield { type: "session.started", sessionId: "sess-1" };
         throw error;
       }
 
@@ -1212,8 +995,8 @@ describe("Process", () => {
 
     it("emits terminated event when process dies", async () => {
       const error = new Error("ProcessTransport is not ready for writing");
-      async function* failingIterator(): AsyncIterator<SDKMessage> {
-        yield { type: "system", subtype: "init", session_id: "sess-1" };
+      async function* failingIterator(): AsyncIterator<AgentEvent> {
+        yield { type: "session.started", sessionId: "sess-1" };
         throw error;
       }
 
@@ -1242,8 +1025,8 @@ describe("Process", () => {
 
     it("getInfo returns terminated state", async () => {
       const error = new Error("process exited");
-      async function* failingIterator(): AsyncIterator<SDKMessage> {
-        yield { type: "system", subtype: "init", session_id: "sess-1" };
+      async function* failingIterator(): AsyncIterator<AgentEvent> {
+        yield { type: "session.started", sessionId: "sess-1" };
         throw error;
       }
 
@@ -1266,9 +1049,7 @@ describe("Process", () => {
 
   describe("hold mode", () => {
     it("setHold(true) transitions to hold state", async () => {
-      const iterator = createMockIterator([
-        { type: "system", subtype: "init", session_id: "sess-1" },
-      ]);
+      const iterator = createMockIterator([{ type: "session.started", sessionId: "sess-1" }]);
 
       const process = new Process(iterator, {
         projectPath: "/test",
@@ -1288,9 +1069,7 @@ describe("Process", () => {
     });
 
     it("setHold(false) transitions back to running", async () => {
-      const iterator = createMockIterator([
-        { type: "system", subtype: "init", session_id: "sess-1" },
-      ]);
+      const iterator = createMockIterator([{ type: "session.started", sessionId: "sess-1" }]);
 
       const process = new Process(iterator, {
         projectPath: "/test",
@@ -1374,8 +1153,8 @@ describe("Process", () => {
 
     it("pauses iterator consumption when held", async () => {
       // Create an iterator that we can control
-      let resolveNext: ((value: IteratorResult<SDKMessage>) => void) | null = null;
-      const controllableIterator: AsyncIterator<SDKMessage> = {
+      let resolveNext: ((value: IteratorResult<AgentEvent>) => void) | null = null;
+      const controllableIterator: AsyncIterator<AgentEvent> = {
         next() {
           return new Promise((resolve) => {
             resolveNext = resolve;
@@ -1390,10 +1169,10 @@ describe("Process", () => {
         idleTimeoutMs: 100,
       });
 
-      const receivedMessages: SDKMessage[] = [];
+      const receivedMessages: AgentEvent[] = [];
       process.subscribe((event) => {
-        if (event.type === "message") {
-          receivedMessages.push(event.message);
+        if (event.type === "agent") {
+          receivedMessages.push(event.event);
         }
       });
 
@@ -1402,7 +1181,7 @@ describe("Process", () => {
       if (resolveNext) {
         resolveNext({
           done: false,
-          value: { type: "system", subtype: "init", session_id: "sess-1" },
+          value: { type: "session.started", sessionId: "sess-1" },
         });
       }
 
@@ -1421,10 +1200,10 @@ describe("Process", () => {
     });
 
     it("resumes iterator consumption after hold is released", async () => {
-      const messages: SDKMessage[] = [
-        { type: "system", subtype: "init", session_id: "sess-1" },
-        { type: "assistant", message: { content: "Hello" } },
-        { type: "result", session_id: "sess-1" },
+      const messages: AgentEvent[] = [
+        { type: "session.started", sessionId: "sess-1" },
+        { type: "text.delta", blockId: "b1", delta: "Hello" },
+        { type: "turn.completed" },
       ];
 
       const iterator = createMockIterator(messages);
@@ -1435,10 +1214,10 @@ describe("Process", () => {
         idleTimeoutMs: 100,
       });
 
-      const receivedMessages: SDKMessage[] = [];
+      const receivedMessages: AgentEvent[] = [];
       process.subscribe((event) => {
-        if (event.type === "message") {
-          receivedMessages.push(event.message);
+        if (event.type === "agent") {
+          receivedMessages.push(event.event);
         }
       });
 
@@ -1450,9 +1229,7 @@ describe("Process", () => {
     });
 
     it("can queue messages while held", async () => {
-      const iterator = createMockIterator([
-        { type: "system", subtype: "init", session_id: "sess-1" },
-      ]);
+      const iterator = createMockIterator([{ type: "session.started", sessionId: "sess-1" }]);
 
       const process = new Process(iterator, {
         projectPath: "/test",
@@ -1471,8 +1248,8 @@ describe("Process", () => {
 
     it("termination while held resolves the wait", async () => {
       // Create an iterator that throws after first message
-      async function* failingIterator(): AsyncIterator<SDKMessage> {
-        yield { type: "system", subtype: "init", session_id: "sess-1" };
+      async function* failingIterator(): AsyncIterator<AgentEvent> {
+        yield { type: "session.started", sessionId: "sess-1" };
         throw new Error("ProcessTransport is not ready for writing");
       }
 

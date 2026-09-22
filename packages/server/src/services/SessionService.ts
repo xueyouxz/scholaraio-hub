@@ -9,8 +9,8 @@ import type {
 } from "@scholaraio-hub/shared";
 import { thinkingOptionToConfig } from "@scholaraio-hub/shared";
 import { type UIMessageChunk, readUIMessageStream } from "ai";
+import { UIChunkWriter } from "../agent/uiChunks.js";
 import { SessionAttachments } from "../sessions/SessionAttachments.js";
-import { SessionMessageNormalizer } from "../sessions/SessionMessageNormalizer.js";
 import type { SessionRecord, SessionStore } from "../sessions/SessionStore.js";
 import { getScholaraioSkill } from "../skills/scholaraioSkills.js";
 import { getSkillSlashCommands } from "../skills/skillCommands.js";
@@ -25,7 +25,8 @@ interface SessionRun {
   chunks: UIMessageChunk[];
   listeners: Set<(chunk: UIMessageChunk | null) => void>;
   controller: ReadableStreamDefaultController<UIMessageChunk>;
-  normalizer: SessionMessageNormalizer;
+  /** Turns this run's AgentEvents into UI chunks. */
+  writer: UIChunkWriter;
   consume: Promise<void>;
   timer?: ReturnType<typeof setTimeout>;
   finished: boolean;
@@ -146,24 +147,11 @@ export class SessionService {
     }
     const run = this.runs.get(id);
     if (run && !run.finished) {
-      if (event.type === "message") {
-        if (event.message.session_id) record.nativeSessionId = event.message.session_id;
-        run.normalizer.accept(event.message);
-        if (event.message.type === "result") {
-          const failed =
-            event.message.is_error === true || event.message.subtype?.startsWith("error");
-          void this.finish(
-            run,
-            failed
-              ? String(
-                  event.message.error ??
-                    event.message.result ??
-                    event.message.errors ??
-                    event.message.subtype,
-                )
-              : undefined,
-          );
-        }
+      if (event.type === "agent") {
+        const agentEvent = event.event;
+        if (agentEvent.type === "session.started") record.nativeSessionId = agentEvent.sessionId;
+        run.writer.write(agentEvent);
+        if (agentEvent.type === "turn.completed") void this.finish(run, agentEvent.error);
       } else if (event.type === "state-change") {
         record.pendingInput =
           event.state.type === "waiting-input"
@@ -292,7 +280,7 @@ export class SessionService {
       chunks: [],
       listeners: new Set(),
       controller,
-      normalizer: new SessionMessageNormalizer((chunk) => this.emit(run, chunk)),
+      writer: new UIChunkWriter((chunk) => this.emit(run, chunk)),
       consume: Promise.resolve(),
       finished: false,
     };
@@ -451,7 +439,7 @@ export class SessionService {
     if (run.record.state !== "idle") run.record.queuePaused = true;
     run.record.error = error;
     run.record.pendingInput = undefined;
-    run.normalizer.finish();
+    run.writer.close();
     if (error) this.emit(run, { type: "data-notice", id: "error", data: error });
     this.emit(run, { type: "finish", finishReason: error ? "error" : "stop" });
     run.controller.close();

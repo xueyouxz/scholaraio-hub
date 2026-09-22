@@ -9,25 +9,20 @@ import { filterEnvForChildProcess } from "./env-filter.js";
 import { execFile, spawn } from "node:child_process";
 import { promisify } from "node:util";
 import type { ModelInfo, ProviderUsageLimits } from "@scholaraio-hub/shared";
+import type { AgentEvent } from "../../agent/events.js";
 import { getLogger } from "../../logging/logger.js";
 import { normalizeCodexRateLimits } from "../../services/ProviderUsageLimitService.js";
 import { findCodexCliPath } from "../cli-detection.js";
-import { logSDKMessage } from "../messageLogger.js";
 import { MessageQueue } from "../messageQueue.js";
-import type { SDKMessage } from "../types.js";
 import type { ToolApprovalResult } from "../types.js";
 import {
-  type TokenUsageSnapshot,
+  CodexEventAdapter,
   asCommandExecutionRequestApprovalParams,
   asFileChangeRequestApprovalParams,
   asToolRequestUserInputParams,
-  convertNotificationToSDKMessages,
   extractTextFromMessage,
-  extractTurnUsage,
   getOptionalString,
   isTurnTerminalNotification,
-  logSdkCorrelationDebug,
-  withCodexTimestamp,
 } from "./codex-events.js";
 import type {
   AskForApproval as CodexAskForApproval,
@@ -529,7 +524,7 @@ export class CodexProvider implements AgentProvider {
     }
 
     let activeClient: CodexAppServerClient | null = null;
-    const iterator = this.runSession(
+    const events = this.runSession(
       options,
       queue,
       abortController.signal,
@@ -540,7 +535,7 @@ export class CodexProvider implements AgentProvider {
     );
 
     return {
-      iterator,
+      events,
       queue,
       abort: () => {
         abortController.abort();
@@ -603,21 +598,13 @@ export class CodexProvider implements AgentProvider {
     signal: AbortSignal,
     runtimeState: CodexTurnRuntimeState,
     setActiveClient: (client: CodexAppServerClient) => void,
-  ): AsyncIterableIterator<SDKMessage> {
+  ): AsyncIterableIterator<AgentEvent> {
     const codexCommand = await this.resolveCodexCommand();
     const appServer = new CodexAppServerClient(codexCommand, options.cwd, this.getCodexEnv());
     setActiveClient(appServer);
 
     let sessionId = options.resumeSessionId ?? "";
-    const usageByTurnId = new Map<string, TokenUsageSnapshot>();
-    const logMessage = (message: SDKMessage): SDKMessage => {
-      const messageSessionId =
-        typeof (message as { session_id?: unknown }).session_id === "string"
-          ? ((message as { session_id: string }).session_id ?? "unknown")
-          : sessionId || "unknown";
-      logSDKMessage(messageSessionId, message, { provider: "codex" });
-      return message;
-    };
+    const adapter = new CodexEventAdapter(sessionId);
 
     appServer.setServerRequestHandler(async (request) => {
       return await this.handleServerRequestApproval(request, options, signal);
@@ -668,15 +655,7 @@ export class CodexProvider implements AgentProvider {
         "Started Codex app-server session thread",
       );
 
-      // Emit init immediately with the real session ID.
-      yield logMessage(
-        withCodexTimestamp({
-          type: "system",
-          subtype: "init",
-          session_id: sessionId,
-          cwd: options.cwd,
-        } as SDKMessage),
-      );
+      yield* adapter.started(sessionId);
 
       const messageGen = queue.generator();
       let isFirstMessage = !options.resumeSessionId;
@@ -699,23 +678,6 @@ export class CodexProvider implements AgentProvider {
           isFirstMessage = false;
         }
 
-        // Emit user message with UUID from queue to enable deduplication.
-        const userMessage = withCodexTimestamp({
-          type: "user",
-          uuid: message.uuid,
-          session_id: sessionId,
-          message: {
-            role: "user",
-            content: userPrompt,
-          },
-        } as SDKMessage);
-        logSdkCorrelationDebug(sessionId, userMessage, {
-          eventKind: "user_message",
-          phase: "submitted",
-          sourceEvent: "queued_input",
-        });
-        yield logMessage(userMessage);
-
         const turnStartParams: TurnStartParams = {
           threadId: sessionId,
           input: [{ type: "text", text: userPrompt, text_elements: [] }],
@@ -728,6 +690,7 @@ export class CodexProvider implements AgentProvider {
 
         const activeTurnId = turnResult.turn.id;
         runtimeState.activeTurnId = activeTurnId;
+        adapter.beginTurn(activeTurnId);
         log.info(
           {
             sessionId,
@@ -736,69 +699,32 @@ export class CodexProvider implements AgentProvider {
           },
           "Started Codex app-server turn",
         );
-        let turnComplete = turnResult.turn.status !== "inProgress";
-        let emittedTurnError = false;
 
+        let turnComplete = turnResult.turn.status !== "inProgress";
         while (!turnComplete && !signal.aborted) {
           const notification = await appServer.nextNotification(signal);
-
-          if (notification.method === "thread/tokenUsage/updated") {
-            const usage = extractTurnUsage(notification.params);
-            if (usage) {
-              usageByTurnId.set(usage.turnId, usage.snapshot);
-            }
-          }
-
-          const messages = convertNotificationToSDKMessages(notification, sessionId, usageByTurnId);
-          for (const msg of messages) {
-            yield logMessage(msg);
-          }
-
-          if (isTurnTerminalNotification(notification, activeTurnId)) {
-            if (notification.method === "error") {
-              emittedTurnError = true;
-            }
-            turnComplete = true;
-          }
+          yield* adapter.notification(notification);
+          turnComplete = isTurnTerminalNotification(notification, activeTurnId);
         }
         runtimeState.activeTurnId = null;
 
-        // If turn failed without an emitted error notification, surface start response error.
-        if (
-          !emittedTurnError &&
-          turnResult.turn.status === "failed" &&
-          turnResult.turn.error?.message
-        ) {
-          yield logMessage({
-            type: "error",
-            session_id: sessionId,
-            error: turnResult.turn.error.message,
-          } as SDKMessage);
-        }
-
-        yield logMessage({
-          type: "result",
-          session_id: sessionId,
-        } as SDKMessage);
+        // A turn that failed at turn/start, or one we stopped waiting on, still
+        // ends here; completeTurn is a no-op if a notification already ended it.
+        yield* adapter.completeTurn(
+          turnResult.turn.status === "failed"
+            ? (turnResult.turn.error?.message ?? "Codex turn failed")
+            : undefined,
+        );
       }
     } catch (error) {
       log.error({ error }, "Error in codex app-server session");
       if (!signal.aborted) {
-        yield logMessage({
-          type: "error",
-          session_id: sessionId,
-          error: error instanceof Error ? error.message : String(error),
-        } as SDKMessage);
+        yield* adapter.fail(error instanceof Error ? error.message : String(error));
       }
     } finally {
       runtimeState.activeTurnId = null;
       appServer.close();
     }
-
-    yield logMessage({
-      type: "result",
-      session_id: sessionId,
-    } as SDKMessage);
   }
 
   private async handleServerRequestApproval(

@@ -3,12 +3,12 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { parseCodexSessionEntry } from "@scholaraio-hub/shared";
 import { describe, expect, it } from "vitest";
+import { ClaudeEventAdapter } from "../../src/sdk/providers/claude-events.js";
 import type { SDKMessage } from "../../src/sdk/types.js";
 import {
   normalizeClaudeRateLimitEvent,
   normalizeCodexRateLimits,
 } from "../../src/services/ProviderUsageLimitService.js";
-import { shouldEmitMessage } from "../../src/supervisor/Process.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
@@ -26,7 +26,7 @@ describe("provider usage limit feasibility", () => {
     expect(sdkTypes).toContain("resetsAt?: number");
   });
 
-  it("current backend message emission would not filter Claude rate_limit_event messages", () => {
+  it("Claude rate_limit_event reaches the hub as a rate-limit agent event", () => {
     const rateLimitMessage: SDKMessage = {
       type: "rate_limit_event",
       uuid: "rate-limit-1",
@@ -39,7 +39,9 @@ describe("provider usage limit feasibility", () => {
       },
     };
 
-    expect(shouldEmitMessage(rateLimitMessage)).toBe(true);
+    expect(new ClaudeEventAdapter().accept(rateLimitMessage)).toMatchObject([
+      { type: "rate-limit", limits: { provider: "claude", available: true } },
+    ]);
     expect(normalizeClaudeRateLimitEvent("claude", rateLimitMessage)).toMatchObject({
       provider: "claude",
       available: true,

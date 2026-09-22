@@ -1,23 +1,28 @@
 /**
  * Codex app-server event conversion.
  *
- * Pure functions that turn app-server JSON-RPC notifications into the internal
- * SDKMessage stream. Kept apart from the provider so the mapping can be tested
- * on its own (see test/sdk/codex-conversion.golden.test.ts) and so transport
- * concerns never leak into it.
+ * Turns app-server JSON-RPC notifications into AgentEvent, the provider-neutral
+ * model in `src/agent/events.ts`. Kept apart from the provider so the mapping
+ * can be tested on its own (see test/sdk/codex-conversion.golden.test.ts) and so
+ * transport concerns never leak into it.
+ *
+ * Codex vocabulary (thread items, turn ids, snake/camel status strings) stops
+ * here. Tool invocations are canonicalized to the shared tool vocabulary
+ * (Read / Edit / Bash / WebSearch …) via `codex/normalization.ts`.
  */
 
+import type { AgentEvent, TokenUsage } from "../../agent/events.js";
+import { TurnState } from "../../agent/turnState.js";
 import {
   isCodexCorrelationDebugEnabled,
   logCodexCorrelationDebug,
-  summarizeCodexNormalizedMessage,
 } from "../../codex/correlationDebugLogger.js";
 import {
   type CodexToolCallContext,
   normalizeCodexCommandExecutionOutput,
   normalizeCodexToolInvocation,
 } from "../../codex/normalization.js";
-import type { SDKMessage, TimestampedSDKMessage, UserMessage } from "../types.js";
+import type { UserMessage } from "../types.js";
 import type {
   ErrorNotification as CodexErrorNotification,
   ItemCompletedNotification as CodexItemCompletedNotification,
@@ -30,42 +35,6 @@ import type {
   TurnCompletedNotification,
 } from "./codex-protocol/index.js";
 import type { JsonRpcNotification } from "./codex-rpc.js";
-
-export function logSdkCorrelationDebug(
-  sessionId: string,
-  message: SDKMessage,
-  metadata: {
-    eventKind?: string;
-    turnId?: string;
-    itemId?: string;
-    callId?: string;
-    phase?: string;
-    sourceEvent?: string;
-    status?: string;
-  } = {},
-): void {
-  if (!isCodexCorrelationDebugEnabled()) return;
-  logCodexCorrelationDebug({
-    sessionId,
-    channel: "sdk",
-    authority: "transient",
-    ...metadata,
-    ...summarizeCodexNormalizedMessage(message),
-  });
-}
-
-export function withCodexTimestamp<T extends SDKMessage>(
-  message: T,
-  timestamp = new Date().toISOString(),
-): TimestampedSDKMessage<T> {
-  if (typeof message.timestamp === "string" && message.timestamp.trim().length > 0) {
-    return message as TimestampedSDKMessage<T>;
-  }
-  return {
-    ...message,
-    timestamp,
-  } as TimestampedSDKMessage<T>;
-}
 
 export interface TokenUsageSnapshot {
   inputTokens: number;
@@ -147,107 +116,6 @@ export function extractTurnUsage(params: unknown): {
       cachedInputTokens: notification.tokenUsage.last.cachedInputTokens,
     },
   };
-}
-
-export function convertNotificationToSDKMessages(
-  notification: JsonRpcNotification,
-  sessionId: string,
-  usageByTurnId: Map<string, TokenUsageSnapshot>,
-): SDKMessage[] {
-  switch (notification.method) {
-    case "item/agentMessage/delta": {
-      const params = notification.params as Record<string, unknown> | undefined;
-      if (
-        params?.threadId !== sessionId ||
-        typeof params?.itemId !== "string" ||
-        typeof params?.turnId !== "string" ||
-        typeof params?.delta !== "string"
-      )
-        return [];
-      return [
-        {
-          type: "text_delta",
-          session_id: sessionId,
-          uuid: `${params.itemId}-${params.turnId}`,
-          delta: params.delta,
-        },
-      ];
-    }
-
-    case "turn/completed": {
-      const params = asTurnCompletedNotification(notification.params);
-      const turnId = params?.turn.id ?? null;
-      const usage = turnId ? usageByTurnId.get(turnId) : undefined;
-      const message = withCodexTimestamp({
-        type: "system",
-        subtype: "turn_complete",
-        session_id: sessionId,
-        usage: usage
-          ? {
-              input_tokens: usage.inputTokens,
-              output_tokens: usage.outputTokens,
-              cached_input_tokens: usage.cachedInputTokens,
-            }
-          : undefined,
-      } as SDKMessage);
-      logSdkCorrelationDebug(sessionId, message, {
-        eventKind: "turn_complete",
-        ...(turnId ? { turnId } : {}),
-        phase: "completed",
-        sourceEvent: notification.method,
-      });
-      return [message];
-    }
-
-    case "error": {
-      const params = asErrorNotification(notification.params);
-      const errorMessage = params?.error.message;
-      const message =
-        (typeof errorMessage === "string" && errorMessage) ||
-        (typeof (notification.params as { message?: unknown })?.message === "string"
-          ? (notification.params as { message: string }).message
-          : "Codex turn failed");
-
-      const errorEvent = {
-        type: "error",
-        session_id: sessionId,
-        error: message,
-      } as SDKMessage;
-      logSdkCorrelationDebug(sessionId, errorEvent, {
-        eventKind: "error",
-        phase: "emitted",
-        sourceEvent: notification.method,
-      });
-      return [errorEvent];
-    }
-
-    case "item/started":
-    case "item/completed": {
-      const params =
-        notification.method === "item/started"
-          ? asItemStartedNotification(notification.params)
-          : asItemCompletedNotification(notification.params);
-      if (!params) return [];
-
-      const normalized = normalizeThreadItem(params.item);
-      if (!normalized) {
-        return [];
-      }
-
-      const turnId = params.turnId;
-
-      return convertItemToSDKMessages(normalized, sessionId, turnId, notification.method);
-    }
-
-    case "account/rateLimits/updated": {
-      // account/rateLimits/updated is telemetry, not a terminal turn error.
-      // Real usage-limit/quota failures arrive via the `error` notification.
-      return [];
-    }
-
-    default:
-      return [];
-  }
 }
 
 export function normalizeThreadItem(
@@ -559,500 +427,7 @@ export function asItemCompletedNotification(
   return params as CodexItemCompletedNotification;
 }
 
-/**
- * Convert a normalized thread item to SDKMessage(s).
- */
-export function convertItemToSDKMessages(
-  item: NormalizedThreadItem,
-  sessionId: string,
-  turnId: string,
-  sourceEvent: "item/started" | "item/completed",
-): SDKMessage[] {
-  const isComplete = sourceEvent === "item/completed";
-  const observedAt = new Date().toISOString();
-  // Create unique UUID by combining item.id with turn ID.
-  const uuid = `${item.id}-${turnId}`;
-
-  switch (item.type) {
-    case "reasoning": {
-      const message = withCodexTimestamp(
-        {
-          type: "assistant",
-          session_id: sessionId,
-          uuid,
-          message: {
-            role: "assistant",
-            content: [
-              {
-                type: "thinking",
-                thinking: item.text,
-              },
-            ],
-          },
-        } as SDKMessage,
-        observedAt,
-      );
-      logSdkCorrelationDebug(sessionId, message, {
-        eventKind: "reasoning",
-        turnId,
-        itemId: item.id,
-        phase: isComplete ? "completed" : "started",
-        sourceEvent,
-      });
-      return [message];
-    }
-
-    case "agent_message": {
-      const message = withCodexTimestamp(
-        {
-          type: "assistant",
-          session_id: sessionId,
-          uuid,
-          message: {
-            role: "assistant",
-            content: item.text,
-          },
-        } as SDKMessage,
-        observedAt,
-      );
-      logSdkCorrelationDebug(sessionId, message, {
-        eventKind: "agent_message",
-        turnId,
-        itemId: item.id,
-        phase: isComplete ? "completed" : "started",
-        sourceEvent,
-      });
-      return [message];
-    }
-
-    case "command_execution": {
-      const messages: SDKMessage[] = [];
-      const normalizedInvocation = normalizeCodexToolInvocation("Bash", {
-        command: item.command,
-      });
-      const toolContext: CodexToolCallContext = {
-        toolName: normalizedInvocation.toolName,
-        input: normalizedInvocation.input,
-        readShellInfo: normalizedInvocation.readShellInfo,
-        writeShellInfo: normalizedInvocation.writeShellInfo,
-      };
-
-      // Emit tool_use for the command
-      const toolUseMessage = withCodexTimestamp(
-        {
-          type: "assistant",
-          session_id: sessionId,
-          uuid,
-          message: {
-            role: "assistant",
-            content: [
-              {
-                type: "tool_use",
-                id: item.id,
-                name: normalizedInvocation.toolName,
-                input: normalizedInvocation.input,
-              },
-            ],
-          },
-        } as SDKMessage,
-        observedAt,
-      );
-      logSdkCorrelationDebug(sessionId, toolUseMessage, {
-        eventKind: "command_execution",
-        turnId,
-        itemId: item.id,
-        callId: item.id,
-        phase: isComplete ? "completed" : "started",
-        sourceEvent,
-        status: item.status,
-      });
-      messages.push(toolUseMessage);
-
-      // If completed, emit tool_result
-      if (isComplete && item.status !== "in_progress") {
-        const normalizedResult = normalizeCodexCommandExecutionOutput(
-          {
-            aggregatedOutput: item.aggregated_output,
-            exitCode: item.exit_code,
-            status: item.status,
-          },
-          toolContext,
-        );
-        const toolResultBlock: {
-          type: "tool_result";
-          tool_use_id: string;
-          content: string;
-          is_error?: boolean;
-        } = {
-          type: "tool_result",
-          tool_use_id: item.id,
-          content: normalizedResult.content,
-        };
-        if (normalizedResult.isError) {
-          toolResultBlock.is_error = true;
-        }
-
-        const toolResultMessage = withCodexTimestamp(
-          {
-            type: "user",
-            session_id: sessionId,
-            uuid: `${uuid}-result`,
-            message: {
-              role: "user",
-              content: [toolResultBlock],
-            },
-            ...(normalizedResult.structured !== undefined
-              ? { toolUseResult: normalizedResult.structured }
-              : {}),
-          } as SDKMessage,
-          observedAt,
-        );
-        logSdkCorrelationDebug(sessionId, toolResultMessage, {
-          eventKind: "tool_result",
-          turnId,
-          itemId: item.id,
-          callId: item.id,
-          phase: "completed",
-          sourceEvent,
-          status: item.status,
-        });
-        messages.push(toolResultMessage);
-      }
-
-      return messages;
-    }
-
-    case "file_change": {
-      const changesSummary = item.changes.map((c) => `${c.kind}: ${c.path}`).join("\n");
-      const editInput: Record<string, unknown> = {
-        changes: item.changes,
-      };
-      const singlePath = item.changes[0]?.path;
-      if (singlePath && item.changes.length === 1) {
-        editInput.file_path = singlePath;
-      }
-
-      const toolUseMessage = withCodexTimestamp(
-        {
-          type: "assistant",
-          session_id: sessionId,
-          uuid,
-          message: {
-            role: "assistant",
-            content: [
-              {
-                type: "tool_use",
-                id: item.id,
-                name: "Edit",
-                input: editInput,
-              },
-            ],
-          },
-        } as SDKMessage,
-        observedAt,
-      );
-      logSdkCorrelationDebug(sessionId, toolUseMessage, {
-        eventKind: "file_change",
-        turnId,
-        itemId: item.id,
-        callId: item.id,
-        phase: isComplete ? "completed" : "started",
-        sourceEvent,
-        status: item.status,
-      });
-
-      const messages = [toolUseMessage];
-
-      if (isComplete) {
-        const toolResultMessage = withCodexTimestamp(
-          {
-            type: "user",
-            session_id: sessionId,
-            uuid: `${uuid}-result`,
-            message: {
-              role: "user",
-              content: [
-                {
-                  type: "tool_result",
-                  tool_use_id: item.id,
-                  content:
-                    item.status === "completed"
-                      ? `File changes applied:\n${changesSummary}`
-                      : item.status === "declined"
-                        ? `File changes declined:\n${changesSummary}`
-                        : `File changes failed:\n${changesSummary}`,
-                },
-              ],
-            },
-          } as SDKMessage,
-          observedAt,
-        );
-        logSdkCorrelationDebug(sessionId, toolResultMessage, {
-          eventKind: "tool_result",
-          turnId,
-          itemId: item.id,
-          callId: item.id,
-          phase: "completed",
-          sourceEvent,
-          status: item.status,
-        });
-        messages.push(toolResultMessage);
-      }
-
-      return messages;
-    }
-
-    case "mcp_tool_call": {
-      const messages: SDKMessage[] = [];
-
-      const toolUseMessage = withCodexTimestamp(
-        {
-          type: "assistant",
-          session_id: sessionId,
-          uuid,
-          message: {
-            role: "assistant",
-            content: [
-              {
-                type: "tool_use",
-                id: item.id,
-                name: `${item.server}:${item.tool}`,
-                input: item.arguments,
-              },
-            ],
-          },
-        } as SDKMessage,
-        observedAt,
-      );
-      logSdkCorrelationDebug(sessionId, toolUseMessage, {
-        eventKind: "mcp_tool_call",
-        turnId,
-        itemId: item.id,
-        callId: item.id,
-        phase: isComplete ? "completed" : "started",
-        sourceEvent,
-        status: item.status,
-      });
-      messages.push(toolUseMessage);
-
-      if (isComplete && item.status !== "in_progress") {
-        const toolResultMessage = withCodexTimestamp(
-          {
-            type: "user",
-            session_id: sessionId,
-            uuid: `${uuid}-result`,
-            message: {
-              role: "user",
-              content: [
-                {
-                  type: "tool_result",
-                  tool_use_id: item.id,
-                  content:
-                    item.status === "completed"
-                      ? JSON.stringify(item.result)
-                      : item.error?.message || "MCP tool call failed",
-                },
-              ],
-            },
-          } as SDKMessage,
-          observedAt,
-        );
-        logSdkCorrelationDebug(sessionId, toolResultMessage, {
-          eventKind: "tool_result",
-          turnId,
-          itemId: item.id,
-          callId: item.id,
-          phase: "completed",
-          sourceEvent,
-          status: item.status,
-        });
-        messages.push(toolResultMessage);
-      }
-
-      return messages;
-    }
-
-    case "web_search": {
-      const messages: SDKMessage[] = [];
-      const toolUseMessage = withCodexTimestamp(
-        {
-          type: "assistant",
-          session_id: sessionId,
-          uuid,
-          message: {
-            role: "assistant",
-            content: [
-              {
-                type: "tool_use",
-                id: item.id,
-                name: "WebSearch",
-                input: { query: item.query },
-              },
-            ],
-          },
-        } as SDKMessage,
-        observedAt,
-      );
-      logSdkCorrelationDebug(sessionId, toolUseMessage, {
-        eventKind: "web_search",
-        turnId,
-        itemId: item.id,
-        callId: item.id,
-        phase: isComplete ? "completed" : "started",
-        sourceEvent,
-      });
-      messages.push(toolUseMessage);
-
-      if (isComplete) {
-        const toolResultMessage = withCodexTimestamp(
-          {
-            type: "user",
-            session_id: sessionId,
-            uuid: `${uuid}-result`,
-            message: {
-              role: "user",
-              content: [
-                {
-                  type: "tool_result",
-                  tool_use_id: item.id,
-                  content: `Search completed for: ${item.query}`,
-                },
-              ],
-            },
-            toolUseResult: {
-              query: item.query,
-              results: [],
-              durationSeconds: 0,
-            },
-          } as SDKMessage,
-          observedAt,
-        );
-        logSdkCorrelationDebug(sessionId, toolResultMessage, {
-          eventKind: "tool_result",
-          turnId,
-          itemId: item.id,
-          callId: item.id,
-          phase: "completed",
-          sourceEvent,
-        });
-        messages.push(toolResultMessage);
-      }
-
-      return messages;
-    }
-
-    case "todo_list": {
-      const message = withCodexTimestamp(
-        {
-          type: "system",
-          subtype: "todo_list",
-          session_id: sessionId,
-          uuid,
-          items: item.items,
-        } as SDKMessage,
-        observedAt,
-      );
-      logSdkCorrelationDebug(sessionId, message, {
-        eventKind: "todo_list",
-        turnId,
-        itemId: item.id,
-        phase: isComplete ? "completed" : "started",
-        sourceEvent,
-      });
-      return [message];
-    }
-
-    case "image_view": {
-      // Represent as a ViewImage tool_use + tool_result pair
-      const toolUseMessage = withCodexTimestamp(
-        {
-          type: "assistant",
-          session_id: sessionId,
-          uuid,
-          message: {
-            role: "assistant",
-            content: [
-              {
-                type: "tool_use",
-                id: item.id,
-                name: "ViewImage",
-                input: { path: item.path },
-              },
-            ],
-          },
-        } as SDKMessage,
-        observedAt,
-      );
-      logSdkCorrelationDebug(sessionId, toolUseMessage, {
-        eventKind: "image_view",
-        turnId,
-        itemId: item.id,
-        phase: isComplete ? "completed" : "started",
-        sourceEvent,
-      });
-      const messages: SDKMessage[] = [toolUseMessage];
-
-      if (isComplete) {
-        const toolResultMessage = withCodexTimestamp(
-          {
-            type: "user",
-            session_id: sessionId,
-            uuid: `${uuid}-result`,
-            message: {
-              role: "user",
-              content: [
-                {
-                  type: "tool_result",
-                  tool_use_id: item.id,
-                  content: `Viewed image: ${item.path}`,
-                },
-              ],
-            },
-          } as SDKMessage,
-          observedAt,
-        );
-        logSdkCorrelationDebug(sessionId, toolResultMessage, {
-          eventKind: "tool_result",
-          turnId,
-          itemId: item.id,
-          callId: item.id,
-          phase: "completed",
-          sourceEvent,
-        });
-        messages.push(toolResultMessage);
-      }
-
-      return messages;
-    }
-
-    case "error": {
-      const message = withCodexTimestamp(
-        {
-          type: "error",
-          session_id: sessionId,
-          uuid,
-          error: item.message,
-        } as SDKMessage,
-        observedAt,
-      );
-      logSdkCorrelationDebug(sessionId, message, {
-        eventKind: "error",
-        turnId,
-        itemId: item.id,
-        phase: isComplete ? "completed" : "started",
-        sourceEvent,
-      });
-      return [message];
-    }
-
-    default:
-      return [];
-  }
-}
-
-/**
- * Extract text content from a user message.
- */
+/** Plain text of a queued user message, as sent to `turn/start`. */
 export function extractTextFromMessage(message: unknown): string {
   if (!message || typeof message !== "object") {
     return "";
@@ -1102,4 +477,245 @@ export function getOptionalString(value: unknown): string | null {
 
 export function getOptionalNumber(value: unknown): number | null {
   return typeof value === "number" && Number.isFinite(value) ? value : null;
+}
+
+type ItemPhase = "item/started" | "item/completed";
+
+/** Stable id for anything scoped to one item of one turn. */
+function itemKey(itemId: string, turnId: string): string {
+  return `${itemId}-${turnId}`;
+}
+
+function fileChangeSummary(item: Extract<NormalizedThreadItem, { type: "file_change" }>): string {
+  const summary = item.changes.map((change) => `${change.kind}: ${change.path}`).join("\n");
+  if (item.status === "completed") return `File changes applied:\n${summary}`;
+  if (item.status === "declined") return `File changes declined:\n${summary}`;
+  return `File changes failed:\n${summary}`;
+}
+
+/**
+ * Stateful: one adapter per app-server thread. Tracks the open turn so exactly
+ * one `turn.completed` is produced per turn, whichever of `turn/completed`, an
+ * `error` notification or a failed `turn/start` ends it.
+ */
+export class CodexEventAdapter {
+  private turn = new TurnState();
+  private usageByTurnId = new Map<string, TokenUsageSnapshot>();
+  private activeTurnId: string | null = null;
+
+  constructor(private sessionId = "") {}
+
+  /** The thread is ready; announce its id. */
+  started(sessionId: string): AgentEvent[] {
+    this.sessionId = sessionId;
+    return [{ type: "session.started", sessionId }];
+  }
+
+  beginTurn(turnId: string): void {
+    this.activeTurnId = turnId;
+  }
+
+  get turnOpen(): boolean {
+    return this.activeTurnId !== null;
+  }
+
+  /** End the open turn (if any). The first caller wins; later calls are no-ops. */
+  completeTurn(error?: string): AgentEvent[] {
+    if (this.activeTurnId === null) return [];
+    const turnId = this.activeTurnId;
+    const snapshot = this.usageByTurnId.get(turnId);
+    const usage: TokenUsage | undefined = snapshot
+      ? {
+          inputTokens: snapshot.inputTokens,
+          outputTokens: snapshot.outputTokens,
+          cachedInputTokens: snapshot.cachedInputTokens,
+        }
+      : undefined;
+    this.activeTurnId = null;
+    this.usageByTurnId.delete(turnId);
+    this.turn = new TurnState();
+    return [{ type: "turn.completed", ...(error ? { error } : {}), ...(usage ? { usage } : {}) }];
+  }
+
+  /**
+   * The session broke outside a turn's normal ending (transport failure,
+   * spawn failure). Report it as a failed turn so the run still finishes.
+   */
+  fail(error: string): AgentEvent[] {
+    if (this.activeTurnId !== null) return this.completeTurn(error);
+    return [{ type: "turn.completed", error }];
+  }
+
+  notification(notification: JsonRpcNotification): AgentEvent[] {
+    const events = this.convert(notification);
+    if (isCodexCorrelationDebugEnabled()) {
+      for (const event of events) {
+        logCodexCorrelationDebug({
+          sessionId: this.sessionId,
+          channel: "sdk",
+          authority: "transient",
+          eventKind: event.type,
+          turnId: this.activeTurnId ?? undefined,
+          sourceEvent: notification.method,
+          ...("callId" in event ? { callId: event.callId } : {}),
+        });
+      }
+    }
+    return events;
+  }
+
+  private convert(notification: JsonRpcNotification): AgentEvent[] {
+    switch (notification.method) {
+      case "item/agentMessage/delta": {
+        const params = notification.params as Record<string, unknown> | undefined;
+        if (
+          params?.threadId !== this.sessionId ||
+          typeof params?.itemId !== "string" ||
+          typeof params?.turnId !== "string" ||
+          typeof params?.delta !== "string"
+        ) {
+          return [];
+        }
+        return this.turn.textDelta("text", itemKey(params.itemId, params.turnId), params.delta);
+      }
+
+      case "thread/tokenUsage/updated": {
+        const usage = extractTurnUsage(notification.params);
+        if (usage) this.usageByTurnId.set(usage.turnId, usage.snapshot);
+        return [];
+      }
+
+      case "turn/completed": {
+        const params = asTurnCompletedNotification(notification.params);
+        if (!params || params.turn.id !== this.activeTurnId) return [];
+        const failed = params.turn.status === "failed";
+        return this.completeTurn(
+          failed ? (params.turn.error?.message ?? "Codex turn failed") : undefined,
+        );
+      }
+
+      case "error": {
+        const params = asErrorNotification(notification.params);
+        if (!params || params.turnId !== this.activeTurnId) return [];
+        // Codex retries some failures itself; those are news, not the end.
+        if (params.willRetry) {
+          return [
+            {
+              type: "notice",
+              key: `retry-${params.turnId}`,
+              level: "info",
+              text: `${params.error.message}（正在重试）`,
+            },
+          ];
+        }
+        return this.completeTurn(params.error.message || "Codex turn failed");
+      }
+
+      case "item/started":
+      case "item/completed": {
+        const params =
+          notification.method === "item/started"
+            ? asItemStartedNotification(notification.params)
+            : asItemCompletedNotification(notification.params);
+        if (!params) return [];
+        const item = normalizeThreadItem(params.item);
+        return item ? this.item(item, params.turnId, notification.method) : [];
+      }
+
+      // Rate-limit snapshots are telemetry; real quota failures arrive as `error`.
+      default:
+        return [];
+    }
+  }
+
+  private item(item: NormalizedThreadItem, turnId: string, phase: ItemPhase): AgentEvent[] {
+    const complete = phase === "item/completed";
+    const key = itemKey(item.id, turnId);
+
+    switch (item.type) {
+      case "reasoning":
+        return this.turn.textSnapshot("reasoning", key, item.text);
+
+      case "agent_message":
+        return this.turn.textSnapshot("text", key, item.text);
+
+      case "command_execution": {
+        const invocation = normalizeCodexToolInvocation("Bash", { command: item.command });
+        const events = this.turn.toolCall(item.id, invocation.toolName, invocation.input);
+        if (!complete || item.status === "in_progress") return events;
+        const context: CodexToolCallContext = {
+          toolName: invocation.toolName,
+          input: invocation.input,
+          readShellInfo: invocation.readShellInfo,
+          writeShellInfo: invocation.writeShellInfo,
+        };
+        const result = normalizeCodexCommandExecutionOutput(
+          {
+            aggregatedOutput: item.aggregated_output,
+            exitCode: item.exit_code,
+            status: item.status,
+          },
+          context,
+        );
+        return [
+          ...events,
+          ...this.turn.toolResult(
+            item.id,
+            result.content,
+            result.isError === true,
+            result.structured,
+          ),
+        ];
+      }
+
+      case "file_change": {
+        const input: Record<string, unknown> = { changes: item.changes };
+        const onlyPath = item.changes.length === 1 ? item.changes[0]?.path : undefined;
+        if (onlyPath) input.file_path = onlyPath;
+        const events = this.turn.toolCall(item.id, "Edit", input);
+        if (!complete) return events;
+        return [...events, ...this.turn.toolResult(item.id, fileChangeSummary(item), false)];
+      }
+
+      case "mcp_tool_call": {
+        const events = this.turn.toolCall(item.id, `${item.server}:${item.tool}`, item.arguments);
+        if (!complete || item.status === "in_progress") return events;
+        const succeeded = item.status === "completed";
+        const output = succeeded
+          ? JSON.stringify(item.result)
+          : item.error?.message || "MCP tool call failed";
+        return [...events, ...this.turn.toolResult(item.id, output, !succeeded)];
+      }
+
+      case "web_search": {
+        const events = this.turn.toolCall(item.id, "WebSearch", { query: item.query });
+        if (!complete) return events;
+        return [
+          ...events,
+          ...this.turn.toolResult(item.id, `Search completed for: ${item.query}`, false, {
+            query: item.query,
+            results: [],
+            durationSeconds: 0,
+          }),
+        ];
+      }
+
+      case "image_view": {
+        const events = this.turn.toolCall(item.id, "ViewImage", { path: item.path });
+        if (!complete) return events;
+        return [...events, ...this.turn.toolResult(item.id, `Viewed image: ${item.path}`, false)];
+      }
+
+      case "error":
+        // A non-fatal error reported inside the turn; the turn keeps going.
+        return [{ type: "notice", key, level: "error", text: item.message }];
+
+      // The plan checklist has no counterpart in the shared model yet.
+      case "todo_list":
+        return [];
+
+      default:
+        return [];
+    }
+  }
 }

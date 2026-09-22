@@ -3,25 +3,22 @@ import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import type { UIMessageChunk } from "ai";
 import { describe, expect, it } from "vitest";
-import {
-  type TokenUsageSnapshot,
-  convertNotificationToSDKMessages,
-  extractTurnUsage,
-} from "../../src/sdk/providers/codex-events.js";
-import type { SDKMessage } from "../../src/sdk/types.js";
-import { SessionMessageNormalizer } from "../../src/sessions/SessionMessageNormalizer.js";
+import type { AgentEvent } from "../../src/agent/events.js";
+import { UIChunkWriter } from "../../src/agent/uiChunks.js";
+import { CodexEventAdapter } from "../../src/sdk/providers/codex-events.js";
 
 /**
  * Golden-file coverage for the Codex conversion pipeline.
  *
  * The contract under test is the whole path an app-server notification travels
- * before it reaches the browser: JSON-RPC notification -> SDKMessage ->
- * UIMessageChunk. Asserting the chunk stream (rather than the intermediate
- * SDKMessage shape) keeps these tests valid while that middle representation is
- * refactored.
+ * before it reaches the browser: JSON-RPC notification -> AgentEvent ->
+ * UIMessageChunk. Both stages are pinned, so a change shows up as a reviewable
+ * diff of the golden file.
  *
- * Regenerate after an intentional change: UPDATE_GOLDEN=1 pnpm --filter
- * @scholaraio-hub/server test codex-conversion
+ * Regenerate after an intentional change, then format (comparison is
+ * structural, so layout never fails the test):
+ *   UPDATE_GOLDEN=1 pnpm --filter @scholaraio-hub/server test codex-conversion
+ *   pnpm lint:fix
  */
 
 const FIXTURES = fileURLToPath(new URL("../fixtures/codex-notifications/", import.meta.url));
@@ -32,32 +29,26 @@ interface NotificationFixture {
   notifications: { method: string; params?: unknown }[];
 }
 
-function convert(fixture: NotificationFixture): {
-  messages: SDKMessage[];
-  chunks: UIMessageChunk[];
-} {
-  const usageByTurnId = new Map<string, TokenUsageSnapshot>();
-  const messages: SDKMessage[] = [];
-  const chunks: UIMessageChunk[] = [];
-  const normalizer = new SessionMessageNormalizer((chunk) => chunks.push(chunk));
+/** Turn ids the fixture refers to, so the adapter sees each turn open. */
+function turnIdOf(notification: { params?: unknown }): string | undefined {
+  const params = notification.params as { turnId?: unknown; turn?: { id?: unknown } } | undefined;
+  const id = params?.turnId ?? params?.turn?.id;
+  return typeof id === "string" ? id : undefined;
+}
+
+function convert(fixture: NotificationFixture): { events: AgentEvent[]; chunks: UIMessageChunk[] } {
+  const adapter = new CodexEventAdapter();
+  const events: AgentEvent[] = [...adapter.started(fixture.sessionId)];
   for (const notification of fixture.notifications) {
-    if (notification.method === "thread/tokenUsage/updated") {
-      const usage = extractTurnUsage(notification.params);
-      if (usage) usageByTurnId.set(usage.turnId, usage.snapshot);
-    }
-    for (const message of convertNotificationToSDKMessages(
-      notification,
-      fixture.sessionId,
-      usageByTurnId,
-    )) {
-      // `timestamp` is wall-clock and would make the golden file unstable.
-      const { timestamp: _timestamp, ...stable } = message;
-      messages.push(stable as SDKMessage);
-      normalizer.accept(message);
-    }
+    const turnId = turnIdOf(notification);
+    if (turnId && !adapter.turnOpen) adapter.beginTurn(turnId);
+    events.push(...adapter.notification(notification));
   }
-  normalizer.finish();
-  return { messages, chunks };
+  const chunks: UIMessageChunk[] = [];
+  const writer = new UIChunkWriter((chunk) => chunks.push(chunk));
+  for (const event of events) writer.write(event);
+  writer.close();
+  return { events, chunks };
 }
 
 function compareWithGolden(name: string, actual: unknown): void {
@@ -78,12 +69,11 @@ function compareWithGolden(name: string, actual: unknown): void {
 
 describe("codex notification conversion", () => {
   for (const name of ["agent-turn", "tool-turn", "failed-turn"]) {
-    it(`converts ${name} into a stable chunk stream`, () => {
+    it(`converts ${name} into a stable event and chunk stream`, () => {
       const fixture = JSON.parse(
         readFileSync(join(FIXTURES, `${name}.json`), "utf-8"),
       ) as NotificationFixture;
-      const { messages, chunks } = convert(fixture);
-      compareWithGolden(name, { messages, chunks });
+      compareWithGolden(name, convert(fixture));
     });
   }
 
@@ -103,5 +93,39 @@ describe("codex notification conversion", () => {
       ],
     });
     expect(chunks).toEqual([]);
+  });
+
+  it("ends each turn exactly once, however it ends", () => {
+    const adapter = new CodexEventAdapter("thread");
+    adapter.beginTurn("turn-1");
+    const events = [
+      ...adapter.notification({
+        method: "error",
+        params: {
+          threadId: "thread",
+          turnId: "turn-1",
+          willRetry: true,
+          error: { message: "overloaded" },
+        },
+      }),
+      ...adapter.notification({
+        method: "error",
+        params: {
+          threadId: "thread",
+          turnId: "turn-1",
+          willRetry: false,
+          error: { message: "boom" },
+        },
+      }),
+      ...adapter.notification({
+        method: "turn/completed",
+        params: { threadId: "thread", turn: { id: "turn-1", status: "failed" } },
+      }),
+      ...adapter.completeTurn(),
+    ];
+    expect(events).toEqual([
+      { type: "notice", key: "retry-turn-1", level: "info", text: "overloaded（正在重试）" },
+      { type: "turn.completed", error: "boom" },
+    ]);
   });
 });

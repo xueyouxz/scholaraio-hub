@@ -1,3 +1,4 @@
+import type { AgentEvent } from "../../src/agent/events.js";
 import { MessageQueue } from "../../src/sdk/messageQueue.js";
 import type {
   AgentProvider,
@@ -5,7 +6,6 @@ import type {
   AuthStatus,
   StartSessionOptions,
 } from "../../src/sdk/providers/types.js";
-import type { SDKMessage } from "../../src/sdk/types.js";
 import type { Process } from "../../src/supervisor/Process.js";
 import type { SessionLaunch } from "../../src/supervisor/Supervisor.js";
 
@@ -22,8 +22,8 @@ export interface ScriptedProviderOptions {
 }
 
 /**
- * Minimal AgentProvider for supervisor tests: emits an init message carrying the
- * session id, an optional assistant reply, then a result.
+ * Minimal AgentProvider for supervisor tests: announces the session, emits an
+ * optional reply, then completes the turn.
  *
  * This replaces the old bespoke mock SDK interfaces — tests now exercise the
  * same provider path as production.
@@ -49,24 +49,20 @@ export function createScriptedProvider(options: ScriptedProviderOptions = {}): A
       if (startOptions.initialMessage) queue.push(startOptions.initialMessage);
       let aborted = false;
 
-      async function* iterator(): AsyncIterableIterator<SDKMessage> {
-        yield { type: "system", subtype: "init", session_id: sessionId };
+      async function* events(): AsyncIterableIterator<AgentEvent> {
+        yield { type: "session.started", sessionId };
         if (options.reply) {
-          yield {
-            type: "assistant",
-            session_id: sessionId,
-            message: { role: "assistant", content: options.reply },
-          };
+          yield { type: "text.delta", blockId: `${sessionId}-reply`, delta: options.reply };
         }
         if (options.holdOpen) {
           while (!aborted) await new Promise((resolve) => setTimeout(resolve, 10));
           return;
         }
-        yield { type: "result", session_id: sessionId };
+        yield { type: "turn.completed" };
       }
 
       return {
-        iterator: iterator(),
+        events: events(),
         queue,
         sessionId,
         abort: () => {

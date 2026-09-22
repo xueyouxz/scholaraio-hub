@@ -1,7 +1,17 @@
 import { randomUUID } from "node:crypto";
+import type { AgentEvent } from "../../src/agent/events.js";
 import { MessageQueue } from "../../src/sdk/messageQueue.js";
+import { ClaudeEventAdapter } from "../../src/sdk/providers/claude-events.js";
 import type { AgentProvider, StartSessionOptions } from "../../src/sdk/providers/types.js";
 import type { SDKMessage } from "../../src/sdk/types.js";
+
+/** The fake speaks Agent SDK wire format; translate it as the real provider does. */
+async function* replayThroughAdapter(
+  messages: AsyncIterable<SDKMessage>,
+): AsyncIterableIterator<AgentEvent> {
+  const adapter = new ClaudeEventAdapter();
+  for await (const message of messages) yield* adapter.accept(message);
+}
 
 /** Deterministic CLI boundary for protocol and browser tests. */
 export class WorkbenchProvider implements AgentProvider {
@@ -84,7 +94,7 @@ export class WorkbenchProvider implements AgentProvider {
       }
     }
     return {
-      iterator: events(),
+      events: replayThroughAdapter(events()),
       queue,
       sessionId,
       abort: () => {

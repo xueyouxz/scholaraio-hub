@@ -4,8 +4,8 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import type { UIMessageChunk } from "ai";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { UIChunkWriter } from "../../../src/agent/uiChunks.js";
 import { CodexProvider } from "../../../src/sdk/providers/codex.js";
-import { SessionMessageNormalizer } from "../../../src/sessions/SessionMessageNormalizer.js";
 
 describe("Codex app-server compatibility", () => {
   let root: string;
@@ -35,17 +35,15 @@ describe("Codex app-server compatibility", () => {
       },
     });
     const chunks: UIMessageChunk[] = [];
-    const normalizer = new SessionMessageNormalizer((chunk) => chunks.push(chunk));
+    const writer = new UIChunkWriter((chunk) => chunks.push(chunk));
     try {
-      for await (const message of session.iterator) {
-        expect(message.type, JSON.stringify(message)).not.toBe("error");
-        normalizer.accept(message);
-        if (message.type === "result") {
-          expect(message.is_error, JSON.stringify(message)).not.toBe(true);
+      for await (const event of session.events) {
+        writer.write(event);
+        if (event.type === "turn.completed") {
+          expect(event.error, JSON.stringify(event)).toBeUndefined();
           break;
         }
       }
-      normalizer.finish();
       expect(approvals).toBe(1);
       expect(
         chunks
@@ -61,29 +59,30 @@ describe("Codex app-server compatibility", () => {
   it("releases an idle queue when aborted", async () => {
     const session = await provider.startSession({ cwd: root, initialMessage: { text: "hello" } });
     while (true) {
-      const next = await session.iterator.next();
+      const next = await session.events.next();
       expect(next.done).not.toBe(true);
-      expect(next.value?.type).not.toBe("error");
-      if (next.value?.type === "result") break;
+      if (next.value?.type === "turn.completed") {
+        expect(next.value.error).toBeUndefined();
+        break;
+      }
     }
-    const waiting = session.iterator.next();
+    const waiting = session.events.next();
     session.abort();
     await waiting;
-    await session.iterator.return?.();
+    await session.events.return?.();
   });
   it("interrupts an active native turn", async () => {
     const session = await provider.startSession({ cwd: root, initialMessage: { text: "slow" } });
     let interrupted = false;
     let completed = false;
     try {
-      for await (const message of session.iterator) {
-        expect(message.type, JSON.stringify(message)).not.toBe("error");
-        if (message.type === "text_delta") {
+      for await (const event of session.events) {
+        if (event.type === "text.delta" && !interrupted) {
           await session.interrupt?.();
           interrupted = true;
         }
-        if (message.type === "result") {
-          expect(message.is_error, JSON.stringify(message)).not.toBe(true);
+        if (event.type === "turn.completed") {
+          expect(event.error, JSON.stringify(event)).toBeUndefined();
           completed = true;
           break;
         }

@@ -1,11 +1,12 @@
 import { randomUUID } from "node:crypto";
 import type { ProviderName, UrlProjectId } from "@scholaraio-hub/shared";
 import type { PendingInputType } from "@scholaraio-hub/shared";
+import type { AgentEvent } from "../agent/events.js";
 import { getLogger } from "../logging/logger.js";
 import { getProvider } from "../sdk/providers/index.js";
 import { resolveSessionControls } from "../sdk/providers/session-capabilities.js";
 import type { AgentProvider } from "../sdk/providers/types.js";
-import type { PermissionMode, SDKMessage, UserMessage } from "../sdk/types.js";
+import type { PermissionMode, UserMessage } from "../sdk/types.js";
 import type { EventBus } from "../watcher/EventBus.js";
 import { Process, type ProcessConstructorOptions } from "./Process.js";
 import { SupervisorEvents } from "./SupervisorEvents.js";
@@ -77,7 +78,8 @@ export type OnSessionSummaryCallback = (
 ) => Promise<SessionSummary | null>;
 
 export type OnSessionExecutorCallback = (sessionId: string, executor: string) => Promise<void>;
-export type OnProviderSDKMessageCallback = (provider: ProviderName, message: SDKMessage) => void;
+/** Every event a provider reports, for cross-session telemetry (e.g. rate limits). */
+export type OnProviderEventCallback = (provider: ProviderName, event: AgentEvent) => void;
 
 export interface SupervisorOptions {
   onProcessCreated?: (process: Process) => void;
@@ -99,7 +101,7 @@ export interface SupervisorOptions {
   /** Callback to persist executor metadata for resumed sessions */
   onSessionExecutor?: OnSessionExecutorCallback;
   /** Callback for provider-level telemetry carried in SDK message streams */
-  onProviderSDKMessage?: OnProviderSDKMessageCallback;
+  onProviderEvent?: OnProviderEventCallback;
 }
 
 export class Supervisor {
@@ -117,7 +119,7 @@ export class Supervisor {
   private workerQueue: WorkerQueue;
   private onSessionSummary?: OnSessionSummaryCallback;
   private onSessionExecutor?: OnSessionExecutorCallback;
-  private onProviderSDKMessage?: OnProviderSDKMessageCallback;
+  private onProviderEvent?: OnProviderEventCallback;
   private staleCheckTimer: ReturnType<typeof setInterval>;
   private readonly events: SupervisorEvents;
 
@@ -137,7 +139,7 @@ export class Supervisor {
     this.onSessionSummary = options.onSessionSummary;
     this.events = new SupervisorEvents(options.eventBus, options.onSessionSummary);
     this.onSessionExecutor = options.onSessionExecutor;
-    this.onProviderSDKMessage = options.onProviderSDKMessage;
+    this.onProviderEvent = options.onProviderEvent;
     this.staleCheckTimer = setInterval(
       () => this.terminateStaleProcesses(),
       STALE_CHECK_INTERVAL_MS,
@@ -280,7 +282,7 @@ export class Supervisor {
       },
     });
 
-    const { iterator, queue, abort, isProcessAlive } = result;
+    const { events, queue, abort, isProcessAlive } = result;
     const controls = resolveSessionControls(result);
 
     const tempSessionId = randomUUID();
@@ -307,7 +309,7 @@ export class Supervisor {
       remoteEnv: modelSettings?.remoteEnv,
     };
 
-    const process = new Process(iterator, options);
+    const process = new Process(events, options);
     this.onProcessCreated?.(process);
     processHolder.process = process;
 
@@ -368,7 +370,7 @@ export class Supervisor {
       },
     });
 
-    const { iterator, queue, abort, isProcessAlive } = result;
+    const { events, queue, abort, isProcessAlive } = result;
     const controls = resolveSessionControls(result);
 
     const options: ProcessConstructorOptions = {
@@ -394,12 +396,11 @@ export class Supervisor {
       remoteEnv: modelSettings?.remoteEnv,
     };
 
-    const process = new Process(iterator, options);
+    const process = new Process(events, options);
     this.onProcessCreated?.(process);
     processHolder.process = process;
 
-    // Add the initial user message to history with the same UUID we passed to provider.
-    process.addInitialUserMessage(message.text, messageUuid, message.tempId);
+    process.noteUserMessage(message.text);
 
     // Wait for the real session ID from the provider before registering
     if (!resumeSessionId) {
@@ -767,8 +768,8 @@ export class Supervisor {
     process.subscribe((event) => {
       if (event.type === "complete") {
         this.unregisterProcess(process);
-      } else if (event.type === "message") {
-        this.onProviderSDKMessage?.(process.provider, event.message);
+      } else if (event.type === "agent") {
+        this.onProviderEvent?.(process.provider, event.event);
       } else if (event.type === "session-id-changed") {
         // Update session→process mapping when temp ID is replaced by real ID from SDK
         // This is critical for ExternalSessionTracker to correctly identify owned sessions

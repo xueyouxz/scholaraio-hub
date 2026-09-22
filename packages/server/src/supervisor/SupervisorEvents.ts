@@ -50,12 +50,7 @@ function buildOptimisticSessionSeed(process: Process): {
   fullTitle: string | null;
   messageCount: number;
 } {
-  const history = process.getMessageHistory();
-  const firstUser = history.find(
-    (msg) => msg.type === "user" && typeof msg.message?.content === "string",
-  );
-  const firstContent = firstUser?.message?.content;
-  const fullTitle = typeof firstContent === "string" ? firstContent.trim() : "";
+  const fullTitle = process.firstUserText?.trim() ?? "";
   if (!fullTitle) {
     return { title: null, fullTitle: null, messageCount: 0 };
   }

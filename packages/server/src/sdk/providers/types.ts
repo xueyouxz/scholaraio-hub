@@ -6,8 +6,9 @@ import type {
   ProviderUsageLimits,
   SlashCommand,
 } from "@scholaraio-hub/shared";
+import type { AgentEvent } from "../../agent/events.js";
 import type { MessageQueue } from "../messageQueue.js";
-import type { CanUseTool, SDKMessage, UserMessage } from "../types.js";
+import type { CanUseTool, UserMessage } from "../types.js";
 
 export type { ProviderName };
 
@@ -60,8 +61,11 @@ export interface StartSessionOptions {
  * This is the common interface all providers must return.
  */
 export interface AgentSession {
-  /** Async iterator yielding SDK messages */
-  iterator: AsyncIterableIterator<SDKMessage>;
+  /**
+   * The session's events in the provider-neutral model. Provider-native
+   * messages never cross this boundary; see src/agent/events.ts.
+   */
+  events: AsyncIterableIterator<AgentEvent>;
   /** Message queue for sending messages to the agent */
   queue: MessageQueue;
   /** Abort function to cancel the session */

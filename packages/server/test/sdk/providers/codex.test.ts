@@ -9,10 +9,8 @@ import { existsSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import {
-  convertItemToSDKMessages,
-  convertNotificationToSDKMessages,
-} from "../../../src/sdk/providers/codex-events.js";
+import type { AgentEvent } from "../../../src/agent/events.js";
+import { CodexEventAdapter } from "../../../src/sdk/providers/codex-events.js";
 import { CodexProvider, type CodexProviderConfig } from "../../../src/sdk/providers/codex.js";
 
 describe("CodexProvider", () => {
@@ -85,7 +83,7 @@ describe("CodexProvider", () => {
         initialMessage: { text: "test" },
       });
 
-      expect(session.iterator).toBeDefined();
+      expect(session.events).toBeDefined();
       expect(typeof session.abort).toBe("function");
       expect(session.queue).toBeDefined();
     });
@@ -100,20 +98,16 @@ describe("CodexProvider", () => {
         initialMessage: { text: "test" },
       });
 
-      const messages: unknown[] = [];
-      for await (const msg of session.iterator) {
-        messages.push(msg);
-        if (msg.type === "result" || msg.type === "error") break;
+      const events: AgentEvent[] = [];
+      for await (const event of session.events) {
+        events.push(event);
+        if (event.type === "turn.completed") break;
       }
 
-      // Should get an error message about CLI not found
-      expect(
-        messages.some(
-          (m: unknown) =>
-            (m as { type?: string; error?: string }).type === "error" ||
-            (m as { type?: string }).type === "result",
-        ),
-      ).toBe(true);
+      // A spawn failure still ends the run, as a failed turn.
+      const last = events.at(-1);
+      expect(last?.type).toBe("turn.completed");
+      expect(last?.type === "turn.completed" && last.error).toBeTruthy();
     });
   });
 });
@@ -204,291 +198,128 @@ describe("CodexProvider Event Normalization", () => {
     expect(typeof provider.startSession).toBe("function");
   });
 
-  it("normalizes command execution tool_use and tool_result to Read shape", () => {
-    const messages = convertItemToSDKMessages(
-      {
-        id: "call-read",
-        type: "command_execution",
-        command: "cat src/example.ts",
-        aggregated_output: "line 1\nline 2",
-        exit_code: 0,
-        status: "completed",
-      },
-      "session-1",
-      "turn-1",
-      "item/completed",
-    );
+  /** Feed one completed app-server item through a fresh adapter. */
+  const completed = (item: Record<string, unknown>) => {
+    const adapter = new CodexEventAdapter("thread-1");
+    adapter.beginTurn("turn-1");
+    return adapter.notification({
+      method: "item/completed",
+      params: { threadId: "thread-1", turnId: "turn-1", item },
+    });
+  };
+  const command = (id: string, commandLine: string, output: string, exitCode: number) =>
+    completed({
+      id,
+      type: "commandExecution",
+      command: commandLine,
+      aggregatedOutput: output,
+      exitCode,
+      status: "completed",
+    });
 
-    expect(messages).toHaveLength(2);
-    expect(messages[0]?.message).toMatchObject({
-      role: "assistant",
-      content: [
-        {
-          type: "tool_use",
-          id: "call-read",
-          name: "Read",
-          input: { file_path: "src/example.ts" },
-        },
-      ],
-    });
-    expect(messages[1]?.message).toMatchObject({
-      role: "user",
-      content: [
-        {
-          type: "tool_result",
-          tool_use_id: "call-read",
-          content: "line 1\nline 2",
-        },
-      ],
-    });
-    expect(messages[1]?.toolUseResult).toMatchObject({
-      type: "text",
-      file: {
-        filePath: "src/example.ts",
+  it("canonicalizes a cat command into a Read call with a structured result", () => {
+    expect(command("call-read", "cat src/example.ts", "line 1\nline 2", 0)).toMatchObject([
+      {
+        type: "tool.call",
+        callId: "call-read",
+        name: "Read",
+        input: { file_path: "src/example.ts" },
       },
-    });
+      {
+        type: "tool.result",
+        callId: "call-read",
+        output: "line 1\nline 2",
+        isError: false,
+        detail: { type: "text", file: { filePath: "src/example.ts" } },
+      },
+    ]);
   });
 
-  it("normalizes shell-launcher wrapped command execution to Read shape", () => {
-    const messages = convertItemToSDKMessages(
-      {
-        id: "call-read-wrapped",
-        type: "command_execution",
-        command: "/bin/bash -lc \"sed -n '10,12p' src/example.ts\"",
-        aggregated_output: "line 10\nline 11\nline 12",
-        exit_code: 0,
-        status: "completed",
-      },
-      "session-1",
-      "turn-1",
-      "item/completed",
+  it("sees through shell launchers when canonicalizing", () => {
+    const events = command(
+      "call-read-wrapped",
+      "/bin/bash -lc \"sed -n '10,12p' src/example.ts\"",
+      "line 10\nline 11\nline 12",
+      0,
     );
-
-    expect(messages).toHaveLength(2);
-    expect(messages[0]?.message).toMatchObject({
-      role: "assistant",
-      content: [
-        {
-          type: "tool_use",
-          id: "call-read-wrapped",
-          name: "Read",
-          input: { file_path: "src/example.ts", offset: 10, limit: 3 },
-        },
-      ],
-    });
-    expect(messages[1]?.toolUseResult).toMatchObject({
-      type: "text",
-      file: {
-        filePath: "src/example.ts",
-        startLine: 10,
+    expect(events).toMatchObject([
+      {
+        type: "tool.call",
+        name: "Read",
+        input: { file_path: "src/example.ts", offset: 10, limit: 3 },
       },
-    });
+      {
+        type: "tool.result",
+        detail: { type: "text", file: { filePath: "src/example.ts", startLine: 10 } },
+      },
+    ]);
   });
 
-  it("normalizes heredoc command execution as Write with structured file result", () => {
+  it("canonicalizes a heredoc into a Write call", () => {
     const content = "line 1\nline 2\n";
-    const messages = convertItemToSDKMessages(
+    const events = command("call-write", `cat > src/generated.ts <<'EOF'\n${content}EOF`, "", 0);
+    expect(events).toMatchObject([
+      { type: "tool.call", name: "Write", input: { file_path: "src/generated.ts", content } },
       {
-        id: "call-write",
-        type: "command_execution",
-        command: `cat > src/generated.ts <<'EOF'\n${content}EOF`,
-        aggregated_output: "",
-        exit_code: 0,
-        status: "completed",
-      },
-      "session-1",
-      "turn-2",
-      "item/completed",
-    );
-
-    expect(messages).toHaveLength(2);
-    expect(messages[0]?.message).toMatchObject({
-      role: "assistant",
-      content: [
-        {
-          type: "tool_use",
-          id: "call-write",
-          name: "Write",
-          input: {
-            file_path: "src/generated.ts",
-            content,
-          },
+        type: "tool.result",
+        isError: false,
+        detail: {
+          type: "text",
+          file: { filePath: "src/generated.ts", content, numLines: 2, startLine: 1, totalLines: 2 },
         },
-      ],
-    });
-
-    const resultBlock = ((messages[1]?.message as { content?: unknown[] } | undefined)?.content ??
-      [])[0] as Record<string, unknown>;
-    expect(resultBlock.type).toBe("tool_result");
-    expect(resultBlock.tool_use_id).toBe("call-write");
-    expect(resultBlock.is_error).toBeUndefined();
-    expect(messages[1]?.toolUseResult).toMatchObject({
-      type: "text",
-      file: {
-        filePath: "src/generated.ts",
-        content,
-        numLines: 2,
-        startLine: 1,
-        totalLines: 2,
       },
-    });
+    ]);
   });
 
-  it("normalizes no-match ripgrep exit code as non-error Grep result", () => {
-    const messages = convertItemToSDKMessages(
-      {
-        id: "call-grep",
-        type: "command_execution",
-        command: "rg -n missing_pattern src",
-        aggregated_output: "",
-        exit_code: 1,
-        status: "completed",
-      },
-      "session-1",
-      "turn-2",
-      "item/completed",
-    );
-
-    expect(messages).toHaveLength(2);
-    expect(messages[0]?.message).toMatchObject({
-      role: "assistant",
-      content: [
-        {
-          type: "tool_use",
-          id: "call-grep",
-          name: "Grep",
-          input: { pattern: "missing_pattern", path: "src" },
-        },
-      ],
-    });
-
-    const resultBlock = ((messages[1]?.message as { content?: unknown[] } | undefined)?.content ??
-      [])[0] as Record<string, unknown>;
-    expect(resultBlock.type).toBe("tool_result");
-    expect(resultBlock.tool_use_id).toBe("call-grep");
-    expect(resultBlock.is_error).toBeUndefined();
-    expect(messages[1]?.toolUseResult).toMatchObject({
-      mode: "files_with_matches",
-      numFiles: 0,
-    });
+  it("treats ripgrep's no-match exit code as a successful empty Grep", () => {
+    expect(command("call-grep", "rg -n missing_pattern src", "", 1)).toMatchObject([
+      { type: "tool.call", name: "Grep", input: { pattern: "missing_pattern", path: "src" } },
+      { type: "tool.result", isError: false, detail: { mode: "files_with_matches", numFiles: 0 } },
+    ]);
   });
 
-  it("emits a tool_result when a WebSearch item completes", () => {
-    const messages = convertItemToSDKMessages(
+  it("completes a WebSearch call when its item completes", () => {
+    expect(
+      completed({ id: "search-1", type: "webSearch", query: "streaming tool status" }),
+    ).toMatchObject([
+      { type: "tool.call", name: "WebSearch", input: { query: "streaming tool status" } },
       {
-        id: "search-1",
-        type: "web_search",
-        query: "streaming tool status",
+        type: "tool.result",
+        output: "Search completed for: streaming tool status",
+        detail: { query: "streaming tool status", results: [] },
       },
-      "session-1",
-      "turn-search",
-      "item/completed",
-    );
-
-    expect(messages).toHaveLength(2);
-    expect(messages[0]?.message).toMatchObject({
-      role: "assistant",
-      content: [
-        {
-          type: "tool_use",
-          id: "search-1",
-          name: "WebSearch",
-          input: { query: "streaming tool status" },
-        },
-      ],
-    });
-    expect(messages[1]?.message).toMatchObject({
-      role: "user",
-      content: [
-        {
-          type: "tool_result",
-          tool_use_id: "search-1",
-          content: "Search completed for: streaming tool status",
-        },
-      ],
-    });
-    expect(messages[1]?.toolUseResult).toMatchObject({
-      query: "streaming tool status",
-      results: [],
-    });
+    ]);
   });
 
-  it("does not emit rate limit errors when hasCredits is false but usage is below 100%", () => {
-    const messages = convertNotificationToSDKMessages(
-      {
-        method: "account/rateLimits/updated",
-        params: {
-          rateLimits: {
-            primary: {
-              usedPercent: 21,
-              resetsAt: 1772721801,
-            },
-            credits: {
-              hasCredits: false,
-              unlimited: false,
-              balance: null,
-            },
-          },
-        },
-      },
-      "session-1",
-      new Map(),
-    );
-
-    expect(messages).toEqual([]);
+  it("treats rate-limit snapshots as telemetry, never as errors", () => {
+    const adapter = new CodexEventAdapter("thread-1");
+    adapter.beginTurn("turn-1");
+    for (const rateLimits of [
+      { primary: { usedPercent: 21 }, credits: { hasCredits: false, unlimited: false } },
+      { primary: { used_percent: 100 }, credits: { has_credits: false, unlimited: false } },
+    ]) {
+      expect(
+        adapter.notification({ method: "account/rateLimits/updated", params: { rateLimits } }),
+      ).toEqual([]);
+    }
   });
 
-  it("does not emit synthetic errors for exhausted usage snapshots", () => {
-    const messages = convertNotificationToSDKMessages(
-      {
-        method: "account/rateLimits/updated",
-        params: {
-          rateLimits: {
-            primary: {
-              used_percent: 100,
-              resets_at: 1772721801,
-            },
-            credits: {
-              has_credits: false,
-              unlimited: false,
-              balance: null,
-            },
-          },
-        },
-      },
-      "session-1",
-      new Map(),
-    );
-
-    expect(messages).toEqual([]);
-  });
-
-  it("emits errors from codex error notifications", () => {
-    const messages = convertNotificationToSDKMessages(
-      {
+  it("ends the turn with the provider's message on a terminal error", () => {
+    const adapter = new CodexEventAdapter("thread-1");
+    adapter.beginTurn("turn-1");
+    const message =
+      "You've hit your usage limit. Visit https://chatgpt.com/codex/settings/usage to purchase more credits or try again later.";
+    expect(
+      adapter.notification({
         method: "error",
         params: {
           threadId: "thread-1",
           turnId: "turn-1",
           willRetry: false,
-          error: {
-            message:
-              "You've hit your usage limit. Visit https://chatgpt.com/codex/settings/usage to purchase more credits or try again later.",
-            codexErrorInfo: "usageLimitExceeded",
-          },
+          error: { message, codexErrorInfo: "usageLimitExceeded" },
         },
-      },
-      "session-1",
-      new Map(),
-    );
-
-    expect(messages).toHaveLength(1);
-    expect(messages[0]).toMatchObject({
-      type: "error",
-      session_id: "session-1",
-      error:
-        "You've hit your usage limit. Visit https://chatgpt.com/codex/settings/usage to purchase more credits or try again later.",
-    });
+      }),
+    ).toEqual([{ type: "turn.completed", error: message }]);
   });
 });
 

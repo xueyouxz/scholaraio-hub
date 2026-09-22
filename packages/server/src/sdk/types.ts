@@ -19,14 +19,12 @@ export interface ContentBlock {
 }
 
 /**
- * SDK Message - loosely typed to preserve all fields from the SDK.
+ * Claude Agent SDK wire message.
  *
- * We intentionally use a loose type here to:
- * 1. Pass through all SDK fields without stripping
- * 2. Allow frontend to inspect any field for debugging
- * 3. Avoid breaking when SDK adds new fields
- *
- * Known fields are documented but not enforced.
+ * Only valid on the provider side of the adapter boundary: the Claude provider
+ * reads it, `ClaudeEventAdapter` (sdk/providers/claude-events.ts) translates it
+ * into AgentEvent, and nothing downstream sees it. Loosely typed on purpose —
+ * the SDK adds fields between releases and the adapter picks what it needs.
  */
 export interface SDKMessage {
   type: string;

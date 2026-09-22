@@ -9,6 +9,7 @@ import type {
   ThinkingConfig,
   UrlProjectId,
 } from "@scholaraio-hub/shared";
+import type { AgentEvent } from "../agent/events.js";
 import { getLogger } from "../logging/logger.js";
 import type { MessageQueue } from "../sdk/messageQueue.js";
 import { decidePermission } from "../sdk/providers/permission-policy.js";
@@ -17,17 +18,9 @@ import {
   resolveSessionControls,
 } from "../sdk/providers/session-capabilities.js";
 import type { AgentSession } from "../sdk/providers/types.js";
-import type {
-  PermissionMode,
-  SDKMessage,
-  TimestampedSDKMessage,
-  ToolApprovalResult,
-  UserMessage,
-} from "../sdk/types.js";
+import type { PermissionMode, ToolApprovalResult, UserMessage } from "../sdk/types.js";
 import { ApprovalQueue } from "./ApprovalQueue.js";
-import { normalizeProviderStreamMessage } from "./messageNormalization.js";
 import { matchPermissionRules } from "./permissionRules.js";
-import { StreamingCatchUp } from "./streamingCatchUp.js";
 import type {
   AgentActivity,
   InputRequest,
@@ -39,30 +32,6 @@ import type {
 import { DEFAULT_IDLE_TIMEOUT_MS } from "./types.js";
 
 type Listener = (event: ProcessEvent) => void;
-
-/**
- * IMPORTANT: Never filter out messages by type before emitting to SSE!
- *
- * Tool results are user-type messages containing tool_result content blocks.
- * If you filter out user messages, tool calls will appear stuck in "pending"
- * state until the page is refreshed (when JSONL is fetched from disk).
- *
- * The client-side mergeMessages handles deduplication by UUID, so duplicate
- * emissions are safe and expected (queueMessage emits user messages, and
- * the iterator also yields them).
- *
- * @returns true - always emit the message
- */
-export function shouldEmitMessage(_message: SDKMessage): boolean {
-  // Always emit. DO NOT add filtering here!
-  // See docstring above for why this is critical.
-  return true;
-}
-
-/**
- * Pending tool approval request.
- * The SDK's canUseTool callback creates this and waits for respondToInput.
- */
 
 export interface ProcessConstructorOptions extends ProcessOptions {
   /** MessageQueue for real SDK, undefined for mock SDK */
@@ -102,18 +71,8 @@ export class Process {
   /** Set synchronously when transport/spawn fails to prevent race with queueMessage */
   private transportFailed = false;
 
-  /**
-   * Two-bucket message buffer for SSE replay to late-joining clients.
-   * Buckets swap every 15 seconds, giving 15-30s of history.
-   * This bounds memory while covering the JSONL persistence gap.
-   */
-  private currentBucket: SDKMessage[] = [];
-  private previousBucket: SDKMessage[] = [];
-  private bucketSwapTimer: ReturnType<typeof setInterval> | null = null;
-  private static readonly BUCKET_SWAP_INTERVAL_MS = 15_000;
-
-  /** Accumulated streaming text for catch-up when clients connect mid-stream */
-  private readonly streamingCatchUp = new StreamingCatchUp();
+  /** Text of the first user message, used to title a new session optimistically. */
+  private _firstUserText: string | null = null;
 
   /** Tool approvals waiting on the user, in the order they were asked. */
   private readonly approvals = new ApprovalQueue({
@@ -171,7 +130,7 @@ export class Process {
   private _exitResolve: (() => void) | null = null;
 
   constructor(
-    private sdkIterator: AsyncIterator<SDKMessage>,
+    private agentEvents: AsyncIterator<AgentEvent>,
     options: ProcessConstructorOptions,
   ) {
     this.id = randomUUID();
@@ -202,32 +161,8 @@ export class Process {
       this._exitResolve = resolve;
     });
 
-    // Start bucket swap timer for bounded message history
-    this.startBucketSwapTimer();
-
-    // Start processing messages from the SDK
+    // Start consuming the provider's event stream
     this.processMessages();
-  }
-
-  /**
-   * Start the timer that swaps message buckets.
-   * This bounds memory by discarding messages older than ~30 seconds.
-   */
-  private startBucketSwapTimer(): void {
-    this.bucketSwapTimer = setInterval(() => {
-      this.previousBucket = this.currentBucket;
-      this.currentBucket = [];
-    }, Process.BUCKET_SWAP_INTERVAL_MS);
-  }
-
-  /**
-   * Stop the bucket swap timer.
-   */
-  private stopBucketSwapTimer(): void {
-    if (this.bucketSwapTimer) {
-      clearInterval(this.bucketSwapTimer);
-      this.bucketSwapTimer = null;
-    }
   }
 
   get sessionId(): string {
@@ -604,7 +539,6 @@ export class Process {
     );
 
     this.clearIdleTimer();
-    this.stopBucketSwapTimer();
     this.iteratorDone = true;
 
     // Wake up hold wait if held (so processMessages loop can exit)
@@ -695,54 +629,17 @@ export class Process {
     return info;
   }
 
-  /**
-   * Get recent message history (15-30 seconds) for SSE replay.
-   * Returns messages from both buckets for late-joining clients.
-   */
-  getMessageHistory(): SDKMessage[] {
-    return [...this.previousBucket, ...this.currentBucket];
+  /** Text of the first user message sent in this process, if any. */
+  get firstUserText(): string | null {
+    return this._firstUserText;
   }
 
   /**
-   * Accumulated streaming text, for clients that connect mid-stream.
+   * Record a user message the provider received outside queueMessage (the
+   * initial prompt passed at spawn time).
    */
-  getStreamingContent(): { messageId: string; text: string } | null {
-    return this.streamingCatchUp.snapshot();
-  }
-
-  /**
-   * Ensure every emitted/replayed message has a timestamp.
-   * Some providers (notably Codex stream messages) omit this field.
-   */
-  private withTimestamp<T extends SDKMessage>(message: T): TimestampedSDKMessage<T> {
-    if (typeof message.timestamp === "string" && message.timestamp.trim().length > 0) {
-      return message as TimestampedSDKMessage<T>;
-    }
-    return {
-      ...message,
-      timestamp: new Date().toISOString(),
-    } as TimestampedSDKMessage<T>;
-  }
-
-  /**
-   * Add initial user message to history without queuing to SDK.
-   * Used for real SDK sessions where the initial message is passed directly
-   * to the SDK but needs to be in history for SSE replay to late-joining clients.
-   *
-   * @param text - The message text
-   * @param uuid - The UUID to use (should match what was passed to SDK)
-   * @param tempId - Optional client temp ID for optimistic UI tracking
-   */
-  addInitialUserMessage(text: string, uuid: string, tempId?: string): void {
-    const sdkMessage = this.withTimestamp({
-      type: "user",
-      uuid,
-      tempId,
-      message: { role: "user", content: text },
-    } as SDKMessage);
-
-    this.currentBucket.push(sdkMessage);
-    this.emit({ type: "message", message: sdkMessage });
+  noteUserMessage(text: string): void {
+    this._firstUserText ??= text;
   }
 
   /**
@@ -762,7 +659,7 @@ export class Process {
   private buildUserMessageContent(message: UserMessage): string {
     let text = message.text;
 
-    // Append attachment paths (same format as MessageQueue.toSDKMessage)
+    // Append attachment paths (same format MessageQueue sends to the provider)
     if (message.attachments?.length) {
       const lines = message.attachments.map(
         (f) => `- ${f.originalName} (${this.formatSize(f.size)}, ${f.mimeType}): ${f.path}`,
@@ -806,43 +703,9 @@ export class Process {
     const uuid = randomUUID();
     const messageWithUuid: UserMessage = { ...message, uuid };
 
-    // Build content that matches what the SDK will write to JSONL.
-    // This ensures SSE/history messages can be deduplicated against JSONL.
+    // The same text the provider receives, attachments included.
     const content = this.buildUserMessageContent(message);
-
-    const sdkMessage = this.withTimestamp({
-      type: "user",
-      uuid,
-      tempId: message.tempId,
-      message: { role: "user", content },
-    } as SDKMessage);
-
-    // Add to history for SSE replay to late-joining clients.
-    // The client-side deduplication (mergeSSEMessage, mergeJSONLMessages) handles
-    // any duplicates when JSONL is later fetched. This is especially important
-    // for the two-phase flow (createSession + queueMessage) where the client
-    // may connect before the JSONL is written.
-    if (shouldEmitMessage(sdkMessage)) {
-      // Check for duplicates in both buckets before adding
-      // This prevents duplicates if the provider echoes the message back with the same UUID
-      const isDuplicate =
-        this.currentBucket.some((m) => m.uuid && m.uuid === sdkMessage.uuid) ||
-        this.previousBucket.some((m) => m.uuid && m.uuid === sdkMessage.uuid);
-      if (!isDuplicate) {
-        this.currentBucket.push(sdkMessage);
-      }
-    }
-
-    // Emit to current SSE subscribers so other clients see it immediately
-    // Include the session ID so client can associate it correctly
-    // The provider will echo this message back, but if we ensure UUIDs match,
-    // the client will merge them.
-    if (shouldEmitMessage(sdkMessage)) {
-      this.emit({
-        type: "message",
-        message: { ...sdkMessage, session_id: this._sessionId },
-      });
-    }
+    this.noteUserMessage(content);
 
     if (this.messageQueue) {
       // If provider supports in-turn steering, prefer that over queue-after-turn behavior.
@@ -1111,7 +974,6 @@ export class Process {
 
   async abort(): Promise<void> {
     this.clearIdleTimer();
-    this.stopBucketSwapTimer();
 
     // Call the SDK's abort function if available
     if (this.abortFn) {
@@ -1149,7 +1011,7 @@ export class Process {
           }
         }
 
-        const result = await this.sdkIterator.next();
+        const result = await this.agentEvents.next();
 
         if (result.done) {
           this.iteratorDone = true;
@@ -1160,95 +1022,20 @@ export class Process {
           break;
         }
 
-        const message = normalizeProviderStreamMessage(this.withTimestamp(result.value));
+        const event = result.value;
         this._lastMessageTime = new Date();
 
-        // Store message in history for replay to late-joining clients.
-        // Exclude stream_event messages - they're transient streaming deltas that
-        // are redundant once the final assistant message arrives. Replaying them
-        // causes flickering as the last message appears to stream in again.
-        if (shouldEmitMessage(message) && message.type !== "stream_event") {
-          // Check for duplicates before adding to history
-          // This handles the case where queueMessage added the optimistic message
-          // and now the provider is echoing it back with the same UUID
-          const isDuplicate =
-            message.type === "user" &&
-            message.uuid &&
-            (this.currentBucket.some((m) => m.uuid === message.uuid) ||
-              this.previousBucket.some((m) => m.uuid === message.uuid));
-
-          if (!isDuplicate) {
-            this.currentBucket.push(message);
-          }
+        if (event.type === "session.started") {
+          this.adoptSessionId(event.sessionId);
+        } else if (event.type === "model.resolved") {
+          this._resolvedModel ??= event.model;
+        } else if (event.type === "turn.completed" && event.contextWindow) {
+          this._contextWindow = Math.max(this._contextWindow ?? 0, event.contextWindow);
         }
 
-        // Extract session ID from init message
-        if (message.type === "system" && message.subtype === "init" && message.session_id) {
-          const log = getLogger();
-          const oldSessionId = this._sessionId;
-          this._sessionId = message.session_id;
-          this.sessionIdResolved = true;
+        this.emit({ type: "agent", event });
 
-          log.info(
-            {
-              event: "session_id_received",
-              sessionId: this._sessionId,
-              previousTempId: oldSessionId,
-              processId: this.id,
-              projectId: this.projectId,
-            },
-            `Session ID received from SDK: ${this._sessionId}`,
-          );
-
-          // Emit session-id-changed event so Supervisor can update its mapping
-          // This is critical for ExternalSessionTracker to correctly identify owned sessions
-          if (oldSessionId !== this._sessionId) {
-            this.emit({
-              type: "session-id-changed",
-              oldSessionId,
-              newSessionId: this._sessionId,
-            });
-          }
-
-          // Resolve any waiters
-          for (const resolve of this.sessionIdResolvers) {
-            resolve(this._sessionId);
-          }
-          this.sessionIdResolvers = [];
-        }
-
-        // Capture resolved model from first assistant message
-        if (
-          !this._resolvedModel &&
-          message.type === "assistant" &&
-          message.message?.model &&
-          message.message.model !== "<synthetic>"
-        ) {
-          this._resolvedModel = message.message.model;
-        }
-
-        // Emit to SSE subscribers
-        // See shouldEmitMessage() for why we never filter messages
-        if (shouldEmitMessage(message)) {
-          this.emit({ type: "message", message });
-        }
-
-        // Handle special message types
-        if (message.type === "system" && message.subtype === "input_request") {
-          // Legacy mock SDK behavior - handle input_request message
-          this.handleInputRequest(message);
-        } else if (message.type === "result") {
-          // Capture context window from modelUsage in result messages.
-          // Keys may include suffixes like "[1m]" (e.g. "claude-opus-4-6[1m]"),
-          // so we take the max contextWindow across all model entries.
-          if (message.modelUsage) {
-            const mu = message.modelUsage as Record<string, { contextWindow?: number }>;
-            for (const entry of Object.values(mu)) {
-              if (entry.contextWindow && entry.contextWindow > 0) {
-                this._contextWindow = Math.max(this._contextWindow ?? 0, entry.contextWindow);
-              }
-            }
-          }
+        if (event.type === "turn.completed") {
           this.transitionToIdle();
         }
       }
@@ -1294,6 +1081,32 @@ export class Process {
     }
   }
 
+  /** Take the provider's native session id and wake anyone waiting for it. */
+  private adoptSessionId(sessionId: string): void {
+    const previous = this._sessionId;
+    this._sessionId = sessionId;
+    this.sessionIdResolved = true;
+
+    getLogger().info(
+      {
+        event: "session_id_received",
+        sessionId,
+        previousTempId: previous,
+        processId: this.id,
+        projectId: this.projectId,
+      },
+      `Session ID received from provider: ${sessionId}`,
+    );
+
+    // The supervisor re-keys its session map on this event.
+    if (previous !== sessionId) {
+      this.emit({ type: "session-id-changed", oldSessionId: previous, newSessionId: sessionId });
+    }
+
+    for (const resolve of this.sessionIdResolvers) resolve(sessionId);
+    this.sessionIdResolvers = [];
+  }
+
   /**
    * Check if an error indicates the underlying Claude process was terminated.
    */
@@ -1309,25 +1122,6 @@ export class Process {
       // where <cmd> varies (e.g., "node", "claude"), so check for ENOENT broadly
       message.includes("ENOENT")
     );
-  }
-
-  /**
-   * Handle input_request message from mock SDK.
-   * Real SDK uses canUseTool callback instead.
-   */
-  private handleInputRequest(message: SDKMessage): void {
-    if (!message.input_request) return;
-
-    const request: InputRequest = {
-      id: message.input_request.id,
-      sessionId: this._sessionId,
-      type: message.input_request.type as InputRequest["type"],
-      prompt: message.input_request.prompt,
-      options: message.input_request.options,
-      timestamp: new Date().toISOString(),
-    };
-
-    this.setState({ type: "waiting-input", request });
   }
 
   private transitionToIdle(): void {
@@ -1387,10 +1181,6 @@ export class Process {
   }
 
   private emit(event: ProcessEvent): void {
-    if (event.type === "message") {
-      this.streamingCatchUp.accept(event.message);
-    }
-
     if (event.type === "state-change") {
       getLogger().debug(
         {

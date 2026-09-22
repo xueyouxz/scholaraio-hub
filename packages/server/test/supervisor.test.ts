@@ -429,15 +429,11 @@ describe("Supervisor", () => {
       const realSdk = {
         startSession: async () => {
           async function* iterator() {
-            yield {
-              type: "system",
-              subtype: "init",
-              session_id: "real-session-1",
-            };
-            yield { type: "result", session_id: "real-session-1" };
+            yield { type: "session.started" as const, sessionId: "real-session-1" };
+            yield { type: "turn.completed" as const };
           }
           return {
-            iterator: iterator(),
+            events: iterator(),
             queue: new MessageQueue(),
             abort: () => {},
           };
@@ -475,14 +471,10 @@ describe("Supervisor", () => {
         const realSdk = {
           startSession: async () => {
             async function* iterator() {
-              yield {
-                type: "system",
-                subtype: "init",
-                session_id: "reconcile-session-1",
-              };
+              yield { type: "session.started" as const, sessionId: "reconcile-session-1" };
             }
             return {
-              iterator: iterator(),
+              events: iterator(),
               queue: new MessageQueue(),
               abort: () => {},
             };
@@ -543,16 +535,12 @@ describe("Supervisor", () => {
       const realSdk = {
         startSession: async () => {
           async function* iterator() {
-            yield {
-              type: "system",
-              subtype: "init",
-              session_id: "terminated-session-1",
-            };
+            yield { type: "session.started" as const, sessionId: "terminated-session-1" };
             throw new Error("process exited");
           }
 
           return {
-            iterator: iterator(),
+            events: iterator(),
             queue: new MessageQueue(),
             abort: () => {},
           };
@@ -595,12 +583,8 @@ describe("Supervisor", () => {
         const realSdk = {
           startSession: async () => {
             async function* iterator() {
-              yield {
-                type: "system",
-                subtype: "init",
-                session_id: "idle-alive-session-1",
-              };
-              yield { type: "result", session_id: "idle-alive-session-1" };
+              yield { type: "session.started" as const, sessionId: "idle-alive-session-1" };
+              yield { type: "turn.completed" as const };
 
               while (!aborted) {
                 await new Promise((resolve) => setTimeout(resolve, 10));
@@ -608,7 +592,7 @@ describe("Supervisor", () => {
             }
 
             return {
-              iterator: iterator(),
+              events: iterator(),
               queue: new MessageQueue(),
               abort: () => {
                 aborted = true;

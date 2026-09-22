@@ -17,10 +17,12 @@ import {
   type SlashCommand,
   getModelContextWindow,
 } from "@scholaraio-hub/shared";
+import type { AgentEvent } from "../../agent/events.js";
 import { normalizeClaudeOAuthUsage } from "../../services/ProviderUsageLimitService.js";
 import { logSDKMessage } from "../messageLogger.js";
 import { MessageQueue } from "../messageQueue.js";
-import type { ContentBlock, SDKMessage } from "../types.js";
+import type { SDKMessage } from "../types.js";
+import { ClaudeEventAdapter } from "./claude-events.js";
 import { filterEnvForChildProcess } from "./env-filter.js";
 import { providerPosture } from "./permission-policy.js";
 import type {
@@ -701,11 +703,8 @@ export class ClaudeProvider implements AgentProvider {
       throw error;
     }
 
-    // Wrap the iterator to convert SDK message types
-    const wrappedIterator = this.wrapIterator(sdkQuery);
-
     return {
-      iterator: wrappedIterator,
+      events: this.toAgentEvents(sdkQuery),
       queue,
       abort: () => abortController.abort(),
       isProcessAlive: USE_SPAWN_WRAPPER
@@ -745,87 +744,31 @@ export class ClaudeProvider implements AgentProvider {
   }
 
   /**
-   * Wrap the SDK iterator to convert message types.
-   * The SDK emits its own message types which we convert to our internal SDKMessage type.
+   * Translate the SDK stream into AgentEvents. The raw SDK message is logged
+   * (when LOG_SDK_MESSAGES is on) but never forwarded.
    */
-  private async *wrapIterator(
+  private async *toAgentEvents(
     iterator: AsyncIterable<AgentSDKMessage>,
-  ): AsyncIterableIterator<SDKMessage> {
+  ): AsyncIterableIterator<AgentEvent> {
+    const adapter = new ClaudeEventAdapter();
     let sessionId = "unknown";
 
     try {
       for await (const message of iterator) {
-        // Log raw SDK message for analysis (if LOG_SDK_MESSAGES=true)
         sessionId = (message as { session_id?: string }).session_id ?? sessionId;
         logSDKMessage(sessionId, message, { provider: "claude" });
-
-        const converted = this.convertMessage(message);
-        yield converted;
+        yield* adapter.accept(message as unknown as SDKMessage);
       }
     } catch (error) {
-      // Handle abort errors gracefully
+      // An abort is how a session ends normally.
       if (error instanceof Error && error.name === "AbortError") {
         return;
       }
-      // Re-throw process termination errors for Process to handle
-      // These include: "ProcessTransport is not ready for writing"
+      // Transport failures ("ProcessTransport is not ready for writing") are
+      // the Process's to classify.
       throw error;
     }
   }
-
-  /**
-   * Convert an SDK message to our internal SDKMessage format.
-   *
-   * We pass through all fields from the SDK without stripping.
-   * This preserves debugging info, DAG structure, and metadata.
-   */
-  private convertMessage(message: AgentSDKMessage): SDKMessage {
-    // Pass through all fields, only normalize content blocks
-    const sdkMessage = message as unknown as SDKMessage;
-
-    // For messages with content, normalize the content blocks
-    if (sdkMessage.message?.content) {
-      return {
-        ...sdkMessage,
-        message: {
-          ...sdkMessage.message,
-          content: this.normalizeContent(sdkMessage.message.content),
-        },
-      };
-    }
-
-    // Pass through as-is for messages without content
-    return sdkMessage;
-  }
-
-  /**
-   * Normalize content to ensure consistent format.
-   * Preserves all fields, only converts strings to text blocks.
-   */
-  private normalizeContent(content: string | ContentBlock[] | unknown): string | ContentBlock[] {
-    // String content stays as string
-    if (typeof content === "string") {
-      return content;
-    }
-
-    // Array content - normalize each block
-    if (Array.isArray(content)) {
-      return content.map((block): ContentBlock => {
-        if (typeof block === "string") {
-          return { type: "text", text: block };
-        }
-        // Pass through all block fields - don't strip anything
-        return block as ContentBlock;
-      });
-    }
-
-    // Unknown content type - stringify for safety
-    return String(content);
-  }
 }
 
-/**
- * Default Claude provider instance.
- * Can be imported for convenience or instantiated directly.
- */
 export const claudeProvider = new ClaudeProvider();

@@ -49,7 +49,9 @@ export function createApp(options: AppOptions) {
     idleTimeoutMs: options.idleTimeoutMs,
     defaultPermissionMode: options.defaultPermissionMode,
     onProcessCreated: (process) => sessions.attach(process),
-    onProviderSDKMessage: (provider, message) => usage.recordSDKMessage(provider, message),
+    onProviderEvent: (_provider, event) => {
+      if (event.type === "rate-limit") usage.record(event.limits);
+    },
   });
   const skillsDir = options.scholaraioSkillsDir ?? path.join(homedir(), "scholaraio", "skills");
   const sessions = new SessionService(store, supervisor, library, skillsDir);

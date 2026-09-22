@@ -9,7 +9,8 @@ import type {
   ThinkingConfig,
   UrlProjectId,
 } from "@scholaraio-hub/shared";
-import type { PermissionMode, SDKMessage } from "../sdk/types.js";
+import type { AgentEvent } from "../agent/events.js";
+import type { PermissionMode } from "../sdk/types.js";
 
 // Constants
 export const DEFAULT_IDLE_TIMEOUT_MS = 5 * 60 * 1000; // 5 minutes
@@ -231,7 +232,7 @@ export interface ProcessInfo {
 
 // Process events for subscribers
 export type ProcessEvent =
-  | { type: "message"; message: SDKMessage }
+  | { type: "agent"; event: AgentEvent }
   | { type: "state-change"; state: ProcessState }
   | { type: "mode-change"; mode: PermissionMode; version: number }
   | { type: "session-id-changed"; oldSessionId: string; newSessionId: string }

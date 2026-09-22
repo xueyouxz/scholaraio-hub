@@ -1,59 +1,41 @@
 {
-  "messages": [
+  "events": [
     {
-      "type": "assistant",
-      "session_id": "thread-golden",
-      "uuid": "item-reason-turn-1",
-      "message": {
-        "role": "assistant",
-        "content": [
-          {
-            "type": "thinking",
-            "thinking": "先检索文献"
-          }
-        ]
-      }
+      "type": "session.started",
+      "sessionId": "thread-golden"
     },
     {
-      "type": "text_delta",
-      "session_id": "thread-golden",
-      "uuid": "item-answer-turn-1",
+      "type": "reasoning.delta",
+      "blockId": "item-reason-turn-1",
+      "delta": "先检索文献"
+    },
+    {
+      "type": "text.delta",
+      "blockId": "item-answer-turn-1",
       "delta": "这篇论文"
     },
     {
-      "type": "text_delta",
-      "session_id": "thread-golden",
-      "uuid": "item-answer-turn-1",
+      "type": "text.delta",
+      "blockId": "item-answer-turn-1",
       "delta": "提出了新方法。"
     },
     {
-      "type": "assistant",
-      "session_id": "thread-golden",
-      "uuid": "item-answer-turn-1",
-      "message": {
-        "role": "assistant",
-        "content": "这篇论文提出了新方法。"
-      }
-    },
-    {
-      "type": "system",
-      "subtype": "turn_complete",
-      "session_id": "thread-golden",
+      "type": "turn.completed",
       "usage": {
-        "input_tokens": 120,
-        "output_tokens": 45,
-        "cached_input_tokens": 64
+        "inputTokens": 120,
+        "outputTokens": 45,
+        "cachedInputTokens": 64
       }
     }
   ],
   "chunks": [
     {
       "type": "reasoning-start",
-      "id": "item-reason-turn-1:0"
+      "id": "item-reason-turn-1"
     },
     {
       "type": "reasoning-delta",
-      "id": "item-reason-turn-1:0",
+      "id": "item-reason-turn-1",
       "delta": "先检索文献"
     },
     {
@@ -72,7 +54,7 @@
     },
     {
       "type": "reasoning-end",
-      "id": "item-reason-turn-1:0"
+      "id": "item-reason-turn-1"
     },
     {
       "type": "text-end",

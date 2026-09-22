@@ -1,33 +1,42 @@
 import type { SessionMessage } from "@scholaraio-hub/shared";
 import { type UIMessageChunk, readUIMessageStream } from "ai";
 import { describe, expect, it } from "vitest";
+import { UIChunkWriter } from "../../src/agent/uiChunks.js";
+import { ClaudeEventAdapter } from "../../src/sdk/providers/claude-events.js";
+import { CodexEventAdapter } from "../../src/sdk/providers/codex-events.js";
 import type { SDKMessage } from "../../src/sdk/types.js";
-import { SessionMessageNormalizer } from "../../src/sessions/SessionMessageNormalizer.js";
 import { importHistory } from "../../src/sessions/import-history.js";
 
-async function normalize(events: SDKMessage[]) {
-  const chunks: UIMessageChunk[] = [{ type: "start", messageId: "stable" }];
-  const normalizer = new SessionMessageNormalizer((chunk) => chunks.push(chunk));
-  for (const event of events) normalizer.accept(event);
-  normalizer.finish();
-  normalizer.finish();
-  chunks.push({ type: "finish" });
+async function assemble(chunks: UIMessageChunk[]) {
   let result: SessionMessage | undefined;
   for await (const message of readUIMessageStream<SessionMessage>({
     stream: new ReadableStream({
       start(controller) {
+        controller.enqueue({ type: "start", messageId: "stable" });
         for (const chunk of chunks) controller.enqueue(chunk);
+        controller.enqueue({ type: "finish" });
         controller.close();
       },
     }),
     terminateOnError: true,
   }))
     result = message;
-  return { result, chunks };
+  return result;
+}
+
+/** Claude SDK messages -> AgentEvent -> UI chunks -> assembled message. */
+async function normalize(messages: SDKMessage[]) {
+  const adapter = new ClaudeEventAdapter();
+  const chunks: UIMessageChunk[] = [];
+  const writer = new UIChunkWriter((chunk) => chunks.push(chunk));
+  for (const message of messages) for (const event of adapter.accept(message)) writer.write(event);
+  writer.close();
+  writer.close();
+  return { result: await assemble(chunks), chunks };
 }
 const stream = (event: Record<string, unknown>): SDKMessage => ({ type: "stream_event", event });
 
-describe("application message protocol", () => {
+describe("Claude events to UI chunks", () => {
   it("deduplicates Claude final snapshots and preserves interleaved tools/reasoning", async () => {
     const events: SDKMessage[] = [
       stream({ type: "message_start", message: { id: "m1" } }),
@@ -93,13 +102,34 @@ describe("application message protocol", () => {
     expect(chunks.filter((chunk) => chunk.type === "text-end")).toHaveLength(2);
   });
   it("combines Codex deltas and completed item snapshots once", async () => {
-    const { result } = await normalize([
-      { type: "text_delta", uuid: "item-turn", delta: "Hello " },
-      { type: "text_delta", uuid: "item-turn", delta: "world" },
-      { type: "assistant", uuid: "item-turn", message: { content: "Hello world!" } },
-      { type: "assistant", uuid: "item-turn", message: { content: "Hello world!" } },
-    ]);
-    expect(result?.parts).toMatchObject([{ type: "text", text: "Hello world!" }]);
+    const adapter = new CodexEventAdapter("thread");
+    adapter.beginTurn("turn");
+    const item = (method: string, text: string) =>
+      adapter.notification({
+        method,
+        params: {
+          threadId: "thread",
+          turnId: "turn",
+          item: { id: "item", type: "agentMessage", text },
+        },
+      });
+    const delta = (text: string) =>
+      adapter.notification({
+        method: "item/agentMessage/delta",
+        params: { threadId: "thread", turnId: "turn", itemId: "item", delta: text },
+      });
+    const events = [
+      ...item("item/started", ""),
+      ...delta("Hello "),
+      ...delta("world"),
+      ...item("item/completed", "Hello world!"),
+      ...item("item/completed", "Hello world!"),
+    ];
+    const chunks: UIMessageChunk[] = [];
+    const writer = new UIChunkWriter((chunk) => chunks.push(chunk));
+    for (const event of events) writer.write(event);
+    writer.close();
+    expect((await assemble(chunks))?.parts).toMatchObject([{ type: "text", text: "Hello world!" }]);
   });
   it("keeps supported file output once without exposing native filesystem paths", async () => {
     const message: SDKMessage = {

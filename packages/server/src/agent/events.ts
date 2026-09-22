@@ -28,7 +28,7 @@
  * point; see `assertNever`.
  */
 
-import type { ProviderUsageLimits } from "@scholaraio-hub/shared";
+import type { ProviderUsageLimits, SessionContextUsage } from "@scholaraio-hub/shared";
 
 export interface TokenUsage {
   inputTokens: number;
@@ -71,6 +71,8 @@ type AgentEventBody =
   | { type: "notice"; key: string; level: "info" | "error"; text: string }
   /** Account-level rate limit telemetry, reported mid-turn by some providers. */
   | { type: "rate-limit"; limits: ProviderUsageLimits }
+  /** The main thread's context window fill, as the provider counts it. */
+  | { type: "context.usage"; usage: SessionContextUsage }
   /** The turn is over. Exactly one per turn. */
   | {
       type: "turn.completed";

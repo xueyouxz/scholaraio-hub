@@ -206,6 +206,7 @@ export class SessionService {
           this.resolvedModels.set(id, agentEvent.model);
           run.metadata.model = agentEvent.model;
         }
+        if (agentEvent.type === "context.usage") record.contextUsage = agentEvent.usage;
         if (agentEvent.type === "turn.completed") {
           if (agentEvent.usage) run.metadata.usage = agentEvent.usage;
           if (agentEvent.contextWindow) run.metadata.contextWindow = agentEvent.contextWindow;

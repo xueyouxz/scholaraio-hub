@@ -11,6 +11,7 @@
  * (Read / Edit / Bash / WebSearch …) via `codex/normalization.ts`.
  */
 
+import type { SessionContextUsage } from "@scholaraio-hub/shared";
 import { type AgentEvent, type TokenUsage, inSubagent } from "../../agent/events.js";
 import { TurnState } from "../../agent/turnState.js";
 import {
@@ -108,6 +109,24 @@ export function isTurnTerminalNotification(
   }
 
   return false;
+}
+
+/** Tokens Codex treats as always present (system prompt, tools); see codex-rs TokenUsage. */
+const CODEX_BASELINE_TOKENS = 12_000;
+
+/**
+ * Codex's "% context left", computed as codex-rs `percent_of_context_window_remaining`
+ * does: both the window and the usage are measured above a fixed baseline.
+ */
+export function codexContextUsage(totalTokens: number, contextWindow: number): SessionContextUsage {
+  let percent = 0;
+  if (contextWindow > CODEX_BASELINE_TOKENS) {
+    const effectiveWindow = contextWindow - CODEX_BASELINE_TOKENS;
+    const used = Math.max(totalTokens - CODEX_BASELINE_TOKENS, 0);
+    const remaining = Math.max(effectiveWindow - used, 0);
+    percent = Math.round(Math.min(Math.max((remaining / effectiveWindow) * 100, 0), 100));
+  }
+  return { usedTokens: totalTokens, contextWindow, percent, display: "remaining" };
 }
 
 export function extractTurnUsage(params: unknown): {
@@ -745,7 +764,23 @@ export class CodexEventAdapter {
       case "thread/tokenUsage/updated": {
         const usage = extractTurnUsage(notification.params);
         if (usage) this.usageByTurnId.set(usage.turnId, usage.snapshot);
-        return [];
+        const update = asThreadTokenUsageUpdatedNotification(notification.params);
+        const window = update?.tokenUsage.modelContextWindow;
+        const total = update?.tokenUsage.last.totalTokens;
+        // Subagent threads have their own windows; the meter is the main thread's.
+        if (
+          !update ||
+          !window ||
+          typeof total !== "number" ||
+          (this.sessionId && update.threadId !== this.sessionId)
+        )
+          return [];
+        return [
+          {
+            type: "context.usage",
+            usage: codexContextUsage(total, window),
+          },
+        ];
       }
 
       case "turn/completed": {

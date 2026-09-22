@@ -1,7 +1,8 @@
-import type { ProviderInfo, ProviderName } from "@scholaraio-hub/shared";
+import type { ProviderInfo, ProviderName, SessionContextUsage } from "@scholaraio-hub/shared";
 import { Bot, Brain, Cpu, ShieldCheck } from "lucide-react";
 import type { SessionOptions } from "../../../../core/library";
 import { effortApplies, modelChange, resolveModel } from "../model/options";
+import { ContextMeter } from "./controls/ContextMeter";
 import { MenuButton, type MenuSection } from "./controls/Menu";
 
 /**
@@ -18,6 +19,8 @@ export interface ComposerControls {
   /** Some options were changed mid-turn and apply when the next turn starts. */
   pending?: boolean;
   error?: string;
+  /** Context window fill after the last turn, as the provider counted it. */
+  contextUsage?: SessionContextUsage;
   /** Providers to switch between; only a new session offers this. */
   providers?: ProviderInfo[];
   onProviderChange?: (provider: ProviderName) => void;
@@ -174,10 +177,11 @@ export function ComposerLeadingOptions({ controls }: { controls: ComposerControl
   );
 }
 
-/** Model pill and change status left of the send button. */
+/** Context meter, model pill and change status left of the send button. */
 export function ComposerTrailingOptions({ controls }: { controls: ComposerControls }) {
   return (
     <>
+      {controls.contextUsage ? <ContextMeter usage={controls.contextUsage} /> : null}
       {controls.pending ? (
         <span className="text-[11px] text-on-surface-variant whitespace-nowrap">下一轮生效</span>
       ) : null}

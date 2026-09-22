@@ -50,6 +50,7 @@ export function SessionChatView({ initial }: { initial: StoredSession }) {
     disabled: session.changeOptions.isPending,
     pending: !!snapshot?.pendingOptions?.length,
     error: session.changeOptions.error?.message,
+    contextUsage: snapshot?.contextUsage,
   };
   return (
     <div className="flex flex-1 h-full min-h-0 overflow-hidden">

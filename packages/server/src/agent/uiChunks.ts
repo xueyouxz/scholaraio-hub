@@ -133,6 +133,7 @@ export class UIChunkWriter {
       case "session.started":
       case "model.resolved":
       case "rate-limit":
+      case "context.usage":
         return;
       default:
         assertNever(event);

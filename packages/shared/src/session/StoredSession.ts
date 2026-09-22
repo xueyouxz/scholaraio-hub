@@ -82,6 +82,20 @@ export interface SessionFileContent {
   rawUrl: string;
   truncated: boolean;
 }
+/**
+ * How full the model's context window is, as the provider itself counts it:
+ * Claude Code's `/context` share used, or Codex's "% context left".
+ */
+export interface SessionContextUsage {
+  /** Tokens occupying the context window. */
+  usedTokens: number;
+  contextWindow: number;
+  /** 0–100 in the direction `display` names. */
+  percent: number;
+  display: "used" | "remaining";
+  /** Claude: token count at which it compacts automatically, when enabled. */
+  autoCompactThreshold?: number;
+}
 export interface StoredSession {
   id: string;
   title: string;
@@ -91,6 +105,8 @@ export interface StoredSession {
   thinking?: ThinkingMode;
   /** One of the model's `efforts` ids; unset means the provider's default. */
   effort?: string;
+  /** Context window fill after the last turn, as the provider reported it. */
+  contextUsage?: SessionContextUsage;
   /** Options changed while a turn was running; they take effect when the next turn starts. */
   pendingOptions?: Array<"model" | "permissionMode" | "thinking" | "effort">;
   paperIds: string[];

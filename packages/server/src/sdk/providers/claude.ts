@@ -5,7 +5,6 @@ import { homedir } from "node:os";
 import { delimiter, join } from "node:path";
 import { promisify } from "node:util";
 import {
-  type SDKMessage as AgentSDKMessage,
   type Query,
   type CanUseTool as SDKCanUseTool,
   type ModelInfo as SdkModelInfo,
@@ -16,6 +15,7 @@ import {
   ATTACHMENT_LIMITS,
   type ModelInfo,
   type ProviderUsageLimits,
+  type SessionContextUsage,
   type SlashCommand,
 } from "@scholaraio-hub/shared";
 import type { AgentEvent } from "../../agent/events.js";
@@ -678,17 +678,22 @@ export class ClaudeProvider implements AgentProvider {
    * Translate the SDK stream into AgentEvents. The raw SDK message is logged
    * (when LOG_SDK_MESSAGES is on) but never forwarded.
    */
-  private async *toAgentEvents(
-    iterator: AsyncIterable<AgentSDKMessage>,
-  ): AsyncIterableIterator<AgentEvent> {
+  private async *toAgentEvents(sdkQuery: Query): AsyncIterableIterator<AgentEvent> {
     const adapter = new ClaudeEventAdapter();
     let sessionId = "unknown";
 
     try {
-      for await (const message of iterator) {
+      for await (const message of sdkQuery) {
         sessionId = (message as { session_id?: string }).session_id ?? sessionId;
         logSDKMessage(sessionId, message, { provider: "claude" });
-        yield* adapter.accept(message as unknown as SDKMessage);
+        for (const event of adapter.accept(message as unknown as SDKMessage)) {
+          // Report the window as `/context` counts it before the turn closes.
+          if (event.type === "turn.completed" && !event.parentCallId) {
+            const usage = await readClaudeContextUsage(sdkQuery);
+            if (usage) yield { type: "context.usage", usage };
+          }
+          yield event;
+        }
       }
     } catch (error) {
       // An abort is how a session ends normally.
@@ -708,4 +713,35 @@ const CLAUDE_EFFORTS = ["low", "medium", "high", "max"] as const;
 
 function toClaudeEffort(effort?: string): (typeof CLAUDE_EFFORTS)[number] | undefined {
   return CLAUDE_EFFORTS.find((known) => known === effort);
+}
+
+const CONTEXT_USAGE_TIMEOUT_MS = 5000;
+
+/** Claude Code's own `/context` numbers; undefined when the CLI cannot answer in time. */
+export async function readClaudeContextUsage(
+  sdkQuery: Pick<Query, "getContextUsage">,
+): Promise<SessionContextUsage | undefined> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    const usage = await Promise.race([
+      sdkQuery.getContextUsage(),
+      new Promise<never>((_, reject) => {
+        timer = setTimeout(() => reject(new Error("timed out")), CONTEXT_USAGE_TIMEOUT_MS);
+      }),
+    ]);
+    return {
+      usedTokens: usage.totalTokens,
+      contextWindow: usage.maxTokens,
+      percent: usage.percentage,
+      display: "used",
+      ...(usage.isAutoCompactEnabled && usage.autoCompactThreshold
+        ? { autoCompactThreshold: usage.autoCompactThreshold }
+        : {}),
+    };
+  } catch (error) {
+    console.warn("[Claude] Context usage unavailable:", error);
+    return undefined;
+  } finally {
+    clearTimeout(timer);
+  }
 }

@@ -22,6 +22,7 @@ import { logSDKMessage } from "../messageLogger.js";
 import { MessageQueue } from "../messageQueue.js";
 import type { ContentBlock, SDKMessage } from "../types.js";
 import { filterEnvForChildProcess } from "./env-filter.js";
+import { providerPosture } from "./permission-policy.js";
 import type {
   AgentProvider,
   AgentSession,
@@ -658,11 +659,12 @@ export class ClaudeProvider implements AgentProvider {
           cwd: options.cwd,
           resume: options.resumeSessionId,
           abortController,
-          // Pass permission mode to SDK for system prompt configuration.
-          // However, for "bypassPermissions" we pass "default" to the SDK so it always
-          // calls our canUseTool callback - we handle the bypass logic ourselves to
-          // allow exceptions (e.g., always prompting for AskUserQuestion/ExitPlanMode).
+          // The mode reaches the SDK only to shape its system prompt; the
+          // decision itself always comes back to canUseTool. bypassPermissions
+          // is downgraded to "default" here so the SDK cannot answer on its
+          // own — see sdk/providers/permission-policy.ts.
           permissionMode:
+            providerPosture(options.permissionMode).askHub &&
             options.permissionMode === "bypassPermissions"
               ? "default"
               : (options.permissionMode ?? "default"),

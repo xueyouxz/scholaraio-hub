@@ -11,6 +11,7 @@ import type {
 } from "@scholaraio-hub/shared";
 import { getLogger } from "../logging/logger.js";
 import type { MessageQueue } from "../sdk/messageQueue.js";
+import { decidePermission } from "../sdk/providers/permission-policy.js";
 import type {
   PermissionMode,
   SDKMessage,
@@ -1135,13 +1136,11 @@ export class Process {
   }
 
   /**
-   * Handle tool approval request from SDK's canUseTool callback.
-   * This is called by the Supervisor when creating the session.
-   * Behavior depends on current permission mode:
-   * - default: Ask user for approval
-   * - acceptEdits: Auto-approve Edit/Write tools, ask for others
-   * - plan: Auto-approve read-only tools (Read, Glob, Grep, etc.), prompt for others
-   * - bypassPermissions: Auto-approve all tools except AskUserQuestion and ExitPlanMode
+   * Handle a tool approval request from the provider.
+   *
+   * Session-specific allow/deny rules win, then the shared permission contract
+   * in `sdk/providers/permission-policy.ts` decides; anything it does not
+   * auto-approve is put to the user.
    */
   async handleToolApproval(
     toolName: string,
@@ -1167,102 +1166,8 @@ export class Process {
       return permissionResult;
     }
 
-    // Handle based on permission mode
-    switch (this._permissionMode) {
-      case "bypassPermissions": {
-        // Always prompt for user questions and plan approval, even in bypass mode
-        // These are inherently interactive and shouldn't be auto-answered
-        if (toolName === "ExitPlanMode" || toolName === "AskUserQuestion") {
-          break; // Fall through to ask user
-        }
-        // Auto-approve all other tools
-        return { behavior: "allow" };
-      }
-
-      case "plan": {
-        // Read-only tools are auto-allowed - essential for creating good plans
-        const readOnlyTools = [
-          "Read",
-          "Glob",
-          "Grep",
-          "LSP",
-          "WebFetch",
-          "WebSearch",
-          "Task", // Subagent exploration (legacy)
-          "Agent", // Subagent exploration (SDK 0.2.76+)
-          "TaskOutput", // Reading subagent results
-        ];
-        if (readOnlyTools.includes(toolName)) {
-          return { behavior: "allow" };
-        }
-
-        // Allow Write to .claude/plans/ directory for saving plans
-        if (toolName === "Write") {
-          const filePath = (input as { file_path?: string })?.file_path ?? "";
-          if (filePath.includes(".claude/plans/")) {
-            return { behavior: "allow" };
-          }
-        }
-
-        // ExitPlanMode and AskUserQuestion should prompt the user
-        // ExitPlanMode: user must approve the plan before exiting plan mode
-        // AskUserQuestion: clarifying questions are valid during planning
-        if (toolName === "ExitPlanMode" || toolName === "AskUserQuestion") {
-          break; // Fall through to ask user for approval
-        }
-
-        // Other tools (Bash, Edit, Write to non-plan files, etc.) - prompt user
-        // Agent typically won't use these in plan mode, but if they have a good
-        // reason (e.g., checking git log, verifying dependencies), let them ask
-        break; // Fall through to ask user for approval
-      }
-
-      case "acceptEdits": {
-        // Auto-approve file editing tools AND read-only tools
-        // acceptEdits should be strictly more permissive than default mode
-        const editTools = ["Edit", "Write", "NotebookEdit"];
-        if (editTools.includes(toolName)) {
-          return { behavior: "allow" };
-        }
-        // Read-only tools are also auto-allowed (same as default mode)
-        const readOnlyTools = [
-          "Read",
-          "Glob",
-          "Grep",
-          "LSP",
-          "WebFetch",
-          "WebSearch",
-          "Task", // Subagent exploration (legacy)
-          "Agent", // Subagent exploration (SDK 0.2.76+)
-          "TaskOutput", // Reading subagent results
-        ];
-        if (readOnlyTools.includes(toolName)) {
-          return { behavior: "allow" };
-        }
-        // Fall through to ask user for other tools (Bash, etc.)
-        break;
-      }
-
-      default: {
-        // Read-only tools are auto-allowed - no need to prompt for reads
-        // "Ask before edits" means ask before WRITES, not reads
-        const readOnlyTools = [
-          "Read",
-          "Glob",
-          "Grep",
-          "LSP",
-          "WebFetch",
-          "WebSearch",
-          "Task", // Subagent exploration (legacy)
-          "Agent", // Subagent exploration (SDK 0.2.76+)
-          "TaskOutput", // Reading subagent results
-        ];
-        if (readOnlyTools.includes(toolName)) {
-          return { behavior: "allow" };
-        }
-        // Fall through to ask user for mutating tools
-        break;
-      }
+    if (decidePermission(this._permissionMode, toolName, input) === "allow") {
+      return { behavior: "allow" };
     }
 
     // Default behavior: ask user for approval

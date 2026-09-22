@@ -48,6 +48,7 @@ import {
   type JsonRpcServerRequest,
   terminateChildProcess,
 } from "./codex-rpc.js";
+import { providerPosture } from "./permission-policy.js";
 import type { AgentProvider, AgentSession, AuthStatus, StartSessionOptions } from "./types.js";
 
 const log = getLogger().child({ component: "codex-provider" });
@@ -481,28 +482,26 @@ export class CodexProvider implements AgentProvider {
     }
   }
 
+  /**
+   * Translate a hub permission mode into Codex thread policy.
+   *
+   * `approvalPolicy` stays "on-request" in every mode — including
+   * bypassPermissions — so the app-server keeps asking us and our own policy
+   * (and the audit trail that goes with it) decides. Only the sandbox boundary
+   * varies by mode. See sdk/providers/permission-policy.ts.
+   */
   private mapPermissionModeToThreadPolicy(permissionMode?: StartSessionOptions["permissionMode"]): {
     approvalPolicy: CodexAskForApproval;
     sandbox: CodexSandboxMode;
   } {
-    if (permissionMode === "bypassPermissions") {
-      return {
-        approvalPolicy: "never",
-        sandbox: "danger-full-access",
-      };
-    }
-
-    if (permissionMode === "plan") {
-      return {
-        approvalPolicy: "on-request",
-        sandbox: "read-only",
-      };
-    }
-
-    return {
-      approvalPolicy: "on-request",
-      sandbox: "workspace-write",
-    };
+    const posture = providerPosture(permissionMode);
+    const sandbox: CodexSandboxMode =
+      posture.sandbox === "read-only"
+        ? "read-only"
+        : posture.sandbox === "full-access"
+          ? "danger-full-access"
+          : "workspace-write";
+    return { approvalPolicy: "on-request", sandbox };
   }
 
   /**

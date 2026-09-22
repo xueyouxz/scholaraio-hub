@@ -7,8 +7,12 @@
 
 ## Rendering stack (as wired today)
 
-- **Client**: `react-markdown` with `remark-gfm`, `remark-math`, `rehype-katex`,
-  `rehype-raw`. See `packages/client/src/features/library/reader/PaperMarkdown.tsx` and
+- **Session transcript**: Streamdown (`shared/components/Markdown.tsx`) with the `code`
+  (Shiki), `math` (KaTeX, `$…$` enabled) and `cjk` plugins; streaming mode and a block
+  caret while a part is live. `script` / `iframe` / `object` / `embed` / `form` / `input`
+  are dropped.
+- **Paper reader and skills**: `react-markdown` with `remark-gfm`, `remark-math`,
+  `rehype-katex`, `rehype-raw`. See `packages/client/src/features/library/reader/PaperMarkdown.tsx` and
   `packages/client/src/features/skills/SkillDetailView.tsx`.
 - **Server sanitization**: `packages/server/src/augments/safe-markdown.ts`
   (`sanitize-html`), plus `marked` and `shiki` for server-side highlighting.
@@ -39,3 +43,37 @@
 > If you need a feature not listed here (e.g. ANSI color, local-media-link previews),
 > confirm it exists in the renderer code first — this repo's renderer is not identical to
 > other agent UIs.
+
+## Session transcript pipeline (client)
+
+`AgentEvent` → `UIChunkWriter` (server) → AI SDK `useChat` (`hooks/useSessionChat.ts`) →
+`SessionMessages` → `AssistantTurn`:
+
+- `lib/turnTree.ts` lays a message out (pure, unit-tested): subagent parts move under
+  their parent call, Read/Grep/Glob runs collapse (`lib/exploration.ts`), citations are
+  collected once.
+- `components/parts/registry.tsx` draws each part type; tool calls are dispatched further
+  by tool name in `components/renderers/registry.tsx`. A new part type goes into
+  `TIMELINE_PART_TYPES` (`lib/parts.ts`) and the part registry together; the types keep
+  them in step.
+- Every message and every timeline item sits in an `ErrorBoundary`, reset when its part
+  changes, so a renderer that throws on half-streamed input recovers.
+- Run state (pending decision, running/idle) is pushed on the open stream as a transient
+  `data-session-state` chunk and merged into the snapshot query; polling is the fallback
+  when no stream is open.
+- `hooks/useStickToBottom.ts` follows content growth (ResizeObserver) while a turn runs;
+  only the reader's gestures unpin it.
+
+## Styling the transcript
+
+- Colors come only from the `@theme` palette in `styles.css`. Streamdown's shadcn-named
+  utilities (`bg-muted`, `border-border`, …) are mapped there; without the mapping its
+  code blocks and tables render with no background or border.
+- `features/session/session.css` is imported into `@layer components`, so a Tailwind
+  utility on the same element wins.
+- `features/session/session-markdown.css` is imported into a `markdown` layer declared
+  after `utilities`, because it must override Streamdown's own utility classes. Target
+  Streamdown output by `[data-streamdown="…"]` attributes under `.session-markdown`, not
+  by its class names, and re-check them when upgrading Streamdown.
+- Every timeline child carries `timeline-item` and sits directly in its timeline
+  (`.assistant-turn` / `.nested-timeline`); the dot and connecting line depend on that.

@@ -1,12 +1,34 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useVirtualizer } from "@tanstack/react-virtual";
-import { BookOpen, FolderOpen, Search, Upload } from "lucide-react";
-import { useEffect, useRef, useState } from "react";
-import { Link, useNavigate, useSearchParams } from "react-router-dom";
+import { BookOpen, FolderOpen, LayoutGrid, List, Search, Upload } from "lucide-react";
+import { Suspense, lazy, useEffect, useRef, useState } from "react";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import { usePageTitle } from "../../app/components/NavigationLayout";
-import { libraryApi } from "../../core/library";
+import { libraryApi, newSessionUrl } from "../../core/library";
+
+import { PaperCollection } from "./components/PaperCollection";
+
+const LibraryDashboard = lazy(() => import("./LibraryDashboard"));
+
+const SearchPage = lazy(() =>
+  import("../search/SearchPage").then((m) => ({ default: m.SearchPage })),
+);
 
 export function LibraryPage() {
+  const [params] = useSearchParams();
+  if (params.has("newProject") || params.get("manage") === "1")
+    return <LibraryContent key={params.get("project") ?? ""} />;
+  return (
+    <Suspense fallback={<output className="p-6">加载中…</output>}>
+      {params.get("view") === "analysis" ? (
+        <LibraryDashboard />
+      ) : (
+        <SearchPage key={params.get("project") ?? ""} />
+      )}
+    </Suspense>
+  );
+}
+
+function LibraryContent() {
   const { setTitle } = usePageTitle();
   useEffect(() => {
     setTitle("文献库");
@@ -14,18 +36,36 @@ export function LibraryPage() {
   }, [setTitle]);
   const [params, setParams] = useSearchParams();
   const query = params.get("q") ?? "";
+  const projectId = params.get("project") ?? "";
+  const view = params.get("view") === "list" ? "list" : "grid";
+  const [newProject, setNewProject] = useState("");
+  const [addTarget, setAddTarget] = useState("");
+  const projects = useQuery({
+    queryKey: ["library", "projects"],
+    queryFn: ({ signal }) => libraryApi.projects(signal),
+  });
+  const project = projects.data?.projects.find((p) => p.id === projectId);
+  const updateParams = (patch: Record<string, string>) =>
+    setParams((previous) => {
+      const next = new URLSearchParams(previous);
+      for (const [key, value] of Object.entries(patch)) {
+        if (value) next.set(key, value);
+        else next.delete(key);
+      }
+      return next;
+    });
   const [draft, setDraft] = useState(query);
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const client = useQueryClient();
   const navigate = useNavigate();
   const fileInput = useRef<HTMLInputElement>(null);
   const folderInput = useRef<HTMLInputElement>(null);
-  const parent = useRef<HTMLDivElement>(null);
+
   const papers = useQuery({
-    queryKey: ["library", "search", query],
+    queryKey: ["library", "search", query, projectId],
     queryFn: async ({ signal }) =>
       query
-        ? libraryApi.search(query, signal)
+        ? libraryApi.search(query, signal, projectId || undefined)
         : {
             results: (await libraryApi.papers(signal)).papers.map((paper) => ({
               paper,
@@ -58,24 +98,44 @@ export function LibraryPage() {
   useEffect(() => {
     folderInput.current?.setAttribute("webkitdirectory", "");
   }, []);
-  const results = papers.data?.results ?? [];
-  const virtualizer = useVirtualizer({
-    count: results.length,
-    getScrollElement: () => parent.current,
-    estimateSize: () => 124,
-    overscan: 5,
+  const members = new Set(project?.paperIds);
+  const results = (papers.data?.results ?? []).filter(
+    ({ paper }) => !projectId || members.has(paper.id),
+  );
+  const createProject = useMutation({
+    mutationFn: libraryApi.createProject,
+    onSuccess: (data) => {
+      refresh();
+      setNewProject("");
+      updateParams({ project: data.id, newProject: "", manage: "1" });
+    },
+  });
+  const membership = useMutation({
+    mutationFn: ({ id, action }: { id: string; action: "add" | "remove" }) =>
+      libraryApi.projectPapers(id, [...selected], action),
+    onSuccess: () => {
+      refresh();
+      setSelected(new Set());
+    },
   });
   const acceptFiles = (files: FileList | null) => {
     if (!files?.length) return;
     const pdfs = Array.from(files).filter((file) => file.name.toLowerCase().endsWith(".pdf"));
     if (pdfs.length) upload.mutate(pdfs);
   };
-  const error = papers.error ?? upload.error ?? retry.error ?? jobs.error;
+  const error =
+    papers.error ??
+    projects.error ??
+    createProject.error ??
+    membership.error ??
+    upload.error ??
+    retry.error ??
+    jobs.error;
   return (
-    <div className="flex-1 min-h-0 flex flex-col p-6 gap-5">
+    <div className="flex-1 min-h-0 flex flex-col p-4 md:p-6 gap-4">
       <div className="flex flex-wrap gap-3 items-center justify-between">
         <div>
-          <h1 className="text-2xl text-primary">本地文献</h1>
+          <h1 className="text-2xl text-primary">{project?.name ?? "本地文献"}</h1>
           <p className="text-sm text-on-surface-variant mt-1">
             查找、阅读，并围绕原文展开对话。
             {papers.data
@@ -127,11 +187,78 @@ export function LibraryPage() {
           </button>
         </div>
       </div>
+      <div className="flex flex-wrap items-end gap-3">
+        <label className="text-sm flex-1 min-w-40">
+          文献项目
+          <select
+            aria-label="查看文献项目"
+            className="hub-input w-full block mt-1"
+            value={projectId}
+            onChange={(e) => updateParams({ project: e.target.value, view })}
+          >
+            <option value="">全部文献</option>
+            {projects.data?.projects.map((p) => (
+              <option key={p.id} value={p.id}>
+                {p.name}（{p.paperCount}）
+              </option>
+            ))}
+          </select>
+        </label>
+        <fieldset className="flex gap-1" aria-label="文献视图">
+          <button
+            type="button"
+            className="hub-button"
+            aria-label="卡片视图"
+            aria-pressed={view === "grid"}
+            onClick={() => updateParams({ view: "grid" })}
+          >
+            <LayoutGrid size={18} />
+          </button>
+          <button
+            type="button"
+            className="hub-button"
+            aria-label="列表视图"
+            aria-pressed={view === "list"}
+            onClick={() => updateParams({ view: "list" })}
+          >
+            <List size={18} />
+          </button>
+        </fieldset>
+      </div>
+      <details open={params.has("newProject") || undefined} className="text-sm">
+        <summary className="cursor-pointer text-primary">新建文献项目</summary>
+        <form
+          className="flex gap-2 mt-2"
+          onSubmit={(e) => {
+            e.preventDefault();
+            if (newProject.trim()) createProject.mutate(newProject.trim());
+          }}
+        >
+          <input
+            aria-label="项目名称"
+            name="projectName"
+            className="hub-input flex-1"
+            maxLength={120}
+            required
+            value={newProject}
+            onChange={(e) => setNewProject(e.target.value)}
+            placeholder="例如：光谱研究…"
+          />
+          <button type="submit" className="hub-button" disabled={createProject.isPending}>
+            创建项目
+          </button>
+        </form>
+      </details>
+      {projectId && projects.data && !project ? (
+        <p role="alert" className="text-error">
+          项目不存在，请重新选择。
+        </p>
+      ) : null}
       <form
-        className="flex gap-2"
+        className="flex flex-wrap gap-2"
         onSubmit={(event) => {
           event.preventDefault();
-          setParams(draft ? { q: draft } : {});
+          updateParams({ q: draft });
         }}
       >
         <label className="sr-only" htmlFor="library-query">
@@ -152,13 +279,50 @@ export function LibraryPage() {
         <button
           className="hub-button"
           type="button"
-          onClick={() =>
-            navigate(`/sessions?papers=${[...selected].map(encodeURIComponent).join(",")}`)
-          }
+          onClick={() => navigate(newSessionUrl(projectId || undefined, [...selected]))}
         >
-          {selected.size ? `询问选中的 ${selected.size} 篇` : "询问文献库"}
+          {selected.size ? `询问选中的 ${selected.size} 篇` : projectId ? "询问项目" : "询问文献库"}
         </button>
       </form>
+      {selected.size > 0 ? (
+        <div className="flex flex-wrap items-center gap-2 text-sm">
+          <span>已选 {selected.size} / 100 篇</span>
+          <select
+            aria-label="添加到项目"
+            className="hub-input"
+            value={addTarget}
+            onChange={(e) => setAddTarget(e.target.value)}
+          >
+            <option value="">选择目标项目…</option>
+            {projects.data?.projects.map((p) => (
+              <option key={p.id} value={p.id}>
+                {p.name}
+              </option>
+            ))}
+          </select>
+          <button
+            type="button"
+            className="hub-button"
+            disabled={!addTarget || membership.isPending}
+            onClick={() => membership.mutate({ id: addTarget, action: "add" })}
+          >
+            添加到项目
+          </button>
+          {project ? (
+            <button
+              type="button"
+              className="hub-button"
+              disabled={membership.isPending}
+              onClick={() => membership.mutate({ id: project.id, action: "remove" })}
+            >
+              从项目移除
+            </button>
+          ) : null}
+          <button type="button" className="hub-button" onClick={() => setSelected(new Set())}>
+            清除选择
+          </button>
+        </div>
+      ) : null}
       {error ? (
         <p role="alert" className="text-error">
           {error.message}
@@ -218,66 +382,26 @@ export function LibraryPage() {
         <div className="flex-1 flex flex-col items-center justify-center text-on-surface-variant gap-4">
           <BookOpen size={36} />
           <p>
-            {query ? "没有找到匹配的文献，试试更短的关键词。" : "文献库还是空的，先导入一份 PDF。"}
+            {query
+              ? "没有找到匹配的文献，试试更短的关键词。"
+              : "当前范围没有文献，可从全部文献添加到项目，或先导入 PDF。"}
           </p>
         </div>
       ) : (
-        <div ref={parent} className="flex-1 min-h-0 overflow-auto">
-          <div style={{ height: virtualizer.getTotalSize(), position: "relative" }}>
-            {virtualizer.getVirtualItems().map((row) => {
-              const result = results[row.index];
-              if (!result) return null;
-              const { paper, matches } = result;
-              const target = `/library/${encodeURIComponent(paper.id)}${matches[0] ? `?line=${matches[0].start_line}&mode=markdown` : ""}`;
-              return (
-                <article
-                  key={paper.id}
-                  className="absolute top-0 left-0 w-full rounded-xl border border-outline-variant/15 bg-surface-container-low p-4 flex gap-4"
-                  style={{ transform: `translateY(${row.start}px)`, height: 116 }}
-                >
-                  <input
-                    type="checkbox"
-                    aria-label={`选择 ${paper.title}`}
-                    checked={selected.has(paper.id)}
-                    onChange={() =>
-                      setSelected((previous) => {
-                        const next = new Set(previous);
-                        if (next.has(paper.id)) next.delete(paper.id);
-                        else next.add(paper.id);
-                        return next;
-                      })
-                    }
-                  />
-                  <div className="min-w-0 flex-1">
-                    <Link
-                      to={target}
-                      className="font-serif font-semibold text-primary hover:underline line-clamp-1"
-                    >
-                      {paper.title}
-                    </Link>
-                    <p className="text-xs text-on-surface-variant truncate mt-1">
-                      {[paper.authors, paper.year, paper.journal].filter(Boolean).join(" · ") ||
-                        "元数据尚未补齐"}
-                      {paper.parseStatus !== "ready" ? (
-                        <span className="ml-2 text-tertiary">
-                          {paper.parseStatus === "failed" ? "解析失败" : "未解析"}
-                        </span>
-                      ) : null}
-                    </p>
-                    <p className="text-xs mt-2 line-clamp-2">
-                      {matches[0]?.text.slice(0, 200) ||
-                        paper.abstract ||
-                        (paper.parseStatus === "ready" ? "全文已就绪" : paper.error || "等待解析")}
-                    </p>
-                  </div>
-                  <Link className="text-xs text-primary self-center" to={target}>
-                    阅读 →
-                  </Link>
-                </article>
-              );
-            })}
-          </div>
-        </div>
+        <PaperCollection
+          results={results}
+          view={view}
+          selected={selected}
+          projectId={projectId || undefined}
+          onToggle={(id) =>
+            setSelected((previous) => {
+              const next = new Set(previous);
+              if (next.has(id)) next.delete(id);
+              else next.add(id);
+              return next;
+            })
+          }
+        />
       )}
     </div>
   );

@@ -22,6 +22,7 @@
  *   a concatenated uuid.
  * - Tool names are canonical (Read / Edit / Bash / …) whatever the provider, so
  *   the permission policy and the UI share one vocabulary.
+ * - Subagent work is not dropped or flattened: it carries `parentCallId`.
  *
  * Adding a variant is a compile error in every exhaustive consumer — that is the
  * point; see `assertNever`.
@@ -35,7 +36,7 @@ export interface TokenUsage {
   cachedInputTokens?: number;
 }
 
-export type AgentEvent =
+type AgentEventBody =
   /** The provider assigned (or confirmed) its native session id. */
   | { type: "session.started"; sessionId: string }
   /** The concrete model serving this session, once the provider reports it. */
@@ -44,8 +45,17 @@ export type AgentEvent =
   | { type: "text.delta"; blockId: string; delta: string }
   /** More reasoning text for one block. */
   | { type: "reasoning.delta"; blockId: string; delta: string }
+  /**
+   * Arguments of a tool call the agent is still writing (raw JSON text so far).
+   * The first one for a call announces it, possibly with an empty delta, so the
+   * tool can appear before its arguments are complete. Always followed by
+   * `tool.call` or `tool.call.invalid` for the same `callId`.
+   */
+  | { type: "tool.input.delta"; callId: string; name: string; delta: string }
   /** The agent decided to call a tool; `name` is canonical. */
   | { type: "tool.call"; callId: string; name: string; input: unknown }
+  /** Output a running tool has produced so far (e.g. a long shell command). */
+  | { type: "tool.output.delta"; callId: string; delta: string }
   /** A streamed tool call whose arguments never became valid JSON. */
   | { type: "tool.call.invalid"; callId: string; name: string; rawInput: string; reason: string }
   /**
@@ -71,7 +81,20 @@ export type AgentEvent =
       contextWindow?: number;
     };
 
+/**
+ * An event, optionally inside a subagent. `parentCallId` names the tool call
+ * (Claude `Task`/`Agent`, Codex `spawnAgent`) whose subagent produced it; its
+ * absence means the main agent. Block and call ids are unique per scope only
+ * within their parent, so consumers key nested state by both.
+ */
+export type AgentEvent = AgentEventBody & { parentCallId?: string };
+
 export type AgentEventType = AgentEvent["type"];
+
+/** Tag events as coming from inside the subagent started by `parentCallId`. */
+export function inSubagent(events: AgentEvent[], parentCallId: string | undefined): AgentEvent[] {
+  return parentCallId ? events.map((event) => ({ ...event, parentCallId })) : events;
+}
 
 /** Exhaustiveness guard for switches over AgentEvent. */
 export function assertNever(value: never): never {

@@ -1,12 +1,13 @@
 import "katex/dist/katex.min.css";
 import { useQuery } from "@tanstack/react-query";
 import { Check, Copy, Send } from "lucide-react";
-import { memo, useState } from "react";
+import { memo, useEffect, useState } from "react";
 import ReactMarkdown from "react-markdown";
+import { Link } from "react-router-dom";
 import rehypeKatex from "rehype-katex";
 import remarkGfm from "remark-gfm";
 import remarkMath from "remark-math";
-import { api } from "../../core/api";
+import { skillsApi } from "../../core/library";
 import { queryKeys } from "../../core/queryKeys";
 
 interface Props {
@@ -16,11 +17,17 @@ interface Props {
 export function SkillDetailView({ skillName }: Props) {
   const detailQuery = useQuery({
     queryKey: queryKeys.scholaraioSkill(skillName),
-    queryFn: ({ signal }) => api.getScholaraioSkill(skillName, { signal }),
+    queryFn: ({ signal }) => skillsApi.get(skillName, signal),
     staleTime: Number.POSITIVE_INFINITY,
   });
 
   const [copied, setCopied] = useState(false);
+  useEffect(() => {
+    if (!copied) return;
+    const timer = window.setTimeout(() => setCopied(false), 1500);
+    return () => window.clearTimeout(timer);
+  }, [copied]);
+  const [copyError, setCopyError] = useState(false);
 
   if (detailQuery.isLoading) {
     return (
@@ -42,7 +49,10 @@ export function SkillDetailView({ skillName }: Props) {
   const slashCommand = `/${skill.name}`;
 
   return (
-    <article className="max-w-3xl mx-auto px-8 py-8">
+    <article className="max-w-3xl mx-auto px-5 md:px-8 py-8">
+      <Link to="/skills" className="hub-button mb-4 md:hidden">
+        返回 Skills
+      </Link>
       <header className="mb-6 pb-6 border-b border-outline-variant">
         <div className="flex items-start justify-between gap-4">
           <div className="min-w-0">
@@ -63,10 +73,16 @@ export function SkillDetailView({ skillName }: Props) {
             <button
               type="button"
               onClick={() => {
-                void navigator.clipboard.writeText(slashCommand).then(() => {
-                  setCopied(true);
-                  window.setTimeout(() => setCopied(false), 1500);
-                });
+                void navigator.clipboard
+                  .writeText(slashCommand)
+                  .then(() => {
+                    setCopied(true);
+                    setCopyError(false);
+                  })
+                  .catch((error) => {
+                    console.warn("复制失败", error);
+                    setCopyError(true);
+                  });
               }}
               className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-surface-container hover:bg-surface-container-high text-on-surface text-xs font-sans"
             >
@@ -75,17 +91,16 @@ export function SkillDetailView({ skillName }: Props) {
               ) : (
                 <Copy className="w-3.5 h-3.5" />
               )}
-              复制 {slashCommand}
+              {copyError ? "复制失败，请重试" : `复制 ${slashCommand}`}
             </button>
-            <button
-              type="button"
-              disabled
-              title="请先打开一个会话，然后在输入框中使用 / 调用此 skill"
-              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-surface-container text-on-surface-variant text-xs font-sans opacity-50 cursor-not-allowed"
+            <Link
+              to={`/sessions?skill=${encodeURIComponent(skill.name)}`}
+              title="新建会话并在输入框中插入此 skill"
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-surface-container hover:bg-surface-container-high text-on-surface text-xs font-sans"
             >
               <Send className="w-3.5 h-3.5" />
               插入到会话
-            </button>
+            </Link>
           </div>
         </div>
         <div className="mt-4 font-mono text-[10px] text-on-surface-variant/70 break-all">

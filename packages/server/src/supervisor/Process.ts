@@ -817,7 +817,7 @@ export class Process {
   async handleToolApproval(
     toolName: string,
     input: unknown,
-    options: { signal: AbortSignal },
+    options: { signal: AbortSignal; toolUseID?: string },
   ): Promise<ToolApprovalResult> {
     console.log(
       `[handleToolApproval] toolName=${toolName}, permissionMode=${this._permissionMode}`,
@@ -850,6 +850,7 @@ export class Process {
       prompt: `Allow ${toolName}?`,
       toolName,
       toolInput: input,
+      ...(options.toolUseID ? { toolCallId: options.toolUseID } : {}),
       timestamp: new Date().toISOString(),
     };
 

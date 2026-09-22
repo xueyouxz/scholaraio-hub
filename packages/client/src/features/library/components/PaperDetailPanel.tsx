@@ -1,9 +1,8 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { BookOpen, FolderPlus, X } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
-import { useNavigate } from "react-router-dom";
-import { scholar } from "../../../core/api";
-import { queryKeys } from "../../../core/queryKeys";
+import { useNavigate, useSearchParams } from "react-router-dom";
+import { libraryApi } from "../../../core/library";
 import { StatusBadge } from "../../../shared/ui/StatusBadge";
 import { buildPaperImageUrl } from "../paperUtils";
 import type { PaperReference } from "../types";
@@ -15,40 +14,49 @@ interface Props {
 
 export function PaperDetailPanel({ paper, onClose }: Props) {
   const navigate = useNavigate();
+  const [params] = useSearchParams();
   const queryClient = useQueryClient();
   const [wsOpen, setWsOpen] = useState(false);
   const [addedTo, setAddedTo] = useState<Set<string>>(new Set());
   const wsRef = useRef<HTMLDivElement>(null);
 
   const workspacesQuery = useQuery({
-    queryKey: queryKeys.scholar.workspaces(),
-    queryFn: ({ signal }) => scholar.getWorkspaces({ signal }),
+    queryKey: ["library", "projects"],
+    queryFn: ({ signal }) => libraryApi.projects(signal),
     enabled: !!paper,
-    select: (res) =>
-      res.workspaces.map((workspace) => ({ id: workspace.id, name: workspace.name })),
-  });
-
-  const imagesQuery = useQuery({
-    queryKey: queryKeys.scholar.paperImages(paper?.id ?? ""),
-    queryFn: ({ signal }) => scholar.getPaperImages(paper?.id ?? "", { signal }),
-    enabled: !!paper,
-    select: (res) => res.images,
+    select: (res) => res.projects.map((workspace) => ({ id: workspace.id, name: workspace.name })),
   });
 
   const addPaperMutation = useMutation({
     mutationFn: ({ workspaceName, paperId }: { workspaceName: string; paperId: string }) =>
-      scholar.addPaperToWorkspace(workspaceName, paperId),
+      libraryApi.projectPapers(workspaceName, [paperId], "add"),
     onSuccess: (_res, variables) => {
       setAddedTo((prev) => new Set([...prev, variables.workspaceName]));
-      queryClient.invalidateQueries({ queryKey: queryKeys.scholar.workspaces() });
+      queryClient.invalidateQueries({ queryKey: ["library", "projects"] });
       queryClient.invalidateQueries({
-        queryKey: queryKeys.scholar.workspace(variables.workspaceName),
+        queryKey: ["library", "projects"],
       });
     },
   });
 
   const workspaces = workspacesQuery.data ?? [];
-  const images = imagesQuery.data ?? [];
+  const imageQuery = useQuery({
+    queryKey: ["library", "images", paper?.id],
+    queryFn: ({ signal }) => libraryApi.images(paper?.id ?? "", signal),
+    enabled: !!paper,
+  });
+  const images = imageQuery.data?.images ?? (paper?.coverImage ? [paper.coverImage] : []);
+  useEffect(() => {
+    if (!paper) return;
+    const handler = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        if (wsOpen) setWsOpen(false);
+        else onClose();
+      }
+    };
+    document.addEventListener("keydown", handler);
+    return () => document.removeEventListener("keydown", handler);
+  }, [paper, wsOpen, onClose]);
   const addingTo = addPaperMutation.isPending
     ? (addPaperMutation.variables?.workspaceName ?? null)
     : null;
@@ -76,7 +84,10 @@ export function PaperDetailPanel({ paper, onClose }: Props) {
 
   return (
     <div
-      className={`fixed right-0 top-[3.25rem] bottom-0 w-[380px] z-20 flex flex-col bg-surface-container-lowest border-l border-outline-variant/20 shadow-2xl transition-all duration-[220ms] ease-in-out ${
+      role="complementary"
+      aria-label="文献详情"
+      inert={!paper}
+      className={`fixed right-0 top-[3.25rem] bottom-0 w-[380px] max-w-full z-40 flex flex-col bg-surface-container-lowest border-l border-outline-variant/20 shadow-2xl transition-[transform,opacity] duration-[220ms] ease-in-out ${
         paper ? "translate-x-0 opacity-100" : "translate-x-full opacity-0 pointer-events-none"
       }`}
     >
@@ -90,6 +101,7 @@ export function PaperDetailPanel({ paper, onClose }: Props) {
             <button
               type="button"
               onClick={onClose}
+              aria-label="关闭文献详情"
               className="p-1.5 rounded-full text-on-surface-variant hover:bg-surface-container shrink-0 mt-0.5 border-0 bg-transparent cursor-pointer"
             >
               <X className="w-4 h-4" />
@@ -137,7 +149,7 @@ export function PaperDetailPanel({ paper, onClose }: Props) {
               </p>
               <div className="flex flex-wrap gap-2">
                 <StatusBadge status={paper.status} />
-                {paper.hasPdf ? (
+                {paper.hasPdfFile ? (
                   <span className="text-[10px] font-mono font-bold text-secondary bg-secondary-container/30 px-2 py-0.5 rounded leading-none uppercase">
                     PDF
                   </span>
@@ -181,16 +193,25 @@ export function PaperDetailPanel({ paper, onClose }: Props) {
             ) : null}
           </div>
 
+          {addPaperMutation.error || workspacesQuery.error ? (
+            <p role="alert" className="text-error px-5 text-xs">
+              {(addPaperMutation.error ?? workspacesQuery.error)?.message}
+            </p>
+          ) : null}
           {/* Footer actions */}
           <div className="shrink-0 px-5 pb-5 pt-4 border-t border-outline-variant/10 space-y-2.5">
-            {paper.hasPdf ? (
+            {paper.hasPdfFile ? (
               <button
                 type="button"
-                onClick={() => navigate(`/library/${paper.id}`)}
+                onClick={() =>
+                  navigate(
+                    `/library/${encodeURIComponent(paper.id)}?returnTo=${encodeURIComponent(`/library?${params}`)}&mode=overview${params.get("project") ? `&project=${encodeURIComponent(params.get("project") ?? "")}` : ""}`,
+                  )
+                }
                 className="flex items-center justify-center gap-2 w-full py-2.5 rounded-xl bg-surface-container text-on-surface text-xs font-semibold hover:bg-surface-container-high transition-colors border-0 cursor-pointer"
               >
                 <BookOpen className="w-3.5 h-3.5" />
-                阅读 PDF
+                阅读文献
               </button>
             ) : null}
 
@@ -202,7 +223,7 @@ export function PaperDetailPanel({ paper, onClose }: Props) {
                 className="flex items-center justify-center gap-2 w-full py-2.5 rounded-xl signature-gradient text-on-primary text-xs font-semibold disabled:opacity-50 border-0 cursor-pointer"
               >
                 <FolderPlus className="w-3.5 h-3.5" />
-                {addingTo ? `添加到 ${addingTo}…` : "添加到 Workspace"}
+                {addingTo ? `添加到 ${addingTo}…` : "添加到文献项目"}
               </button>
               {wsOpen ? (
                 <div className="absolute bottom-full mb-2 left-0 right-0 bg-surface-container-highest border border-outline-variant/20 rounded-xl p-1.5 shadow-xl z-50 max-h-44 overflow-y-auto no-scrollbar">

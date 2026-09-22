@@ -5,10 +5,16 @@ import type { LibraryService } from "../services/LibraryService.js";
 export function createLibraryRoutes(service: LibraryService) {
   const routes = new Hono();
   const resources = [
+    ["GET", "/analytics"],
+    ["GET", "/projects"],
+    ["POST", "/projects"],
+    ["GET", "/projects/:id"],
+    ["POST", "/projects/:id/papers"],
     ["GET", "/papers"],
     ["GET", "/search"],
     ["GET", "/papers/:id"],
     ["GET", "/papers/:id/pdf"],
+    ["GET", "/papers/:id/images"],
     ["GET", "/papers/:id/attachments/*"],
     ["GET", "/papers/:id/position"],
     ["PUT", "/papers/:id/position"],

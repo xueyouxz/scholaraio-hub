@@ -58,22 +58,9 @@
  */
 
 import { open } from "node:fs/promises";
-import { homedir } from "node:os";
-import { basename, isAbsolute, join, sep } from "node:path";
+import { basename, join } from "node:path";
 import type { UrlProjectId } from "@scholaraio-hub/shared";
 import { stripBom } from "../utils/jsonl.js";
-
-/** Check if a path is absolute (works for both Unix and Windows paths). */
-export function isAbsolutePath(p: string): boolean {
-  return isAbsolute(p);
-}
-
-/** The root directory where Claude stores project sessions */
-export const CLAUDE_DIR =
-  process.env.CLAUDE_SESSIONS_DIR?.replace(new RegExp(`\\${sep}projects$`), "") ??
-  process.env.CLAUDE_CONFIG_DIR ??
-  join(homedir(), ".claude");
-export const CLAUDE_PROJECTS_DIR = process.env.CLAUDE_SESSIONS_DIR ?? join(CLAUDE_DIR, "projects");
 
 /**
  * Encode an absolute project path to a projectId (base64url).

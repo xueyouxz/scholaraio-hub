@@ -35,7 +35,9 @@ export function PaperGridCard({
       type="button"
       onClick={onClick}
       title={failedReason ?? undefined}
-      className={`relative w-full text-left transition-all rounded-xl cursor-pointer border overflow-hidden focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40 ${borderClass}`}
+      aria-pressed={selectionMode ? !!isChecked : !!isSelected}
+      style={{ contentVisibility: "auto", containIntrinsicSize: "auto 280px" }}
+      className={`relative w-full text-left transition-[background-color,border-color,box-shadow] rounded-xl cursor-pointer border overflow-hidden focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40 ${borderClass}`}
     >
       {selectionMode ? (
         <div
@@ -67,7 +69,14 @@ export function PaperGridCard({
 
       {coverUrl && (
         <div className="h-36 overflow-hidden">
-          <img src={coverUrl} alt="" className="w-full h-full object-cover" loading="lazy" />
+          <img
+            width={400}
+            height={144}
+            src={coverUrl}
+            alt=""
+            className="w-full h-full object-cover"
+            loading="lazy"
+          />
         </div>
       )}
     </button>

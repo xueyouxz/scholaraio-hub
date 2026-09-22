@@ -1,4 +1,4 @@
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, symlink, unlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
@@ -32,8 +32,19 @@ describe.each(["claude", "codex"] as const)("%s application sessions", (name) =>
   let server: ReturnType<typeof createApp>;
   beforeEach(async () => {
     root = await mkdtemp(join(tmpdir(), "hub-sessions-"));
+    const skillsDir = join(root, "skills");
+    await mkdir(join(skillsDir, "review-fixture"), { recursive: true });
+    await writeFile(
+      join(skillsDir, "review-fixture", "SKILL.md"),
+      "---\nname: review-fixture\ndescription: Test research skill\n---\nRESEARCH_SKILL_INSTRUCTIONS $ARGUMENTS",
+    );
     provider = new WorkbenchProvider(name);
-    server = createApp({ dataDir: root, provider, libraryService: new TestLibrary(root) });
+    server = createApp({
+      dataDir: root,
+      provider,
+      libraryService: new TestLibrary(root),
+      scholaraioSkillsDir: join(root, "skills"),
+    });
     await server.ready;
   });
   afterEach(async () => {
@@ -55,6 +66,158 @@ describe.each(["claude", "codex"] as const)("%s application sessions", (name) =>
       headers,
       body: JSON.stringify({ id: messageId, text }),
     });
+  it("uploads session-owned files, rejects foreign attachments and retains file parts after restart", async () => {
+    const id = await create();
+    const foreign = await create();
+    const form = new FormData();
+    form.set("file", new File(["paper attachment"], "研究资料.pdf", { type: "application/pdf" }));
+    const upload = await server.app.request(`/api/sessions/${id}/attachments`, {
+      method: "POST",
+      headers: { "ScholarAIO-Hub": "true" },
+      body: form,
+    });
+    expect(upload.status).toBe(201);
+    const attachment = await upload.json();
+    expect(attachment).not.toHaveProperty("path");
+    expect((await server.app.request(attachment.url)).headers.get("content-disposition")).toContain(
+      "attachment;",
+    );
+    const post = (sessionId: string) =>
+      server.app.request(`/api/sessions/${sessionId}/messages`, {
+        method: "POST",
+        headers,
+        body: JSON.stringify({ id: "attached", text: "", attachmentIds: [attachment.id] }),
+      });
+    expect((await post(foreign)).status).toBe(400);
+    expect(provider.calls).toHaveLength(0);
+    await (await post(id)).text();
+    await expect.poll(() => server.sessions.detail(id).state).toBe("idle");
+    expect(provider.inputs[0]).toContain("研究资料.pdf");
+    const uploaded = provider.calls[0]?.initialMessage?.attachments?.[0];
+    expect(uploaded?.path).toContain(`/sessions/${id}/workspace/.attachments/`);
+    expect(await readFile(uploaded?.path ?? "", "utf8")).toBe("paper attachment");
+    expect(server.sessions.detail(id).messages[0]?.parts).toEqual([
+      expect.objectContaining({ type: "file", filename: "研究资料.pdf", url: attachment.url }),
+    ]);
+    await server.close();
+    server = createApp({
+      dataDir: root,
+      provider,
+      libraryService: new TestLibrary(root),
+      scholaraioSkillsDir: join(root, "skills"),
+    });
+    await server.ready;
+    expect(await (await server.app.request(attachment.url)).text()).toBe("paper attachment");
+    await unlink(uploaded?.path ?? "");
+    await symlink(join(root, "sessions", id, "session.json"), uploaded?.path ?? "");
+    expect((await server.app.request(attachment.url)).status).toBe(400);
+  });
+
+  it("runs durable queued messages in order once, and pauses them across stop and restart", async () => {
+    const id = await create();
+    const active = await send(id, "approval");
+    await expect.poll(() => server.sessions.detail(id).pendingInput?.id).toBeTruthy();
+    const enqueue = (messageId: string, text: string) =>
+      server.app.request(`/api/sessions/${id}/queue`, {
+        method: "POST",
+        headers,
+        body: JSON.stringify({ id: messageId, text }),
+      });
+    expect((await enqueue("q1", "second")).status).toBe(200);
+    await enqueue("q1", "second");
+    await enqueue("q2", "third");
+    expect(server.sessions.detail(id).queuedMessages).toHaveLength(2);
+    const request = server.sessions.detail(id).pendingInput;
+    server.sessions.input(id, request?.id ?? "", "deny");
+    await active.text();
+    await expect.poll(() => provider.inputs.length).toBe(3);
+    await expect.poll(() => server.sessions.detail(id).state).toBe("idle");
+    expect(provider.inputs[1]).toContain("second");
+    expect(provider.inputs[2]).toContain("third");
+    expect(server.sessions.detail(id).queuedMessages).toEqual([]);
+    const stopped = await send(id, "slow");
+    await enqueue("q3", "after restart");
+    await server.sessions.stop(id);
+    await stopped.text();
+    expect(server.sessions.detail(id).queuePaused).toBe(true);
+    await server.close();
+    server = createApp({
+      dataDir: root,
+      provider,
+      libraryService: new TestLibrary(root),
+      scholaraioSkillsDir: join(root, "skills"),
+    });
+    await server.ready;
+    expect(server.sessions.detail(id).queuedMessages).toHaveLength(1);
+    expect(server.sessions.detail(id).queuePaused).toBe(true);
+    await server.sessions.editQueue(id, "resume");
+    await expect
+      .poll(() => provider.inputs.some((text) => text.includes("after restart")))
+      .toBe(true);
+    await expect.poll(() => server.sessions.detail(id).state).toBe("idle");
+  });
+
+  it("activates only the selected research skill and confines the file tree to the session", async () => {
+    const id = await create();
+    const workspace = join(root, "sessions", id, "workspace");
+    await writeFile(join(workspace, "result.md"), "# 真实输出\n文件内容");
+    await writeFile(join(root, "outside.txt"), "private");
+    await symlink(join(root, "outside.txt"), join(workspace, "outside-link"));
+    const tree = await server.app.request(`/api/sessions/${id}/fs/browse`);
+    expect((await tree.json()).entries.map((entry: { name: string }) => entry.name)).toEqual([
+      "result.md",
+    ]);
+    const preview = await server.app.request(`/api/sessions/${id}/fs/file?path=result.md`);
+    expect((await preview.json()).content).toContain("真实输出");
+    for (const path of ["../session.json", "outside-link", join(root, "outside.txt")]) {
+      expect(
+        (await server.app.request(`/api/sessions/${id}/fs/file?path=${encodeURIComponent(path)}`))
+          .status,
+      ).toBe(400);
+    }
+    await (await send(id, "/review-fixture 分析论文")).text();
+    await expect.poll(() => server.sessions.detail(id).state).toBe("idle");
+    expect(provider.inputs[0]).toContain("RESEARCH_SKILL_INSTRUCTIONS 分析论文");
+    expect(server.sessions.detail(id).messages[0]?.parts).toEqual([
+      { type: "text", text: "/review-fixture 分析论文" },
+    ]);
+    await (await send(id, "普通问题")).text();
+    expect(provider.inputs[1]).not.toContain("RESEARCH_SKILL_INSTRUCTIONS");
+  });
+
+  it("applies original execution controls and resumes with a changed model", async () => {
+    const id = await create();
+    const options = (value: object) =>
+      server.app.request(`/api/sessions/${id}/options`, {
+        method: "PATCH",
+        headers,
+        body: JSON.stringify(value),
+      });
+    expect(
+      (await options({ model: "first-model", permissionMode: "plan", thinking: "on:high" })).status,
+    ).toBe(200);
+    await (await send(id, "first")).text();
+    await expect.poll(() => server.sessions.detail(id).state).toBe("idle");
+    expect(provider.calls[0]).toMatchObject({
+      model: "first-model",
+      permissionMode: "plan",
+      effort: "high",
+    });
+    expect((await options({ model: "second-model", permissionMode: "default" })).status).toBe(200);
+    await (await send(id, "second")).text();
+    await expect.poll(() => server.sessions.detail(id).state).toBe("idle");
+    expect(provider.calls.at(-1)).toMatchObject({
+      model: "second-model",
+      permissionMode: "default",
+    });
+    expect(server.sessions.detail(id).messages).toHaveLength(4);
+    const running = await send(id, "approval slow");
+    expect((await options({ model: "during-run" })).status).toBe(409);
+    await server.sessions.stop(id);
+    await running.text();
+    expect(server.sessions.detail(id).model).toBe("second-model");
+  });
+
   it("persists canonical messages, sends only new input, and resumes by native ID", async () => {
     const id = await create();
     const first = await send(id, "第一问", "input1");
@@ -75,7 +238,12 @@ describe.each(["claude", "codex"] as const)("%s application sessions", (name) =>
     expect(provider.inputs[1]).not.toContain("第一问");
     expect(server.sessions.detail(id).messages).toHaveLength(4);
     await server.close();
-    server = createApp({ dataDir: root, provider, libraryService: new TestLibrary(root) });
+    server = createApp({
+      dataDir: root,
+      provider,
+      libraryService: new TestLibrary(root),
+      scholaraioSkillsDir: join(root, "skills"),
+    });
     await server.ready;
     await (await send(id, "重启后继续")).text();
     await expect.poll(() => server.sessions.detail(id).state).toBe("idle");
@@ -117,6 +285,38 @@ describe.each(["claude", "codex"] as const)("%s application sessions", (name) =>
     expect((await (await server.app.request("/api/sessions")).json()).sessions).toHaveLength(1);
     expect((await server.app.request("/api/projects")).status).toBe(404);
   });
+  it("pushes the pending decision to the open stream without storing it", async () => {
+    const id = await create();
+    const response = await send(id, "approval");
+    await expect.poll(() => server.sessions.detail(id).pendingInput?.id).toBeTruthy();
+    const pending = server.sessions.detail(id).pendingInput;
+    await server.app.request(`/api/sessions/${id}/input`, {
+      method: "POST",
+      headers,
+      body: JSON.stringify({ requestId: pending?.id, decision: "deny" }),
+    });
+    const text = await response.text();
+    expect(text).toContain('"type":"data-session-state"');
+    expect(text).toContain('"state":"waiting-input"');
+    expect(text).toContain(`"id":"${pending?.id}"`);
+    const stored = server.sessions.detail(id).messages.flatMap((message) => message.parts);
+    expect(stored.some((part) => part.type === "data-session-state")).toBe(false);
+  });
+  it("approves and switches to accept-edits like the original approval panel", async () => {
+    const id = await create();
+    const response = await send(id, "approval");
+    await expect.poll(() => server.sessions.detail(id).pendingInput?.id).toBeTruthy();
+    const pending = server.sessions.detail(id).pendingInput;
+    const decision = await server.app.request(`/api/sessions/${id}/input`, {
+      method: "POST",
+      headers,
+      body: JSON.stringify({ requestId: pending?.id, decision: "approve_accept_edits" }),
+    });
+    expect(decision.status).toBe(200);
+    await response.text();
+    expect(provider.approvals).toEqual(["allow"]);
+    expect(server.sessions.detail(id).permissionMode).toBe("acceptEdits");
+  });
   it("marks interrupted disk runs without replaying input", async () => {
     const record = await server.sessions.store.create({
       title: "interrupted",
@@ -130,5 +330,78 @@ describe.each(["claude", "codex"] as const)("%s application sessions", (name) =>
     await restarted.initialize();
     expect(restarted.get(record.id).state).toBe("interrupted");
     expect(provider.calls).toHaveLength(0);
+  });
+});
+
+describe("workbench project and settings contract", () => {
+  it("persists project identity, enforces scope, and applies provider-specific defaults", async () => {
+    const { ServerSettingsService } = await import("../../src/services/ServerSettingsService.js");
+    const root = await mkdtemp(join(tmpdir(), "hub-project-contract-"));
+    const calls: { resource: string; input: Record<string, unknown> }[] = [];
+    class ScopedLibrary extends LibraryService {
+      override async request(resource: string, init?: RequestInit) {
+        const input = JSON.parse(String(init?.body ?? "{}"));
+        calls.push({ resource, input });
+        if (input.projectId === "outside")
+          return Response.json({ error: "invalid project" }, { status: 400 });
+        return Response.json(
+          resource === "/scope" ? { paperIds: [] } : { citations: [], truncated: false },
+        );
+      }
+    }
+    const settings = new ServerSettingsService({ dataDir: root });
+    await settings.initialize();
+    await settings.updateSettings({
+      newSessionDefaults: { provider: "codex", model: "codex-model" },
+    });
+    const server = createApp({
+      dataDir: root,
+      provider: new WorkbenchProvider("codex"),
+      libraryService: new ScopedLibrary(root),
+      serverSettingsService: settings,
+    });
+    try {
+      await server.ready;
+      const create = (body: object) =>
+        server.app.request("/api/sessions", {
+          method: "POST",
+          headers,
+          body: JSON.stringify(body),
+        });
+      const response = await create({ projectId: "内部项目" });
+      expect(response.status).toBe(201);
+      const session = await response.json();
+      expect(session).toMatchObject({
+        projectId: "内部项目",
+        provider: "codex",
+        model: "codex-model",
+        paperIds: [],
+      });
+      const turn = await server.app.request(`/api/sessions/${session.id}/messages`, {
+        method: "POST",
+        headers,
+        body: JSON.stringify({ id: "first", text: "summarize" }),
+      });
+      await turn.text();
+      expect(calls).toContainEqual({
+        resource: "/context",
+        input: { query: "summarize", paperIds: [], projectId: "内部项目" },
+      });
+      expect((await create({ projectId: "outside" })).status).toBe(400);
+      expect(await (await create({ provider: "claude" })).json()).not.toHaveProperty("model");
+      expect(await (await create({ model: "" })).json()).not.toHaveProperty("model");
+      await settings.updateSettings({ newSessionDefaults: { provider: "claude" } });
+      expect(server.sessions.detail(session.id).provider).toBe("codex");
+      const restored = new SessionStore(root);
+      await restored.initialize();
+      expect(restored.public(restored.get(session.id))).toMatchObject({
+        projectId: "内部项目",
+        provider: "codex",
+      });
+      expect(restored.list().some((s) => !s.projectId)).toBe(true);
+    } finally {
+      await server.close();
+      await rm(root, { recursive: true, force: true });
+    }
   });
 });

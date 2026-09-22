@@ -1,5 +1,6 @@
 export const DEFAULT_PORT = 3400;
 export const DEFAULT_DEV_PORT = 3500;
+export const DEFAULT_TEST_PORT = 3600;
 
 export interface DerivedPorts {
   app: number;
@@ -20,7 +21,13 @@ function parsePort(value: string | undefined, fallback: number): number {
 }
 
 export function resolveBasePort(env: PortEnv = {}): number {
-  return parsePort(env.PORT, env.NODE_ENV === "development" ? DEFAULT_DEV_PORT : DEFAULT_PORT);
+  const fallback =
+    env.NODE_ENV === "test"
+      ? DEFAULT_TEST_PORT
+      : env.NODE_ENV === "development"
+        ? DEFAULT_DEV_PORT
+        : DEFAULT_PORT;
+  return parsePort(env.PORT, fallback);
 }
 
 export function resolveDerivedPorts(env: PortEnv = {}): DerivedPorts {

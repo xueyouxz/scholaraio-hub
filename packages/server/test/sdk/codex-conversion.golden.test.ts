@@ -1,7 +1,8 @@
 import { readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
-import type { UIMessageChunk } from "ai";
+import type { SessionMessage } from "@scholaraio-hub/shared";
+import { type UIMessageChunk, readUIMessageStream } from "ai";
 import { describe, expect, it } from "vitest";
 import type { AgentEvent } from "../../src/agent/events.js";
 import { UIChunkWriter } from "../../src/agent/uiChunks.js";
@@ -68,7 +69,7 @@ function compareWithGolden(name: string, actual: unknown): void {
 }
 
 describe("codex notification conversion", () => {
-  for (const name of ["agent-turn", "tool-turn", "failed-turn"]) {
+  for (const name of ["agent-turn", "tool-turn", "failed-turn", "streaming-turn", "collab-turn"]) {
     it(`converts ${name} into a stable event and chunk stream`, () => {
       const fixture = JSON.parse(
         readFileSync(join(FIXTURES, `${name}.json`), "utf-8"),
@@ -127,5 +128,39 @@ describe("codex notification conversion", () => {
       { type: "notice", key: "retry-turn-1", level: "info", text: "overloaded（正在重试）" },
       { type: "turn.completed", error: "boom" },
     ]);
+  });
+
+  it("lets the browser show running output, then settle on the final result", async () => {
+    const fixture = JSON.parse(
+      readFileSync(join(FIXTURES, "streaming-turn.json"), "utf-8"),
+    ) as NotificationFixture;
+    const { chunks } = convert(fixture);
+    const snapshots: SessionMessage[] = [];
+    for await (const message of readUIMessageStream<SessionMessage>({
+      stream: new ReadableStream({
+        start(controller) {
+          controller.enqueue({ type: "start", messageId: "m" });
+          for (const chunk of chunks) controller.enqueue(chunk);
+          controller.enqueue({ type: "finish" });
+          controller.close();
+        },
+      }),
+      terminateOnError: true,
+    }))
+      snapshots.push(structuredClone(message));
+
+    const bash = (message: SessionMessage | undefined) =>
+      message?.parts.find(
+        (part) => part.type === "dynamic-tool" && part.toolCallId === "item-test",
+      );
+    const running = snapshots
+      .map(bash)
+      .find((part) => part && "preliminary" in part && part.preliminary);
+    expect(running).toMatchObject({ output: { content: "running 3 tests\n" } });
+    expect(bash(snapshots.at(-1))).toMatchObject({
+      state: "output-available",
+      output: { content: "running 3 tests\n3 passed\n", isError: false },
+    });
+    expect(bash(snapshots.at(-1))).not.toMatchObject({ preliminary: true });
   });
 });

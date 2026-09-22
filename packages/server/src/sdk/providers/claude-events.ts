@@ -10,7 +10,7 @@
  * which is the same for a streamed block and its copy in the final message.
  */
 
-import type { AgentEvent, TokenUsage } from "../../agent/events.js";
+import { type AgentEvent, type TokenUsage, inSubagent } from "../../agent/events.js";
 import { TurnState } from "../../agent/turnState.js";
 import { normalizeClaudeRateLimitEvent } from "../../services/ProviderUsageLimitService.js";
 import type { SDKMessage } from "../types.js";
@@ -65,62 +65,16 @@ function usage(message: SDKMessage): TokenUsage | undefined {
 }
 
 /**
- * Stateful: one adapter per provider session. State that only matters within a
- * turn is dropped when the turn completes.
+ * Dedup and block state for one agent: the main agent, or one subagent. Block
+ * ids and message ids are only unique within an agent, so each gets its own.
  */
-export class ClaudeEventAdapter {
-  private turn = new TurnState();
-  private activeMessage = "";
+class ClaudeScope {
+  turn = new TurnState();
+  activeMessage = "";
   private serial = 0;
   private streamedTools = new Map<string, { id: string; name: string; json: string }>();
-  private modelResolved = false;
 
-  accept(message: SDKMessage): AgentEvent[] {
-    // Subagent traffic is summarized by its parent tool's result.
-    if (message.parent_tool_use_id) return [];
-
-    switch (message.type) {
-      case "system":
-        return message.subtype === "init" && typeof message.session_id === "string"
-          ? [{ type: "session.started", sessionId: message.session_id }]
-          : [];
-      case "stream_event":
-        return this.streamEvent(record(message.event));
-      case "assistant":
-        return [...this.resolveModel(message), ...this.content(message)];
-      case "user":
-        return this.content(message);
-      case "rate_limit_event": {
-        const limits = normalizeClaudeRateLimitEvent("claude", message);
-        return limits ? [{ type: "rate-limit", limits }] : [];
-      }
-      case "result":
-        return this.complete({
-          type: "turn.completed",
-          error: claudeResultError(message),
-          usage: usage(message),
-          contextWindow: contextWindow(message),
-        });
-      default:
-        return [];
-    }
-  }
-
-  private complete(event: Extract<AgentEvent, { type: "turn.completed" }>): AgentEvent[] {
-    this.turn = new TurnState();
-    this.streamedTools.clear();
-    this.activeMessage = "";
-    return [event];
-  }
-
-  private resolveModel(message: SDKMessage): AgentEvent[] {
-    const model = message.message?.model;
-    if (this.modelResolved || !model || model === "<synthetic>") return [];
-    this.modelResolved = true;
-    return [{ type: "model.resolved", model }];
-  }
-
-  private streamEvent(event: Record<string, unknown>): AgentEvent[] {
+  streamEvent(event: Record<string, unknown>): AgentEvent[] {
     if (event.type === "message_start") {
       this.activeMessage = String(record(event.message).id ?? `native-${++this.serial}`);
       return [];
@@ -133,7 +87,10 @@ export class ClaudeEventAdapter {
         return this.turn.textDelta("reasoning", key, String(block.thinking ?? ""));
       }
       if (block.type === "tool_use") {
-        this.streamedTools.set(key, { id: String(block.id), name: String(block.name), json: "" });
+        const tool = { id: String(block.id), name: String(block.name), json: "" };
+        this.streamedTools.set(key, tool);
+        // Show the call as soon as the agent starts writing it.
+        return this.turn.toolInputDelta(tool.id, tool.name, "");
       }
       return [];
     }
@@ -145,7 +102,11 @@ export class ClaudeEventAdapter {
         return this.turn.textDelta("reasoning", key, String(delta.thinking ?? ""));
       }
       const tool = this.streamedTools.get(key);
-      if (tool && delta.type === "input_json_delta") tool.json += String(delta.partial_json ?? "");
+      if (tool && delta.type === "input_json_delta") {
+        const chunk = String(delta.partial_json ?? "");
+        tool.json += chunk;
+        return this.turn.toolInputDelta(tool.id, tool.name, chunk);
+      }
       return [];
     }
     if (event.type === "content_block_stop") {
@@ -162,7 +123,7 @@ export class ClaudeEventAdapter {
   }
 
   /** Blocks of a complete assistant or user message. */
-  private content(message: SDKMessage): AgentEvent[] {
+  content(message: SDKMessage): AgentEvent[] {
     const nested = record(message.message);
     const events: AgentEvent[] = [];
 
@@ -213,5 +174,74 @@ export class ClaudeEventAdapter {
       }
     }
     return events;
+  }
+}
+
+/**
+ * Stateful: one adapter per provider session. Subagent traffic (messages with
+ * `parent_tool_use_id`) is kept, in its own scope, and tagged with the tool
+ * call that started the subagent. State that only matters within a turn is
+ * dropped when the turn completes.
+ */
+export class ClaudeEventAdapter {
+  private root = new ClaudeScope();
+  private subagents = new Map<string, ClaudeScope>();
+  private modelResolved = false;
+
+  accept(message: SDKMessage): AgentEvent[] {
+    const parent =
+      typeof message.parent_tool_use_id === "string" && message.parent_tool_use_id
+        ? message.parent_tool_use_id
+        : undefined;
+    if (parent) return inSubagent(this.scoped(this.subagentScope(parent), message), parent);
+
+    switch (message.type) {
+      case "system":
+        return message.subtype === "init" && typeof message.session_id === "string"
+          ? [{ type: "session.started", sessionId: message.session_id }]
+          : [];
+      case "assistant":
+        return [...this.resolveModel(message), ...this.scoped(this.root, message)];
+      case "rate_limit_event": {
+        const limits = normalizeClaudeRateLimitEvent("claude", message);
+        return limits ? [{ type: "rate-limit", limits }] : [];
+      }
+      case "result":
+        this.root = new ClaudeScope();
+        this.subagents.clear();
+        return [
+          {
+            type: "turn.completed",
+            error: claudeResultError(message),
+            usage: usage(message),
+            contextWindow: contextWindow(message),
+          },
+        ];
+      default:
+        return this.scoped(this.root, message);
+    }
+  }
+
+  /** Stream and content messages, which every agent sends the same way. */
+  private scoped(scope: ClaudeScope, message: SDKMessage): AgentEvent[] {
+    if (message.type === "stream_event") return scope.streamEvent(record(message.event));
+    if (message.type === "assistant" || message.type === "user") return scope.content(message);
+    return [];
+  }
+
+  private subagentScope(parent: string): ClaudeScope {
+    let scope = this.subagents.get(parent);
+    if (!scope) {
+      scope = new ClaudeScope();
+      this.subagents.set(parent, scope);
+    }
+    return scope;
+  }
+
+  private resolveModel(message: SDKMessage): AgentEvent[] {
+    const model = message.message?.model;
+    if (this.modelResolved || !model || model === "<synthetic>") return [];
+    this.modelResolved = true;
+    return [{ type: "model.resolved", model }];
   }
 }

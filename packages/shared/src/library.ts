@@ -1,3 +1,10 @@
+export interface LiteratureProject {
+  id: string;
+  name: string;
+  paperIds: string[];
+  paperCount: number;
+}
+
 export interface LibraryPaper {
   id: string;
   title: string;
@@ -10,6 +17,10 @@ export interface LibraryPaper {
   hasMarkdown: boolean;
   parseStatus: "ready" | "pending" | "failed";
   error?: string;
+  coverImage?: string | null;
+  citationCount?: number | null;
+  citationCounts?: Record<string, number> | null;
+  paperType?: string;
 }
 export interface LibraryChunk {
   chunk_id: string;
@@ -22,6 +33,7 @@ export interface LibraryChunk {
 }
 export interface LibraryPaperDetail extends LibraryPaper {
   markdown: string;
+  l3Conclusion?: string;
   chunks: LibraryChunk[];
 }
 export interface LibrarySearchResult {

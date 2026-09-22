@@ -1,11 +1,9 @@
 import { scaleSqrt } from "d3";
 import { Layers } from "lucide-react";
 import { useMemo } from "react";
-import type { ScholarTopic } from "../../../core/api";
+import type { ScholarTopic } from "../../../core/scholarTypes";
 import { useChartSize } from "../hooks/useChartSize";
 import type { TopicColorMap } from "../types";
-import { buildGlobalTopicCloud, buildTopicCloud } from "../utils/topicCloud";
-import { TopicWordCloud } from "./TopicWordCloud";
 
 interface LassoData {
   ratio: number;
@@ -39,18 +37,6 @@ export function TopicBarChart({
 
   const visibleTopics = useMemo(() => topics.filter((t) => t.id !== -1), [topics]);
   const maxCount = Math.max(...visibleTopics.map((t) => t.paperCount), 1);
-
-  // For cloud words, if 1 topic is selected, show it. If 2 are selected, maybe combine them or show global if none?
-  const cloudWords = useMemo(
-    () =>
-      activeTopicIds.length > 0
-        ? activeTopicIds.flatMap((id) => {
-            const t = visibleTopics.find((v) => v.id === id);
-            return t ? buildTopicCloud(t, topicColors) : [];
-          })
-        : buildGlobalTopicCloud(visibleTopics, topicColors),
-    [activeTopicIds, visibleTopics, topicColors],
-  );
 
   const innerW = Math.max(svgW - MARGIN.left - MARGIN.right, 0);
   const innerH = Math.max(svgH - MARGIN.top - MARGIN.bottom, 0);
@@ -180,10 +166,6 @@ export function TopicBarChart({
           </g>
         </svg>
       </div>
-
-      {/* <div className="flex-1 min-w-0 border-l border-outline-variant/10 flex items-center px-3 py-2">
-        <TopicWordCloud words={cloudWords} />
-      </div> */}
     </div>
   );
 }

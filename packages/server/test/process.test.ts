@@ -894,6 +894,29 @@ describe("Process", () => {
     });
   });
 
+  describe("approval requests", () => {
+    it("say which tool call they are about, so the UI can ask on its row", async () => {
+      const process = new Process(
+        createMockIterator([{ type: "session.started", sessionId: "sess-1" }]),
+        { projectPath: "/test", projectId: "proj-1", sessionId: "sess-1", idleTimeoutMs: 100 },
+      );
+      const controller = new AbortController();
+      void process.handleToolApproval(
+        "Bash",
+        { command: "rm -rf build" },
+        {
+          signal: controller.signal,
+          toolUseID: "call-9",
+        },
+      );
+      expect(process.getPendingInputRequest()).toMatchObject({
+        toolName: "Bash",
+        toolCallId: "call-9",
+      });
+      controller.abort();
+    });
+  });
+
   describe("first user message", () => {
     const newProcess = (queue?: MessageQueue) =>
       new Process(createMockIterator([{ type: "session.started", sessionId: "sess-1" }]), {

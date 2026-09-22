@@ -17,6 +17,7 @@ export class TurnState {
   private calls = new Set<string>();
   private results = new Set<string>();
   private files = new Set<string>();
+  private streamingInputs = new Set<string>();
 
   /** An incremental piece of text. */
   textDelta(kind: TextKind, blockId: string, delta: string): AgentEvent[] {
@@ -35,6 +36,15 @@ export class TurnState {
     const block = this.block(kind, blockId);
     if (!text.startsWith(block.value)) return [];
     return this.textDelta(kind, blockId, text.slice(block.value.length));
+  }
+
+  /** Argument text of a call still being written; nothing once the call is final. */
+  toolInputDelta(callId: string, name: string, delta: string): AgentEvent[] {
+    if (this.calls.has(callId)) return [];
+    const announcing = !this.streamingInputs.has(callId);
+    this.streamingInputs.add(callId);
+    if (!delta && !announcing) return [];
+    return [{ type: "tool.input.delta", callId, name, delta }];
   }
 
   /** A tool call; repeats of the same call id are dropped. */
@@ -61,6 +71,12 @@ export class TurnState {
     const result: AgentEvent = { type: "tool.result", callId, output, isError };
     if (detail !== undefined) result.detail = detail;
     return [...this.toolCall(callId, "Tool", {}), result];
+  }
+
+  /** Partial output of a running tool; dropped once its result is in. */
+  toolOutputDelta(callId: string, delta: string): AgentEvent[] {
+    if (!delta || !this.calls.has(callId) || this.results.has(callId)) return [];
+    return [{ type: "tool.output.delta", callId, delta }];
   }
 
   file(key: string, mediaType: string, url: string): AgentEvent[] {

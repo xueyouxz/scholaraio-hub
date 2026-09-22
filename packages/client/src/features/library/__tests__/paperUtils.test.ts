@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { ScholarPaper } from "../../../core/api";
+import type { ScholarPaper } from "../../../core/scholarTypes";
 import {
   abbreviateSource,
   buildPdfUrl,
@@ -53,13 +53,11 @@ function makeScholarPaper(overrides: Partial<ScholarPaper> = {}): ScholarPaper {
 
 describe("buildPdfUrl", () => {
   it("constructs the correct API path", () => {
-    expect(buildPdfUrl("abc-123")).toBe("/api/scholar/api/v1/papers/abc-123/pdf");
+    expect(buildPdfUrl("abc-123")).toBe("/api/library/papers/abc-123/pdf");
   });
 
   it("handles IDs with special characters", () => {
-    expect(buildPdfUrl("paper/with-slash")).toBe(
-      "/api/scholar/api/v1/papers/paper%2Fwith-slash/pdf",
-    );
+    expect(buildPdfUrl("paper/with-slash")).toBe("/api/library/papers/paper%2Fwith-slash/pdf");
   });
 });
 

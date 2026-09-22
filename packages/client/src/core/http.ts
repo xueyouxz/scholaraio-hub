@@ -1,8 +1,4 @@
-export interface ApiRequestOptions {
-  signal?: AbortSignal;
-}
-
-export type QueryParams = object;
+/** JSON transport shared by every client API module (`core/library.ts`). */
 
 export class HttpError extends Error {
   readonly status: number;
@@ -20,17 +16,6 @@ export class HttpError extends Error {
 
 export function pathSegment(value: string): string {
   return encodeURIComponent(value);
-}
-
-export function withQuery(path: string, params: QueryParams): string {
-  const qs = new URLSearchParams();
-  for (const [key, value] of Object.entries(params)) {
-    if (value === null || value === undefined) continue;
-    if (!["string", "number", "boolean"].includes(typeof value)) continue;
-    qs.set(key, String(value));
-  }
-  const query = qs.toString();
-  return query ? `${path}?${query}` : path;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

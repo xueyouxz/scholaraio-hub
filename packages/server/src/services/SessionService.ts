@@ -4,12 +4,13 @@ import type {
   LibraryContext,
   SessionInput,
   SessionMessage,
+  SessionMessageMetadata,
   StoredSession,
   UploadedFile,
 } from "@scholaraio-hub/shared";
 import { thinkingOptionToConfig } from "@scholaraio-hub/shared";
 import { type UIMessageChunk, readUIMessageStream } from "ai";
-import { UIChunkWriter } from "../agent/uiChunks.js";
+import { UIChunkWriter, appendReplayChunk } from "../agent/uiChunks.js";
 import { SessionAttachments } from "../sessions/SessionAttachments.js";
 import type { SessionRecord, SessionStore } from "../sessions/SessionStore.js";
 import { getScholaraioSkill } from "../skills/scholaraioSkills.js";
@@ -27,6 +28,8 @@ interface SessionRun {
   controller: ReadableStreamDefaultController<UIMessageChunk>;
   /** Turns this run's AgentEvents into UI chunks. */
   writer: UIChunkWriter;
+  /** Model and usage for this turn, sent as message metadata when it ends. */
+  metadata: SessionMessageMetadata;
   consume: Promise<void>;
   timer?: ReturnType<typeof setTimeout>;
   finished: boolean;
@@ -40,6 +43,8 @@ export class SessionScopeError extends Error {}
 
 export class SessionService {
   private runs = new Map<string, SessionRun>();
+  /** Model each session's provider process reported, by session id. */
+  private resolvedModels = new Map<string, string>();
   private processes = new Map<string, Process>();
   private subscriptions = new Map<string, () => void>();
   private closing = false;
@@ -150,6 +155,15 @@ export class SessionService {
       if (event.type === "agent") {
         const agentEvent = event.event;
         if (agentEvent.type === "session.started") record.nativeSessionId = agentEvent.sessionId;
+        if (agentEvent.type === "model.resolved") {
+          // Providers report the model once per process; remember it for later turns.
+          this.resolvedModels.set(id, agentEvent.model);
+          run.metadata.model = agentEvent.model;
+        }
+        if (agentEvent.type === "turn.completed") {
+          if (agentEvent.usage) run.metadata.usage = agentEvent.usage;
+          if (agentEvent.contextWindow) run.metadata.contextWindow = agentEvent.contextWindow;
+        }
         run.writer.write(agentEvent);
         if (agentEvent.type === "turn.completed") void this.finish(run, agentEvent.error);
       } else if (event.type === "state-change") {
@@ -158,6 +172,11 @@ export class SessionService {
             ? { ...event.state.request, sessionId: id }
             : undefined;
         record.state = record.pendingInput ? "waiting-input" : "running";
+        this.broadcast(run, {
+          type: "data-session-state",
+          data: { state: record.state, pendingInput: record.pendingInput },
+          transient: true,
+        });
         this.checkpoint(run);
       } else if (event.type === "error") {
         void this.finish(run, event.error.message);
@@ -166,6 +185,8 @@ export class SessionService {
       }
     }
     if (event.type === "terminated" || event.type === "complete") {
+      // The next process reports its own model (it may have been switched).
+      this.resolvedModels.delete(id);
       this.subscriptions.get(id)?.();
       this.subscriptions.delete(id);
       this.processes.delete(id);
@@ -173,8 +194,17 @@ export class SessionService {
   }
 
   private emit(run: SessionRun, chunk: UIMessageChunk): void {
-    run.chunks.push(chunk);
+    appendReplayChunk(run.chunks, chunk);
     run.controller.enqueue(chunk);
+    for (const listener of run.listeners) listener(chunk);
+  }
+
+  /**
+   * Send a transient chunk to the browsers attached now. It is not replayed to
+   * later attachments (they read the same state from the session snapshot) and
+   * not written into the stored message.
+   */
+  private broadcast(run: SessionRun, chunk: UIMessageChunk): void {
     for (const listener of run.listeners) listener(chunk);
   }
 
@@ -281,6 +311,7 @@ export class SessionService {
       listeners: new Set(),
       controller,
       writer: new UIChunkWriter((chunk) => this.emit(run, chunk)),
+      metadata: { model: this.resolvedModels.get(id) ?? record.model },
       consume: Promise.resolve(),
       finished: false,
     };
@@ -348,7 +379,7 @@ export class SessionService {
         this.emit(run, {
           type: "data-notice",
           id: "context",
-          data: "已按上下文长度截取文献片段。",
+          data: { level: "info", text: "已按上下文长度截取文献片段。" },
         });
       const evidence = context.citations
         .map((citation) => `[${citation.id}] ${citation.title}\n${citation.text}`)
@@ -440,7 +471,15 @@ export class SessionService {
     run.record.error = error;
     run.record.pendingInput = undefined;
     run.writer.close();
-    if (error) this.emit(run, { type: "data-notice", id: "error", data: error });
+    const metadata = Object.fromEntries(
+      Object.entries(run.metadata).filter(([, value]) => value !== undefined),
+    ) as SessionMessageMetadata;
+    if (Object.keys(metadata).length) {
+      this.emit(run, { type: "message-metadata", messageMetadata: metadata });
+    }
+    if (error) {
+      this.emit(run, { type: "data-notice", id: "error", data: { level: "error", text: error } });
+    }
     this.emit(run, { type: "finish", finishReason: error ? "error" : "stop" });
     run.controller.close();
     for (const listener of [...run.listeners]) listener(null);

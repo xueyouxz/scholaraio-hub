@@ -788,6 +788,7 @@ export class CodexProvider implements AgentProvider {
           signal,
           "accept",
           "decline",
+          commandParams.itemId,
         );
         log.info(
           {
@@ -842,6 +843,7 @@ export class CodexProvider implements AgentProvider {
           signal,
           "accept",
           "decline",
+          fileParams.itemId,
         );
         log.info(
           {
@@ -876,6 +878,7 @@ export class CodexProvider implements AgentProvider {
           signal,
           "approved",
           "denied",
+          toolInput.callId ?? undefined,
         );
         log.info(
           {
@@ -909,6 +912,7 @@ export class CodexProvider implements AgentProvider {
           signal,
           "approved",
           "denied",
+          toolInput.callId ?? undefined,
         );
         log.info(
           {
@@ -923,28 +927,49 @@ export class CodexProvider implements AgentProvider {
         return { decision };
       }
 
+      // Codex asking the user something: the same question flow as Claude's
+      // AskUserQuestion, so the user sees one kind of prompt whichever agent asks.
       case "item/tool/requestUserInput": {
         const requestInput = asToolRequestUserInputParams(request.params);
         const questions = requestInput?.questions ?? [];
+        const respond = (given: Record<string, string>): ToolRequestUserInputResponse => ({
+          answers: Object.fromEntries(
+            questions.map((question) => [
+              question.id,
+              { answers: given[question.question] ? [given[question.question] as string] : [] },
+            ]),
+          ),
+        });
+        if (!requestInput || !questions.length || !options.onToolApproval) return respond({});
 
-        // MVP: return empty answers so request can complete without blocking.
-        const answers: ToolRequestUserInputResponse["answers"] = {};
-        for (const question of questions) {
-          answers[question.id] = { answers: [] };
+        const input = {
+          questions: questions.map((question) => ({
+            question: question.question,
+            header: question.header,
+            options: (question.options ?? []).map((option) => ({
+              label: option.label,
+              description: option.description,
+            })),
+            multiSelect: false,
+            ...(question.isSecret ? { secret: true } : {}),
+          })),
+        };
+        try {
+          const result = await options.onToolApproval("AskUserQuestion", input, {
+            signal,
+            toolUseID: requestInput.itemId,
+          });
+          if (result.behavior !== "allow") return respond({});
+          const answers = (result.updatedInput as { answers?: Record<string, string> } | undefined)
+            ?.answers;
+          return respond(answers ?? {});
+        } catch (error) {
+          log.warn(
+            { requestId: request.id, error },
+            "Codex user-input prompt failed; answering empty",
+          );
+          return respond({});
         }
-        log.warn(
-          {
-            method: request.method,
-            requestId: request.id,
-            questionCount: questions.length,
-            threadId: requestInput?.threadId ?? null,
-            turnId: requestInput?.turnId ?? null,
-            itemId: requestInput?.itemId ?? null,
-          },
-          "Codex requested tool user input; returning empty answers in MVP",
-        );
-        const response: ToolRequestUserInputResponse = { answers };
-        return response;
       }
 
       default: {
@@ -964,6 +989,8 @@ export class CodexProvider implements AgentProvider {
     signal: AbortSignal,
     allowDecision: TDecision,
     denyDecision: TDecision,
+    /** The item being approved, so the request can be shown on its row. */
+    toolUseID?: string,
   ): Promise<TDecision> {
     if (!options.onToolApproval) {
       log.warn({ toolName }, "No onToolApproval handler available; denying Codex approval request");
@@ -972,7 +999,7 @@ export class CodexProvider implements AgentProvider {
 
     let result: ToolApprovalResult;
     try {
-      result = await options.onToolApproval(toolName, toolInput, { signal });
+      result = await options.onToolApproval(toolName, toolInput, { signal, toolUseID });
     } catch (error) {
       log.warn({ toolName, error }, "onToolApproval threw; denying Codex approval request");
       return denyDecision;

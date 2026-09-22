@@ -1,13 +1,11 @@
 import { interpolateRgb } from "d3";
 import { Layers } from "lucide-react";
 import { useMemo } from "react";
-import type { ScholarTopicSimilarity } from "../../../../core/api";
+import type { ScholarTopicSimilarity } from "../../../../core/scholarTypes";
 import { useChartSize } from "../../hooks/useChartSize";
-import type { TopicColorMap } from "../../types";
 
 interface Props {
   similarity?: ScholarTopicSimilarity;
-  topicColors: TopicColorMap;
   activeTopicIds: number[];
   onTopicSelect: (ids: number[]) => void;
 }
@@ -15,12 +13,7 @@ interface Props {
 const MARGIN = 0;
 const colorScale = interpolateRgb("#eff5f0", "#005235");
 
-export function TopicSimilarityHeatmap({
-  similarity,
-  topicColors,
-  activeTopicIds,
-  onTopicSelect,
-}: Props) {
+export function TopicSimilarityHeatmap({ similarity, activeTopicIds, onTopicSelect }: Props) {
   const { ref: containerRef, width, height } = useChartSize(320, 200);
 
   const topics = similarity?.topics ?? [];
@@ -46,9 +39,7 @@ export function TopicSimilarityHeatmap({
     return (
       <div ref={containerRef} className="w-full h-full flex items-center justify-center gap-2 px-4">
         <Layers className="h-4 w-4 text-on-surface-variant" />
-        <span className="text-xs font-mono text-on-surface-variant">
-          主题模型构建后显示相似矩阵
-        </span>
+        <span className="text-xs font-mono text-on-surface-variant">暂无保存的主题相似矩阵</span>
       </div>
     );
   }

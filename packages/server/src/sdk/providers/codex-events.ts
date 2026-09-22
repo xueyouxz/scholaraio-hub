@@ -11,7 +11,7 @@
  * (Read / Edit / Bash / WebSearch …) via `codex/normalization.ts`.
  */
 
-import type { AgentEvent, TokenUsage } from "../../agent/events.js";
+import { type AgentEvent, type TokenUsage, inSubagent } from "../../agent/events.js";
 import { TurnState } from "../../agent/turnState.js";
 import {
   isCodexCorrelationDebugEnabled,
@@ -82,6 +82,15 @@ export type NormalizedThreadItem =
       items: Array<{ text: string; completed: boolean }>;
     }
   | { id: string; type: "error"; message: string }
+  | {
+      id: string;
+      type: "collab_agent";
+      tool: string;
+      status: string;
+      prompt: string | null;
+      receiverThreadIds: string[];
+      agentsStates: Record<string, { status: string; message: string | null }>;
+    }
   | { id: string; type: "image_view"; path: string };
 
 export function isTurnTerminalNotification(
@@ -255,6 +264,33 @@ export function normalizeThreadItem(
       const imagePath = getOptionalString(itemRecord.path) ?? "";
       if (!imagePath) return null;
       return { id, type: "image_view", path: imagePath };
+    }
+
+    case "collab_agent_tool_call": {
+      const receivers = Array.isArray(itemRecord.receiverThreadIds)
+        ? itemRecord.receiverThreadIds.filter(
+            (thread): thread is string => typeof thread === "string",
+          )
+        : [];
+      const states: Record<string, { status: string; message: string | null }> = {};
+      const rawStates =
+        itemRecord.agentsStates && typeof itemRecord.agentsStates === "object"
+          ? (itemRecord.agentsStates as Record<string, unknown>)
+          : {};
+      for (const [thread, value] of Object.entries(rawStates)) {
+        const state = value && typeof value === "object" ? (value as Record<string, unknown>) : {};
+        const status = getOptionalString(state.status);
+        if (status) states[thread] = { status, message: getOptionalString(state.message) };
+      }
+      return {
+        id,
+        type: "collab_agent",
+        tool: getOptionalString(itemRecord.tool) ?? "unknown",
+        status: getOptionalString(itemRecord.status) ?? "unknown",
+        prompt: getOptionalString(itemRecord.prompt),
+        receiverThreadIds: receivers,
+        agentsStates: states,
+      };
     }
 
     case "error": {
@@ -493,15 +529,99 @@ function fileChangeSummary(item: Extract<NormalizedThreadItem, { type: "file_cha
   return `File changes failed:\n${summary}`;
 }
 
+interface DeltaParams {
+  threadId: string;
+  turnId: string;
+  itemId: string;
+  delta: string;
+  summaryIndex?: number;
+}
+
+/** The shared shape of Codex's per-item streaming notifications. */
+function asDeltaParams(params: unknown): DeltaParams | null {
+  const record = params && typeof params === "object" ? (params as Record<string, unknown>) : null;
+  if (
+    typeof record?.threadId !== "string" ||
+    typeof record.turnId !== "string" ||
+    typeof record.itemId !== "string" ||
+    typeof record.delta !== "string"
+  ) {
+    return null;
+  }
+  return record as unknown as DeltaParams;
+}
+
+/** First line of `text`, cut to `length`. */
+function truncateLine(text: string, length: number): string {
+  const line = text.trim().split("\n")[0] ?? "";
+  return line.length > length ? `${line.slice(0, length)}…` : line;
+}
+
+type TodoStatus = "pending" | "in_progress" | "completed";
+
+/** Claude Code's TodoWrite input, the canonical shape for any plan. */
+function todoWriteInput(todos: { content: string; status: TodoStatus }[]) {
+  return { todos: todos.map((todo) => ({ ...todo, activeForm: todo.content })) };
+}
+
+/** `turn/plan/updated`: the agent's step list with per-step status. */
+function asPlanUpdate(params: unknown): {
+  turnId: string;
+  explanation?: string | null;
+  plan: { step: string; status: string }[];
+} | null {
+  const record = params && typeof params === "object" ? (params as Record<string, unknown>) : null;
+  if (typeof record?.turnId !== "string" || !Array.isArray(record.plan)) return null;
+  const plan = record.plan.filter(
+    (entry): entry is { step: string; status: string } =>
+      !!entry &&
+      typeof (entry as { step?: unknown }).step === "string" &&
+      typeof (entry as { status?: unknown }).status === "string",
+  );
+  return {
+    turnId: record.turnId,
+    explanation: typeof record.explanation === "string" ? record.explanation : null,
+    plan,
+  };
+}
+
+function todoStatus(status: string): TodoStatus {
+  if (status === "inProgress" || status === "in_progress") return "in_progress";
+  return status === "completed" ? "completed" : "pending";
+}
+
+/**
+ * Dedup state for one thread: the session's own, or a subagent's. Items from a
+ * child thread are reported inside the tool call that spawned it.
+ */
+interface ThreadScope {
+  turn: TurnState;
+  /** Last reasoning summary part seen per block, to separate parts. */
+  summaryIndex: Map<string, number>;
+  parentCallId?: string;
+}
+
+function newScope(parentCallId?: string): ThreadScope {
+  return { turn: new TurnState(), summaryIndex: new Map(), parentCallId };
+}
+
+const FINISHED_AGENT = new Set(["completed", "errored", "shutdown", "notFound"]);
+
 /**
  * Stateful: one adapter per app-server thread. Tracks the open turn so exactly
  * one `turn.completed` is produced per turn, whichever of `turn/completed`, an
  * `error` notification or a failed `turn/start` ends it.
  */
 export class CodexEventAdapter {
-  private turn = new TurnState();
+  private root = newScope();
+  /** Child threads started by `spawnAgent`, keyed by thread id. */
+  private children = new Map<string, ThreadScope>();
+  /** Which spawn call started each child thread, for reporting its outcome. */
+  private spawnedBy = new Map<string, string>();
   private usageByTurnId = new Map<string, TokenUsageSnapshot>();
   private activeTurnId: string | null = null;
+  /** Plan updates so far this turn; each becomes its own TodoWrite call. */
+  private planUpdates = 0;
 
   constructor(private sessionId = "") {}
 
@@ -533,7 +653,10 @@ export class CodexEventAdapter {
       : undefined;
     this.activeTurnId = null;
     this.usageByTurnId.delete(turnId);
-    this.turn = new TurnState();
+    this.root = newScope();
+    for (const [thread, scope] of this.children)
+      this.children.set(thread, newScope(scope.parentCallId));
+    this.planUpdates = 0;
     return [{ type: "turn.completed", ...(error ? { error } : {}), ...(usage ? { usage } : {}) }];
   }
 
@@ -566,17 +689,57 @@ export class CodexEventAdapter {
 
   private convert(notification: JsonRpcNotification): AgentEvent[] {
     switch (notification.method) {
-      case "item/agentMessage/delta": {
-        const params = notification.params as Record<string, unknown> | undefined;
-        if (
-          params?.threadId !== this.sessionId ||
-          typeof params?.itemId !== "string" ||
-          typeof params?.turnId !== "string" ||
-          typeof params?.delta !== "string"
-        ) {
-          return [];
-        }
-        return this.turn.textDelta("text", itemKey(params.itemId, params.turnId), params.delta);
+      // Plan-mode text streams exactly like an answer; the "plan" item
+      // snapshot then lands on the same block (see normalizeThreadItem).
+      case "item/agentMessage/delta":
+      case "item/plan/delta": {
+        const params = asDeltaParams(notification.params);
+        const scope = params && this.scopeFor(params.threadId);
+        if (!params || !scope) return [];
+        return inSubagent(
+          scope.turn.textDelta("text", itemKey(params.itemId, params.turnId), params.delta),
+          scope.parentCallId,
+        );
+      }
+
+      case "item/reasoning/summaryTextDelta": {
+        const params = asDeltaParams(notification.params);
+        const scope = params && this.scopeFor(params.threadId);
+        if (!params || !scope) return [];
+        const key = itemKey(params.itemId, params.turnId);
+        const index = params.summaryIndex ?? 0;
+        const previous = scope.summaryIndex.get(key);
+        scope.summaryIndex.set(key, index);
+        // Summary parts join with a newline, matching the completed item text.
+        const separator = previous !== undefined && previous !== index ? "\n" : "";
+        return inSubagent(
+          scope.turn.textDelta("reasoning", key, separator + params.delta),
+          scope.parentCallId,
+        );
+      }
+
+      case "item/commandExecution/outputDelta":
+      case "item/fileChange/outputDelta": {
+        const params = asDeltaParams(notification.params);
+        const scope = params && this.scopeFor(params.threadId);
+        if (!params || !scope) return [];
+        return inSubagent(
+          scope.turn.toolOutputDelta(params.itemId, params.delta),
+          scope.parentCallId,
+        );
+      }
+
+      case "turn/plan/updated": {
+        const params = asPlanUpdate(notification.params);
+        if (!params || params.turnId !== this.activeTurnId) return [];
+        const callId = `plan-${params.turnId}-${++this.planUpdates}`;
+        const input = todoWriteInput(
+          params.plan.map((entry) => ({ content: entry.step, status: todoStatus(entry.status) })),
+        );
+        return [
+          ...this.root.turn.toolCall(callId, "TodoWrite", input),
+          ...this.root.turn.toolResult(callId, "Plan updated", false),
+        ];
       }
 
       case "thread/tokenUsage/updated": {
@@ -617,9 +780,14 @@ export class CodexEventAdapter {
           notification.method === "item/started"
             ? asItemStartedNotification(notification.params)
             : asItemCompletedNotification(notification.params);
-        if (!params) return [];
+        const scope = params && this.scopeFor(params.threadId);
+        if (!params || !scope) return [];
         const item = normalizeThreadItem(params.item);
-        return item ? this.item(item, params.turnId, notification.method) : [];
+        if (!item) return [];
+        return inSubagent(
+          this.item(scope, item, params.turnId, notification.method),
+          scope.parentCallId,
+        );
       }
 
       // Rate-limit snapshots are telemetry; real quota failures arrive as `error`.
@@ -628,20 +796,69 @@ export class CodexEventAdapter {
     }
   }
 
-  private item(item: NormalizedThreadItem, turnId: string, phase: ItemPhase): AgentEvent[] {
+  /** The session's own thread, a known child thread, or null for anything else. */
+  private scopeFor(threadId: string): ThreadScope | null {
+    if (threadId === this.sessionId) return this.root;
+    return this.children.get(threadId) ?? null;
+  }
+
+  /** `spawnAgent` becomes a Task call; the other collab tools report on it. */
+  private collab(
+    scope: ThreadScope,
+    item: Extract<NormalizedThreadItem, { type: "collab_agent" }>,
+    complete: boolean,
+  ): AgentEvent[] {
+    const events: AgentEvent[] = [];
+    if (item.tool === "spawnAgent") {
+      for (const thread of item.receiverThreadIds) {
+        this.spawnedBy.set(thread, item.id);
+        if (!this.children.has(thread)) this.children.set(thread, newScope(item.id));
+      }
+      const prompt = item.prompt ?? "";
+      events.push(
+        ...scope.turn.toolCall(item.id, "Task", {
+          description: truncateLine(prompt, 60),
+          prompt,
+          subagent_type: "codex",
+        }),
+      );
+      if (complete && item.status === "failed") {
+        events.push(...scope.turn.toolResult(item.id, "Failed to start the agent", true));
+      }
+    }
+    // Any collab call may carry agents' latest states; a finished agent
+    // settles the Task call that started it.
+    for (const [thread, state] of Object.entries(item.agentsStates)) {
+      const spawnCall = this.spawnedBy.get(thread);
+      if (!spawnCall || !FINISHED_AGENT.has(state.status)) continue;
+      const failed = state.status === "errored" || state.status === "notFound";
+      events.push(
+        ...scope.turn.toolResult(spawnCall, state.message ?? `Agent ${state.status}`, failed),
+      );
+    }
+    return events;
+  }
+
+  private item(
+    scope: ThreadScope,
+    item: NormalizedThreadItem,
+    turnId: string,
+    phase: ItemPhase,
+  ): AgentEvent[] {
+    const turn = scope.turn;
     const complete = phase === "item/completed";
     const key = itemKey(item.id, turnId);
 
     switch (item.type) {
       case "reasoning":
-        return this.turn.textSnapshot("reasoning", key, item.text);
+        return turn.textSnapshot("reasoning", key, item.text);
 
       case "agent_message":
-        return this.turn.textSnapshot("text", key, item.text);
+        return turn.textSnapshot("text", key, item.text);
 
       case "command_execution": {
         const invocation = normalizeCodexToolInvocation("Bash", { command: item.command });
-        const events = this.turn.toolCall(item.id, invocation.toolName, invocation.input);
+        const events = turn.toolCall(item.id, invocation.toolName, invocation.input);
         if (!complete || item.status === "in_progress") return events;
         const context: CodexToolCallContext = {
           toolName: invocation.toolName,
@@ -659,12 +876,7 @@ export class CodexEventAdapter {
         );
         return [
           ...events,
-          ...this.turn.toolResult(
-            item.id,
-            result.content,
-            result.isError === true,
-            result.structured,
-          ),
+          ...turn.toolResult(item.id, result.content, result.isError === true, result.structured),
         ];
       }
 
@@ -672,27 +884,27 @@ export class CodexEventAdapter {
         const input: Record<string, unknown> = { changes: item.changes };
         const onlyPath = item.changes.length === 1 ? item.changes[0]?.path : undefined;
         if (onlyPath) input.file_path = onlyPath;
-        const events = this.turn.toolCall(item.id, "Edit", input);
+        const events = turn.toolCall(item.id, "Edit", input);
         if (!complete) return events;
-        return [...events, ...this.turn.toolResult(item.id, fileChangeSummary(item), false)];
+        return [...events, ...turn.toolResult(item.id, fileChangeSummary(item), false)];
       }
 
       case "mcp_tool_call": {
-        const events = this.turn.toolCall(item.id, `${item.server}:${item.tool}`, item.arguments);
+        const events = turn.toolCall(item.id, `${item.server}:${item.tool}`, item.arguments);
         if (!complete || item.status === "in_progress") return events;
         const succeeded = item.status === "completed";
         const output = succeeded
           ? JSON.stringify(item.result)
           : item.error?.message || "MCP tool call failed";
-        return [...events, ...this.turn.toolResult(item.id, output, !succeeded)];
+        return [...events, ...turn.toolResult(item.id, output, !succeeded)];
       }
 
       case "web_search": {
-        const events = this.turn.toolCall(item.id, "WebSearch", { query: item.query });
+        const events = turn.toolCall(item.id, "WebSearch", { query: item.query });
         if (!complete) return events;
         return [
           ...events,
-          ...this.turn.toolResult(item.id, `Search completed for: ${item.query}`, false, {
+          ...turn.toolResult(item.id, `Search completed for: ${item.query}`, false, {
             query: item.query,
             results: [],
             durationSeconds: 0,
@@ -701,18 +913,32 @@ export class CodexEventAdapter {
       }
 
       case "image_view": {
-        const events = this.turn.toolCall(item.id, "ViewImage", { path: item.path });
+        const events = turn.toolCall(item.id, "ViewImage", { path: item.path });
         if (!complete) return events;
-        return [...events, ...this.turn.toolResult(item.id, `Viewed image: ${item.path}`, false)];
+        return [...events, ...turn.toolResult(item.id, `Viewed image: ${item.path}`, false)];
       }
+
+      case "collab_agent":
+        return this.collab(scope, item, complete);
 
       case "error":
         // A non-fatal error reported inside the turn; the turn keeps going.
         return [{ type: "notice", key, level: "error", text: item.message }];
 
-      // The plan checklist has no counterpart in the shared model yet.
-      case "todo_list":
-        return [];
+      case "todo_list": {
+        // The list can change between started and completed; report the final one.
+        if (!complete) return [];
+        const input = todoWriteInput(
+          item.items.map((entry) => ({
+            content: entry.text,
+            status: entry.completed ? "completed" : "pending",
+          })),
+        );
+        return [
+          ...turn.toolCall(item.id, "TodoWrite", input),
+          ...turn.toolResult(item.id, "Plan updated", false),
+        ];
+      }
 
       default:
         return [];

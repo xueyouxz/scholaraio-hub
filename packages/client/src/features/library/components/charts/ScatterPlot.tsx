@@ -10,7 +10,7 @@ import {
 } from "d3";
 import { Lasso, RotateCcw, ZoomIn } from "lucide-react";
 import { forwardRef, useEffect, useImperativeHandle, useRef, useState } from "react";
-import type { ScholarProjectionPoint } from "../../../../core/api";
+import type { ScholarProjectionPoint } from "../../../../core/scholarTypes";
 import type { TopicColorMap } from "../../types";
 
 export interface ScatterPlotData {

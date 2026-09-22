@@ -22,14 +22,16 @@ export function Markdown({
   text,
   streaming = false,
   imageBase,
-}: { text: string; streaming?: boolean; imageBase?: string }) {
+  className = "min-w-0 break-words text-sm leading-7",
+}: { text: string; streaming?: boolean; imageBase?: string; className?: string }) {
   return (
     <Streamdown
       plugins={plugins}
       components={components}
       mode={streaming ? "streaming" : "static"}
       isAnimating={streaming}
-      className="min-w-0 break-words text-sm leading-7"
+      caret={streaming ? "block" : undefined}
+      className={className}
       disallowedElements={["script", "iframe", "object", "embed", "form", "input"]}
       urlTransform={(url, key, node) => {
         if (node.tagName === "img" && imageBase && !/^(?:[a-z]+:|\/)/i.test(url)) {

@@ -3,6 +3,7 @@
   "files": {
     "ignore": [
       "**/node_modules/**",
+      "**/.pnpm-store/**",
       "**/dist/**",
       "**/coverage/**",
       "**/playwright-report/**",
@@ -24,7 +25,11 @@
   "linter": {
     "enabled": true,
     "rules": {
-      "recommended": true
+      "recommended": true,
+      "correctness": {
+        "noUnusedImports": "error",
+        "noUnusedVariables": "error"
+      }
     }
   },
   "javascript": {

@@ -1,9 +1,12 @@
 import type { LibraryPaperDetail, ReadingPosition } from "@scholaraio-hub/shared";
 import { useMutation, useQuery } from "@tanstack/react-query";
+import { MessageSquare, X } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
-import { libraryApi } from "../../../core/library";
-import { Markdown } from "../../../shared/components/Markdown";
+import { libraryApi, newSessionUrl } from "../../../core/library";
+import { toLibraryPaperRef } from "../paperUtils";
+import { LayerReader } from "./LayerReader";
+import { PaperMarkdown } from "./PaperMarkdown";
 import { PdfViewer } from "./PdfViewer";
 
 interface PaperReaderViewProps {
@@ -53,13 +56,24 @@ function Reader({
 }) {
   const [params, setParams] = useSearchParams();
   const targetLine = Number(params.get("line") ?? saved.line);
-  const [mode, setMode] = useState(
-    params.get("mode") === "markdown" || !paper.hasPdf ? "markdown" : saved.mode,
-  );
+  const mode =
+    params.get("mode") === "overview"
+      ? "overview"
+      : params.get("mode") === "markdown" || !paper.hasPdf
+        ? "markdown"
+        : params.get("mode") === "pdf"
+          ? "pdf"
+          : saved.mode;
+  const setMode = (value: "overview" | "pdf" | "markdown") => {
+    setParams((current) => {
+      const next = new URLSearchParams(current);
+      next.set("mode", value);
+      return next;
+    });
+  };
   const [line, setLine] = useState(targetLine);
   const [page, setPage] = useState(saved.page);
-  const [jumpPage, setJumpPage] = useState(saved.page);
-  const [pageInput, setPageInput] = useState(String(saved.page));
+
   const save = useMutation({
     mutationFn: (value: ReadingPosition) => libraryApi.savePosition(paper.id, value),
   });
@@ -68,6 +82,7 @@ function Reader({
   const viewport = useRef<HTMLDivElement>(null);
   const pendingSave = useRef<ReadingPosition | null>(null);
   useEffect(() => {
+    if (mode === "overview") return;
     pendingSave.current = { page, line, mode: mode === "pdf" ? "pdf" : "markdown" };
     const timer = setTimeout(() => {
       if (pendingSave.current) saveRef.current(pendingSave.current);
@@ -99,43 +114,51 @@ function Reader({
   }, [mode]);
   useEffect(() => {
     if (mode !== "markdown") return;
-    const chunk = paper.chunks.find(
-      (chunk) => chunk.start_line <= targetLine && chunk.end_line >= targetLine,
+    const elements = [...(viewport.current?.querySelectorAll<HTMLElement>("[data-line]") ?? [])];
+    const target = elements.find(
+      (element) =>
+        Number(element.dataset.line) <= targetLine && Number(element.dataset.endLine) >= targetLine,
     );
-    if (chunk)
-      viewport.current
-        ?.querySelector(`[id="line-${chunk.start_line}"]`)
-        ?.scrollIntoView({ block: "start" });
-  }, [mode, targetLine, paper.chunks]);
+    target?.scrollIntoView({ block: "start" });
+  }, [mode, targetLine]);
   return (
     <div className="flex-1 min-w-0 min-h-0 flex flex-col">
-      <div className="flex flex-wrap items-center gap-2 border-b border-outline-variant/15 p-3">
+      <div className="shrink-0 flex items-center gap-2 px-5 border-b border-outline-variant/15 bg-surface-container-low h-12 overflow-x-auto">
         {leading}
-        <h1 className="text-base text-primary truncate flex-1 min-w-40">{paper.title}</h1>
-        <button
-          type="button"
-          className="hub-button"
-          aria-pressed={mode === "pdf"}
-          disabled={!paper.hasPdf}
-          onClick={() => setMode("pdf")}
+        {(
+          [
+            ["overview", "概览"],
+            ["markdown", "全文"],
+            ["pdf", "PDF"],
+          ] as const
+        ).map(([id, label]) => (
+          <button
+            key={id}
+            type="button"
+            aria-pressed={mode === id}
+            disabled={id === "pdf" ? !paper.hasPdf : id === "markdown" ? !paper.hasMarkdown : false}
+            onClick={() => setMode(id)}
+            className={`shrink-0 px-3 py-1.5 rounded-full text-xs font-medium border transition-colors disabled:opacity-30 ${mode === id ? "bg-primary text-on-primary border-primary" : "bg-surface-container-high text-on-surface-variant border-outline-variant/30 hover:bg-surface-container"}`}
+          >
+            {label}
+          </button>
+        ))}
+        <Link
+          className="ml-auto shrink-0 p-1.5 rounded-full text-on-surface-variant hover:text-on-surface hover:bg-surface-container"
+          aria-label="询问本文"
+          title="询问本文"
+          to={newSessionUrl(params.get("project") ?? undefined, [paper.id])}
         >
-          PDF
-        </button>
-        <button
-          type="button"
-          className="hub-button"
-          aria-pressed={mode === "markdown"}
-          disabled={!paper.hasMarkdown}
-          onClick={() => setMode("markdown")}
-        >
-          全文
-        </button>
-        <Link className="hub-button" to={`/sessions?papers=${encodeURIComponent(paper.id)}`}>
-          询问本文
+          <MessageSquare size={14} />
         </Link>
         {onClose ? (
-          <button className="hub-button" type="button" aria-label="关闭阅读器" onClick={onClose}>
-            关闭
+          <button
+            className="shrink-0 p-1.5 rounded-full text-on-surface-variant hover:bg-surface-container"
+            type="button"
+            aria-label="关闭阅读器"
+            onClick={onClose}
+          >
+            <X size={14} />
           </button>
         ) : null}
       </div>
@@ -144,60 +167,32 @@ function Reader({
           阅读位置保存失败：{save.error.message}
         </p>
       ) : null}
-      {mode === "pdf" ? (
+      {mode === "overview" ? (
+        <LayerReader
+          paper={toLibraryPaperRef(paper)}
+          paperId={paper.id}
+          activeLayer="overview"
+          detail={{ l3Conclusion: paper.l3Conclusion }}
+          loadingDetail={false}
+        />
+      ) : mode === "pdf" ? (
         <>
-          <form
-            className="flex items-center gap-2 px-4 py-2 text-xs"
-            onSubmit={(event) => {
-              event.preventDefault();
-              setJumpPage(Math.max(1, Number(pageInput) || 1));
-            }}
-          >
-            <label htmlFor="reader-page">跳转页码</label>
-            <input
-              id="reader-page"
-              className="hub-input w-20"
-              type="number"
-              min="1"
-              value={pageInput}
-              onChange={(event) => setPageInput(event.target.value)}
-            />
-            <button className="hub-button" type="submit">
-              跳转
-            </button>
-            <span>当前第 {page} 页</span>
-          </form>
           <PdfViewer
             url={`/api/library/papers/${encodeURIComponent(paper.id)}/pdf`}
-            initialPage={jumpPage}
+            initialPage={saved.page}
             onPageChange={setPage}
           />
         </>
       ) : (
-        <div ref={viewport} className="flex-1 overflow-auto p-6 lg:px-12">
+        <div ref={viewport} className="flex-1 min-h-0 overflow-y-auto no-scrollbar px-8 py-6">
           {paper.hasMarkdown ? (
-            paper.chunks.map((chunk) => (
-              <section
-                key={chunk.chunk_id}
-                id={`line-${chunk.start_line}`}
-                data-line={chunk.start_line}
-                className={`max-w-4xl mx-auto py-3 scroll-mt-4 ${params.has("line") && chunk.start_line <= targetLine && chunk.end_line >= targetLine ? "bg-secondary-container/30 rounded-xl px-4" : ""}`}
-              >
-                <button
-                  type="button"
-                  className="text-xs text-on-surface-variant mb-2 hover:text-primary"
-                  onClick={() => {
-                    setParams({ mode: "markdown", line: String(chunk.start_line) });
-                  }}
-                >
-                  第 {chunk.start_line}–{chunk.end_line} 行
-                </button>
-                <Markdown
-                  text={chunk.text}
-                  imageBase={`/api/library/papers/${encodeURIComponent(paper.id)}/attachments/`}
-                />
-              </section>
-            ))
+            <div className="max-w-3xl">
+              <PaperMarkdown
+                content={paper.markdown}
+                paperId={paper.id}
+                highlightedLine={params.has("line") ? targetLine : undefined}
+              />
+            </div>
           ) : (
             <p className="text-on-surface-variant">
               {paper.error || "尚未提取全文，可以先阅读 PDF。"}

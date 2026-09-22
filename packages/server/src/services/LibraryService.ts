@@ -32,11 +32,17 @@ export class LibraryService {
   async start(): Promise<void> {
     const python = libraryPythonPath(this.dataDir);
     if (!existsSync(python)) throw new Error("文献运行环境尚未安装，请先运行 pnpm run setup。");
-    const child = spawn(python, ["-m", "scholaraio.interfaces.api", "--data-dir", this.dataDir], {
-      cwd: scholarSourceDir,
-      env: { ...process.env, SCHOLARAIO_HUB_INTERNAL_TOKEN: this.token, PYTHONUNBUFFERED: "1" },
-      stdio: ["ignore", "pipe", "pipe"],
-    });
+    // The open stdin pipe owns the Python lifetime, including watch restarts and
+    // uncatchable Node exits. Python shuts down when this pipe reaches EOF.
+    const child = spawn(
+      python,
+      ["-m", "scholaraio.interfaces.api", "--data-dir", this.dataDir, "--watch-stdin"],
+      {
+        cwd: scholarSourceDir,
+        env: { ...process.env, SCHOLARAIO_HUB_INTERNAL_TOKEN: this.token, PYTHONUNBUFFERED: "1" },
+        stdio: ["pipe", "pipe", "pipe"],
+      },
+    );
     this.child = child;
     child.stderr?.on("data", (data: Buffer) =>
       console.error(`[Library] ${data.toString().trim()}`),
@@ -119,6 +125,7 @@ export class LibraryService {
         clearTimeout(timer);
         resolve();
       });
+      child.stdin?.end();
       child.kill("SIGTERM");
     });
   }

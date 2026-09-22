@@ -1,5 +1,5 @@
 import "katex/dist/katex.min.css";
-import { memo, useState } from "react";
+import { memo, useEffect, useState } from "react";
 import ReactMarkdown from "react-markdown";
 import rehypeKatex from "rehype-katex";
 import rehypeRaw from "rehype-raw";
@@ -10,6 +10,7 @@ import { buildPaperImageUrl } from "../paperUtils";
 interface Props {
   content: string;
   paperId: string;
+  highlightedLine?: number;
 }
 
 /** 将 paper.md 中的相对图片路径 `images/xxx` 替换为可访问的绝对 API 路径。 */
@@ -24,6 +25,14 @@ function rewriteImageUrls(content: string, paperId: string): string {
 
 function PaperImage({ src, alt }: { src?: string; alt?: string }) {
   const [open, setOpen] = useState(false);
+  useEffect(() => {
+    if (!open) return;
+    const handleKey = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setOpen(false);
+    };
+    document.addEventListener("keydown", handleKey);
+    return () => document.removeEventListener("keydown", handleKey);
+  }, [open]);
   if (!src) return null;
 
   const openLightbox = () => setOpen(true);
@@ -34,6 +43,7 @@ function PaperImage({ src, alt }: { src?: string; alt?: string }) {
       <span className="block my-5">
         <button
           type="button"
+          aria-label={alt ? `放大图片：${alt}` : "放大图片"}
           onClick={openLightbox}
           className="block w-full text-left p-0 border-0 bg-transparent cursor-zoom-in"
         >
@@ -55,6 +65,7 @@ function PaperImage({ src, alt }: { src?: string; alt?: string }) {
         <button
           type="button"
           className="fixed inset-0 z-50 flex items-center justify-center bg-on-surface/60 backdrop-blur-sm w-full border-0 cursor-zoom-out"
+          aria-label="关闭图片预览"
           onClick={closeLightbox}
         >
           <img
@@ -70,46 +81,87 @@ function PaperImage({ src, alt }: { src?: string; alt?: string }) {
 
 // ─── Main component ───────────────────────────────────────────────────────────
 
-export const PaperMarkdown = memo(function PaperMarkdown({ content, paperId }: Props) {
+export const PaperMarkdown = memo(function PaperMarkdown({
+  content,
+  paperId,
+  highlightedLine,
+}: Props) {
   const rewritten = rewriteImageUrls(content, paperId);
+  const source = (node?: { position?: { start: { line: number }; end: { line: number } } }) => {
+    const position = node?.position;
+    return position
+      ? {
+          id: `line-${position.start.line}`,
+          "data-line": position.start.line,
+          "data-end-line": position.end.line,
+          style:
+            highlightedLine &&
+            position.start.line <= highlightedLine &&
+            position.end.line >= highlightedLine
+              ? { backgroundColor: "var(--color-secondary-container)" }
+              : undefined,
+        }
+      : {};
+  };
 
   return (
     <ReactMarkdown
+      disallowedElements={["script", "iframe", "object", "embed", "form", "input", "style"]}
       remarkPlugins={[remarkGfm, remarkMath]}
       rehypePlugins={[rehypeRaw, [rehypeKatex, { strict: false, throwOnError: false }]]}
       components={{
-        h1: ({ children }) => (
-          <h1 className="font-serif text-xl font-bold text-on-surface leading-snug mt-8 mb-3 first:mt-0">
+        h1: ({ children, node }) => (
+          <h1
+            {...source(node)}
+            className="font-serif text-xl font-bold text-on-surface leading-snug mt-8 mb-3 first:mt-0"
+          >
             {children}
           </h1>
         ),
-        h2: ({ children }) => (
-          <h2 className="font-serif text-lg font-bold text-on-surface leading-snug mt-7 mb-2.5">
+        h2: ({ children, node }) => (
+          <h2
+            {...source(node)}
+            className="font-serif text-lg font-bold text-on-surface leading-snug mt-7 mb-2.5"
+          >
             {children}
           </h2>
         ),
-        h3: ({ children }) => (
-          <h3 className="font-serif text-base font-semibold text-on-surface leading-snug mt-6 mb-2">
+        h3: ({ children, node }) => (
+          <h3
+            {...source(node)}
+            className="font-serif text-base font-semibold text-on-surface leading-snug mt-6 mb-2"
+          >
             {children}
           </h3>
         ),
-        h4: ({ children }) => (
-          <h4 className="font-serif text-sm font-semibold text-on-surface leading-snug mt-5 mb-1.5">
+        h4: ({ children, node }) => (
+          <h4
+            {...source(node)}
+            className="font-serif text-sm font-semibold text-on-surface leading-snug mt-5 mb-1.5"
+          >
             {children}
           </h4>
         ),
-        h5: ({ children }) => (
-          <h5 className="font-serif text-sm font-medium text-on-surface leading-snug mt-4 mb-1">
+        h5: ({ children, node }) => (
+          <h5
+            {...source(node)}
+            className="font-serif text-sm font-medium text-on-surface leading-snug mt-4 mb-1"
+          >
             {children}
           </h5>
         ),
-        h6: ({ children }) => (
-          <h6 className="font-mono text-[10px] uppercase tracking-widest text-on-surface-variant mt-4 mb-1">
+        h6: ({ children, node }) => (
+          <h6
+            {...source(node)}
+            className="font-mono text-[10px] uppercase tracking-widest text-on-surface-variant mt-4 mb-1"
+          >
             {children}
           </h6>
         ),
-        p: ({ children }) => (
-          <p className="text-sm text-on-surface leading-relaxed mb-3">{children}</p>
+        p: ({ children, node }) => (
+          <p {...source(node)} className="text-sm text-on-surface leading-relaxed mb-3">
+            {children}
+          </p>
         ),
         a: ({ href, children }) => (
           <a
@@ -121,19 +173,28 @@ export const PaperMarkdown = memo(function PaperMarkdown({ content, paperId }: P
             {children}
           </a>
         ),
-        ul: ({ children }) => (
-          <ul className="list-disc list-outside pl-5 mb-3 space-y-1 text-sm text-on-surface">
+        ul: ({ children, node }) => (
+          <ul
+            {...source(node)}
+            className="list-disc list-outside pl-5 mb-3 space-y-1 text-sm text-on-surface"
+          >
             {children}
           </ul>
         ),
-        ol: ({ children }) => (
-          <ol className="list-decimal list-outside pl-5 mb-3 space-y-1 text-sm text-on-surface">
+        ol: ({ children, node }) => (
+          <ol
+            {...source(node)}
+            className="list-decimal list-outside pl-5 mb-3 space-y-1 text-sm text-on-surface"
+          >
             {children}
           </ol>
         ),
         li: ({ children }) => <li className="leading-relaxed">{children}</li>,
-        blockquote: ({ children }) => (
-          <blockquote className="border-l-4 border-primary/30 pl-4 my-4 text-on-surface-variant italic">
+        blockquote: ({ children, node }) => (
+          <blockquote
+            {...source(node)}
+            className="border-l-4 border-primary/30 pl-4 my-4 text-on-surface-variant italic"
+          >
             {children}
           </blockquote>
         ),
@@ -153,14 +214,19 @@ export const PaperMarkdown = memo(function PaperMarkdown({ content, paperId }: P
             </code>
           );
         },
-        pre: ({ children }) => (
-          <pre className="bg-surface-container-high rounded-lg px-4 py-3 my-3 overflow-x-auto border border-outline-variant/10">
+        pre: ({ children, node }) => (
+          <pre
+            {...source(node)}
+            className="bg-surface-container-high rounded-lg px-4 py-3 my-3 overflow-x-auto border border-outline-variant/10"
+          >
             {children}
           </pre>
         ),
-        table: ({ children }) => (
+        table: ({ children, node }) => (
           <div className="overflow-x-auto my-4">
-            <table className="w-full text-sm border-collapse">{children}</table>
+            <table {...source(node)} className="w-full text-sm border-collapse">
+              {children}
+            </table>
           </div>
         ),
         thead: ({ children }) => (

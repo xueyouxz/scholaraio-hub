@@ -1,13 +1,3 @@
-export const CODEX_TOOL_NAME_ALIASES: Record<string, string> = {
-  shell_command: "Bash",
-  exec_command: "Bash",
-  write_stdin: "WriteStdin",
-  update_plan: "UpdatePlan",
-  apply_patch: "Edit",
-  web_search_call: "WebSearch",
-  search_query: "WebSearch",
-};
-
 export interface CodexReadShellInfo {
   filePath: string;
   startLine?: number;
@@ -40,26 +30,7 @@ export interface NormalizedCodexToolOutput {
   isError: boolean;
 }
 
-interface NormalizedCodexToolOutputWithExitCode extends NormalizedCodexToolOutput {
-  exitCode?: number;
-}
-
 const SHELL_EXECUTABLES = new Set(["bash", "sh", "zsh", "dash"]);
-
-export function parseCodexToolArguments(argumentsText?: string): unknown {
-  if (!argumentsText) {
-    return {};
-  }
-  try {
-    return JSON.parse(argumentsText);
-  } catch {
-    return { raw: argumentsText };
-  }
-}
-
-export function canonicalizeCodexToolName(name: string): string {
-  return CODEX_TOOL_NAME_ALIASES[name] ?? CODEX_TOOL_NAME_ALIASES[name.toLowerCase()] ?? name;
-}
 
 export function normalizeCodexToolInvocation(
   toolName: string,
@@ -95,6 +66,12 @@ export function normalizeCodexToolInvocation(
     };
   }
 
+  // `rg --files` lists files rather than searching them: that is Glob, not Grep.
+  const globInput = parseRipgrepFilesCommand(normalizedCommand);
+  if (globInput) {
+    return { toolName: "Glob", input: globInput };
+  }
+
   const grepInput = parseRipgrepCommand(normalizedCommand);
   if (grepInput) {
     return {
@@ -113,44 +90,6 @@ export function normalizeCodexToolInvocation(
   }
 
   return { toolName: "Bash", input: normalizedInput };
-}
-
-export function normalizeCodexToolOutputWithContext(
-  output: unknown,
-  context?: CodexToolCallContext,
-): NormalizedCodexToolOutput {
-  const normalized = normalizeCodexToolOutput(output);
-  let content = normalized.content;
-  let structured = normalized.structured;
-  let isError = normalized.isError;
-  const exitCode = normalized.exitCode ?? extractExitCodeFromText(content);
-  const sessionId = extractSessionIdFromText(content);
-
-  if (context?.toolName === "Grep") {
-    const grepContent = extractCodexShellOutputContent(content);
-    const grepResult = normalizeRipgrepOutput(grepContent);
-    const isNoMatchesResult = exitCode === 1 && grepResult.numFiles === 0;
-
-    if (!isError || isNoMatchesResult) {
-      isError = false;
-      structured = sessionId ? { ...grepResult, session_id: sessionId } : grepResult;
-      content = grepContent;
-    }
-  } else if (context?.toolName === "Read" && context.readShellInfo) {
-    if (!isError) {
-      const readContent = extractCodexShellOutputContent(content);
-      const readResult = normalizeReadOutput(readContent, context.readShellInfo);
-      structured = sessionId ? { ...readResult, session_id: sessionId } : readResult;
-      content = readContent;
-    }
-  } else if (context?.toolName === "Write" && context.writeShellInfo) {
-    if (!isError) {
-      const writeResult = normalizeWriteOutput(context.writeShellInfo);
-      structured = sessionId ? { ...writeResult, session_id: sessionId } : writeResult;
-    }
-  }
-
-  return { content, structured, isError };
 }
 
 export function normalizeCodexCommandExecutionOutput(
@@ -183,7 +122,20 @@ export function normalizeCodexCommandExecutionOutput(
   }
 
   let structured: unknown;
-  if (context?.toolName === "Grep") {
+  if (context?.toolName === "Glob") {
+    // rg --files exits 1 when nothing matches; that is an empty listing.
+    const filenames = baseOutput
+      .replace(/\r\n/g, "\n")
+      .split("\n")
+      .map((line) => line.trim())
+      .filter(Boolean);
+    const isNoFilesResult = execution.exitCode === 1 && filenames.length === 0;
+    if (!isError || isNoFilesResult) {
+      isError = false;
+      structured = { filenames, numFiles: filenames.length, truncated: false };
+      content = baseOutput;
+    }
+  } else if (context?.toolName === "Grep") {
     const grepResult = normalizeRipgrepOutput(baseOutput);
     const isNoMatchesResult = execution.exitCode === 1 && grepResult.numFiles === 0;
     if (!isError || isNoMatchesResult) {
@@ -473,6 +425,39 @@ function createWriteToolInput(writeInfo: CodexWriteShellInfo): Record<string, un
   };
 }
 
+/**
+ * `rg --files [paths…] [-g glob…]` as Claude Code's Glob input. Globs become
+ * the pattern (comma-joined when several); no glob means every file.
+ */
+function parseRipgrepFilesCommand(command: string): Record<string, unknown> | null {
+  const tokens = tokenizeShellCommand(command);
+  if (tokens[0] !== "rg" || !tokens.includes("--files")) return null;
+  if (tokens.some((token) => token === "|" || token === "&&" || token === ";")) return null;
+
+  const globs: string[] = [];
+  const paths: string[] = [];
+  const skipValue = new Set(["-t", "--type", "-T", "--type-not", "--max-depth", "-d"]);
+  for (let i = 1; i < tokens.length; i++) {
+    const token = tokens[i];
+    if (!token || token === "--files") continue;
+    if (token === "-g" || token === "--glob" || token === "--iglob") {
+      const next = tokens[i + 1];
+      if (next) globs.push(next);
+      i += 1;
+    } else if (token.startsWith("--glob=") || token.startsWith("--iglob=")) {
+      globs.push(token.slice(token.indexOf("=") + 1));
+    } else if (skipValue.has(token)) {
+      i += 1;
+    } else if (!token.startsWith("-")) {
+      paths.push(token);
+    }
+  }
+
+  const input: Record<string, unknown> = { pattern: globs.length ? globs.join(",") : "**/*" };
+  if (paths.length) input.path = paths.join(" ");
+  return input;
+}
+
 function parseRipgrepCommand(command: string): Record<string, unknown> | null {
   const tokens = tokenizeShellCommand(command);
   if (tokens[0] !== "rg" || tokens.length < 2) {
@@ -570,140 +555,6 @@ function parseRipgrepCommand(command: string): Record<string, unknown> | null {
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return !!value && typeof value === "object" && !Array.isArray(value);
-}
-
-function parseNumericExitCode(value: unknown): number | undefined {
-  if (typeof value === "number" && Number.isFinite(value)) {
-    return Math.trunc(value);
-  }
-  if (typeof value === "string" && /^-?\d+$/.test(value.trim())) {
-    return Number.parseInt(value, 10);
-  }
-  return undefined;
-}
-
-function extractExitCodeFromRecord(record: Record<string, unknown>): number | undefined {
-  const direct = parseNumericExitCode(record.exit_code ?? record.exitCode);
-  if (direct !== undefined) {
-    return direct;
-  }
-
-  const metadata = record.metadata;
-  if (isRecord(metadata)) {
-    const nested = parseNumericExitCode(metadata.exit_code ?? metadata.exitCode);
-    if (nested !== undefined) {
-      return nested;
-    }
-  }
-
-  return undefined;
-}
-
-function hasFailedStatus(record: Record<string, unknown>): boolean {
-  const status = record.status;
-  if (typeof status !== "string") {
-    return false;
-  }
-  const normalized = status.toLowerCase();
-  return normalized === "failed" || normalized === "error";
-}
-
-function extractExitCodeFromText(output: string): number | undefined {
-  const match = output.match(/(?:^|\n)\s*(?:Exit code:|Process exited with code)\s*(-?\d+)\b/i);
-  if (!match?.[1]) {
-    return undefined;
-  }
-  return Number.parseInt(match[1], 10);
-}
-
-function extractSessionIdFromText(output: string): number | undefined {
-  const match = output.match(
-    /(?:^|\n)\s*(?:Process\s+running\s+with\s+session\s+ID|session(?:\s+id)?)\s*:?\s*(\d+)\b/i,
-  );
-  if (!match?.[1]) {
-    return undefined;
-  }
-  return Number.parseInt(match[1], 10);
-}
-
-function normalizeCodexToolOutput(output: unknown): NormalizedCodexToolOutputWithExitCode {
-  if (typeof output === "string") {
-    let structured: unknown;
-    let isError = false;
-    let content = output;
-    let exitCode: number | undefined;
-
-    try {
-      structured = JSON.parse(output);
-      if (typeof structured === "string") {
-        content = structured;
-        exitCode = extractExitCodeFromText(structured);
-        if (exitCode !== undefined) {
-          isError = exitCode !== 0;
-        }
-      } else if (isRecord(structured)) {
-        exitCode = extractExitCodeFromRecord(structured);
-        isError =
-          structured.is_error === true ||
-          (exitCode !== undefined && exitCode !== 0) ||
-          hasFailedStatus(structured);
-      }
-    } catch {
-      structured = undefined;
-      exitCode = extractExitCodeFromText(output);
-      if (exitCode !== undefined) {
-        isError = exitCode !== 0;
-      } else {
-        isError = /(?:^|\n)\s*(error|fatal|failed):/i.test(output);
-      }
-    }
-
-    return { content, structured, isError, exitCode };
-  }
-
-  if (output === null || output === undefined) {
-    return { content: "", isError: false };
-  }
-
-  if (typeof output === "number" || typeof output === "boolean") {
-    return {
-      content: String(output),
-      structured: output,
-      isError: false,
-    };
-  }
-
-  if (Array.isArray(output) || isRecord(output)) {
-    const exitCode = isRecord(output) ? extractExitCodeFromRecord(output) : undefined;
-    const isError =
-      isRecord(output) &&
-      (output.is_error === true || (exitCode ?? 0) !== 0 || hasFailedStatus(output));
-    return {
-      content: JSON.stringify(output, null, 2),
-      structured: output,
-      isError,
-      exitCode,
-    };
-  }
-
-  return { content: String(output), isError: false };
-}
-
-function extractCodexShellOutputContent(content: string): string {
-  const normalized = content.replace(/\r\n/g, "\n");
-  const inlineMarker = "Output:\n";
-  if (normalized.startsWith(inlineMarker)) {
-    return normalized.slice(inlineMarker.length);
-  }
-
-  const marker = "\nOutput:\n";
-  const markerIndex = normalized.indexOf(marker);
-  if (markerIndex < 0) {
-    return normalized;
-  }
-
-  const rawOutput = normalized.slice(markerIndex + marker.length);
-  return rawOutput.startsWith("\n") ? rawOutput.slice(1) : rawOutput;
 }
 
 function normalizeRipgrepOutput(output: string): {

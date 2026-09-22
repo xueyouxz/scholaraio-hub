@@ -26,6 +26,7 @@ export interface Config {
   logPretty: boolean;
   enabledProviders: string[];
   httpsSelfSigned: boolean;
+  scholaraioSkillsDir?: string;
 }
 
 export function loadConfig(): Config {
@@ -53,6 +54,7 @@ export function loadConfig(): Config {
     logPretty: env.LOG_PRETTY ?? true,
     enabledProviders: parseEnabledProviders(env.ENABLED_PROVIDERS),
     httpsSelfSigned: env.HTTPS_SELF_SIGNED ?? false,
+    scholaraioSkillsDir: env.SCHOLARAIO_SKILLS_DIR,
   };
 }
 

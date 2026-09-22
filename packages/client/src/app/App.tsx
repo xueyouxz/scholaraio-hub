@@ -15,6 +15,15 @@ const SessionPage = lazy(() =>
 const SettingsPage = lazy(() =>
   import("./pages/SettingsPage").then((module) => ({ default: module.SettingsPage })),
 );
+const SkillsPage = lazy(() =>
+  import("../features/skills/SkillsPage").then((module) => ({ default: module.SkillsPage })),
+);
+const ProjectsPage = lazy(() =>
+  import("./pages/ProjectsPage").then((module) => ({ default: module.ProjectsPage })),
+);
+const AgentsPage = lazy(() =>
+  import("./pages/AgentsPage").then((module) => ({ default: module.AgentsPage })),
+);
 export function App() {
   return (
     <BrowserRouter>
@@ -29,7 +38,12 @@ export function App() {
             <Route path="/library/:paperId" element={<ReaderPage />} />
             <Route path="/sessions" element={<SessionPage />} />
             <Route path="/sessions/:sessionId" element={<SessionPage />} />
+            <Route path="/projects" element={<ProjectsPage />} />
+            <Route path="/agents" element={<AgentsPage />} />
             <Route path="/settings" element={<SettingsPage />} />
+            <Route path="/skills" element={<SkillsPage />} />
+            <Route path="/skills/:skillId" element={<SkillsPage />} />
+            <Route path="/new-session" element={<Navigate to="/sessions" replace />} />
             <Route path="*" element={<Navigate to="/library" replace />} />
           </Route>
         </Routes>

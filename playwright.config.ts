@@ -1,7 +1,7 @@
 import { defineConfig, devices } from "@playwright/test";
 import { resolveDerivedPorts } from "./packages/shared/src/ports";
 
-const port = resolveDerivedPorts(process.env).app + 100;
+const port = resolveDerivedPorts({ ...process.env, NODE_ENV: "test" }).app;
 export default defineConfig({
   testDir: "./e2e",
   fullyParallel: false,

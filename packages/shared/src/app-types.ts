@@ -383,49 +383,14 @@ export interface InputRequest {
   options?: string[];
   toolName?: string;
   toolInput?: unknown;
+  /**
+   * The tool call this request is about, when the provider says so, so the UI
+   * can ask inline on that call's row instead of in a detached panel.
+   */
+  toolCallId?: string;
   timestamp: string;
 }
 
 // =============================================================================
 // Type Guards
 // =============================================================================
-
-/**
- * Check if a message is a user entry.
- */
-export function isUserMessage(msg: AppMessage): msg is AppUserMessage {
-  return msg.type === "user";
-}
-
-/**
- * Check if a message is an assistant entry.
- */
-export function isAssistantMessage(msg: AppMessage): msg is AppAssistantMessage {
-  return msg.type === "assistant";
-}
-
-/**
- * Check if a message is a system entry.
- */
-export function isSystemMessage(msg: AppMessage): msg is AppSystemMessage {
-  return msg.type === "system";
-}
-
-/**
- * Check if a message is a summary entry.
- */
-export function isSummaryMessage(msg: AppMessage): msg is AppSummaryMessage {
-  return msg.type === "summary";
-}
-
-/**
- * Check if a message is a conversation message (user/assistant/system/summary).
- */
-export function isConversationMessage(msg: AppMessage): msg is AppConversationMessage {
-  return (
-    msg.type === "user" ||
-    msg.type === "assistant" ||
-    msg.type === "system" ||
-    msg.type === "summary"
-  );
-}

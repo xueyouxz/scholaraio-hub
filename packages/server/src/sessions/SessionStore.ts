@@ -33,6 +33,10 @@ export class SessionStore {
       )
         throw new Error(`Invalid session record: ${entry.name}`);
       this.records.set(data.id, data);
+      if (data.queuedMessages?.length) {
+        data.queuePaused = true;
+        await this.save(data);
+      }
       if (data.state === "running" || data.state === "waiting-input") {
         data.state = "interrupted";
         data.pendingInput = undefined;
@@ -63,7 +67,10 @@ export class SessionStore {
   }
 
   async create(
-    input: Pick<StoredSession, "title" | "provider" | "paperIds" | "model">,
+    input: Pick<
+      StoredSession,
+      "title" | "provider" | "paperIds" | "model" | "projectId" | "permissionMode" | "thinking"
+    >,
   ): Promise<SessionRecord> {
     const now = new Date().toISOString();
     const record: SessionRecord = {

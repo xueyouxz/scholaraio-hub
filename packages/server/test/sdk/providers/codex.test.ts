@@ -278,6 +278,39 @@ describe("CodexProvider Event Normalization", () => {
     ]);
   });
 
+  it("canonicalizes rg --files as a Glob listing, not a search for the path", () => {
+    expect(
+      command("call-files", "rg --files packages -g '*.ts'", "packages/a.ts\npackages/b.ts\n", 0),
+    ).toMatchObject([
+      { type: "tool.call", name: "Glob", input: { pattern: "*.ts", path: "packages" } },
+      {
+        type: "tool.result",
+        isError: false,
+        detail: { filenames: ["packages/a.ts", "packages/b.ts"], numFiles: 2 },
+      },
+    ]);
+    expect(command("call-all", "rg --files", "a.ts\n", 0)[0]).toMatchObject({
+      type: "tool.call",
+      name: "Glob",
+      input: { pattern: "**/*" },
+    });
+  });
+
+  it("treats rg --files finding nothing as an empty listing, not a failure", () => {
+    expect(command("call-none", "rg --files src -g '*.rs'", "", 1)).toMatchObject([
+      { type: "tool.call", name: "Glob" },
+      { type: "tool.result", isError: false, detail: { filenames: [], numFiles: 0 } },
+    ]);
+  });
+
+  it("keeps rg with a pattern as Grep", () => {
+    expect(command("call-grep2", "rg -n PORT src", "src/a.ts:3:PORT", 0)[0]).toMatchObject({
+      type: "tool.call",
+      name: "Grep",
+      input: { pattern: "PORT", path: "src" },
+    });
+  });
+
   it("completes a WebSearch call when its item completes", () => {
     expect(
       completed({ id: "search-1", type: "webSearch", query: "streaming tool status" }),
@@ -349,5 +382,74 @@ describe("CodexProvider Configuration", () => {
 
     expect(provider.name).toBe("codex");
     expect(provider.displayName).toBe("Codex");
+  });
+});
+
+describe("Codex user-input requests", () => {
+  type Handler = {
+    handleServerRequestApproval(
+      request: { id: number; method: string; params: unknown },
+      options: unknown,
+      signal: AbortSignal,
+    ): Promise<unknown>;
+  };
+  const request = {
+    id: 7,
+    method: "item/tool/requestUserInput",
+    params: {
+      threadId: "t",
+      turnId: "turn",
+      itemId: "ask-1",
+      questions: [
+        {
+          id: "q1",
+          header: "Scope",
+          question: "Which package?",
+          isOther: false,
+          isSecret: false,
+          options: [{ label: "server", description: "Hono API" }],
+        },
+      ],
+    },
+  };
+
+  it("asks through the AskUserQuestion flow and maps answers back by question id", async () => {
+    const calls: unknown[] = [];
+    const provider = new CodexProvider() as unknown as Handler;
+    const response = await provider.handleServerRequestApproval(
+      request,
+      {
+        onToolApproval: async (name: string, input: unknown, options: { toolUseID?: string }) => {
+          calls.push({ name, input, toolUseID: options.toolUseID });
+          return {
+            behavior: "allow",
+            updatedInput: { ...(input as object), answers: { "Which package?": "server" } },
+          };
+        },
+      },
+      new AbortController().signal,
+    );
+    expect(calls).toMatchObject([
+      {
+        name: "AskUserQuestion",
+        toolUseID: "ask-1",
+        input: {
+          questions: [
+            { question: "Which package?", header: "Scope", options: [{ label: "server" }] },
+          ],
+        },
+      },
+    ]);
+    expect(response).toEqual({ answers: { q1: { answers: ["server"] } } });
+  });
+
+  it("answers empty when the user declines", async () => {
+    const provider = new CodexProvider() as unknown as Handler;
+    const response = await provider.handleServerRequestApproval(
+      request,
+      { onToolApproval: async () => ({ behavior: "deny" }) },
+      new AbortController().signal,
+    );
+    expect(response).toEqual({ answers: { q1: { answers: [] } } });
   });
 });

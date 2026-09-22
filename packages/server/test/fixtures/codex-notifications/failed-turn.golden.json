@@ -40,15 +40,21 @@
       "dynamic": true
     },
     {
-      "type": "tool-output-error",
+      "type": "tool-output-available",
       "toolCallId": "item-cmd-fail",
-      "errorText": "Exit code: 1\n1 test failed",
+      "output": {
+        "content": "Exit code: 1\n1 test failed",
+        "isError": true
+      },
       "dynamic": true
     },
     {
       "type": "data-notice",
       "id": "item-error-turn-3",
-      "data": "模型调用超时"
+      "data": {
+        "level": "error",
+        "text": "模型调用超时"
+      }
     }
   ]
 }

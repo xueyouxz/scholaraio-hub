@@ -1,5 +1,31 @@
-import type { ScholarPaper } from "../../core/api";
+import type { LibraryPaper } from "@scholaraio-hub/shared";
+import type { ScholarPaper } from "../../core/scholarTypes";
 import type { MiniChartBar, PaperReference, YearGroup } from "./types";
+
+export function toLibraryPaperRef(p: LibraryPaper): PaperReference {
+  return {
+    id: p.id,
+    title: p.title,
+    authors: p.authors,
+    source: p.journal,
+    year: Number(p.year) || 0,
+    citations: p.citationCounts
+      ? Object.entries(p.citationCounts)
+          .map(([source, count]) => `${source}: ${count}`)
+          .join(" · ")
+      : p.citationCount == null
+        ? ""
+        : String(p.citationCount),
+    status: p.hasMarkdown ? "ingested" : p.hasPdf ? "pending" : "no-pdf",
+    hasPdf: p.hasMarkdown,
+    hasPdfFile: p.hasPdf,
+    isIndexed: p.hasMarkdown,
+    abstract: p.abstract,
+    coverImage: p.coverImage,
+    paperType: p.paperType,
+    doi: p.doi,
+  };
+}
 
 /** 将 API 返回的 ScholarPaper 映射为前端 PaperReference。 */
 export function toPaperRef(p: ScholarPaper): PaperReference {
@@ -34,12 +60,13 @@ export function groupByYear(papers: PaperReference[]): YearGroup[] {
 
 /** 构建文献 PDF 的 API 访问 URL。 */
 export function buildPdfUrl(paperId: string): string {
-  return `/api/scholar/api/v1/papers/${encodeURIComponent(paperId)}/pdf`;
+  return `/api/library/papers/${encodeURIComponent(paperId)}/pdf`;
 }
 
 /** 构建文献图片的 API 访问 URL（对应 paper.md 中的 images/ 相对路径）。 */
 export function buildPaperImageUrl(paperId: string, filename: string): string {
-  return `/api/scholar/api/v1/papers/${encodeURIComponent(paperId)}/images/${encodeURIComponent(filename)}`;
+  const relative = filename.startsWith("images/") ? filename : `images/${filename}`;
+  return `/api/library/papers/${encodeURIComponent(paperId)}/attachments/${relative.split("/").map(encodeURIComponent).join("/")}`;
 }
 
 /** 判断文献是否有可读的 PDF 原文（paper.pdf 存在）。 */

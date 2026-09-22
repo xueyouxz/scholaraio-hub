@@ -7,9 +7,10 @@ interface Props {
   papers: PaperReference[];
   currentPaperId: string;
   onBack: () => void;
+  projectId?: string;
 }
 
-export function ReaderSidebar({ papers, currentPaperId, onBack }: Props) {
+export function ReaderSidebar({ papers, currentPaperId, onBack, projectId }: Props) {
   const navigate = useNavigate();
 
   return (
@@ -51,7 +52,13 @@ export function ReaderSidebar({ papers, currentPaperId, onBack }: Props) {
               type="button"
               disabled={!navigable}
               title={!navigable ? "此文献暂无可读内容（尚未入库）" : undefined}
-              onClick={() => navigable && navigate(`/library/${paper.id}`)}
+              onClick={() =>
+                navigable &&
+                navigate(
+                  `/library/${encodeURIComponent(paper.id)}?mode=overview${projectId ? `&project=${encodeURIComponent(projectId)}` : ""}`,
+                )
+              }
+              style={{ contentVisibility: "auto", containIntrinsicSize: "auto 80px" }}
               className={[
                 "w-full text-left px-4 py-3 border-b border-outline-variant/10 transition-colors border-0 bg-transparent",
                 isActive

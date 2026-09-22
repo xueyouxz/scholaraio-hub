@@ -42,6 +42,23 @@ export function NavigationLayout() {
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
   const [isMobileSidebarOpen, setIsMobileSidebarOpen] = useState(false);
   const [pageTitle, setPageTitle] = useState("");
+  const [expandedWidth, setExpandedWidth] = useState(() => {
+    try {
+      const saved = Number(localStorage.getItem("sidebarExpandedWidth"));
+      return saved ? Math.max(220, Math.min(420, saved)) : SIDEBAR_WIDTH_EXPANDED_DEFAULT;
+    } catch {
+      return SIDEBAR_WIDTH_EXPANDED_DEFAULT;
+    }
+  });
+  const resizeSidebar = (width: number) => {
+    const next = Math.max(220, Math.min(420, width));
+    setExpandedWidth(next);
+    try {
+      localStorage.setItem("sidebarExpandedWidth", String(next));
+    } catch (error) {
+      console.warn("无法保存侧栏宽度", error);
+    }
+  };
 
   useEffect(() => {
     const handleResize = () => {
@@ -63,9 +80,7 @@ export function NavigationLayout() {
 
   const closeMobileSidebar = useCallback(() => setIsMobileSidebarOpen(false), []);
 
-  const sidebarWidth = isSidebarCollapsed
-    ? SIDEBAR_WIDTH_COLLAPSED
-    : SIDEBAR_WIDTH_EXPANDED_DEFAULT;
+  const sidebarWidth = isSidebarCollapsed ? SIDEBAR_WIDTH_COLLAPSED : expandedWidth;
 
   const layoutContext = useMemo<NavigationLayoutContext>(
     () => ({
@@ -82,10 +97,17 @@ export function NavigationLayout() {
     [pageTitle],
   );
 
-  const isSessionRoute = /^\/sessions(\/|$)/.test(location.pathname);
+  // New chats keep the layout title bar; an open session renders its own header.
+  const isSessionRoute = /^\/sessions\/[^/]+/.test(location.pathname);
+  const isNewSessionRoute = location.pathname === "/sessions";
   const isPaperReaderRoute = /^\/library\/.+/.test(location.pathname);
   const isLibraryRoute = location.pathname === "/library";
-  const isFullscreenRoute = isSessionRoute || isPaperReaderRoute || isLibraryRoute;
+  const isFullscreenRoute =
+    isSessionRoute ||
+    isNewSessionRoute ||
+    isPaperReaderRoute ||
+    isLibraryRoute ||
+    location.pathname.startsWith("/skills");
 
   return (
     <PageTitleContext value={pageTitleContext}>
@@ -117,14 +139,18 @@ export function NavigationLayout() {
           isOpen={isDesktop || isMobileSidebarOpen}
           onToggle={toggleSidebar}
           onClose={closeMobileSidebar}
+          width={expandedWidth}
+          onWidthChange={resizeSidebar}
         />
 
         {/* Main content — no margin/padding needed; grid track handles spacing */}
         <div
-          className={`flex flex-col min-w-0 ${isFullscreenRoute ? "h-screen overflow-hidden" : "min-h-screen"}`}
+          className={`flex flex-col min-w-0 ${isFullscreenRoute ? "h-dvh overflow-hidden" : "min-h-dvh"}`}
         >
           {!isSessionRoute ? (
-            <header className="sticky top-0 z-30 flex items-center h-[3.25rem] px-6 bg-surface border-b border-outline-variant/10">
+            <header
+              className={`sticky top-0 z-30 flex items-center h-[3.25rem] shrink-0 px-6 ${!isDesktop ? "pl-16" : ""} bg-surface border-b border-outline-variant/10`}
+            >
               {pageTitle ? (
                 <h3 className="font-serif text-[1.65rem] font-bold text-primary leading-none">
                   {pageTitle}

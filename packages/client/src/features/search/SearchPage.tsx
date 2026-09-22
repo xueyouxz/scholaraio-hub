@@ -1,10 +1,19 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { CheckSquare, ChevronDown, LayoutGrid, LayoutList, Search, SortAsc, X } from "lucide-react";
+import {
+  ChartNoAxesCombined,
+  CheckSquare,
+  ChevronDown,
+  LayoutGrid,
+  LayoutList,
+  Search,
+  SortAsc,
+  Upload,
+  X,
+} from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { useSearchParams } from "react-router-dom";
+import { Link, useSearchParams } from "react-router-dom";
 import { usePageTitle } from "../../app/components/NavigationLayout";
-import { type ScholarPaper, scholar } from "../../core/api";
-import { queryKeys } from "../../core/queryKeys";
+import type { ScholarPaper } from "../../core/scholarTypes";
 import { PaperDetailPanel } from "../library/components/PaperDetailPanel";
 import { PaperGridCard } from "../library/components/PaperGridCard";
 import { PaperVirtualList } from "../library/components/PaperVirtualList";
@@ -12,6 +21,7 @@ import { toPaperRef } from "../library/paperUtils";
 import type { PaperReference, ViewMode } from "../library/types";
 import { BatchAddDropdown } from "./components/BatchAddDropdown";
 import { SearchSkeleton } from "./components/SearchSkeleton";
+import { searchLibrary as scholar } from "./libraryAdapter";
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -65,18 +75,38 @@ export function SearchPage() {
   const queryClient = useQueryClient();
 
   // ── Shared view state ──
-  const [view, setView] = useState<ViewMode>("grid");
+  const [viewParams, setViewParams] = useSearchParams();
+  const projectId = viewParams.get("project") ?? undefined;
+  const view: ViewMode = viewParams.get("view") === "list" ? "list" : "grid";
+  const setView = (value: ViewMode) =>
+    setViewParams((previous) => {
+      const next = new URLSearchParams(previous);
+      next.set("view", value);
+      return next;
+    });
 
   // ── Unified sort state ──
-  const [browseSort, setBrowseSort] = useState(0);
-  const [searchSort, setSearchSort] = useState(0);
+  const browseSort = Math.max(0, Math.min(2, Number(viewParams.get("sort")) || 0));
+  const searchSort = Math.max(0, Math.min(2, Number(viewParams.get("searchSort")) || 0));
+  const saveSort = (key: string, value: number) =>
+    setViewParams((previous) => {
+      const next = new URLSearchParams(previous);
+      next.set(key, String(value));
+      return next;
+    });
+  const setBrowseSort = (value: number) => saveSort("sort", value);
+  const setSearchSort = (value: number) => saveSort("searchSort", value);
   const [sortOpen, setSortOpen] = useState(false);
   const sortRef = useRef<HTMLDivElement>(null);
 
   // ── Browse query ──
-  const browseParams = { sort: BROWSE_SORT_KEYS[browseSort] ?? "year_desc", limit: 2000 };
+  const browseParams = {
+    sort: BROWSE_SORT_KEYS[browseSort] ?? "year_desc",
+    limit: 2000,
+    projectId,
+  };
   const browseQuery = useQuery({
-    queryKey: queryKeys.scholar.papers(browseParams),
+    queryKey: ["library", "browse", browseParams],
     queryFn: ({ signal }) => scholar.getPapers(browseParams, { signal }),
     select: (res) => res.papers.map(toPaperRef),
   });
@@ -97,6 +127,13 @@ export function SearchPage() {
   );
   const [searched, setSearched] = useState(urlSearched && !!urlQuery);
   const modeRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    setQuery(urlQuery);
+    setMode(urlMode);
+    setSearched(!!urlQuery);
+    setSubmittedSearch(urlQuery ? { query: urlQuery, mode: urlMode } : null);
+  }, [urlQuery, urlMode]);
 
   // ── Paper drawer ──
   const [selectedPaper, setSelectedPaper] = useState<PaperReference | null>(null);
@@ -151,7 +188,7 @@ export function SearchPage() {
   };
 
   const workspacesQuery = useQuery({
-    queryKey: queryKeys.scholar.workspaces(),
+    queryKey: ["library", "projects"],
     queryFn: ({ signal }) => scholar.getWorkspaces({ signal }),
     enabled: selectionMode,
     select: (res) => res.workspaces.map((w) => ({ id: w.id, name: w.name })),
@@ -185,8 +222,8 @@ export function SearchPage() {
       setBatchNotice(
         `${res.added.length} 已加入 · ${res.skipped.length} 已存在 · ${res.failed.length} 失败`,
       );
-      queryClient.invalidateQueries({ queryKey: queryKeys.scholar.workspaces() });
-      queryClient.invalidateQueries({ queryKey: queryKeys.scholar.workspace(ws) });
+      queryClient.invalidateQueries({ queryKey: ["library", "projects"] });
+      queryClient.invalidateQueries({ queryKey: ["library", "project", ws] });
     },
     onError: (err: unknown) => {
       const msg = err instanceof Error ? err.message : "未知错误";
@@ -221,11 +258,8 @@ export function SearchPage() {
         return next;
       });
       setBatchNotice(`已创建 ${ws} · ${res.added.length} 已加入 · ${res.failed.length} 失败`);
-      queryClient.invalidateQueries({ queryKey: queryKeys.scholar.workspaces() });
-      queryClient.invalidateQueries({ queryKey: queryKeys.scholar.workspace(ws) });
-      // Workspace creation may also produce a new project entry; refresh the
-      // sidebar projects list so the new workspace's session group renders.
-      queryClient.invalidateQueries({ queryKey: queryKeys.projects() });
+      queryClient.invalidateQueries({ queryKey: ["library", "projects"] });
+      queryClient.invalidateQueries({ queryKey: ["library", "project", ws] });
     },
     onError: (err: unknown) => {
       const msg = err instanceof Error ? err.message : "未知错误";
@@ -248,20 +282,20 @@ export function SearchPage() {
   const lastSourceKeyRef = useRef<string | null>(null);
   useEffect(() => {
     if (!selectionMode) return;
-    const sourceKey = searched ? `s:${submittedSearch?.query ?? ""}` : "b";
+    const sourceKey = `${projectId ?? ""}:${searched ? `s:${submittedSearch?.query ?? ""}` : "b"}`;
     if (lastSourceKeyRef.current === sourceKey) return;
     lastSourceKeyRef.current = sourceKey;
     setSelectedIds(new Set());
     setAddedMap(new Map());
     setFailedMap(new Map());
     setBatchNotice(null);
-  }, [searched, submittedSearch?.query, selectionMode]);
+  }, [searched, submittedSearch?.query, selectionMode, projectId]);
 
   const searchBody = submittedSearch
-    ? { query: submittedSearch.query, mode: submittedSearch.mode, limit: SEARCH_LIMIT }
+    ? { query: submittedSearch.query, mode: submittedSearch.mode, limit: SEARCH_LIMIT, projectId }
     : null;
   const searchQuery = useQuery({
-    queryKey: searchBody ? queryKeys.scholar.search(searchBody) : ["scholar", "search", "idle"],
+    queryKey: searchBody ? ["library", "search", searchBody] : ["scholar", "search", "idle"],
     queryFn: ({ signal }) => {
       if (!searchBody) throw new Error("Missing search body");
       return scholar.search(searchBody, { signal });
@@ -285,7 +319,10 @@ export function SearchPage() {
     setSearched(true);
     setSelectedPaper(null);
     setSubmittedSearch({ query: q, mode });
-    setSearchParams({ q, mode, s: "1" }, { replace: true });
+    setSearchParams(
+      { ...(projectId ? { project: projectId } : {}), view, q, mode, s: "1" },
+      { replace: true },
+    );
   };
 
   // ── Close dropdowns on outside click ──
@@ -295,8 +332,18 @@ export function SearchPage() {
       if (modeRef.current && !modeRef.current.contains(e.target as Node)) setModeOpen(false);
       if (sortRef.current && !sortRef.current.contains(e.target as Node)) setSortOpen(false);
     };
+    const handleEscape = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        setModeOpen(false);
+        setSortOpen(false);
+      }
+    };
     document.addEventListener("mousedown", handler);
-    return () => document.removeEventListener("mousedown", handler);
+    document.addEventListener("keydown", handleEscape);
+    return () => {
+      document.removeEventListener("mousedown", handler);
+      document.removeEventListener("keydown", handleEscape);
+    };
   }, [modeOpen, sortOpen]);
 
   // ── Sorted search results ──
@@ -354,7 +401,7 @@ export function SearchPage() {
 
           {/* Search bar */}
           <div className="relative">
-            <div className="w-full bg-surface-container-lowest rounded-2xl flex items-center border border-outline-variant/20 focus-within:border-primary/30 focus-within:ring-1 focus-within:ring-primary/10 transition-all shadow-sm">
+            <div className="w-full bg-surface-container-lowest rounded-2xl flex items-center border border-outline-variant/20 focus-within:border-primary/30 focus-within:ring-1 focus-within:ring-primary/10 transition-[background-color,border-color,box-shadow,transform] shadow-sm">
               <div className="relative shrink-0" ref={modeRef}>
                 <button
                   type="button"
@@ -404,9 +451,14 @@ export function SearchPage() {
               <input
                 value={query}
                 onChange={(e) => setQuery(e.target.value)}
-                onKeyDown={(e) => e.key === "Enter" && handleSearch()}
-                placeholder="输入并搜索"
-                className="flex-1 bg-transparent text-on-surface px-3 py-3 font-sans text-sm outline-none placeholder:text-on-surface-variant/40"
+                aria-label="检索文献"
+                name="query"
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" && !e.nativeEvent.isComposing && e.keyCode !== 229)
+                    handleSearch();
+                }}
+                placeholder="输入并搜索…"
+                className="min-w-0 flex-1 bg-transparent text-on-surface px-3 py-3 font-sans text-sm outline-none placeholder:text-on-surface-variant/40"
               />
 
               {query ? (
@@ -417,8 +469,12 @@ export function SearchPage() {
                     setSubmittedSearch(null);
                     setSearched(false);
                     setSelectedPaper(null);
-                    setSearchParams({}, { replace: true });
+                    setSearchParams(
+                      { ...(projectId ? { project: projectId } : {}), view },
+                      { replace: true },
+                    );
                   }}
+                  aria-label="清空检索"
                   className="mr-3 p-1 rounded-lg text-on-surface-variant hover:text-on-surface hover:bg-surface-container transition-colors"
                 >
                   <X className="w-3.5 h-3.5" />
@@ -439,7 +495,10 @@ export function SearchPage() {
       </header>
 
       {/* ── Unified toolbar (always visible, same layout in all states) ── */}
-      <div className="shrink-0 flex items-center justify-between px-6 mb-4" ref={sortRef}>
+      <div
+        className="shrink-0 flex flex-wrap gap-2 items-center justify-between px-6 mb-4"
+        ref={sortRef}
+      >
         {selectionMode ? (
           <>
             {/* Selection-mode left side: count + clear */}
@@ -493,7 +552,7 @@ export function SearchPage() {
                 <button
                   type="button"
                   onClick={() => setSortOpen((v) => !v)}
-                  className="flex items-center gap-1.5 px-3 py-1.5 bg-surface-container-high rounded-full text-sm font-medium text-primary hover:bg-surface-container active:scale-95 transition-all"
+                  className="flex items-center gap-1.5 px-3 py-1.5 bg-surface-container-high rounded-full text-sm font-medium text-primary hover:bg-surface-container active:scale-95 transition-[background-color,border-color,box-shadow,transform]"
                 >
                   <SortAsc className="w-3.5 h-3.5" />
                   {currentSortLabel}
@@ -526,6 +585,22 @@ export function SearchPage() {
 
             {/* Right: select + view toggle */}
             <div className="flex items-center gap-1.5">
+              <Link
+                to={`/library?manage=1${projectId ? `&project=${encodeURIComponent(projectId)}` : ""}`}
+                aria-label="导入与管理文献"
+                title="导入与管理文献"
+                className="p-1.5 rounded-lg text-on-surface-variant hover:bg-surface-container-high"
+              >
+                <Upload size={16} />
+              </Link>
+              <Link
+                to="/library?view=analysis"
+                aria-label="文献分析"
+                title="文献分析"
+                className="p-1.5 rounded-lg text-on-surface-variant hover:bg-surface-container-high"
+              >
+                <ChartNoAxesCombined size={16} />
+              </Link>
               <button
                 type="button"
                 onClick={() => {
@@ -533,6 +608,7 @@ export function SearchPage() {
                   setSelectedPaper(null);
                 }}
                 title="多选"
+                aria-label="多选"
                 className="p-1.5 rounded-lg text-on-surface-variant hover:bg-surface-container-high border-0 bg-transparent cursor-pointer"
               >
                 <CheckSquare className="w-4 h-4" />
@@ -540,6 +616,8 @@ export function SearchPage() {
               <div className="h-4 w-px bg-outline-variant/30 mx-1" />
               <button
                 type="button"
+                aria-label="列表视图"
+                aria-pressed={view === "list"}
                 onClick={() => setView("list")}
                 className={`p-1.5 rounded-lg transition-colors ${
                   view === "list"
@@ -551,6 +629,8 @@ export function SearchPage() {
               </button>
               <button
                 type="button"
+                aria-label="卡片视图"
+                aria-pressed={view === "grid"}
                 onClick={() => setView("grid")}
                 className={`p-1.5 rounded-lg transition-colors ${
                   view === "grid"
@@ -565,6 +645,16 @@ export function SearchPage() {
         )}
       </div>
 
+      {browseQuery.error ? (
+        <p role="alert" className="px-6 text-sm text-error">
+          {browseQuery.error.message}
+        </p>
+      ) : null}
+      {searchQuery.data?.notice ? (
+        <output className="px-6 pb-2 text-xs text-on-surface-variant">
+          {searchQuery.data.notice}
+        </output>
+      ) : null}
       {/* ── Body ── */}
       {!searched ? (
         /* ── Browse mode ── */

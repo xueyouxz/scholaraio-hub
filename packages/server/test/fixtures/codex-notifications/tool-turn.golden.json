@@ -7,10 +7,10 @@
     {
       "type": "tool.call",
       "callId": "item-cmd",
-      "name": "Grep",
+      "name": "Glob",
       "input": {
-        "pattern": "packages",
-        "output_mode": "content"
+        "pattern": "**/*",
+        "path": "packages"
       }
     },
     {
@@ -19,9 +19,9 @@
       "output": "packages/server/src/app.ts\npackages/client/src/main.tsx",
       "isError": false,
       "detail": {
-        "mode": "files_with_matches",
         "filenames": ["packages/server/src/app.ts", "packages/client/src/main.tsx"],
-        "numFiles": 2
+        "numFiles": 2,
+        "truncated": false
       }
     },
     {
@@ -61,6 +61,31 @@
     },
     {
       "type": "tool.call",
+      "callId": "item-todo",
+      "name": "TodoWrite",
+      "input": {
+        "todos": [
+          {
+            "content": "读论文",
+            "status": "completed",
+            "activeForm": "读论文"
+          },
+          {
+            "content": "写总结",
+            "status": "pending",
+            "activeForm": "写总结"
+          }
+        ]
+      }
+    },
+    {
+      "type": "tool.result",
+      "callId": "item-todo",
+      "output": "Plan updated",
+      "isError": false
+    },
+    {
+      "type": "tool.call",
       "callId": "item-search",
       "name": "WebSearch",
       "input": {
@@ -86,17 +111,25 @@
     {
       "type": "tool-input-available",
       "toolCallId": "item-cmd",
-      "toolName": "Grep",
+      "toolName": "Glob",
       "input": {
-        "pattern": "packages",
-        "output_mode": "content"
+        "pattern": "**/*",
+        "path": "packages"
       },
       "dynamic": true
     },
     {
       "type": "tool-output-available",
       "toolCallId": "item-cmd",
-      "output": "packages/server/src/app.ts\npackages/client/src/main.tsx",
+      "output": {
+        "content": "packages/server/src/app.ts\npackages/client/src/main.tsx",
+        "isError": false,
+        "detail": {
+          "filenames": ["packages/server/src/app.ts", "packages/client/src/main.tsx"],
+          "numFiles": 2,
+          "truncated": false
+        }
+      },
       "dynamic": true
     },
     {
@@ -118,7 +151,10 @@
     {
       "type": "tool-output-available",
       "toolCallId": "item-edit",
-      "output": "File changes applied:\nupdate: packages/server/src/app.ts",
+      "output": {
+        "content": "File changes applied:\nupdate: packages/server/src/app.ts",
+        "isError": false
+      },
       "dynamic": true
     },
     {
@@ -133,7 +169,39 @@
     {
       "type": "tool-output-available",
       "toolCallId": "item-mcp",
-      "output": "{\"hits\":2}",
+      "output": {
+        "content": "{\"hits\":2}",
+        "isError": false
+      },
+      "dynamic": true
+    },
+    {
+      "type": "tool-input-available",
+      "toolCallId": "item-todo",
+      "toolName": "TodoWrite",
+      "input": {
+        "todos": [
+          {
+            "content": "读论文",
+            "status": "completed",
+            "activeForm": "读论文"
+          },
+          {
+            "content": "写总结",
+            "status": "pending",
+            "activeForm": "写总结"
+          }
+        ]
+      },
+      "dynamic": true
+    },
+    {
+      "type": "tool-output-available",
+      "toolCallId": "item-todo",
+      "output": {
+        "content": "Plan updated",
+        "isError": false
+      },
       "dynamic": true
     },
     {
@@ -148,7 +216,15 @@
     {
       "type": "tool-output-available",
       "toolCallId": "item-search",
-      "output": "Search completed for: codex app-server",
+      "output": {
+        "content": "Search completed for: codex app-server",
+        "isError": false,
+        "detail": {
+          "query": "codex app-server",
+          "results": [],
+          "durationSeconds": 0
+        }
+      },
       "dynamic": true
     }
   ]

@@ -1,5 +1,3 @@
-import type { LucideIcon } from "lucide-react";
-
 export type PaperStatus = "ingested" | "indexing" | "pending" | "no-pdf";
 export type TopicColorMap = Map<number, string>;
 export type ViewMode = "list" | "grid";
@@ -16,6 +14,7 @@ export interface PaperDetail {
 }
 
 export interface PaperReference {
+  doi?: string;
   id: string;
   title: string;
   authors: string;
@@ -32,15 +31,6 @@ export interface PaperReference {
   abstract?: string;
   coverImage?: string | null;
   paperType?: string;
-}
-
-export interface StatCardReference {
-  label: string;
-  value: string;
-  badge: string;
-  icon: LucideIcon;
-  tone: "primary" | "secondary" | "tertiary" | "error";
-  miniChart?: MiniChartBar[];
 }
 
 export interface YearGroup {

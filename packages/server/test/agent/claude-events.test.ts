@@ -1,4 +1,4 @@
-import type { SessionMessage } from "@scholaraio-hub/shared";
+import { type SessionMessage, parentCallIdOf } from "@scholaraio-hub/shared";
 import { type UIMessageChunk, readUIMessageStream } from "ai";
 import { describe, expect, it } from "vitest";
 import { UIChunkWriter } from "../../src/agent/uiChunks.js";
@@ -97,7 +97,7 @@ describe("Claude events to UI chunks", () => {
     ]);
     expect(result?.parts.find((part) => part.type === "dynamic-tool")).toMatchObject({
       state: "output-available",
-      output: "资料",
+      output: { content: "资料", isError: false },
     });
     expect(chunks.filter((chunk) => chunk.type === "text-end")).toHaveLength(2);
   });
@@ -131,6 +131,125 @@ describe("Claude events to UI chunks", () => {
     writer.close();
     expect((await assemble(chunks))?.parts).toMatchObject([{ type: "text", text: "Hello world!" }]);
   });
+  it("shows a tool call while its arguments are still being written", async () => {
+    const adapter = new ClaudeEventAdapter();
+    const chunks: UIMessageChunk[] = [];
+    const writer = new UIChunkWriter((chunk) => chunks.push(chunk));
+    const feed = (message: SDKMessage) => {
+      for (const event of adapter.accept(message)) writer.write(event);
+    };
+    feed(stream({ type: "message_start", message: { id: "m1" } }));
+    feed(
+      stream({
+        type: "content_block_start",
+        index: 0,
+        content_block: { type: "tool_use", id: "w1", name: "Write" },
+      }),
+    );
+    const announced = await assemble([...chunks]);
+    expect(announced?.parts).toMatchObject([
+      { type: "dynamic-tool", toolCallId: "w1", toolName: "Write", state: "input-streaming" },
+    ]);
+
+    feed(
+      stream({
+        type: "content_block_delta",
+        index: 0,
+        delta: { type: "input_json_delta", partial_json: '{"file_path":"notes.md","content":"hel' },
+      }),
+    );
+    const partial = await assemble([...chunks]);
+    expect(partial?.parts[0]).toMatchObject({
+      state: "input-streaming",
+      input: { file_path: "notes.md", content: "hel" },
+    });
+
+    feed(
+      stream({
+        type: "content_block_delta",
+        index: 0,
+        delta: { type: "input_json_delta", partial_json: 'lo"}' },
+      }),
+    );
+    feed(stream({ type: "content_block_stop", index: 0 }));
+    feed({
+      type: "assistant",
+      message: {
+        id: "m1",
+        content: [
+          {
+            type: "tool_use",
+            id: "w1",
+            name: "Write",
+            input: { file_path: "notes.md", content: "hello" },
+          },
+        ],
+      },
+    });
+    writer.close();
+    const final = await assemble(chunks);
+    expect(final?.parts).toMatchObject([
+      { state: "input-available", input: { file_path: "notes.md", content: "hello" } },
+    ]);
+    expect(chunks.filter((chunk) => chunk.type === "tool-input-start")).toHaveLength(1);
+  });
+
+  it("keeps subagent work, tagged with the Task call that started it", async () => {
+    const sub = (message: SDKMessage): SDKMessage => ({ ...message, parent_tool_use_id: "task-1" });
+    const { result } = await normalize([
+      {
+        type: "assistant",
+        message: {
+          id: "m1",
+          content: [
+            { type: "tool_use", id: "task-1", name: "Task", input: { description: "查资料" } },
+          ],
+        },
+      },
+      sub(stream({ type: "message_start", message: { id: "s1" } })),
+      sub(
+        stream({
+          type: "content_block_start",
+          index: 0,
+          content_block: { type: "text", text: "" },
+        }),
+      ),
+      sub(
+        stream({
+          type: "content_block_delta",
+          index: 0,
+          delta: { type: "text_delta", text: "子任务" },
+        }),
+      ),
+      sub({
+        type: "assistant",
+        message: {
+          id: "s1",
+          content: [
+            { type: "text", text: "子任务" },
+            { type: "tool_use", id: "grep-1", name: "Grep", input: { pattern: "x" } },
+          ],
+        },
+      }),
+      sub({
+        type: "user",
+        message: { content: [{ type: "tool_result", tool_use_id: "grep-1", content: "a.ts" }] },
+      }),
+      {
+        type: "user",
+        message: { content: [{ type: "tool_result", tool_use_id: "task-1", content: "结论" }] },
+      },
+    ]);
+    const parts = result?.parts ?? [];
+    expect(parts.map((part) => [part.type, parentCallIdOf(part)])).toEqual([
+      ["dynamic-tool", undefined],
+      ["text", "task-1"],
+      ["dynamic-tool", "task-1"],
+    ]);
+    expect(parts[0]).toMatchObject({ toolCallId: "task-1", output: { content: "结论" } });
+    expect(parts[2]).toMatchObject({ toolCallId: "grep-1", output: { content: "a.ts" } });
+  });
+
   it("keeps supported file output once without exposing native filesystem paths", async () => {
     const message: SDKMessage = {
       type: "assistant",

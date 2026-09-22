@@ -102,5 +102,9 @@ export interface ToolApprovalResult {
 export type CanUseTool = (
   toolName: string,
   input: unknown,
-  options: { signal: AbortSignal },
+  options: {
+    signal: AbortSignal;
+    /** The tool call being approved (Claude `toolUseID`, Codex item id). */
+    toolUseID?: string;
+  },
 ) => Promise<ToolApprovalResult>;

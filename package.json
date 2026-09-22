@@ -10,6 +10,8 @@
   },
   "scripts": {
     "dev": "node scripts/dev.mjs",
+    "dev:server": "node scripts/dev.mjs --server",
+    "dev:client": "node scripts/dev.mjs --client",
     "build": "pnpm --filter @scholaraio-hub/shared build && pnpm --filter @scholaraio-hub/server build && pnpm --filter @scholaraio-hub/client build",
     "clean": "node scripts/clean.mjs",
     "lint": "biome check .",
@@ -24,7 +26,9 @@
     "skills:sync": "node scripts/sync-scholaraio-skills.mjs",
     "setup": "node scripts/hub.mjs setup",
     "start": "node scripts/hub.mjs start",
-    "doctor": "node scripts/hub.mjs doctor"
+    "doctor": "node scripts/hub.mjs doctor",
+    "migrate": "node scripts/hub.mjs migrate",
+    "test:python": "node scripts/test-python.mjs"
   },
   "devDependencies": {
     "@biomejs/biome": "^1.9.4",

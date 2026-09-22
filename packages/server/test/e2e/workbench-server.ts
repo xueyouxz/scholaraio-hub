@@ -1,11 +1,21 @@
 import { spawnSync } from "node:child_process";
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { serve } from "@hono/node-server";
 import { createApp } from "../../src/app.js";
+import { claudeProvider, codexProvider } from "../../src/sdk/providers/index.js";
 import { LibraryService, scholarSourceDir } from "../../src/services/LibraryService.js";
+import { ServerSettingsService } from "../../src/services/ServerSettingsService.js";
 import { WorkbenchProvider } from "../helpers/WorkbenchProvider.js";
+
+// Keep both tool choices deterministic; never launch a real CLI from browser tests.
+for (const provider of [claudeProvider, codexProvider]) {
+  const fake = new WorkbenchProvider(provider.name);
+  provider.startSession = fake.startSession.bind(fake);
+  provider.getAuthStatus = fake.getAuthStatus.bind(fake);
+  provider.getAvailableModels = fake.getAvailableModels.bind(fake);
+}
 
 const dataDir = await mkdtemp(path.join(tmpdir(), "hub-browser-test-"));
 const library = new LibraryService(dataDir);
@@ -40,7 +50,17 @@ try {
   if (setup.status !== 0)
     throw setup.error ?? new Error("Cannot prepare isolated Python test environment; install uv");
   await library.start();
+  const settings = new ServerSettingsService({ dataDir });
+  await settings.initialize();
+  const skillsDir = path.join(dataDir, "skills");
+  await mkdir(path.join(skillsDir, "review-fixture"), { recursive: true });
+  await writeFile(
+    path.join(skillsDir, "review-fixture", "SKILL.md"),
+    "---\nname: review-fixture\ndescription: 用于隔离测试的科研技能\n---\n阅读研究资料并总结 $ARGUMENTS",
+  );
   application = createApp({
+    scholaraioSkillsDir: skillsDir,
+    serverSettingsService: settings,
     dataDir,
     libraryService: library,
     provider: new WorkbenchProvider(),

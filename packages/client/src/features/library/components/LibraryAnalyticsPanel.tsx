@@ -1,6 +1,5 @@
 import { useCallback, useMemo, useRef, useState } from "react";
-import type { ScholarProjection, ScholarTopicsOverview } from "../../../core/api";
-import { useJobMutation } from "../hooks/useJobMutation";
+import type { ScholarProjection, ScholarTopicsOverview } from "../../../core/scholarTypes";
 import type { PaperReference, TopicColorMap } from "../types";
 import { PaperDetailPanel } from "./PaperDetailPanel";
 import { TopicBarChart } from "./TopicBubbleBar";
@@ -30,9 +29,6 @@ export function LibraryAnalyticsPanel({
     number,
     { ratio: number; count: number }
   > | null>(null);
-
-  const topicsJob = useJobMutation("topics");
-  const projectJob = useJobMutation("project");
 
   const scatterPlotRef = useRef<ScatterPlotRef>(null);
 
@@ -92,7 +88,10 @@ export function LibraryAnalyticsPanel({
   );
 
   return (
-    <div className="flex flex-col flex-1 min-h-0 gap-2">
+    <div
+      aria-label="文献主题分析"
+      className="flex flex-col flex-1 shrink-0 min-h-[480px] lg:min-h-0 gap-2"
+    >
       <TopicBarChart
         built={topicsBuilt}
         topics={topics}
@@ -100,7 +99,6 @@ export function LibraryAnalyticsPanel({
         activeTopicIds={activeTopicIds}
         lassoFills={lassoFills}
         onTopicSelect={onTopicSelect}
-        onBuildRequest={topicsJob.submit}
       />
 
       <div className="relative flex-1 min-h-0 w-full bg-surface-container-low border border-outline-variant/10 rounded-lg overflow-hidden">
@@ -119,16 +117,8 @@ export function LibraryAnalyticsPanel({
           <div className="w-full h-full flex flex-col items-center justify-center gap-3 p-6 text-center">
             <div className="text-xs font-medium text-on-surface">散点图尚未生成</div>
             <p className="text-[11px] text-on-surface-variant max-w-xs leading-relaxed">
-              需先运行 Embed 任务生成向量，然后提交 Project 任务计算 UMAP 投影。
+              当前文献库没有保存的投影数据。已有主题和投影会自动显示。
             </p>
-            <button
-              type="button"
-              onClick={projectJob.submit}
-              disabled={projectJob.isPending}
-              className="px-3 py-1.5 bg-primary/10 hover:bg-primary/20 text-primary text-xs font-mono font-bold rounded-lg transition-colors disabled:opacity-50"
-            >
-              {projectJob.isPending ? "计算中…" : "生成投影"}
-            </button>
           </div>
         )}
       </div>

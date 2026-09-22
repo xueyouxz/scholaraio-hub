@@ -44,6 +44,9 @@ export default defineConfig(({ mode }) => {
       alias: {
         "@": path.resolve(__dirname, "packages/client/src"),
       },
+      // Dev reads @scholaraio-hub/shared from source (like the tsx server), so
+      // shared edits apply without rebuilding packages/shared/dist.
+      conditions: isDev ? ["scholaraio-source"] : [],
     },
     server: {
       host,

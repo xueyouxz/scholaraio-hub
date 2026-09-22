@@ -5,6 +5,10 @@ describe("ports", () => {
   it("separates development from production ports", () => {
     expect(resolveDerivedPorts({ NODE_ENV: "development" }).app).toBe(3500);
     expect(resolveDerivedPorts({ NODE_ENV: "production" }).app).toBe(3400);
+    expect(resolveDerivedPorts({ NODE_ENV: "test" }).app).toBe(3600);
+  });
+  it("honors an explicit test port without adding an offset", () => {
+    expect(resolveBasePort({ NODE_ENV: "test", PORT: "65535" })).toBe(65535);
   });
   it("uses 3400 as the default base port", () => {
     expect(resolveBasePort({})).toBe(DEFAULT_PORT);

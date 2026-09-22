@@ -19,6 +19,7 @@ const withAudit = args.has("--audit");
 const steps = [
   { name: "lint", cmd: "pnpm", argv: ["lint"] },
   { name: "typecheck", cmd: "pnpm", argv: ["typecheck"] },
+  { name: "Python", cmd: "pnpm", argv: ["test:python"] },
   { name: "test", cmd: "pnpm", argv: ["test"] },
   {
     name: "server e2e",

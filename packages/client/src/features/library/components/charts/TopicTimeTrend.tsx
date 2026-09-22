@@ -1,6 +1,6 @@
 import { scaleLinear } from "d3";
 import { useMemo, useState } from "react";
-import type { ScholarProjectionPoint, ScholarTopic } from "../../../../core/api";
+import type { ScholarProjectionPoint, ScholarTopic } from "../../../../core/scholarTypes";
 import { useChartSize } from "../../hooks/useChartSize";
 import type { TopicColorMap } from "../../types";
 

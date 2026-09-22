@@ -1,0 +1,107 @@
+/*
+ * Markdown in the session transcript (Streamdown output under `.session-markdown`).
+ *
+ * Streamdown styles its own elements with Tailwind utilities, and its colors
+ * come from the shadcn-named tokens mapped in styles.css (`--color-muted`,
+ * `--color-border`, ...). This file only tightens its document-sized
+ * typography to the transcript's density. It is imported into the `markdown`
+ * layer, declared after `utilities`, so these rules beat Streamdown's classes.
+ *
+ * Target elements through Streamdown's `data-streamdown` attributes rather than
+ * its class names; the attributes are the stable part of its output.
+ */
+
+.session-markdown {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  font-size: var(--font-size-base);
+  line-height: 1.6;
+  color: var(--color-on-surface);
+}
+
+.session-markdown > :first-child {
+  margin-top: 0;
+}
+
+.session-markdown > :last-child {
+  margin-bottom: 0;
+}
+
+.session-markdown p {
+  margin: 0 0 var(--space-2);
+}
+
+.session-markdown :is(h1, h2, h3, h4, h5, h6) {
+  margin: var(--space-3) 0 var(--space-2);
+  font-family: var(--font-sans);
+  font-weight: 600;
+  line-height: 1.35;
+}
+
+.session-markdown [data-streamdown="heading-1"] {
+  font-size: 1.25rem;
+}
+
+.session-markdown [data-streamdown="heading-2"] {
+  font-size: 1.125rem;
+}
+
+.session-markdown [data-streamdown="heading-3"] {
+  font-size: 1rem;
+}
+
+.session-markdown :is(h4, h5, h6) {
+  font-size: var(--font-size-lg);
+}
+
+.session-markdown :is([data-streamdown="ordered-list"], [data-streamdown="unordered-list"]) {
+  margin: var(--space-2) 0;
+}
+
+.session-markdown [data-streamdown="list-item"] {
+  margin: var(--space-1) 0;
+}
+
+.session-markdown [data-streamdown="blockquote"] {
+  margin: var(--space-2) 0;
+  font-style: normal;
+}
+
+.session-markdown [data-streamdown="horizontal-rule"] {
+  margin: var(--space-3) 0;
+}
+
+.session-markdown [data-streamdown="link"] {
+  color: var(--color-primary);
+}
+
+.session-markdown [data-streamdown="inline-code"] {
+  font-size: 0.9em;
+}
+
+.session-markdown
+  :is(
+    [data-streamdown="code-block"],
+    [data-streamdown="table-wrapper"],
+    [data-streamdown="mermaid-block"]
+  ) {
+  margin: var(--space-2) 0;
+}
+
+.session-markdown [data-streamdown="code-block"] pre {
+  font-size: var(--font-size-sm);
+}
+
+.session-markdown [data-streamdown="table"] {
+  font-size: var(--font-size-sm);
+}
+
+/* A plan is the point of its tool call, so it reads a step larger. */
+.exitplan-inline {
+  font-size: var(--font-size-lg);
+}
+
+/* Reasoning reads as an aside: muted, like its summary. */
+.collapsible__content .session-markdown {
+  color: inherit;
+}

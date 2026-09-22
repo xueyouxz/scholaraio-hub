@@ -15,7 +15,6 @@ import {
   createStandardScenario,
   createToolUseScenario,
 } from "../../../../src/sdk/providers/__mocks__/index.js";
-import type { ProviderName } from "../../../../src/sdk/providers/types.js";
 import type { SDKMessage } from "../../../../src/sdk/types.js";
 
 /**

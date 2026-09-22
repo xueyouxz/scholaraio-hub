@@ -3,7 +3,11 @@ import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import type { UIMessageChunk } from "ai";
 import { describe, expect, it } from "vitest";
-import { CodexProvider } from "../../src/sdk/providers/codex.js";
+import {
+  type TokenUsageSnapshot,
+  convertNotificationToSDKMessages,
+  extractTurnUsage,
+} from "../../src/sdk/providers/codex-events.js";
 import type { SDKMessage } from "../../src/sdk/types.js";
 import { SessionMessageNormalizer } from "../../src/sessions/SessionMessageNormalizer.js";
 
@@ -28,31 +32,20 @@ interface NotificationFixture {
   notifications: { method: string; params?: unknown }[];
 }
 
-/** The conversion entry point is private; tests reach it through this view. */
-type ConversionSurface = {
-  convertNotificationToSDKMessages(
-    notification: { method: string; params?: unknown },
-    sessionId: string,
-    usageByTurnId: Map<string, unknown>,
-  ): SDKMessage[];
-  extractTurnUsage(params: unknown): { turnId: string; snapshot: unknown } | null;
-};
-
 function convert(fixture: NotificationFixture): {
   messages: SDKMessage[];
   chunks: UIMessageChunk[];
 } {
-  const provider = new CodexProvider() as unknown as ConversionSurface;
-  const usageByTurnId = new Map<string, unknown>();
+  const usageByTurnId = new Map<string, TokenUsageSnapshot>();
   const messages: SDKMessage[] = [];
   const chunks: UIMessageChunk[] = [];
   const normalizer = new SessionMessageNormalizer((chunk) => chunks.push(chunk));
   for (const notification of fixture.notifications) {
     if (notification.method === "thread/tokenUsage/updated") {
-      const usage = provider.extractTurnUsage(notification.params);
+      const usage = extractTurnUsage(notification.params);
       if (usage) usageByTurnId.set(usage.turnId, usage.snapshot);
     }
-    for (const message of provider.convertNotificationToSDKMessages(
+    for (const message of convertNotificationToSDKMessages(
       notification,
       fixture.sessionId,
       usageByTurnId,

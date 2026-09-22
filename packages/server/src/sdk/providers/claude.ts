@@ -552,7 +552,7 @@ export class ClaudeProvider implements AgentProvider {
       // The SDK's internal readMessages loop must be running for
       // the initialize control_response to be processed. Start
       // consuming the async iterator in the background.
-      const drain = (async () => {
+      void (async () => {
         try {
           for await (const _ of sdkQuery) {
             // drain

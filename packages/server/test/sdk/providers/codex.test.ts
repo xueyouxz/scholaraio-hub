@@ -8,7 +8,11 @@
 import { existsSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
-import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
+import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import {
+  convertItemToSDKMessages,
+  convertNotificationToSDKMessages,
+} from "../../../src/sdk/providers/codex-events.js";
 import { CodexProvider, type CodexProviderConfig } from "../../../src/sdk/providers/codex.js";
 
 describe("CodexProvider", () => {
@@ -201,16 +205,7 @@ describe("CodexProvider Event Normalization", () => {
   });
 
   it("normalizes command execution tool_use and tool_result to Read shape", () => {
-    const provider = createTestProvider() as unknown as {
-      convertItemToSDKMessages: (
-        item: unknown,
-        sessionId: string,
-        turnId: string,
-        sourceEvent: "item/started" | "item/completed",
-      ) => Array<Record<string, unknown>>;
-    };
-
-    const messages = provider.convertItemToSDKMessages(
+    const messages = convertItemToSDKMessages(
       {
         id: "call-read",
         type: "command_execution",
@@ -255,16 +250,7 @@ describe("CodexProvider Event Normalization", () => {
   });
 
   it("normalizes shell-launcher wrapped command execution to Read shape", () => {
-    const provider = createTestProvider() as unknown as {
-      convertItemToSDKMessages: (
-        item: unknown,
-        sessionId: string,
-        turnId: string,
-        sourceEvent: "item/started" | "item/completed",
-      ) => Array<Record<string, unknown>>;
-    };
-
-    const messages = provider.convertItemToSDKMessages(
+    const messages = convertItemToSDKMessages(
       {
         id: "call-read-wrapped",
         type: "command_execution",
@@ -300,17 +286,8 @@ describe("CodexProvider Event Normalization", () => {
   });
 
   it("normalizes heredoc command execution as Write with structured file result", () => {
-    const provider = createTestProvider() as unknown as {
-      convertItemToSDKMessages: (
-        item: unknown,
-        sessionId: string,
-        turnId: string,
-        sourceEvent: "item/started" | "item/completed",
-      ) => Array<Record<string, unknown>>;
-    };
-
     const content = "line 1\nline 2\n";
-    const messages = provider.convertItemToSDKMessages(
+    const messages = convertItemToSDKMessages(
       {
         id: "call-write",
         type: "command_execution",
@@ -358,16 +335,7 @@ describe("CodexProvider Event Normalization", () => {
   });
 
   it("normalizes no-match ripgrep exit code as non-error Grep result", () => {
-    const provider = createTestProvider() as unknown as {
-      convertItemToSDKMessages: (
-        item: unknown,
-        sessionId: string,
-        turnId: string,
-        sourceEvent: "item/started" | "item/completed",
-      ) => Array<Record<string, unknown>>;
-    };
-
-    const messages = provider.convertItemToSDKMessages(
+    const messages = convertItemToSDKMessages(
       {
         id: "call-grep",
         type: "command_execution",
@@ -406,16 +374,7 @@ describe("CodexProvider Event Normalization", () => {
   });
 
   it("emits a tool_result when a WebSearch item completes", () => {
-    const provider = createTestProvider() as unknown as {
-      convertItemToSDKMessages: (
-        item: unknown,
-        sessionId: string,
-        turnId: string,
-        sourceEvent: "item/started" | "item/completed",
-      ) => Array<Record<string, unknown>>;
-    };
-
-    const messages = provider.convertItemToSDKMessages(
+    const messages = convertItemToSDKMessages(
       {
         id: "search-1",
         type: "web_search",
@@ -455,15 +414,7 @@ describe("CodexProvider Event Normalization", () => {
   });
 
   it("does not emit rate limit errors when hasCredits is false but usage is below 100%", () => {
-    const provider = createTestProvider() as unknown as {
-      convertNotificationToSDKMessages: (
-        notification: { method: string; params?: unknown },
-        sessionId: string,
-        usageByTurnId: Map<string, unknown>,
-      ) => Array<Record<string, unknown>>;
-    };
-
-    const messages = provider.convertNotificationToSDKMessages(
+    const messages = convertNotificationToSDKMessages(
       {
         method: "account/rateLimits/updated",
         params: {
@@ -488,15 +439,7 @@ describe("CodexProvider Event Normalization", () => {
   });
 
   it("does not emit synthetic errors for exhausted usage snapshots", () => {
-    const provider = createTestProvider() as unknown as {
-      convertNotificationToSDKMessages: (
-        notification: { method: string; params?: unknown },
-        sessionId: string,
-        usageByTurnId: Map<string, unknown>,
-      ) => Array<Record<string, unknown>>;
-    };
-
-    const messages = provider.convertNotificationToSDKMessages(
+    const messages = convertNotificationToSDKMessages(
       {
         method: "account/rateLimits/updated",
         params: {
@@ -521,15 +464,7 @@ describe("CodexProvider Event Normalization", () => {
   });
 
   it("emits errors from codex error notifications", () => {
-    const provider = createTestProvider() as unknown as {
-      convertNotificationToSDKMessages: (
-        notification: { method: string; params?: unknown },
-        sessionId: string,
-        usageByTurnId: Map<string, unknown>,
-      ) => Array<Record<string, unknown>>;
-    };
-
-    const messages = provider.convertNotificationToSDKMessages(
+    const messages = convertNotificationToSDKMessages(
       {
         method: "error",
         params: {

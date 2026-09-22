@@ -10,7 +10,13 @@
 import type { ModelInfo } from "@scholaraio-hub/shared";
 import { MessageQueue } from "../../messageQueue.js";
 import type { SDKMessage } from "../../types.js";
-import type { AgentSession, AuthStatus, ProviderName, StartSessionOptions } from "../types.js";
+import type {
+  AgentSession,
+  AuthStatus,
+  ProviderCapabilities,
+  ProviderName,
+  StartSessionOptions,
+} from "../types.js";
 import type { MockAgentProvider, MockProviderConfig, MockScenario } from "./types.js";
 
 /**
@@ -21,9 +27,11 @@ export abstract class BaseMockProvider implements MockAgentProvider {
   abstract readonly name: ProviderName;
   abstract readonly displayName: string;
   // Mock providers default to Claude-like behavior (supports all)
-  readonly supportsPermissionMode = true;
-  readonly supportsThinkingToggle = true;
-  readonly supportsSlashCommands = true;
+  readonly capabilities: ProviderCapabilities = {
+    permissionMode: true,
+    thinkingToggle: true,
+    slashCommands: true,
+  };
 
   protected scenarios: MockScenario[] = [];
   protected _scenarioIndex = 0;

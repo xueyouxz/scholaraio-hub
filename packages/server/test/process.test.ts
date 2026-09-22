@@ -1,5 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import { MessageQueue } from "../src/sdk/messageQueue.js";
+import { resolveSessionControls } from "../src/sdk/providers/session-capabilities.js";
+import type { AgentSession } from "../src/sdk/providers/types.js";
 import type { SDKMessage } from "../src/sdk/types.js";
 import { Process } from "../src/supervisor/Process.js";
 import type { ProcessEvent } from "../src/supervisor/types.js";
@@ -242,7 +244,7 @@ describe("Process", () => {
         sessionId: "sess-1",
         idleTimeoutMs: 100,
         queue,
-        steerFn,
+        controls: resolveSessionControls({ steer: steerFn } as unknown as AgentSession),
       });
 
       const result = process.queueMessage({ text: "steer me" });
@@ -274,7 +276,7 @@ describe("Process", () => {
         sessionId: "sess-1",
         idleTimeoutMs: 100,
         queue,
-        steerFn,
+        controls: resolveSessionControls({ steer: steerFn } as unknown as AgentSession),
       });
 
       const result = process.queueMessage({ text: "fallback me" });

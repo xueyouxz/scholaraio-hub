@@ -107,6 +107,20 @@ export interface AgentSession {
 }
 
 /**
+ * What a provider supports, as a single descriptor rather than a growing list
+ * of `supportsX` booleans spread across the interface, the HTTP payload and
+ * the UI. Add a capability here and every consumer has to acknowledge it.
+ */
+export interface ProviderCapabilities {
+  /** Permission modes (default / acceptEdits / plan / bypass) are meaningful. */
+  permissionMode: boolean;
+  /** Extended thinking can be toggled per session. */
+  thinkingToggle: boolean;
+  /** Slash commands can be listed and invoked. */
+  slashCommands: boolean;
+}
+
+/**
  * Agent provider interface.
  * All supported providers implement this interface.
  */
@@ -115,12 +129,8 @@ export interface AgentProvider {
   readonly name: ProviderName;
   /** Human-readable display name */
   readonly displayName: string;
-  /** Whether this provider supports permission modes (default: true) */
-  readonly supportsPermissionMode: boolean;
-  /** Whether this provider supports extended thinking toggle (default: true) */
-  readonly supportsThinkingToggle: boolean;
-  /** Whether this provider supports slash commands (default: false) */
-  readonly supportsSlashCommands: boolean;
+  /** What this provider can do, declared in one place. */
+  readonly capabilities: ProviderCapabilities;
 
   /**
    * Check if this provider is installed and available.

@@ -33,9 +33,7 @@ export function createScriptedProvider(options: ScriptedProviderOptions = {}): A
   return {
     name: "claude",
     displayName: "Scripted",
-    supportsPermissionMode: true,
-    supportsThinkingToggle: true,
-    supportsSlashCommands: false,
+    capabilities: { permissionMode: true, thinkingToggle: true, slashCommands: false },
     isInstalled: async () => true,
     isAuthenticated: async () => true,
     getAuthStatus: async (): Promise<AuthStatus> => ({
@@ -90,9 +88,7 @@ export function providerFromSessionFactory(
   return {
     name,
     displayName: "Scripted",
-    supportsPermissionMode: true,
-    supportsThinkingToggle: true,
-    supportsSlashCommands: false,
+    capabilities: { permissionMode: true, thinkingToggle: true, slashCommands: false },
     isInstalled: async () => true,
     isAuthenticated: async () => true,
     getAuthStatus: async (): Promise<AuthStatus> => ({

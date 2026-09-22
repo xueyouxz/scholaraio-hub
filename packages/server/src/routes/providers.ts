@@ -43,9 +43,9 @@ export function createProvidersRoutes(deps: ProviderRouteDeps = {}): Hono {
         expiresAt: authStatus.expiresAt?.toISOString(),
         user: authStatus.user,
         models,
-        supportsPermissionMode: provider.supportsPermissionMode,
-        supportsThinkingToggle: provider.supportsThinkingToggle,
-        supportsSlashCommands: provider.supportsSlashCommands,
+        supportsPermissionMode: provider.capabilities.permissionMode,
+        supportsThinkingToggle: provider.capabilities.thinkingToggle,
+        supportsSlashCommands: provider.capabilities.slashCommands,
       });
     }
 
@@ -91,9 +91,9 @@ export function createProvidersRoutes(deps: ProviderRouteDeps = {}): Hono {
       expiresAt: authStatus.expiresAt?.toISOString(),
       user: authStatus.user,
       models,
-      supportsPermissionMode: provider.supportsPermissionMode,
-      supportsThinkingToggle: provider.supportsThinkingToggle,
-      supportsSlashCommands: provider.supportsSlashCommands,
+      supportsPermissionMode: provider.capabilities.permissionMode,
+      supportsThinkingToggle: provider.capabilities.thinkingToggle,
+      supportsSlashCommands: provider.capabilities.slashCommands,
     };
 
     return c.json({ provider: providerInfo });

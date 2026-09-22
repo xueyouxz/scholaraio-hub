@@ -6,9 +6,11 @@ import type { SDKMessage } from "../../src/sdk/types.js";
 /** Deterministic CLI boundary for protocol and browser tests. */
 export class WorkbenchProvider implements AgentProvider {
   readonly displayName = "Test provider";
-  readonly supportsPermissionMode = true;
-  readonly supportsThinkingToggle = false;
-  readonly supportsSlashCommands = false;
+  readonly capabilities = {
+    permissionMode: true,
+    thinkingToggle: false,
+    slashCommands: false,
+  };
   readonly calls: StartSessionOptions[] = [];
   readonly inputs: string[] = [];
   interruptions = 0;

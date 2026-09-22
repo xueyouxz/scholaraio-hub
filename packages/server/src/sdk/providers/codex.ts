@@ -49,7 +49,13 @@ import {
   terminateChildProcess,
 } from "./codex-rpc.js";
 import { providerPosture } from "./permission-policy.js";
-import type { AgentProvider, AgentSession, AuthStatus, StartSessionOptions } from "./types.js";
+import type {
+  AgentProvider,
+  AgentSession,
+  AuthStatus,
+  ProviderCapabilities,
+  StartSessionOptions,
+} from "./types.js";
 
 const log = getLogger().child({ component: "codex-provider" });
 
@@ -106,9 +112,11 @@ interface CodexTurnRuntimeState {
 export class CodexProvider implements AgentProvider {
   readonly name = "codex" as const;
   readonly displayName = "Codex";
-  readonly supportsPermissionMode = true;
-  readonly supportsThinkingToggle = true;
-  readonly supportsSlashCommands = true;
+  readonly capabilities: ProviderCapabilities = {
+    permissionMode: true,
+    thinkingToggle: true,
+    slashCommands: true,
+  };
 
   private readonly config: CodexProviderConfig;
   private modelCache: { models: ModelInfo[]; expiresAt: number } | null = null;

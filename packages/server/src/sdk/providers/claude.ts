@@ -27,6 +27,7 @@ import type {
   AgentProvider,
   AgentSession,
   AuthStatus,
+  ProviderCapabilities,
   ProviderName,
   StartSessionOptions,
 } from "./types.js";
@@ -238,9 +239,11 @@ let probePromise: Promise<ModelInfo[]> | null = null;
 export class ClaudeProvider implements AgentProvider {
   readonly name: ProviderName = "claude";
   readonly displayName: string = "Claude";
-  readonly supportsPermissionMode = true;
-  readonly supportsThinkingToggle = true;
-  readonly supportsSlashCommands = true;
+  readonly capabilities: ProviderCapabilities = {
+    permissionMode: true,
+    thinkingToggle: true,
+    slashCommands: true,
+  };
 
   /**
    * Check the executable selected for the SDK, including its platform binary.

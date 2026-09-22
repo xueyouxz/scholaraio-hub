@@ -3,6 +3,7 @@ import type { ProviderName, UrlProjectId } from "@scholaraio-hub/shared";
 import type { PendingInputType } from "@scholaraio-hub/shared";
 import { getLogger } from "../logging/logger.js";
 import { getProvider } from "../sdk/providers/index.js";
+import { resolveSessionControls } from "../sdk/providers/session-capabilities.js";
 import type { AgentProvider } from "../sdk/providers/types.js";
 import type { PermissionMode, SDKMessage, UserMessage } from "../sdk/types.js";
 import type { EventBus } from "../watcher/EventBus.js";
@@ -279,18 +280,8 @@ export class Supervisor {
       },
     });
 
-    const {
-      iterator,
-      queue,
-      abort,
-      isProcessAlive,
-      setMaxThinkingTokens,
-      interrupt,
-      steer,
-      supportedModels,
-      supportedCommands,
-      setModel,
-    } = result;
+    const { iterator, queue, abort, isProcessAlive } = result;
+    const controls = resolveSessionControls(result);
 
     const tempSessionId = randomUUID();
     const options: ProcessConstructorOptions = {
@@ -305,12 +296,7 @@ export class Supervisor {
         const p = result.pid;
         return typeof p === "function" ? p() : p;
       },
-      setMaxThinkingTokensFn: setMaxThinkingTokens,
-      interruptFn: interrupt,
-      steerFn: steer,
-      supportedModelsFn: supportedModels,
-      supportedCommandsFn: supportedCommands,
-      setModelFn: setModel,
+      controls,
       permissionMode: effectiveMode,
       provider: activeProvider.name,
       model: modelSettings?.model,
@@ -382,18 +368,8 @@ export class Supervisor {
       },
     });
 
-    const {
-      iterator,
-      queue,
-      abort,
-      isProcessAlive,
-      setMaxThinkingTokens,
-      interrupt,
-      steer,
-      supportedModels,
-      supportedCommands,
-      setModel,
-    } = result;
+    const { iterator, queue, abort, isProcessAlive } = result;
+    const controls = resolveSessionControls(result);
 
     const options: ProcessConstructorOptions = {
       projectPath,
@@ -407,12 +383,7 @@ export class Supervisor {
         const p = result.pid;
         return typeof p === "function" ? p() : p;
       },
-      setMaxThinkingTokensFn: setMaxThinkingTokens,
-      interruptFn: interrupt,
-      steerFn: steer,
-      supportedModelsFn: supportedModels,
-      supportedCommandsFn: supportedCommands,
-      setModelFn: setModel,
+      controls,
       permissionMode: effectiveMode,
       provider: activeProvider.name,
       model: modelSettings?.model,

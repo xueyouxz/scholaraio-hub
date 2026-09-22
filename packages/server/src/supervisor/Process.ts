@@ -12,6 +12,11 @@ import type {
 import { getLogger } from "../logging/logger.js";
 import type { MessageQueue } from "../sdk/messageQueue.js";
 import { decidePermission } from "../sdk/providers/permission-policy.js";
+import {
+  type ResolvedSessionControls,
+  resolveSessionControls,
+} from "../sdk/providers/session-capabilities.js";
+import type { AgentSession } from "../sdk/providers/types.js";
 import type {
   PermissionMode,
   SDKMessage,
@@ -66,21 +71,12 @@ export interface ProcessConstructorOptions extends ProcessOptions {
   abortFn?: () => void;
   /** Check if underlying CLI process is still alive (for stale detection) */
   isProcessAlive?: () => boolean;
-  /** Function to change max thinking tokens at runtime (SDK 0.2.7+) */
-  setMaxThinkingTokensFn?: (tokens: number | null) => Promise<void>;
-  /** Function to interrupt current turn gracefully (SDK 0.2.7+) */
-  interruptFn?: () => Promise<void>;
   /**
-   * Function to steer an active turn with additional user input.
-   * Returns false when steering is unavailable and caller should enqueue.
+   * Session controls with their capability descriptor, from
+   * `resolveSessionControls()`. Absent for processes that are not backed by a
+   * provider session (tests that drive a bare iterator).
    */
-  steerFn?: (message: UserMessage) => Promise<boolean>;
-  /** Function to get supported models (SDK 0.2.7+) */
-  supportedModelsFn?: () => Promise<ModelInfo[]>;
-  /** Function to get supported slash commands (SDK 0.2.7+) */
-  supportedCommandsFn?: () => Promise<SlashCommand[]>;
-  /** Function to change model mid-session (SDK 0.2.7+) */
-  setModelFn?: (model?: string) => Promise<void>;
+  controls?: ResolvedSessionControls;
 }
 
 export class Process {
@@ -139,22 +135,8 @@ export class Process {
   /** Effort level for response quality */
   private _effort: EffortLevel | undefined;
 
-  /** Function to change max thinking tokens at runtime (SDK 0.2.7+) */
-  private setMaxThinkingTokensFn: ((tokens: number | null) => Promise<void>) | null;
-
-  /** Function to interrupt current turn gracefully (SDK 0.2.7+) */
-  private interruptFn: (() => Promise<void>) | null;
-  /** Function to steer an active turn (provider-specific, currently Codex app-server) */
-  private steerFn: ((message: UserMessage) => Promise<boolean>) | null;
-
-  /** Function to get supported models (SDK 0.2.7+) */
-  private supportedModelsFn: (() => Promise<ModelInfo[]>) | null;
-
-  /** Function to get supported slash commands (SDK 0.2.7+) */
-  private supportedCommandsFn: (() => Promise<SlashCommand[]>) | null;
-
-  /** Function to change model mid-session (SDK 0.2.7+) */
-  private setModelFn: ((model?: string) => Promise<void>) | null;
+  /** Session controls plus the capability descriptor that says which are real. */
+  private readonly controls: ResolvedSessionControls;
 
   /** Resolvers waiting for the real session ID */
   private sessionIdResolvers: Array<(id: string) => void> = [];
@@ -210,13 +192,8 @@ export class Process {
     this.remoteEnv = options.remoteEnv;
     this._thinking = options.thinking;
     this._effort = options.effort;
-    this.setMaxThinkingTokensFn = options.setMaxThinkingTokensFn ?? null;
-    this.interruptFn = options.interruptFn ?? null;
-    this.steerFn = options.steerFn ?? null;
-    this.supportedModelsFn = options.supportedModelsFn ?? null;
-    this.supportedCommandsFn = options.supportedCommandsFn ?? null;
+    this.controls = options.controls ?? resolveSessionControls({} as AgentSession);
     this._pidResolver = options.pid;
-    this.setModelFn = options.setModelFn ?? null;
     this._isProcessAlive = options.isProcessAlive ?? null;
     this._lastMessageTime = new Date();
 
@@ -338,7 +315,7 @@ export class Process {
    * Only Claude SDK 0.2.7+ supports this.
    */
   get supportsThinkingModeChange(): boolean {
-    return this.setMaxThinkingTokensFn !== null;
+    return this.controls.capabilities.thinkingTokens;
   }
 
   /**
@@ -346,7 +323,7 @@ export class Process {
    * Only Claude SDK 0.2.7+ supports this.
    */
   get supportsInterrupt(): boolean {
-    return this.interruptFn !== null;
+    return this.controls.capabilities.interrupt;
   }
 
   /**
@@ -357,7 +334,7 @@ export class Process {
    * @returns true if the interrupt was triggered, false if not supported
    */
   async interrupt(): Promise<boolean> {
-    if (!this.interruptFn) {
+    if (!this.controls.capabilities.interrupt) {
       return false;
     }
 
@@ -373,7 +350,7 @@ export class Process {
       `Interrupting process: ${this._sessionId}`,
     );
 
-    await this.interruptFn();
+    await this.controls.interrupt();
     return true;
   }
 
@@ -386,7 +363,7 @@ export class Process {
    * @returns true if the change was applied, false if not supported
    */
   async setMaxThinkingTokens(tokens: number | undefined): Promise<boolean> {
-    if (!this.setMaxThinkingTokensFn) {
+    if (!this.controls.capabilities.thinkingTokens) {
       return false;
     }
 
@@ -403,7 +380,7 @@ export class Process {
     );
 
     // SDK uses null to disable, we use undefined for consistency with our types
-    await this.setMaxThinkingTokensFn(tokens ?? null);
+    await this.controls.setMaxThinkingTokens(tokens ?? null);
     return true;
   }
 
@@ -412,7 +389,7 @@ export class Process {
    * Only Claude SDK 0.2.7+ supports this.
    */
   get supportsDynamicModels(): boolean {
-    return this.supportedModelsFn !== null;
+    return this.controls.capabilities.modelList;
   }
 
   /**
@@ -420,7 +397,7 @@ export class Process {
    * Only Claude SDK 0.2.7+ supports this.
    */
   get supportsDynamicCommands(): boolean {
-    return this.supportedCommandsFn !== null;
+    return this.controls.capabilities.commandList;
   }
 
   /**
@@ -428,7 +405,7 @@ export class Process {
    * Only Claude SDK 0.2.7+ supports this.
    */
   get supportsSetModel(): boolean {
-    return this.setModelFn !== null;
+    return this.controls.capabilities.modelSwitch;
   }
 
   /**
@@ -438,10 +415,10 @@ export class Process {
    * @returns Array of available models, or null if not supported
    */
   async supportedModels(): Promise<ModelInfo[] | null> {
-    if (!this.supportedModelsFn) {
+    if (!this.controls.capabilities.modelList) {
       return null;
     }
-    return this.supportedModelsFn();
+    return this.controls.supportedModels();
   }
 
   /**
@@ -451,10 +428,10 @@ export class Process {
    * @returns Array of available commands, or null if not supported
    */
   async supportedCommands(): Promise<SlashCommand[] | null> {
-    if (!this.supportedCommandsFn) {
+    if (!this.controls.capabilities.commandList) {
       return null;
     }
-    return this.supportedCommandsFn();
+    return this.controls.supportedCommands();
   }
 
   /**
@@ -465,7 +442,7 @@ export class Process {
    * @returns true if the change was applied, false if not supported
    */
   async setModel(model?: string): Promise<boolean> {
-    if (!this.setModelFn) {
+    if (!this.controls.capabilities.modelSwitch) {
       return false;
     }
 
@@ -481,7 +458,7 @@ export class Process {
       `Changing model: ${this.model} → ${model}`,
     );
 
-    await this.setModelFn(model);
+    await this.controls.setModel(model);
     // Update resolved model so subsequent API responses reflect the switch
     if (model) {
       this._resolvedModel = model;
@@ -869,14 +846,15 @@ export class Process {
 
     if (this.messageQueue) {
       // If provider supports in-turn steering, prefer that over queue-after-turn behavior.
-      if (this._state.type === "in-turn" && this.steerFn) {
+      if (this._state.type === "in-turn" && this.controls.capabilities.steer) {
         const steerMessage: UserMessage = {
           ...messageWithUuid,
           // Mirror MessageQueue's attachment expansion for steer payloads.
           text: content,
           attachments: undefined,
         };
-        void this.steerFn(steerMessage)
+        void this.controls
+          .steer(steerMessage)
           .then((steered) => {
             if (!steered) {
               this.messageQueue?.push(messageWithUuid);

@@ -72,28 +72,16 @@ const USAGE_LIMITS_TIMEOUT_MS = 8000;
 const APP_SERVER_INIT_REQUEST_ID = 1;
 const APP_SERVER_MODEL_LIST_REQUEST_ID = 2;
 
-const PREFERRED_MODEL_ORDER = [
-  "gpt-5.3-codex",
-  "gpt-5.2-codex",
-  "gpt-5.1-codex-max",
-  "gpt-5.2",
-  "gpt-5.1-codex-mini",
-] as const;
-
-const FALLBACK_CODEX_MODELS: ModelInfo[] = [
-  { id: "gpt-5.3-codex", name: "GPT-5.3-Codex" },
-  { id: "gpt-5.2-codex", name: "GPT-5.2-Codex" },
-  { id: "gpt-5.1-codex-max", name: "GPT-5.1-Codex-Max" },
-  { id: "gpt-5.2", name: "GPT-5.2" },
-  { id: "gpt-5.1-codex-mini", name: "GPT-5.1-Codex-Mini" },
-];
-
-interface AppServerModel {
+/** The fields of app-server `model/list` entries the hub shows (see generated v2 `Model`). */
+export interface AppServerModel {
   id: string;
   model?: string;
   displayName?: string;
   description?: string;
-  upgrade?: string | null;
+  hidden?: boolean;
+  isDefault?: boolean;
+  supportedReasoningEfforts?: Array<{ reasoningEffort: string; description?: string }>;
+  defaultReasoningEffort?: string;
 }
 
 interface CodexTurnRuntimeState {
@@ -205,7 +193,7 @@ export class CodexProvider implements AgentProvider {
 
   /**
    * Get available models for Codex cloud.
-   * Queries Codex app-server's model/list endpoint with a static fallback.
+   * Queries Codex app-server's model/list endpoint. No list means no models are offered.
    */
   async getAvailableModels(): Promise<ModelInfo[]> {
     const now = Date.now();
@@ -218,14 +206,13 @@ export class CodexProvider implements AgentProvider {
       models = await this.getModelsFromAppServer();
     }
 
-    if (models.length === 0) {
-      models = FALLBACK_CODEX_MODELS;
+    // A failed query is retried on the next request instead of cached as "no models".
+    if (models.length > 0) {
+      this.modelCache = {
+        models,
+        expiresAt: now + MODEL_CACHE_TTL_MS,
+      };
     }
-
-    this.modelCache = {
-      models,
-      expiresAt: now + MODEL_CACHE_TTL_MS,
-    };
 
     return models;
   }
@@ -272,9 +259,9 @@ export class CodexProvider implements AgentProvider {
   private async getModelsFromAppServer(): Promise<ModelInfo[]> {
     try {
       const appServerModels = await this.requestAppServerModelList();
-      return this.normalizeModelList(appServerModels);
+      return toCodexModels(appServerModels);
     } catch (error) {
-      log.debug({ error }, "Failed to query Codex app-server model list, using fallback models");
+      log.warn({ error }, "Failed to query Codex app-server model list; offering none");
       return [];
     }
   }
@@ -412,55 +399,6 @@ export class CodexProvider implements AgentProvider {
         })}\n`,
       );
     });
-  }
-
-  private normalizeModelList(models: AppServerModel[]): ModelInfo[] {
-    const orderLookup = new Map<string, number>(PREFERRED_MODEL_ORDER.map((id, idx) => [id, idx]));
-    const deduped = new Map<string, ModelInfo>();
-
-    for (const model of models) {
-      const modelId = (model.model || model.id || "").trim();
-      if (!modelId) continue;
-
-      deduped.set(modelId, {
-        id: modelId,
-        name: this.formatModelName(model.displayName || modelId),
-        description: model.description,
-      });
-
-      const upgradeId = model.upgrade?.trim();
-      if (upgradeId && !deduped.has(upgradeId)) {
-        deduped.set(upgradeId, {
-          id: upgradeId,
-          name: this.formatModelName(upgradeId),
-        });
-      }
-    }
-
-    return [...deduped.values()]
-      .map((model, index) => ({
-        model,
-        index,
-        rank: orderLookup.get(model.id) ?? PREFERRED_MODEL_ORDER.length + index,
-      }))
-      .sort((a, b) => a.rank - b.rank)
-      .map((entry) => entry.model);
-  }
-
-  private formatModelName(value: string): string {
-    return value
-      .trim()
-      .split("-")
-      .map((part) => {
-        const lower = part.toLowerCase();
-        if (lower === "gpt") return "GPT";
-        if (lower === "codex") return "Codex";
-        if (lower === "mini") return "Mini";
-        if (lower === "max") return "Max";
-        if (lower.length === 0) return "";
-        return lower.charAt(0).toUpperCase() + lower.slice(1);
-      })
-      .join("-");
   }
 
   private mapEffortToReasoningEffort(
@@ -1015,3 +953,31 @@ export class CodexProvider implements AgentProvider {
  * Default Codex provider instance.
  */
 export const codexProvider = new CodexProvider();
+
+/** Visible `model/list` entries in the app-server's own order, naming and effort levels. */
+export function toCodexModels(models: AppServerModel[]): ModelInfo[] {
+  const seen = new Set<string>();
+  const result: ModelInfo[] = [];
+  for (const model of models) {
+    const id = (model.model || model.id || "").trim();
+    if (!id || model.hidden || seen.has(id)) continue;
+    seen.add(id);
+    const efforts = model.supportedReasoningEfforts ?? [];
+    result.push({
+      id,
+      name: model.displayName || id,
+      ...(model.description ? { description: model.description } : {}),
+      ...(model.isDefault ? { isDefault: true } : {}),
+      ...(efforts.length
+        ? {
+            efforts: efforts.map((effort) => ({
+              id: effort.reasoningEffort,
+              ...(effort.description ? { description: effort.description } : {}),
+            })),
+          }
+        : {}),
+      ...(model.defaultReasoningEffort ? { defaultEffort: model.defaultReasoningEffort } : {}),
+    });
+  }
+  return result;
+}

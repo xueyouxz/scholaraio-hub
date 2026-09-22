@@ -8,15 +8,11 @@ import {
   type SDKMessage as AgentSDKMessage,
   type Query,
   type CanUseTool as SDKCanUseTool,
+  type ModelInfo as SdkModelInfo,
   type SpawnedProcess,
   query,
 } from "@anthropic-ai/claude-agent-sdk";
-import {
-  type ModelInfo,
-  type ProviderUsageLimits,
-  type SlashCommand,
-  getModelContextWindow,
-} from "@scholaraio-hub/shared";
+import type { ModelInfo, ProviderUsageLimits, SlashCommand } from "@scholaraio-hub/shared";
 import type { AgentEvent } from "../../agent/events.js";
 import { normalizeClaudeOAuthUsage } from "../../services/ProviderUsageLimitService.js";
 import { logSDKMessage } from "../messageLogger.js";
@@ -144,84 +140,18 @@ export function resolveLocalClaudeCodeExecutable(): string | undefined {
   return executable;
 }
 
-/** Static fallback list of Claude models (used if probe fails) */
-const CLAUDE_MODELS_FALLBACK: ModelInfo[] = [
-  {
-    id: "default",
-    name: "Default (recommended)",
-    description: "Claude Code chooses the recommended model for your account",
-    contextWindow: getModelContextWindow("default", "claude"),
-  },
-  {
-    id: "best",
-    name: "Best",
-    description: "Highest-capability Claude Code alias for complex work",
-    contextWindow: getModelContextWindow("best", "claude"),
-  },
-  {
-    id: "sonnet",
-    name: "Sonnet",
-    description: "Standard-context Sonnet for everyday coding tasks",
-    contextWindow: getModelContextWindow("sonnet", "claude"),
-  },
-  {
-    id: "sonnet[1m]",
-    name: "Sonnet 1M",
-    description: "Sonnet with 1M context for long sessions and large codebases",
-    contextWindow: getModelContextWindow("sonnet[1m]", "claude"),
-  },
-  {
-    id: "opus",
-    name: "Opus",
-    description: "Standard-context Opus for the most demanding reasoning",
-    contextWindow: getModelContextWindow("opus", "claude"),
-  },
-  {
-    id: "opus[1m]",
-    name: "Opus 1M",
-    description: "Opus with 1M context for the largest working sets",
-    contextWindow: getModelContextWindow("opus[1m]", "claude"),
-  },
-  {
-    id: "haiku",
-    name: "Haiku",
-    description: "Fastest model for simple tasks",
-    contextWindow: getModelContextWindow("haiku", "claude"),
-  },
-  {
-    id: "opusplan",
-    name: "Opus Plan",
-    description: "Uses Opus for planning, then Sonnet for execution",
-    contextWindow: getModelContextWindow("opus", "claude"),
-  },
-];
-
-function enrichClaudeModel(model: ModelInfo): ModelInfo {
+/** A model exactly as the Claude CLI describes it; efforts only when it supports them. */
+export function toModelInfo(model: SdkModelInfo): ModelInfo {
+  const efforts = model.supportsEffort ? (model.supportedEffortLevels ?? []) : [];
   return {
-    ...model,
-    contextWindow: model.contextWindow ?? getModelContextWindow(model.id, "claude"),
+    id: model.value,
+    name: model.displayName,
+    description: model.description,
+    ...(efforts.length ? { efforts: efforts.map((id) => ({ id })) } : {}),
+    ...(model.supportsAdaptiveThinking !== undefined
+      ? { supportsAdaptiveThinking: model.supportsAdaptiveThinking }
+      : {}),
   };
-}
-
-function mergeClaudeModels(models: ModelInfo[]): ModelInfo[] {
-  const byId = new Map<string, ModelInfo>();
-
-  for (const model of CLAUDE_MODELS_FALLBACK) {
-    byId.set(model.id, enrichClaudeModel(model));
-  }
-
-  for (const model of models) {
-    byId.set(model.id, enrichClaudeModel(model));
-  }
-
-  const orderedIds = [
-    ...CLAUDE_MODELS_FALLBACK.map((model) => model.id),
-    ...models.map((model) => model.id),
-  ];
-
-  return [...new Set(orderedIds)]
-    .map((id) => byId.get(id))
-    .filter((model): model is ModelInfo => model !== undefined);
 }
 
 /** Cached models from SDK probe */
@@ -404,10 +334,10 @@ export class ClaudeProvider implements AgentProvider {
       return cachedModels;
     }
 
-    // Check if user is authenticated before trying to probe
+    // An unauthenticated CLI never finishes its handshake; it has no models to offer.
     const authStatus = await this.getAuthStatus();
     if (!authStatus.authenticated) {
-      return CLAUDE_MODELS_FALLBACK;
+      return [];
     }
 
     // If probe is already in progress, wait for it
@@ -418,12 +348,11 @@ export class ClaudeProvider implements AgentProvider {
     // Start a new probe
     probePromise = this.probeModels();
     try {
-      const models = await probePromise;
-      cachedModels = mergeClaudeModels(models);
+      cachedModels = await probePromise;
       return cachedModels;
     } catch (error) {
-      console.warn("[Claude] Failed to probe models, using fallback:", error);
-      return CLAUDE_MODELS_FALLBACK;
+      console.warn("[Claude] Failed to probe models; none offered until the CLI answers:", error);
+      return [];
     } finally {
       probePromise = null;
     }
@@ -577,13 +506,7 @@ export class ClaudeProvider implements AgentProvider {
         ),
       ]);
 
-      return mergeClaudeModels(
-        models.map((m) => ({
-          id: m.value,
-          name: m.displayName,
-          description: m.description,
-        })),
-      );
+      return models.map(toModelInfo);
     } finally {
       abortController.abort();
     }
@@ -717,15 +640,7 @@ export class ClaudeProvider implements AgentProvider {
       setMaxThinkingTokens: (tokens: number | null) => sdkQuery.setMaxThinkingTokens(tokens),
       interrupt: () => sdkQuery.interrupt(),
       supportedModels: async (): Promise<ModelInfo[]> => {
-        const models = await sdkQuery.supportedModels();
-        // Map SDK ModelInfo (value, displayName, description) to our ModelInfo (id, name, description)
-        const mappedModels = mergeClaudeModels(
-          models.map((m) => ({
-            id: m.value,
-            name: m.displayName,
-            description: m.description,
-          })),
-        );
+        const mappedModels = (await sdkQuery.supportedModels()).map(toModelInfo);
         // Update cache for future getAvailableModels() calls
         cachedModels = mappedModels;
         return mappedModels;

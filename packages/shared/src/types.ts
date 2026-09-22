@@ -34,6 +34,20 @@ export interface ModelInfo {
   parentModel?: string;
   /** Quantization level, e.g. "Q4_K_M" */
   quantizationLevel?: string;
+  /** The provider's own default model. */
+  isDefault?: boolean;
+  /** Effort levels the provider offers for this model, in its order and naming. */
+  efforts?: EffortOption[];
+  /** The effort the provider uses when none is chosen. */
+  defaultEffort?: string;
+  /** Whether the provider can switch this model's thinking between off and adaptive. */
+  supportsAdaptiveThinking?: boolean;
+}
+
+/** One effort level as the provider names and describes it. */
+export interface EffortOption {
+  id: string;
+  description?: string;
 }
 
 /**

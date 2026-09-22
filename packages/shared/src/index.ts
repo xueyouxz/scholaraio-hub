@@ -18,6 +18,7 @@ export type {
   ProviderUsageLimitWindow,
   ProviderUsageLimitWindowName,
   ModelInfo,
+  EffortOption,
   SlashCommand,
   ScholaraioSkill,
   ScholaraioSkillDetail,

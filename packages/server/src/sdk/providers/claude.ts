@@ -603,7 +603,7 @@ export class ClaudeProvider implements AgentProvider {
           // Model, thinking, and effort options
           model: options.model,
           thinking: options.thinking,
-          effort: options.effort,
+          effort: toClaudeEffort(options.effort),
           // Filter env to exclude npm_*, scholaraio-hub specific, and other irrelevant vars
           env: this.getEnv(),
           pathToClaudeCodeExecutable: resolveLocalClaudeCodeExecutable(),
@@ -687,3 +687,9 @@ export class ClaudeProvider implements AgentProvider {
 }
 
 export const claudeProvider = new ClaudeProvider();
+
+const CLAUDE_EFFORTS = ["low", "medium", "high", "max"] as const;
+
+function toClaudeEffort(effort?: string): (typeof CLAUDE_EFFORTS)[number] | undefined {
+  return CLAUDE_EFFORTS.find((known) => known === effort);
+}

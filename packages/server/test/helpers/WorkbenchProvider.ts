@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import type { ModelInfo } from "@scholaraio-hub/shared";
 import type { AgentEvent } from "../../src/agent/events.js";
 import { MessageQueue } from "../../src/sdk/messageQueue.js";
 import { ClaudeEventAdapter } from "../../src/sdk/providers/claude-events.js";
@@ -25,6 +26,8 @@ export class WorkbenchProvider implements AgentProvider {
   readonly inputs: string[] = [];
   interruptions = 0;
   approvals: string[] = [];
+  /** What `getAvailableModels` reports; empty means the CLI listed nothing. */
+  models: ModelInfo[] = [];
   constructor(readonly name: "claude" | "codex" = "claude") {}
   async isInstalled() {
     return true;
@@ -36,7 +39,7 @@ export class WorkbenchProvider implements AgentProvider {
     return { installed: true, authenticated: true, enabled: true };
   }
   async getAvailableModels() {
-    return [];
+    return this.models;
   }
   async startSession(options: StartSessionOptions) {
     this.calls.push(options);

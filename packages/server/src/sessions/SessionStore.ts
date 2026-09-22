@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { mkdir, readFile, readdir, rename, writeFile } from "node:fs/promises";
 import path from "node:path";
-import type { StoredSession } from "@scholaraio-hub/shared";
+import { type StoredSession, readLegacyThinking } from "@scholaraio-hub/shared";
 
 export interface SessionRecord extends StoredSession {
   nativeSessionId?: string;
@@ -33,6 +33,10 @@ export class SessionStore {
       )
         throw new Error(`Invalid session record: ${entry.name}`);
       this.records.set(data.id, data);
+      if (data.thinking && data.thinking !== "off" && data.thinking !== "adaptive") {
+        Object.assign(data, readLegacyThinking(data.thinking));
+        await this.save(data);
+      }
       if (data.queuedMessages?.length) {
         data.queuePaused = true;
         await this.save(data);
@@ -69,7 +73,14 @@ export class SessionStore {
   async create(
     input: Pick<
       StoredSession,
-      "title" | "provider" | "paperIds" | "model" | "projectId" | "permissionMode" | "thinking"
+      | "title"
+      | "provider"
+      | "paperIds"
+      | "model"
+      | "projectId"
+      | "permissionMode"
+      | "thinking"
+      | "effort"
     >,
   ): Promise<SessionRecord> {
     const now = new Date().toISOString();

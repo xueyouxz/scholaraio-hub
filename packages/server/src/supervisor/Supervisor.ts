@@ -151,6 +151,11 @@ export class Supervisor {
    * Pick the provider for a request: the one the caller named, otherwise the
    * supervisor default. An unknown name is a caller bug, not a fallback case.
    */
+  /** The provider that would run a session for `name`. */
+  providerFor(name: ProviderName): AgentProvider {
+    return this.resolveProvider({ providerName: name });
+  }
+
   private resolveProvider(modelSettings?: ModelSettings): AgentProvider {
     const name = modelSettings?.providerName;
     if (!name || name === this.provider.name) return this.provider;

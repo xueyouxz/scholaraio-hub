@@ -178,42 +178,17 @@ export interface NewSessionDefaults {
   permissionMode?: PermissionMode;
 }
 
-/**
- * Model option for Claude sessions.
- * - "default": Use the CLI's default model
- * - "best": Use Claude Code's best available model alias
- * - "sonnet": Claude Sonnet
- * - "sonnet[1m]": Claude Sonnet with 1M context when available
- * - "opus": Claude Opus
- * - "opus[1m]": Claude Opus with 1M context when available
- * - "haiku": Claude Haiku
- * - "opusplan": Plan with Opus, execute with Sonnet
- */
-export type ModelOption =
-  | "default"
-  | "best"
-  | "sonnet"
-  | "sonnet[1m]"
-  | "opus"
-  | "opus[1m]"
-  | "haiku"
-  | "opusplan";
+/** Whether the model thinks before answering, for providers that offer the switch. */
+export type ThinkingMode = "off" | "adaptive";
 
 /**
- * Effort level for Claude's response quality.
- * Maps to the SDK's effort parameter.
+ * A session's execution options in the provider's own terms: `effort` is one of
+ * the model's `efforts` ids (Claude "low".."max", Codex "none".."xhigh").
  */
-export type EffortLevel = "low" | "medium" | "high" | "max";
-
-/**
- * Thinking + effort option sent from client to server.
- * Wire format (backward compatible):
- * - "off": Thinking disabled
- * - "auto": Adaptive thinking, no effort override
- * - "on:low" | "on:medium" | "on:high" | "on:max": Forced-on thinking at effort level
- * - EffortLevel (plain): Adaptive thinking with effort (backward compat with old clients)
- */
-export type ThinkingOption = "off" | "auto" | `on:${EffortLevel}` | EffortLevel;
+export interface ExecutionOptions {
+  thinking?: ThinkingMode;
+  effort?: string;
+}
 
 /**
  * Thinking configuration for the SDK.
@@ -223,28 +198,19 @@ export type ThinkingConfig =
   | { type: "enabled"; budgetTokens?: number }
   | { type: "disabled" };
 
+export function thinkingModeToConfig(mode: ThinkingMode): ThinkingConfig {
+  return mode === "off" ? { type: "disabled" } : { type: "adaptive" };
+}
+
 /**
- * Convert thinking option to SDK thinking config + effort level.
- * On Opus 4.6+, "enabled" type is for older models and crashes the CLI.
- * Instead, "on" mode uses adaptive + explicit effort level.
+ * Sessions stored before thinking and effort were separate kept one combined
+ * value: "off" | "auto" | "on:<effort>" | "<effort>".
  */
-export function thinkingOptionToConfig(option: ThinkingOption): {
-  thinking: ThinkingConfig;
-  effort?: EffortLevel;
-} {
-  if (option === "off") {
-    return { thinking: { type: "disabled" } };
-  }
-  if (option === "auto") {
-    return { thinking: { type: "adaptive" } };
-  }
-  // "on:high" etc. = adaptive thinking with explicit effort level
-  if (option.startsWith("on:")) {
-    const effort = option.slice(3) as EffortLevel;
-    return { thinking: { type: "adaptive" }, effort };
-  }
-  // Plain EffortLevel = adaptive + effort (backward compat with old clients)
-  return { thinking: { type: "adaptive" }, effort: option as EffortLevel };
+export function readLegacyThinking(value: string): ExecutionOptions {
+  if (value === "off" || value === "adaptive") return { thinking: value };
+  if (value === "auto") return { thinking: "adaptive" };
+  const effort = value.startsWith("on:") ? value.slice(3) : value;
+  return effort ? { thinking: "adaptive", effort } : {};
 }
 
 /**

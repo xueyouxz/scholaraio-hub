@@ -401,28 +401,6 @@ export class CodexProvider implements AgentProvider {
     });
   }
 
-  private mapEffortToReasoningEffort(
-    effort?: import("@scholaraio-hub/shared").EffortLevel,
-    thinking?: import("@scholaraio-hub/shared").ThinkingConfig,
-  ): "none" | "minimal" | "low" | "medium" | "high" | "xhigh" | undefined {
-    if (thinking?.type === "disabled") {
-      return "low";
-    }
-    if (!effort) {
-      return undefined;
-    }
-    switch (effort) {
-      case "low":
-        return "low";
-      case "medium":
-        return "medium";
-      case "high":
-        return "high";
-      case "max":
-        return "xhigh";
-    }
-  }
-
   /**
    * Translate a hub permission mode into Codex thread policy.
    *
@@ -619,7 +597,7 @@ export class CodexProvider implements AgentProvider {
         const turnStartParams: TurnStartParams = {
           threadId: sessionId,
           input: [{ type: "text", text: userPrompt, text_elements: [] }],
-          effort: this.mapEffortToReasoningEffort(options.effort, options.thinking),
+          effort: toReasoningEffort(options.effort),
         };
         const turnResult = await appServer.request<TurnStartResponse>(
           "turn/start",
@@ -980,4 +958,11 @@ export function toCodexModels(models: AppServerModel[]): ModelInfo[] {
     });
   }
   return result;
+}
+
+const REASONING_EFFORTS = ["none", "minimal", "low", "medium", "high", "xhigh"] as const;
+
+/** Codex has no thinking switch; its effort ids are passed through as the app-server names them. */
+function toReasoningEffort(effort?: string): (typeof REASONING_EFFORTS)[number] | undefined {
+  return REASONING_EFFORTS.find((known) => known === effort);
 }

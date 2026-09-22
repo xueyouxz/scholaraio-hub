@@ -1,7 +1,6 @@
 import { randomUUID } from "node:crypto";
 import path from "node:path";
 import type {
-  EffortLevel,
   ModelInfo,
   PermissionRules,
   ProviderName,
@@ -92,7 +91,7 @@ export class Process {
   /** Thinking configuration (undefined = thinking disabled) */
   private _thinking: ThinkingConfig | undefined;
   /** Effort level for response quality */
-  private _effort: EffortLevel | undefined;
+  private _effort: string | undefined;
 
   /** Session controls plus the capability descriptor that says which are real. */
   private readonly controls: ResolvedSessionControls;
@@ -233,14 +232,14 @@ export class Process {
   /**
    * Effort level for this process.
    */
-  get effort(): EffortLevel | undefined {
+  get effort(): string | undefined {
     return this._effort;
   }
 
   /**
    * Update thinking config and effort after a dynamic change.
    */
-  updateThinkingConfig(thinking?: ThinkingConfig, effort?: EffortLevel): void {
+  updateThinkingConfig(thinking?: ThinkingConfig, effort?: string): void {
     this._thinking = thinking;
     this._effort = effort;
   }

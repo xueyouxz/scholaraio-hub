@@ -26,16 +26,17 @@ export type {
   ScholaraioSkillsResponse,
   PermissionMode,
   NewSessionDefaults,
-  ThinkingOption,
+  ThinkingMode,
   ThinkingConfig,
-  EffortLevel,
+  ExecutionOptions,
   ProjectFsEntry,
   ProjectFsBrowseResponse,
   PermissionRules,
 } from "./types.js";
 export {
   ALL_PERMISSION_MODES,
-  thinkingOptionToConfig,
+  thinkingModeToConfig,
+  readLegacyThinking,
 } from "./types.js";
 
 export type { UrlProjectId } from "./projectId.js";

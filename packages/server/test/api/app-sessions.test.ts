@@ -194,13 +194,21 @@ describe.each(["claude", "codex"] as const)("%s application sessions", (name) =>
         body: JSON.stringify(value),
       });
     expect(
-      (await options({ model: "first-model", permissionMode: "plan", thinking: "on:high" })).status,
+      (
+        await options({
+          model: "first-model",
+          permissionMode: "plan",
+          thinking: "adaptive",
+          effort: "high",
+        })
+      ).status,
     ).toBe(200);
     await (await send(id, "first")).text();
     await expect.poll(() => server.sessions.detail(id).state).toBe("idle");
     expect(provider.calls[0]).toMatchObject({
       model: "first-model",
       permissionMode: "plan",
+      thinking: { type: "adaptive" },
       effort: "high",
     });
     expect((await options({ model: "second-model", permissionMode: "default" })).status).toBe(200);
@@ -216,6 +224,48 @@ describe.each(["claude", "codex"] as const)("%s application sessions", (name) =>
     await server.sessions.stop(id);
     await running.text();
     expect(server.sessions.detail(id).model).toBe("second-model");
+  });
+
+  it("accepts only efforts the chosen model offers", async () => {
+    provider.models = [
+      { id: "fast", name: "Fast", isDefault: true, efforts: [{ id: "low" }] },
+      { id: "deep", name: "Deep", efforts: [{ id: "low" }, { id: "xhigh" }] },
+    ];
+    const id = await create();
+    const options = (value: object) =>
+      server.app.request(`/api/sessions/${id}/options`, {
+        method: "PATCH",
+        headers,
+        body: JSON.stringify(value),
+      });
+    expect((await options({ effort: "xhigh" })).status).toBe(400);
+    expect((await options({ model: "deep", effort: "xhigh" })).status).toBe(200);
+    expect((await options({ model: "fast" })).status).toBe(400);
+    expect((await options({ effort: "" })).status).toBe(200);
+    expect(server.sessions.detail(id).effort).toBeUndefined();
+    expect((await options({ thinking: "on:high" })).status).toBe(400);
+    const created = await server.app.request("/api/sessions", {
+      method: "POST",
+      headers,
+      body: JSON.stringify({ provider: name, paperIds: [], effort: "xhigh" }),
+    });
+    expect(created.status).toBe(400);
+  });
+
+  it("reads the combined thinking value of sessions stored before effort was separate", async () => {
+    const id = await create();
+    const record = server.sessions.store.get(id);
+    await server.close();
+    const file = join(root, "sessions", id, "session.json");
+    await writeFile(file, JSON.stringify({ ...record, thinking: "on:max" }));
+    server = createApp({
+      dataDir: root,
+      provider,
+      libraryService: new TestLibrary(root),
+      scholaraioSkillsDir: join(root, "skills"),
+    });
+    await server.ready;
+    expect(server.sessions.detail(id)).toMatchObject({ thinking: "adaptive", effort: "max" });
   });
 
   it("persists canonical messages, sends only new input, and resumes by native ID", async () => {

@@ -8,7 +8,7 @@ import type {
   StoredSession,
   UploadedFile,
 } from "@scholaraio-hub/shared";
-import { thinkingOptionToConfig } from "@scholaraio-hub/shared";
+import { thinkingModeToConfig } from "@scholaraio-hub/shared";
 import { type UIMessageChunk, readUIMessageStream } from "ai";
 import { UIChunkWriter, appendReplayChunk } from "../agent/uiChunks.js";
 import { SessionAttachments } from "../sessions/SessionAttachments.js";
@@ -40,6 +40,10 @@ interface SessionRun {
 
 export class SessionConflictError extends Error {}
 export class SessionScopeError extends Error {}
+/** The requested execution options are not ones the provider offers. */
+export class SessionOptionsError extends Error {}
+
+type ExecutionInput = Partial<Pick<StoredSession, "model" | "thinking" | "effort">>;
 
 export class SessionService {
   private runs = new Map<string, SessionRun>();
@@ -97,9 +101,32 @@ export class SessionService {
     return data;
   }
 
+  /**
+   * Reject an effort the chosen model does not offer. The model is the one the
+   * options name, else the session's, else the provider's default; when the
+   * provider cannot list its models there is nothing to check against.
+   */
+  async validateExecution(
+    provider: StoredSession["provider"],
+    options: ExecutionInput,
+    current: ExecutionInput = {},
+  ): Promise<void> {
+    const effort = options.effort ?? current.effort;
+    if (!effort) return;
+    const models = await this.supervisor.providerFor(provider).getAvailableModels();
+    if (models.length === 0) return;
+    const modelId = Object.hasOwn(options, "model") ? options.model : current.model;
+    const model = modelId
+      ? models.find((candidate) => candidate.id === modelId)
+      : models.find((candidate) => candidate.isDefault);
+    if (!model) return;
+    if (!model.efforts?.some((option) => option.id === effort))
+      throw new SessionOptionsError(`${model.name} 不支持推理强度 ${effort}`);
+  }
+
   async updateOptions(
     id: string,
-    input: Pick<StoredSession, "model" | "permissionMode" | "thinking">,
+    input: Pick<StoredSession, "model" | "permissionMode" | "thinking" | "effort">,
   ) {
     const record = this.store.get(id);
     const previous = this.runs.get(id);
@@ -118,8 +145,10 @@ export class SessionService {
           await process.abort();
         }
       }
+      await this.validateExecution(record.provider, input, record);
       Object.assign(record, input);
       if (input.model === "") record.model = undefined;
+      if (input.effort === "") record.effort = undefined;
       await this.store.save(record);
       return this.store.public(record);
     } finally {
@@ -395,7 +424,8 @@ export class SessionService {
       const settings = {
         providerName: record.provider,
         model: record.model,
-        ...(record.thinking ? thinkingOptionToConfig(record.thinking) : {}),
+        ...(record.thinking ? { thinking: thinkingModeToConfig(record.thinking) } : {}),
+        ...(record.effort ? { effort: record.effort } : {}),
       };
       const launchRequest = {
         projectPath: workingDir,

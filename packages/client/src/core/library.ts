@@ -5,7 +5,6 @@ import type {
   LibrarySearchResult,
   LiteratureProject,
   NewSessionDefaults,
-  PermissionMode,
   ProjectFsBrowseResponse,
   ProviderInfo,
   ProviderUsageLimits,
@@ -17,9 +16,13 @@ import type {
   SessionInput,
   SlashCommand,
   StoredSession,
-  ThinkingOption,
 } from "@scholaraio-hub/shared";
 import { pathSegment, requestJson } from "./http";
+
+/** Execution options a session can change, in the provider's own terms. */
+export type SessionOptions = Partial<
+  Pick<StoredSession, "model" | "permissionMode" | "thinking" | "effort">
+>;
 import type {
   ScholarProjection,
   ScholarTopicSimilarity,
@@ -161,16 +164,13 @@ export const sessionApi = {
     paperIds: string[] = [],
     model?: string,
     projectId?: string,
-    execution?: { permissionMode?: PermissionMode; thinking?: ThinkingOption },
+    execution?: Omit<SessionOptions, "model">,
   ) =>
     requestJson<StoredSession>("/api/sessions", {
       method: "POST",
       body: JSON.stringify({ provider, paperIds, model, projectId, ...execution }),
     }),
-  options: (
-    id: string,
-    options: { model?: string; permissionMode?: PermissionMode; thinking?: ThinkingOption },
-  ) =>
+  options: (id: string, options: SessionOptions) =>
     requestJson<StoredSession>(`/api/sessions/${pathSegment(id)}/options`, {
       method: "PATCH",
       body: JSON.stringify(options),

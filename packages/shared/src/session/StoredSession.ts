@@ -2,7 +2,7 @@ import type { UIMessage } from "ai";
 import { z } from "zod";
 import type { InputRequest } from "../app-types.js";
 import type { LibraryCitation } from "../library.js";
-import type { PermissionMode, ThinkingOption } from "../types.js";
+import type { PermissionMode, ThinkingMode } from "../types.js";
 
 /**
  * Something the user should see that is not part of the answer.
@@ -88,7 +88,9 @@ export interface StoredSession {
   provider: "claude" | "codex";
   model?: string;
   permissionMode?: PermissionMode;
-  thinking?: ThinkingOption;
+  thinking?: ThinkingMode;
+  /** One of the model's `efforts` ids; unset means the provider's default. */
+  effort?: string;
   paperIds: string[];
   projectId?: string;
   createdAt: string;
@@ -104,19 +106,11 @@ export interface StoredSession {
 export const SessionOptionsSchema = z.object({
   model: z.string().max(200).optional(),
   permissionMode: z.enum(["default", "acceptEdits", "plan", "bypassPermissions"]).optional(),
-  thinking: z
-    .enum([
-      "off",
-      "auto",
-      "low",
-      "medium",
-      "high",
-      "max",
-      "on:low",
-      "on:medium",
-      "on:high",
-      "on:max",
-    ])
+  thinking: z.enum(["off", "adaptive"]).optional(),
+  /** "" returns to the provider's default effort. */
+  effort: z
+    .string()
+    .regex(/^[a-z0-9_-]{0,40}$/)
     .optional(),
 });
 export const CreateSessionSchema = SessionOptionsSchema.extend({

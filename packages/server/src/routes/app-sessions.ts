@@ -11,6 +11,7 @@ import { z } from "zod";
 import type { ServerSettingsService } from "../services/ServerSettingsService.js";
 import {
   SessionConflictError,
+  SessionOptionsError,
   SessionScopeError,
   type SessionService,
 } from "../services/SessionService.js";
@@ -37,6 +38,7 @@ export function createAppSessionRoutes(service: SessionService, settings?: Serve
           : (raw.model ?? (provider === defaults?.provider ? defaults.model : undefined)),
     });
     await service.validateScope(input);
+    await service.validateExecution(input.provider, input);
     return c.json(service.store.public(await service.store.create(input)), 201);
   });
   routes.post("/import", async (c) => {
@@ -166,6 +168,7 @@ export function createAppSessionRoutes(service: SessionService, settings?: Serve
         : error instanceof z.ZodError ||
             error instanceof SyntaxError ||
             error instanceof SessionScopeError ||
+            error instanceof SessionOptionsError ||
             error instanceof AttachmentError
           ? 400
           : error instanceof SessionConflictError

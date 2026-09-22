@@ -1,7 +1,6 @@
 import type {
   AgentActivity,
   ContextUsage,
-  EffortLevel,
   InputRequest,
   PendingInputType,
   PermissionRules,
@@ -37,7 +36,7 @@ export interface ModelSettings {
   /** Thinking configuration. undefined = thinking disabled */
   thinking?: ThinkingConfig;
   /** Effort level for response quality. undefined = SDK default */
-  effort?: EffortLevel;
+  effort?: string;
   /** Provider to use for this session. undefined = use default provider */
   providerName?: ProviderName;
   /** Global instructions to append to system prompt */
@@ -219,7 +218,7 @@ export interface ProcessInfo {
   /** Thinking configuration (undefined = thinking disabled) */
   thinking?: ThinkingConfig;
   /** Effort level for response quality (undefined = SDK default) */
-  effort?: EffortLevel;
+  effort?: string;
   /** Model used for this session (e.g., "claude-opus-4-5-20251101") */
   model?: string;
   /** Context window usage from the last assistant message */
@@ -255,7 +254,7 @@ export interface ProcessOptions {
   /** Thinking configuration (undefined = thinking disabled) */
   thinking?: ThinkingConfig;
   /** Effort level for response quality (undefined = SDK default) */
-  effort?: EffortLevel;
+  effort?: string;
   /** Model used for this session (e.g., "claude-opus-4-5-20251101") */
   model?: string;
   /** Permission rules for tool filtering (deny/allow patterns) */

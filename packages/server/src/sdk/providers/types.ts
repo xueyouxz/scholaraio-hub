@@ -44,8 +44,8 @@ export interface StartSessionOptions {
   model?: string;
   /** Thinking configuration (undefined = thinking disabled) */
   thinking?: import("@scholaraio-hub/shared").ThinkingConfig;
-  /** Effort level for response quality (undefined = SDK default) */
-  effort?: import("@scholaraio-hub/shared").EffortLevel;
+  /** One of the model's native effort ids (undefined = provider default). */
+  effort?: string;
   /** Tool approval callback */
   onToolApproval?: CanUseTool;
   /** Global instructions to append to system prompt (from server settings) */

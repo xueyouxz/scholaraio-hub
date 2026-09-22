@@ -1,10 +1,16 @@
-import type { PermissionMode, StoredSession, ThinkingOption } from "@scholaraio-hub/shared";
+import type { StoredSession } from "@scholaraio-hub/shared";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { X } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { usePageTitle } from "../../app/components/NavigationLayout";
-import { libraryApi, sessionApi, settingsApi, skillsApi } from "../../core/library";
+import {
+  type SessionOptions,
+  libraryApi,
+  sessionApi,
+  settingsApi,
+  skillsApi,
+} from "../../core/library";
 import { queryKeys } from "../../core/queryKeys";
 import { Composer, readComposerDraft } from "./components/Composer";
 import { ExecutionControls } from "./components/ExecutionControls";
@@ -105,15 +111,16 @@ function NewSessionForm({
   const [text, setText] = useState(() =>
     skillName ? `/${skillName} ` : readComposerDraft(draftKey),
   );
-  const [execution, setExecution] = useState<{
-    permissionMode: PermissionMode;
-    thinking: ThinkingOption;
-  }>({ permissionMode: "default", thinking: "auto" });
+  const [execution, setExecution] = useState<Omit<SessionOptions, "model">>({
+    permissionMode: "default",
+    thinking: "adaptive",
+  });
   const [modelChoice, setModelChoice] = useState<string>();
   const provider =
     defaults.data?.settings.newSessionDefaults?.provider === "codex" ? "codex" : "claude";
   const model = modelChoice ?? defaults.data?.settings.newSessionDefaults?.model ?? "";
   const tool = providers.data?.providers.find((p) => p.name === provider);
+  const modelInfo = tool?.models?.find((item) => (model ? item.id === model : item.isDefault));
   useEffect(() => {
     setTitle(project?.name ?? "New Chat");
     return () => setTitle("");
@@ -355,8 +362,11 @@ function NewSessionForm({
           onSend={start}
           toolbar={
             <ExecutionControls
-              permissionMode={execution.permissionMode}
-              thinking={execution.thinking}
+              permissionMode={execution.permissionMode ?? "default"}
+              thinking={execution.thinking ?? "adaptive"}
+              effort={execution.effort || undefined}
+              efforts={modelInfo?.efforts}
+              defaultEffort={modelInfo?.defaultEffort}
               onChange={(value) => setExecution((previous) => ({ ...previous, ...value }))}
               disabled={submitting}
               supportsPermission={false}
@@ -368,7 +378,11 @@ function NewSessionForm({
               model={model || "default"}
               models={modelOptions(tool?.models)}
               disabled={submitting}
-              onModelChange={(value) => setModelChoice(value === "default" ? "" : value)}
+              onModelChange={(value) => {
+                setModelChoice(value === "default" ? "" : value);
+                // Efforts belong to a model; the next one starts at its own default.
+                setExecution((previous) => ({ ...previous, effort: undefined }));
+              }}
             />
           }
         />

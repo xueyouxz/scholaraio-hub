@@ -44,6 +44,9 @@ export function SessionChatView({ initial }: { initial: StoredSession }) {
         (part) => part.type === "dynamic-tool" && part.toolCallId === pending.toolCallId,
       );
   const model = snapshot?.model;
+  const modelInfo = currentTool?.models?.find((item) =>
+    model ? item.id === model : item.isDefault,
+  );
   const optionsLocked = running || session.changeOptions.isPending;
   return (
     <div className="flex flex-1 h-full min-h-0 overflow-hidden">
@@ -166,7 +169,10 @@ export function SessionChatView({ initial }: { initial: StoredSession }) {
                   toolbar={
                     <ExecutionControls
                       permissionMode={snapshot?.permissionMode ?? "default"}
-                      thinking={snapshot?.thinking ?? "auto"}
+                      thinking={snapshot?.thinking ?? "adaptive"}
+                      effort={snapshot?.effort}
+                      efforts={modelInfo?.efforts}
+                      defaultEffort={modelInfo?.defaultEffort}
                       onChange={(value) => session.changeOptions.mutate(value)}
                       disabled={optionsLocked}
                       supportsThinking={currentTool?.supportsThinkingToggle ?? true}
@@ -184,11 +190,21 @@ export function SessionChatView({ initial }: { initial: StoredSession }) {
                         model={model || "default"}
                         models={modelOptions(currentTool?.models)}
                         disabled={optionsLocked}
-                        onModelChange={(value) =>
-                          session.changeOptions
-                            .mutateAsync({ model: value === "default" ? "" : value })
-                            .then(() => {})
-                        }
+                        onModelChange={(value) => {
+                          const next = currentTool?.models?.find((item) =>
+                            value === "default" ? item.isDefault : item.id === value,
+                          );
+                          const effort = snapshot?.effort;
+                          // Keep the effort when the next model offers it; else its own default.
+                          const keepsEffort =
+                            !effort || next?.efforts?.some((option) => option.id === effort);
+                          return session.changeOptions
+                            .mutateAsync({
+                              model: value === "default" ? "" : value,
+                              ...(keepsEffort ? {} : { effort: "" }),
+                            })
+                            .then(() => {});
+                        }}
                       />
                     </>
                   }

@@ -26,3 +26,23 @@ export function routeSubmission(input: {
   if (input.wantsQueue || input.running) return input.canQueue ? "queue" : null;
   return "send";
 }
+
+/**
+ * What Enter does. On touch devices Enter is the soft keyboard's newline and
+ * sending is the button's job; elsewhere Enter sends, Shift+Enter breaks the
+ * line and Ctrl+Enter queues.
+ */
+export function enterAction(input: {
+  shiftKey: boolean;
+  ctrlKey: boolean;
+  touch: boolean;
+}): "newline" | "send" | "queue" {
+  if (input.shiftKey) return "newline";
+  if (input.ctrlKey) return "queue";
+  return input.touch ? "newline" : "send";
+}
+
+/** Whether the primary pointer is a finger (phones, tablets). */
+export function isTouchDevice(): boolean {
+  return typeof window !== "undefined" && !!window.matchMedia?.("(pointer: coarse)").matches;
+}

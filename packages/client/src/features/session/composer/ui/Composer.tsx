@@ -22,7 +22,14 @@ import {
   replaceToken,
   tokenReplacement,
 } from "../model/slashCommands";
-import { appendTranscript, hasContent, routeSubmission, withInterim } from "../model/submission";
+import {
+  appendTranscript,
+  enterAction,
+  hasContent,
+  isTouchDevice,
+  routeSubmission,
+  withInterim,
+} from "../model/submission";
 import {
   type ComposerControls,
   ComposerLeadingOptions,
@@ -325,8 +332,14 @@ export function Composer({
               picker.resume();
               return;
             }
-            if (e.key !== "Enter" || e.shiftKey) return;
-            if (e.ctrlKey) {
+            if (e.key !== "Enter") return;
+            const action = enterAction({
+              shiftKey: e.shiftKey,
+              ctrlKey: e.ctrlKey,
+              touch: isTouchDevice(),
+            });
+            if (action === "newline") return;
+            if (action === "queue") {
               if (onQueue) {
                 e.preventDefault();
                 void submit(true);

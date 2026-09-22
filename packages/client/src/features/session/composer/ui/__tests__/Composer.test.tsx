@@ -140,6 +140,24 @@ describe("Composer keyboard submission", () => {
     expect(sessionStorage.getItem("hub-composer:session:s1")).toBeNull();
   });
 
+  it("leaves Enter as a newline on touch devices; the button sends", async () => {
+    const matchMedia = vi
+      .spyOn(window, "matchMedia")
+      .mockImplementation(
+        (query) => ({ matches: query === "(pointer: coarse)" }) as MediaQueryList,
+      );
+    const { onSend } = render();
+    type("line one");
+    const event = key({ key: "Enter" });
+    await flush();
+    expect(event.defaultPrevented).toBe(false);
+    expect(onSend).not.toHaveBeenCalled();
+    act(() => button("发送")?.click());
+    await flush();
+    expect(onSend).toHaveBeenCalledWith("line one", []);
+    matchMedia.mockRestore();
+  });
+
   it("keeps Shift+Enter as a newline and does not send", async () => {
     const { onSend } = render();
     type("hello");

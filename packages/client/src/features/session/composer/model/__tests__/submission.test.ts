@@ -1,5 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { appendTranscript, hasContent, routeSubmission, withInterim } from "../submission";
+import {
+  appendTranscript,
+  enterAction,
+  hasContent,
+  routeSubmission,
+  withInterim,
+} from "../submission";
 
 describe("appendTranscript", () => {
   it("joins with exactly one space and never leads with one", () => {
@@ -32,5 +38,14 @@ describe("routeSubmission", () => {
   it("refuses to queue without a queue action", () => {
     expect(routeSubmission({ running: true, wantsQueue: false, canQueue: false })).toBeNull();
     expect(routeSubmission({ running: false, wantsQueue: true, canQueue: false })).toBeNull();
+  });
+});
+
+describe("enterAction", () => {
+  it("sends on desktop and leaves Enter as a newline on touch devices", () => {
+    expect(enterAction({ shiftKey: false, ctrlKey: false, touch: false })).toBe("send");
+    expect(enterAction({ shiftKey: false, ctrlKey: false, touch: true })).toBe("newline");
+    expect(enterAction({ shiftKey: true, ctrlKey: false, touch: false })).toBe("newline");
+    expect(enterAction({ shiftKey: false, ctrlKey: true, touch: true })).toBe("queue");
   });
 });

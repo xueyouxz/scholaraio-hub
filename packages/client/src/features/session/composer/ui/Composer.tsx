@@ -357,20 +357,20 @@ export function Composer({
                 </span>
               ) : null}
             </button>
+            <VoiceInputButton
+              ref={voice}
+              disabled={disabled || sending}
+              onListeningStart={() => textarea.current?.focus()}
+              onInterimTranscript={setInterim}
+              onFinalTranscript={(transcript) => {
+                setText((previous) => appendTranscript(previous, transcript));
+                setInterim("");
+              }}
+            />
             <div className="hub-composer-options flex items-center gap-0.5 min-w-0 overflow-x-auto">
               {controls ? (
                 <ComposerLeadingOptions controls={controls} request={menuRequest} />
               ) : null}
-              <VoiceInputButton
-                ref={voice}
-                disabled={disabled || sending}
-                onListeningStart={() => textarea.current?.focus()}
-                onInterimTranscript={setInterim}
-                onFinalTranscript={(transcript) => {
-                  setText((previous) => appendTranscript(previous, transcript));
-                  setInterim("");
-                }}
-              />
             </div>
           </div>
           <div className="flex items-center gap-2 shrink-0">

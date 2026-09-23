@@ -9,6 +9,7 @@ import { loadConfig } from "./config.js";
 import { ensureSelfSignedCertificate } from "./https/self-signed.js";
 import { initLogger, interceptConsole } from "./logging/index.js";
 import { closeMessageLogger, initMessageLogger } from "./sdk/messageLogger.js";
+import { setHubApiBaseUrl } from "./sdk/providers/scholaraio-cli.js";
 import { LibraryService } from "./services/LibraryService.js";
 import { InstallService, ModelInfoService, ServerSettingsService } from "./services/index.js";
 import { ensureSkillsDirectory } from "./skills/skillsDirectory.js";
@@ -36,6 +37,7 @@ let closing = false;
 async function shutdown() {
   if (closing) return;
   closing = true;
+  setHubApiBaseUrl(undefined);
   server?.close();
   await application?.close();
   await library.close();
@@ -83,6 +85,7 @@ try {
         serverOptions: { key: tls.key, cert: tls.cert },
       })
     : serve(options);
+  setHubApiBaseUrl(`${tls ? "https" : "http"}://${config.host}:${config.port}`);
   server.on("error", (error) => {
     console.error("[Server]", error);
     void shutdown().then(() => {

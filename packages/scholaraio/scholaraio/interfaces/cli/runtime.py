@@ -62,6 +62,14 @@ def main() -> None:
 
     parser = cli_mod._build_parser()
     args = parser.parse_args()
+
+    from scholaraio.interfaces.cli import hub_routing
+
+    refusal = hub_routing.refusal(args)
+    if refusal:
+        _ui(refusal)
+        raise SystemExit(2)
+
     cfg = cli_mod.load_config()
     cfg.ensure_dirs()
 
@@ -104,4 +112,10 @@ def main() -> None:
     configure_session(cfg.ingest.contact_email)
     configure_s2_session(cfg.resolved_s2_api_key())
 
-    args.func(args, cfg)
+    from scholaraio.interfaces.cli.hub_client import HubUnavailable
+
+    try:
+        args.func(args, cfg)
+    except HubUnavailable as exc:
+        _ui(str(exc))
+        raise SystemExit(2) from exc

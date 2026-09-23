@@ -2,6 +2,16 @@ import { existsSync } from "node:fs";
 import path from "node:path";
 import { getDataDir } from "../../data-dir.js";
 
+let apiBaseUrl: string | undefined;
+
+/**
+ * Tell agent CLI runs where this server listens, so their write commands go
+ * through the Hub instead of editing the data directory behind its back.
+ */
+export function setHubApiBaseUrl(url: string | undefined): void {
+  apiBaseUrl = url;
+}
+
 /**
  * Point an agent's `scholaraio` CLI at this application's library.
  *
@@ -22,6 +32,7 @@ export function withScholaraioCli(
     return env;
   }
   const result: Record<string, string | undefined> = { ...env, SCHOLARAIO_CONFIG: config };
+  if (apiBaseUrl) result.SCHOLARAIO_HUB_API = apiBaseUrl;
   const binDir = path.join(
     dataDir,
     "runtime",

@@ -13,7 +13,8 @@ import {
 } from "../../core/library";
 import { queryKeys } from "../../core/queryKeys";
 import { useProviders } from "./composer/hooks/useProviders";
-import { optionsForProvider } from "./composer/model/options";
+import { initialOptions, optionsForProvider } from "./composer/model/options";
+import { readComposerPreference, rememberComposerChoice } from "./composer/model/preferences";
 import { Composer, readComposerDraft } from "./composer/ui/Composer";
 import type { ComposerControls } from "./composer/ui/ComposerOptions";
 import {
@@ -112,12 +113,18 @@ function NewSessionForm({
   const [choices, setChoices] = useState<SessionOptions>({});
   const provider: ProviderName =
     providerChoice ?? (newSessionDefaults?.provider === "codex" ? "codex" : "claude");
-  // The settings' default model belongs to the settings' provider, until a model is picked.
+  const info = providers.find(provider);
+  // Until the user picks, a new chat opens on its last choices for this agent
+  // (the server settings' model counts as one), else the provider's own defaults.
+  const remembered = {
+    ...readComposerPreference(provider),
+    ...(provider === newSessionDefaults?.provider && newSessionDefaults.model
+      ? { model: newSessionDefaults.model }
+      : {}),
+  };
   const options: SessionOptions = {
+    ...(info ? initialOptions(info.capabilities, info.models ?? [], remembered) : {}),
     ...choices,
-    model:
-      choices.model ??
-      (provider === newSessionDefaults?.provider ? newSessionDefaults.model : undefined),
   };
   const model = options.model ?? "";
   const execution = {
@@ -212,16 +219,28 @@ function NewSessionForm({
   };
   const controls: ComposerControls = {
     provider,
-    info: providers.find(provider),
+    info,
     options,
-    onChange: (patch) => setChoices((previous) => ({ ...previous, ...patch })),
+    onChange: (patch) => {
+      rememberComposerChoice(provider, patch);
+      setChoices((previous) => ({ ...previous, ...patch }));
+    },
     disabled: submitting,
     providers: providers.providers,
     onProviderChange: (next) => {
       if (next === provider) return;
       const nextInfo = providers.find(next);
       setProviderChoice(next);
-      if (nextInfo) setChoices(optionsForProvider(nextInfo.capabilities, options));
+      setChoices(
+        nextInfo
+          ? optionsForProvider(
+              nextInfo.capabilities,
+              nextInfo.models ?? [],
+              options,
+              readComposerPreference(next),
+            )
+          : {},
+      );
     },
   };
   const invalidProject = !!projectId && !!projects.data && !project;

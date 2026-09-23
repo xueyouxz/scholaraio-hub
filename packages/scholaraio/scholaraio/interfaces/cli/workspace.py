@@ -6,6 +6,9 @@ import argparse
 import logging
 import sqlite3
 from pathlib import Path
+from urllib.parse import quote
+
+from scholaraio.interfaces.cli import hub_client
 
 
 def _ui(msg: str = "") -> None:
@@ -112,6 +115,37 @@ def _manifest_detail_lines(manifest: dict | None) -> list[str]:
     return lines
 
 
+def _resolve_paper_ids(paper_refs: list[str], cfg) -> list[str]:
+    """Resolve UUIDs / directory names / DOIs to paper UUIDs for the Hub API."""
+    from scholaraio.services.index import lookup_paper
+
+    ids: list[str] = []
+    for ref in paper_refs:
+        paper = lookup_paper(cfg.index_db, ref)
+        if paper is None:
+            raise hub_client.HubUnavailable(f"未找到论文：{ref}")
+        ids.append(paper["id"])
+    return ids
+
+
+def _hub_project(name: str) -> dict:
+    """Return the Hub project, creating it when it does not exist yet."""
+    try:
+        return hub_client.request("GET", f"/api/library/projects/{quote(name, safe='')}")
+    except hub_client.HubUnavailable as error:
+        if "(404)" not in str(error):
+            raise
+    return hub_client.request("POST", "/api/library/projects", {"name": name})
+
+
+def _hub_update_papers(name: str, paper_ids: list[str], action: str) -> dict:
+    return hub_client.request(
+        "POST",
+        f"/api/library/projects/{quote(name, safe='')}/papers",
+        {"paperIds": paper_ids, "action": action},
+    )
+
+
 def cmd_ws(args: argparse.Namespace, cfg) -> None:
     from scholaraio.projects import workspace as workspace_mod
 
@@ -131,13 +165,19 @@ def cmd_ws(args: argparse.Namespace, cfg) -> None:
             return
 
     if action == "init":
+        if hub_client.active():
+            project = _hub_project(args.name)
+            _ui(f"Workspace created via Hub: {project['name']}")
+            return
         ws_dir = ws_root / args.name
         workspace_mod.create(ws_dir)
         _ui(f"Workspace created: {ws_dir}")
 
     elif action == "add":
         ws_dir = ws_root / args.name
-        if not workspace_mod.has_paper_index(ws_dir):
+        if hub_client.active():
+            _hub_project(args.name)
+        elif not workspace_mod.has_paper_index(ws_dir):
             workspace_mod.create(ws_dir)
 
         # Resolve paper_refs from batch flags or positional args
@@ -162,6 +202,10 @@ def cmd_ws(args: argparse.Namespace, cfg) -> None:
             resolved = [{"id": r["id"], "dir_name": r["dir_name"]} for r in rows]
             if not resolved:
                 _ui("The main library has no papers")
+                return
+            if hub_client.active():
+                project = _hub_update_papers(args.name, [r["id"] for r in resolved], "add")
+                _ui(f"workspace {args.name} now has {project['paperCount']} papers")
                 return
             added = workspace_mod.add(ws_dir, [], cfg.index_db, resolved=resolved)
             _ui(f"Added {len(added)} papers to {args.name}")
@@ -205,6 +249,10 @@ def cmd_ws(args: argparse.Namespace, cfg) -> None:
             _ui("No paper references specified")
             return
 
+        if hub_client.active():
+            project = _hub_update_papers(args.name, _resolve_paper_ids(paper_refs, cfg), "add")
+            _ui(f"workspace {args.name} now has {project['paperCount']} papers")
+            return
         added = workspace_mod.add(ws_dir, paper_refs, cfg.index_db)
         _ui(f"Added {len(added)} papers to {args.name}")
         for entry in added:
@@ -212,6 +260,10 @@ def cmd_ws(args: argparse.Namespace, cfg) -> None:
 
     elif action == "remove":
         ws_dir = ws_root / args.name
+        if hub_client.active():
+            project = _hub_update_papers(args.name, _resolve_paper_ids(args.paper_refs, cfg), "remove")
+            _ui(f"workspace {args.name} now has {project['paperCount']} papers")
+            return
         removed = workspace_mod.remove(ws_dir, args.paper_refs, cfg.index_db)
         _ui(f"Removed {len(removed)} papers")
         for entry in removed:
@@ -325,6 +377,11 @@ def cmd_ws(args: argparse.Namespace, cfg) -> None:
             print(bib)
 
     elif action == "rename":
+        if hub_client.active():
+            # Renaming also moves sessions and stored references; the Hub owns
+            # that move and has no endpoint for it yet.
+            _ui("Hub 会话中暂不支持重命名工作区，请在前端操作。")
+            return
         try:
             workspace_mod.rename(ws_root, args.old_name, args.new_name)
         except (ValueError, FileNotFoundError, FileExistsError) as e:

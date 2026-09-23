@@ -481,7 +481,7 @@ describe("Composer slash commands", () => {
     type("/mod");
     key({ key: "Enter" });
     await flush();
-    expect(document.querySelector('[role="menu"]')?.textContent).toContain("Opus (默认)");
+    expect(document.querySelector('[role="menu"]')?.textContent).toContain("Opus");
     expect(textarea().value).toBe("");
   });
 });

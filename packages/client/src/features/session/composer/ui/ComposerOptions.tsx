@@ -1,9 +1,10 @@
 import type { ProviderInfo, ProviderName, SessionContextUsage } from "@scholaraio-hub/shared";
-import { Bot, Brain, Cpu, ShieldCheck } from "lucide-react";
+import { Brain, ShieldCheck } from "lucide-react";
 import type { SessionOptions } from "../../../../core/library";
 import { effortApplies, modelChange, resolveModel } from "../model/options";
 import { ContextMeter } from "./controls/ContextMeter";
 import { MenuButton, type MenuSection } from "./controls/Menu";
+import { ProviderLogo } from "./controls/ProviderLogo";
 
 /**
  * Everything the composer's option pills need. Choices come from the
@@ -55,7 +56,7 @@ export function ProviderMenu({ controls }: { controls: ComposerControls }) {
   const current = providers.find((item) => item.name === controls.provider);
   return (
     <MenuButton
-      icon={<Bot size={12} aria-hidden="true" data-accent="" />}
+      icon={<ProviderLogo provider={controls.provider} size={13} />}
       label={current?.displayName ?? controls.provider}
       title="Agent"
       disabled={controls.disabled}
@@ -66,6 +67,7 @@ export function ProviderMenu({ controls }: { controls: ComposerControls }) {
           items: providers.map((item) => ({
             id: item.name,
             label: item.displayName,
+            icon: <ProviderLogo provider={item.name} size={15} />,
             disabled: !item.installed || !item.authenticated,
             description: !item.installed ? "未安装" : !item.authenticated ? "未登录" : undefined,
           })),
@@ -81,7 +83,8 @@ export function PermissionMenu({
 }: { controls: ComposerControls; request?: MenuRequest }) {
   const modes = controls.info?.capabilities.permissionModes ?? [];
   if (modes.length === 0) return null;
-  const selected = controls.options.permissionMode ?? "default";
+  // Without an explicit choice the provider's first mode is what runs.
+  const selected = controls.options.permissionMode ?? modes[0]?.id ?? "default";
   const current = modes.find((mode) => mode.id === selected);
   return (
     <MenuButton
@@ -93,7 +96,8 @@ export function PermissionMenu({
       sections={[
         {
           selected,
-          onSelect: (id) => void controls.onChange({ permissionMode: id as typeof selected }),
+          onSelect: (id) =>
+            void controls.onChange({ permissionMode: id as NonNullable<typeof selected> }),
           items: modes.map((mode) => ({
             id: mode.id,
             label: mode.label,
@@ -168,22 +172,21 @@ export function ModelMenu({
   request,
 }: { controls: ComposerControls; request?: MenuRequest }) {
   const models = controls.info?.models ?? [];
-  const selected = controls.options.model ?? "";
-  if (models.length === 0 && !selected) return null;
-  const fallback = models.find((model) => model.isDefault);
-  const current = models.find((model) => model.id === selected);
+  const chosen = controls.options.model;
+  // Menus name real models only; without a choice the provider's default runs.
+  const current = resolveModel(models, chosen);
+  const selected = current?.id ?? chosen ?? "";
+  if (models.length === 0 && !chosen) return null;
   const items = [
-    {
-      id: "",
-      label: fallback ? `${fallback.name} (${DEFAULT_LABEL})` : `${DEFAULT_LABEL}模型`,
-    },
-    ...(selected && !current ? [{ id: selected, label: selected }] : []),
+    ...(chosen && !models.some((model) => model.id === chosen)
+      ? [{ id: chosen, label: chosen }]
+      : []),
     ...models.map((model) => ({ id: model.id, label: model.name, description: model.description })),
   ];
   return (
     <MenuButton
-      icon={<Cpu size={12} aria-hidden="true" />}
-      label={current?.name ?? (selected || fallback?.name || `${DEFAULT_LABEL}模型`)}
+      icon={<ProviderLogo provider={controls.provider} size={13} />}
+      label={current?.name ?? selected}
       title="模型"
       align="right"
       disabled={controls.disabled}

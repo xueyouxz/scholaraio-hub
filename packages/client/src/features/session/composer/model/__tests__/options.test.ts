@@ -1,6 +1,12 @@
 import type { ModelInfo, ProviderCapabilities } from "@scholaraio-hub/shared";
 import { describe, expect, it } from "vitest";
-import { effortApplies, modelChange, optionsForProvider, resolveModel } from "../options";
+import {
+  effortApplies,
+  initialOptions,
+  modelChange,
+  optionsForProvider,
+  resolveModel,
+} from "../options";
 
 const models: ModelInfo[] = [
   { id: "fast", name: "Fast", isDefault: true, efforts: [{ id: "low" }] },
@@ -28,6 +34,24 @@ describe("resolveModel", () => {
   });
 });
 
+describe("initialOptions", () => {
+  it("names a real model and permission mode, never a placeholder", () => {
+    expect(initialOptions(capabilities(), models)).toEqual({
+      model: "fast",
+      permissionMode: "default",
+    });
+  });
+
+  it("reuses the last choice while the provider still offers it", () => {
+    expect(
+      initialOptions(capabilities(), models, { model: "deep", permissionMode: "plan" }),
+    ).toEqual({ model: "deep", permissionMode: "plan" });
+    expect(
+      initialOptions(capabilities(), models, { model: "gone", permissionMode: "acceptEdits" }),
+    ).toEqual({ model: "fast", permissionMode: "default" });
+  });
+});
+
 describe("modelChange", () => {
   it("keeps an effort the next model offers", () => {
     expect(modelChange(models, { effort: "low" }, "deep")).toEqual({ model: "deep" });
@@ -40,23 +64,27 @@ describe("modelChange", () => {
 });
 
 describe("optionsForProvider", () => {
-  it("keeps offered choices and resets the model and effort", () => {
+  it("keeps offered choices and moves to the new provider's own model", () => {
     expect(
-      optionsForProvider(capabilities(), {
+      optionsForProvider(capabilities(), models, {
         permissionMode: "plan",
         thinking: "adaptive",
         model: "opus",
         effort: "max",
       }),
-    ).toEqual({ permissionMode: "plan", thinking: undefined, model: undefined, effort: undefined });
+    ).toEqual({ permissionMode: "plan", thinking: undefined, model: "fast", effort: undefined });
   });
 
   it("falls back to the provider's default permission and first thinking choice", () => {
     expect(
-      optionsForProvider(capabilities({ thinkingModes: [{ id: "adaptive", label: "On" }] }), {
-        permissionMode: "acceptEdits",
-        thinking: "off",
-      }),
+      optionsForProvider(
+        capabilities({ thinkingModes: [{ id: "adaptive", label: "On" }] }),
+        models,
+        {
+          permissionMode: "acceptEdits",
+          thinking: "off",
+        },
+      ),
     ).toMatchObject({ permissionMode: "default", thinking: "adaptive" });
   });
 });

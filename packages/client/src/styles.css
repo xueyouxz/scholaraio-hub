@@ -344,6 +344,12 @@
   color: var(--composer-accent);
 }
 
+/* The send button carries the agent's accent; Codex's is the text colour. */
+.hub-composer[data-provider="codex"] .hub-composer-send:not(:disabled) {
+  background: var(--color-on-surface);
+  color: var(--color-surface);
+}
+
 /* Option pills keep one row: on narrow composers they shrink to their icons. */
 .hub-composer-options {
   scrollbar-width: none;

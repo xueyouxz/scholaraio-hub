@@ -15,6 +15,7 @@ export interface MenuItem {
   label: string;
   description?: string;
   disabled?: boolean;
+  icon?: ReactNode;
 }
 
 /** A group of mutually exclusive choices inside a menu, e.g. one layer of effort. */
@@ -154,6 +155,7 @@ export function MenuButton({
                             : "text-on-surface hover:bg-surface-container-low"
                         }`}
                       >
+                        {item.icon}
                         <span className="flex-1 min-w-0">
                           <span className="block">{item.label}</span>
                           {item.description ? (

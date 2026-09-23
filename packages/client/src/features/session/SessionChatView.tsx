@@ -9,6 +9,7 @@ import { SessionHeader, type SessionPanel } from "./components/SessionHeader";
 import { SessionMessages } from "./components/SessionMessages";
 import { ResizableWorkspacePapersPanel } from "./components/WorkspacePapersPanel";
 import { useProviders } from "./composer/hooks/useProviders";
+import { rememberComposerChoice } from "./composer/model/preferences";
 import { Composer } from "./composer/ui/Composer";
 import type { ComposerControls } from "./composer/ui/ComposerOptions";
 import { useSessionChat } from "./hooks/useSessionChat";
@@ -46,7 +47,11 @@ export function SessionChatView({ initial }: { initial: StoredSession }) {
       thinking: snapshot?.thinking,
       effort: snapshot?.effort,
     },
-    onChange: (patch) => session.changeOptions.mutate(patch),
+    onChange: (patch) => {
+      // The next new chat with this agent opens on the same choice.
+      rememberComposerChoice(initial.provider, patch);
+      session.changeOptions.mutate(patch);
+    },
     disabled: session.changeOptions.isPending,
     pending: !!snapshot?.pendingOptions?.length,
     error: session.changeOptions.error?.message,

@@ -46,9 +46,9 @@ export function SendActionButton({
           onClick={onStop}
           title="停止"
           aria-label="停止"
-          className="p-1.5 rounded-lg bg-surface-container text-error hover:bg-error/10 transition-colors"
+          className="w-8 h-8 flex items-center justify-center rounded-full border border-error/30 text-error hover:bg-error/10 active:scale-95 transition"
         >
-          <Square size={11} aria-hidden="true" />
+          <Square size={10} fill="currentColor" aria-hidden="true" />
         </button>
       ) : null}
 
@@ -59,7 +59,7 @@ export function SendActionButton({
           disabled={busy}
           title="加入队列"
           aria-label="加入队列"
-          className="p-1.5 rounded-lg bg-surface-container text-on-surface-variant hover:bg-surface-container-high hover:text-on-surface transition-colors"
+          className="w-8 h-8 flex items-center justify-center rounded-full bg-surface-container text-on-surface-variant hover:bg-surface-container-high hover:text-on-surface active:scale-95 transition disabled:opacity-40"
         >
           <ListPlus size={15} aria-hidden="true" />
         </button>
@@ -76,16 +76,18 @@ export function SendActionButton({
         }}
         disabled={busy || (!canSend && !primaryIsStop)}
         aria-label={primaryIsStop ? "停止" : busy ? "发送中…" : "发送"}
-        className={`w-8 h-8 flex items-center justify-center rounded-lg transition-colors disabled:opacity-40 ${
-          primaryIsStop ? "bg-error text-on-error" : "signature-gradient text-on-primary shadow-sm"
+        className={`hub-composer-send w-9 h-9 flex items-center justify-center rounded-full transition active:scale-95 disabled:bg-surface-container-high disabled:text-on-surface-variant/40 disabled:shadow-none ${
+          primaryIsStop
+            ? "bg-error text-on-error hover:brightness-110"
+            : "bg-[var(--composer-accent)] text-on-primary shadow-sm hover:brightness-110"
         }`}
       >
         {busy ? (
-          <Loader2 size={15} className="animate-spin" aria-hidden="true" />
+          <Loader2 size={16} className="animate-spin" aria-hidden="true" />
         ) : primaryIsStop ? (
-          <Square size={11} aria-hidden="true" />
+          <Square size={10} fill="currentColor" aria-hidden="true" />
         ) : (
-          <ArrowUp size={15} aria-hidden="true" />
+          <ArrowUp size={17} strokeWidth={2.5} aria-hidden="true" />
         )}
       </button>
     </>

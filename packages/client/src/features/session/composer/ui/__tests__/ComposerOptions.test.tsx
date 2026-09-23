@@ -97,14 +97,15 @@ describe("permission menu", () => {
   it("lists the provider's own presets and reports the chosen hub mode", () => {
     const onChange = vi.fn();
     render({ provider: "codex", info: info("codex", codexCapabilities), options: {}, onChange });
-    act(() => pill("Default")?.click());
+    // Nothing chosen yet: the pill names the provider's first mode, not a placeholder.
+    act(() => pill("Read Only")?.click());
     expect(menuItems()).toEqual([
-      { label: "Read Only", checked: false },
-      { label: "Default", checked: true },
+      { label: "Read Only", checked: true },
+      { label: "Default", checked: false },
       { label: "Full Access", checked: false },
     ]);
-    choose("Read Only");
-    expect(onChange).toHaveBeenCalledWith({ permissionMode: "plan" });
+    choose("Full Access");
+    expect(onChange).toHaveBeenCalledWith({ permissionMode: "bypassPermissions" });
   });
 
   it("shows nothing before the provider has described itself", () => {
@@ -170,7 +171,7 @@ describe("effort menu", () => {
 });
 
 describe("model menu", () => {
-  it("names the provider default and resets an effort the next model lacks", () => {
+  it("lists real models only and resets an effort the next model lacks", () => {
     const onChange = vi.fn();
     const options: SessionOptions = { effort: "max" };
     render({
@@ -183,7 +184,7 @@ describe("model menu", () => {
       onChange,
     });
     act(() => pill("Opus")?.click());
-    expect(menuItems().map((item) => item.label)).toEqual(["Opus (默认)", "Opus", "Haiku"]);
+    expect(menuItems().map((item) => item.label)).toEqual(["Opus", "Haiku"]);
     choose("Haiku");
     expect(onChange).toHaveBeenCalledWith({ model: "haiku", effort: "" });
   });

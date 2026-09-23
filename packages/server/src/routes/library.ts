@@ -33,6 +33,7 @@ export function createLibraryRoutes(service: LibraryService) {
     ["DELETE", "/tasks/:kind"],
     ["GET", "/imports"],
     ["POST", "/imports"],
+    ["POST", "/imports/fetch"],
     ["POST", "/imports/:id/retry"],
   ];
   for (const [method, resource] of resources) {

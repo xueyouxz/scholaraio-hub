@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { BookOpen, FolderOpen, LayoutGrid, List, Search, Upload } from "lucide-react";
+import { BookOpen, Download, FolderOpen, LayoutGrid, List, Search, Upload } from "lucide-react";
 import { Suspense, lazy, useEffect, useRef, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { usePageTitle } from "../../app/components/NavigationLayout";
@@ -95,6 +95,14 @@ function LibraryContent() {
     void client.invalidateQueries({ queryKey: ["library"] });
   };
   const upload = useMutation({ mutationFn: libraryApi.upload, onSuccess: refresh });
+  const [locator, setLocator] = useState("");
+  const acquire = useMutation({
+    mutationFn: libraryApi.fetchPaper,
+    onSuccess: () => {
+      refresh();
+      setLocator("");
+    },
+  });
   const retry = useMutation({ mutationFn: libraryApi.retry, onSuccess: refresh });
   const pending =
     jobs.data?.jobs.some((job) =>
@@ -233,6 +241,34 @@ function LibraryContent() {
           </button>
         </fieldset>
       </div>
+      <form
+        className="flex flex-wrap gap-2"
+        onSubmit={(event) => {
+          event.preventDefault();
+          if (locator.trim()) acquire.mutate(locator.trim());
+        }}
+      >
+        <label className="sr-only" htmlFor="library-locator">
+          按标识获取文献
+        </label>
+        <input
+          id="library-locator"
+          name="locator"
+          className="hub-input flex-1 min-w-48"
+          value={locator}
+          onChange={(event) => setLocator(event.target.value)}
+          placeholder="DOI、arXiv 编号、专利号或论文链接…"
+        />
+        <button className="hub-button" type="submit" disabled={acquire.isPending}>
+          <Download size={16} />
+          {acquire.isPending ? "获取中…" : "获取并入库"}
+        </button>
+      </form>
+      {acquire.error ? (
+        <p role="alert" className="text-error text-sm">
+          {acquire.error.message}
+        </p>
+      ) : null}
       <details open={params.has("newProject") || undefined} className="text-sm">
         <summary className="cursor-pointer text-primary">新建文献项目</summary>
         <form

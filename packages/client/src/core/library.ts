@@ -105,6 +105,11 @@ export const libraryApi = {
     for (const file of files) body.append("files", file);
     return requestJson<ImportJob>("/api/library/imports", { method: "POST", body });
   },
+  fetchPaper: (locator: string) =>
+    requestJson<ImportJob & { source: string }>("/api/library/imports/fetch", {
+      method: "POST",
+      body: JSON.stringify({ locator }),
+    }),
   retry: (id: string) =>
     requestJson<ImportJob>(`/api/library/imports/${pathSegment(id)}/retry`, { method: "POST" }),
   settings: (signal?: AbortSignal) =>

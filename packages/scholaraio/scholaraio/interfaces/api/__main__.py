@@ -62,6 +62,10 @@ class SettingsInput(BaseModel):
     embedApiKey: str | None = Field(default=None, max_length=500)
 
 
+class AcquireInput(BaseModel):
+    locator: str = Field(min_length=1, max_length=2000)
+
+
 class ReadingPosition(BaseModel):
     page: int = Field(default=1, ge=1)
     line: int = Field(default=1, ge=1)
@@ -267,6 +271,10 @@ def create_app(root: Path, token: str) -> FastAPI:
         finally:
             for file in files:
                 await file.close()
+
+    @app.post("/imports/fetch", status_code=202)
+    def acquire(body: AcquireInput):
+        return app.state.library.acquire.fetch(body.locator)
 
     @app.post("/imports/{job_id}/retry", status_code=202)
     def retry(job_id: str):

@@ -11,14 +11,15 @@ test.beforeEach(async ({ request }) => {
 test("import → keyword search → read → cited conversation → reload", async ({ page, request }) => {
   const errors: string[] = [];
   page.on("pageerror", (error) => errors.push(error.message));
-  await page.goto("/library?manage=1");
-  await expect(page.getByRole("heading", { name: "本地文献" })).toBeVisible();
+  await page.goto("/library?import=1");
+  const importDialog = page.getByRole("dialog", { name: "导入文献" });
+  await expect(importDialog).toBeVisible();
   await page
     .getByLabel("选择 PDF 文件")
     .setInputFiles(path.resolve("e2e/fixtures/library/spectroscopy.pdf"));
-  await expect(page.getByRole("link", { name: "Spectroscopy Research" })).toBeVisible({
-    timeout: 20000,
-  });
+  await expect(importDialog.getByText(/已入库/)).toBeVisible({ timeout: 20000 });
+  await page.keyboard.press("Escape");
+  await expect(importDialog).toHaveCount(0);
   await page.goto("/library");
   await expect(page.getByRole("heading", { name: "检索文献", exact: true })).toBeVisible();
   await page.getByLabel("检索文献").fill("molecular");
@@ -150,24 +151,27 @@ test("internal project → cards → reading → first message preserves project
   const errors: string[] = [];
   page.on("pageerror", (error) => errors.push(error.message));
   const projectName = `阅读项目-${Date.now()}`;
-  await page.goto("/library?newProject=1");
+  await page.goto("/projects");
   await page.getByRole("textbox", { name: "项目名称" }).fill(projectName);
-  await page.getByRole("button", { name: "创建项目", exact: true }).click();
-  await expect(page.getByRole("combobox", { name: "查看文献项目" })).toHaveValue(projectName);
-  await page.getByRole("combobox", { name: "查看文献项目" }).selectOption("");
+  await page.getByRole("button", { name: "创建", exact: true }).click();
+  await expect(
+    page.getByRole("main").getByRole("link", { name: projectName, exact: true }),
+  ).toBeVisible();
+  await page.goto("/library?import=1");
   await page
     .getByLabel("选择 PDF 文件")
     .setInputFiles(path.resolve("e2e/fixtures/library/spectroscopy.pdf"));
-  await expect(
-    page.getByRole("link", { name: "Spectroscopy Research", exact: true }),
-  ).toBeVisible();
-  await page.getByRole("checkbox", { name: "选择 Spectroscopy Research" }).check();
+  await expect(page.getByRole("dialog", { name: "导入文献" }).getByText(/已入库/)).toBeVisible({
+    timeout: 20000,
+  });
+  await page.keyboard.press("Escape");
+  await page.getByRole("button", { name: "多选", exact: true }).click();
+  await page.getByRole("button", { name: /Spectroscopy Research/ }).click();
   const selectionBar = page.getByLabel("选中文献的操作");
   await expect(selectionBar.getByText("已选 1 篇", { exact: true })).toBeVisible();
   await selectionBar.getByRole("button", { name: "加入 Workspace" }).click();
   await selectionBar.getByRole("button", { name: projectName, exact: true }).click();
   await expect(selectionBar).toHaveCount(0);
-  await page.getByRole("combobox", { name: "查看文献项目" }).selectOption(projectName);
   await page.goto(`/library?project=${encodeURIComponent(projectName)}`);
   await page.getByRole("button", { name: "列表视图" }).click();
   await expect(page.getByRole("button", { name: "列表视图" })).toHaveAttribute(

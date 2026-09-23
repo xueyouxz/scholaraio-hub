@@ -284,6 +284,16 @@
   color: #3f4943;
 }
 
+/* The dialog element paints its own backdrop; this is the atelier's. */
+.hub-dialog::backdrop {
+  background: rgb(23 29 26 / 0.2);
+  backdrop-filter: blur(2px);
+}
+
+.hub-dialog {
+  margin: auto;
+}
+
 .hub-button {
   display: inline-flex;
   align-items: center;

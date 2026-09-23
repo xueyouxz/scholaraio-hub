@@ -14,12 +14,14 @@ const AFFECTED: Record<LibraryEvent["type"], string[][]> = {
   papers: [
     ["library", "search"],
     ["library", "papers"],
+    ["library", "browse"],
     ["library", "analytics"],
     ["library", "capabilities"],
   ],
   projects: [
     ["library", "projects"],
     ["library", "search"],
+    ["library", "browse"],
   ],
 };
 

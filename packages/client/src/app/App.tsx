@@ -7,11 +7,6 @@ const LibraryLayout = lazy(() =>
 const LibraryPage = lazy(() =>
   import("../features/library/LibraryPage").then((module) => ({ default: module.LibraryPage })),
 );
-const LibraryImportPage = lazy(() =>
-  import("../features/library/LibraryImportPage").then((module) => ({
-    default: module.LibraryImportPage,
-  })),
-);
 const LibraryDashboard = lazy(() => import("../features/library/LibraryDashboard"));
 const ReaderPage = lazy(() =>
   import("../features/library/reader/PaperReaderPage").then((module) => ({
@@ -45,7 +40,7 @@ export function App() {
             <Route path="/" element={<Navigate to="/library" replace />} />
             <Route path="/library" element={<LibraryLayout />}>
               <Route index element={<LibraryPage />} />
-              <Route path="import" element={<LibraryImportPage />} />
+              <Route path="import" element={<Navigate replace to="/library?import=1" />} />
               <Route path="insights" element={<LibraryDashboard />} />
             </Route>
             <Route path="/library/:paperId" element={<ReaderPage />} />

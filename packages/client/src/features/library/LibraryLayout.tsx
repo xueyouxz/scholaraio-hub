@@ -1,27 +1,37 @@
-import { ChartNoAxesCombined, Search, Upload } from "lucide-react";
+import { ChartNoAxesCombined, Plus, Search } from "lucide-react";
 import { NavLink, Outlet, useSearchParams } from "react-router-dom";
+import { ImportDialog } from "./components/ImportDialog";
 import { LibrarySelectionBar } from "./components/LibrarySelectionBar";
 import { LibrarySelectionProvider } from "./selection";
 
 /**
- * The three ways to work with the library, as places rather than actions.
+ * The two ways to look at the library, as places rather than actions.
  *
- * Browsing, importing and analysing are co-equal views of one collection, so
- * they are tabs: linkable, restorable by the back button, and visible before
- * they are needed.
+ * Browsing and analysing are co-equal views of one collection, so they are
+ * tabs. Importing is not a place — it is something done to the collection
+ * from wherever the user is — so it opens as a dialog over the current view.
  */
 const TABS = [
   { path: "", label: "检索", icon: Search },
-  { path: "import", label: "导入", icon: Upload },
   { path: "insights", label: "分析", icon: ChartNoAxesCombined },
 ];
 
 export function LibraryLayout() {
-  const [params] = useSearchParams();
+  const [params, setParams] = useSearchParams();
   const project = params.get("project");
   // Only the project carries across tabs: a query or a sort belongs to the
   // view that owns it.
   const scope = project ? `?project=${encodeURIComponent(project)}` : "";
+  const importing = params.get("import") === "1";
+  const closeImport = () =>
+    setParams(
+      (previous) => {
+        const next = new URLSearchParams(previous);
+        next.delete("import");
+        return next;
+      },
+      { replace: true },
+    );
   return (
     <LibrarySelectionProvider>
       <div className="flex-1 min-h-0 flex flex-col">
@@ -43,9 +53,24 @@ export function LibraryLayout() {
               {label}
             </NavLink>
           ))}
+          <button
+            type="button"
+            onClick={() =>
+              setParams((previous) => {
+                const next = new URLSearchParams(previous);
+                next.set("import", "1");
+                return next;
+              })
+            }
+            className="ml-auto inline-flex items-center gap-1.5 rounded-full signature-gradient px-4 py-1.5 text-sm font-semibold text-on-primary active:scale-95 border-0 cursor-pointer"
+          >
+            <Plus className="w-3.5 h-3.5" aria-hidden="true" />
+            导入文献
+          </button>
         </nav>
         <Outlet />
         <LibrarySelectionBar />
+        {importing ? <ImportDialog onClose={closeImport} /> : null}
       </div>
     </LibrarySelectionProvider>
   );

@@ -489,7 +489,7 @@ export function SearchPage() {
               </div>
               <p className="text-sm text-on-surface-variant">
                 文献库还是空的。
-                <Link className="text-primary" to="/library/import">
+                <Link className="text-primary" to="/library?import=1">
                   导入第一篇
                 </Link>
                 ：拖入 PDF、按 DOI 获取，或从 Zotero 导出文件导入。

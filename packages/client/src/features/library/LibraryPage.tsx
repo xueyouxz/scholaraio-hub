@@ -3,7 +3,6 @@ import { SearchPage } from "../search/SearchPage";
 
 /** Query params that used to select a view, and the route that replaces each. */
 const MOVED: Array<{ matches: (params: URLSearchParams) => boolean; to: string }> = [
-  { matches: (params) => params.has("newProject") || params.get("manage") === "1", to: "import" },
   { matches: (params) => params.get("view") === "analysis", to: "insights" },
 ];
 

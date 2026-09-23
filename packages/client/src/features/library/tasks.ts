@@ -59,7 +59,7 @@ export const CAPABILITIES: Capability[] = [
       state.embedProvider === "none"
         ? { message: "配置中关闭了向量嵌入", remedy: { label: "前往设置", to: "/settings" } }
         : state.papers === 0
-          ? { message: "文献库还没有论文", remedy: { label: "导入文献", to: "/library/import" } }
+          ? { message: "文献库还没有论文", remedy: { label: "导入文献", to: "/library?import=1" } }
           : null,
   },
   {

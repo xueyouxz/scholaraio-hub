@@ -5,6 +5,7 @@ import { Link } from "react-router-dom";
 import { usePageTitle } from "../../app/components/NavigationLayout";
 import { libraryApi } from "../../core/library";
 import { CapabilityPrompt } from "./components/CapabilityPrompt";
+import { CitationCheckPanel } from "./components/CitationCheckPanel";
 import { LibraryAnalyticsPanel } from "./components/LibraryAnalyticsPanel";
 import { LibraryTasksPanel } from "./components/LibraryTasksPanel";
 import { TopicSimilarityHeatmap } from "./components/charts/TopicSimilarityHeatmap";
@@ -82,13 +83,16 @@ export default function LibraryDashboard() {
       ) : null}
 
       <LibraryTasksPanel />
+      <section className="shrink-0 rounded-lg border border-outline-variant/10 bg-surface-container-low p-3">
+        <CitationCheckPanel />
+      </section>
 
       {loading ? (
         <div className="text-center text-on-surface-variant text-sm py-20">加载中…</div>
       ) : papers.length === 0 && !error ? (
         <div className="text-center text-on-surface-variant text-sm py-20">
           还没有论文。
-          <Link className="text-primary" to="/library/import">
+          <Link className="text-primary" to="/library?import=1">
             先导入文献
           </Link>
           ，这里会画出它们的主题分布。

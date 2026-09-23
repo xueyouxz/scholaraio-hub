@@ -340,7 +340,7 @@ export function Composer({
           }}
           placeholder={placeholder}
         />
-        <div className="flex items-center justify-between px-3 pb-2 gap-2">
+        <div className="flex items-center justify-between px-2.5 pb-1.5 gap-2">
           <div className="flex items-center gap-1 min-w-0 flex-1">
             <button
               type="button"

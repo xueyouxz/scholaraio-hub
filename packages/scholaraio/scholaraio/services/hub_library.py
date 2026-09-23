@@ -5,18 +5,18 @@ import hashlib
 import json
 import os
 import re
-from itertools import zip_longest
 import threading
 import uuid
-from concurrent.futures import ThreadPoolExecutor
 from dataclasses import asdict
+from itertools import zip_longest
 from pathlib import Path
 
-from scholaraio.services.hub_config import ensure_config
-from scholaraio.services.hub_projects import HubProjects
 from scholaraio.services.chunks import build_chunk_index, chunk_search, iter_paper_chunks
+from scholaraio.services.hub_config import ensure_config
+from scholaraio.services.hub_import import ImportQueue
+from scholaraio.services.hub_projects import HubProjects
 from scholaraio.services.index import build_index, search
-from scholaraio.stores.papers import authors_text, find_pdf, iter_paper_dirs, read_meta, write_meta
+from scholaraio.stores.papers import authors_text, find_pdf, iter_paper_dirs, read_meta
 
 
 def atomic_json(path: Path, value: object) -> None:
@@ -53,19 +53,11 @@ class HubLibrary:
             directory.mkdir(parents=True, exist_ok=True)
         self.lock = threading.RLock()
         self.projects = HubProjects(self)
-        self.executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix="library-import")
-        self.jobs_dir = self.cfg.state_root / "imports"
-        self.jobs_dir.mkdir(parents=True, exist_ok=True)
-        self.jobs = {p.stem: json.loads(p.read_text()) for p in self.jobs_dir.glob("*.json")}
-        for job in self.jobs.values():
-            for item in job["items"]:
-                if item["status"] in ("queued", "running"):
-                    item.update(status="failed", error="Import interrupted; retry to continue")
-            self.save_job(job)
+        self.imports = ImportQueue(self)
         self.reindex()
 
     def close(self):
-        self.executor.shutdown(wait=True, cancel_futures=True)
+        self.imports.close()
 
     def reindex(self):
         with self.lock:
@@ -97,6 +89,8 @@ class HubLibrary:
             "citationCount": meta.get("citation_count") if isinstance(meta.get("citation_count"), int) else None,
             "citationCounts": {key: value for key, value in meta.get("citation_count", {}).items() if isinstance(value, int)} if isinstance(meta.get("citation_count"), dict) else None,
             "paperType": meta.get("paper_type") or "",
+            "metadataStatus": meta.get("metadata_status") or "complete",
+            "missingMetadata": list(meta.get("missing_metadata") or []),
         }
 
     def analytics(self, project_id: str | None = None):
@@ -267,102 +261,11 @@ class HubLibrary:
             budget -= len(text)
         return {"citations": citations, "truncated": truncated}
 
-    def save_job(self, job):
-        atomic_json(self.jobs_dir / f'{job["id"]}.json', job)
-
     def list_jobs(self):
-        with self.lock:
-            return json.loads(json.dumps(list(self.jobs.values())))
+        return self.imports.list()
 
     def enqueue(self, files: list[tuple[Path, str]]):
-        with self.lock:
-            pending = {item["source"] for job in self.jobs.values() for item in job["items"]
-                       if item["status"] in ("queued", "running")}
-            items = [{"id": uuid.uuid4().hex, "source": str(source), "name": name, "status": "queued"}
-                     for source, name in files if str(source) not in pending]
-            if not items:
-                raise ValueError("These files are already being imported")
-            job = {"id": uuid.uuid4().hex, "items": items}
-            self.jobs[job["id"]] = job
-            self.save_job(job)
-            self.executor.submit(self.run_job, job)
-            return json.loads(json.dumps(job))
+        return self.imports.enqueue(files)
 
     def retry(self, job_id):
-        with self.lock:
-            job = self.jobs[job_id]
-            if any(i["status"] in ("queued", "running") for i in job["items"]):
-                raise ValueError("Import already running")
-            for item in job["items"]:
-                if item["status"] == "failed":
-                    item.update(status="queued", error=None)
-            self.save_job(job)
-            self.executor.submit(self.run_job, job)
-            return json.loads(json.dumps(job))
-
-    def run_job(self, job):
-        for item in job["items"]:
-            with self.lock:
-                if item["status"] != "queued":
-                    continue
-                item["status"] = "running"
-                self.save_job(job)
-            try:
-                pid, duplicate = self.import_pdf(Path(item["source"]), item["name"])
-                with self.lock:
-                    item.update(status="duplicate" if duplicate else "completed", paperId=pid, error=None)
-            except Exception as exc:
-                with self.lock:
-                    item.update(status="failed", error=str(exc))
-            finally:
-                with self.lock:
-                    self.save_job(job)
-                if item["status"] in ("completed", "duplicate"):
-                    source = Path(item["source"])
-                    if source.is_relative_to(self.cfg.inbox_dir):
-                        source.unlink(missing_ok=True)
-
-    def import_pdf(self, source: Path, name: str):
-        import pymupdf
-        import shutil
-
-        fingerprint = content_hash(source)
-        source_size = source.stat().st_size
-        existing = None
-        for directory in iter_paper_dirs(self.cfg.papers_dir):
-            meta = read_meta(directory)
-            pdf = find_pdf(directory)
-            if meta.get("hub", {}).get("sha256") == fingerprint or (pdf and pdf.stat().st_size == source_size and content_hash(pdf) == fingerprint):
-                if meta.get("hub", {}).get("parseStatus") != "failed" and (directory / "paper.md").exists():
-                    return str(meta.get("id") or directory.name), True
-                existing = (directory, meta)
-                break
-        pid = str(uuid.uuid4())
-        directory, meta = existing or (self.cfg.papers_dir / pid, {"id": pid, "title": Path(name).stem, "authors": []})
-        pid = meta["id"]
-        directory.mkdir(parents=True, exist_ok=True)
-        destination = directory / "paper.pdf"
-        if source.resolve() != destination.resolve():
-            shutil.copy2(source, destination)
-        meta["hub"] = {"sha256": fingerprint, "parseStatus": "pending", "filename": name}
-        write_meta(directory, meta)
-        try:
-            with pymupdf.open(destination) as document:
-                pages = [f"## Page {index + 1}\n\n{page.get_text()}" for index, page in enumerate(document)]
-                if not any(page.get_text().strip() for page in document):
-                    raise ValueError("PDF contains no extractable text; OCR is required")
-                if document.metadata.get("title"):
-                    meta["title"] = document.metadata["title"]
-                if document.metadata.get("author") and not meta.get("authors"):
-                    meta["authors"] = [document.metadata["author"]]
-            temporary = directory / "paper.md.tmp"
-            temporary.write_text("\n\n".join(pages), encoding="utf-8")
-            temporary.replace(directory / "paper.md")
-            meta["hub"]["parseStatus"] = "ready"
-            write_meta(directory, meta)
-            self.reindex()
-            return pid, False
-        except Exception as exc:
-            meta["hub"].update(parseStatus="failed", error=str(exc))
-            write_meta(directory, meta)
-            raise
+        return self.imports.retry(job_id)

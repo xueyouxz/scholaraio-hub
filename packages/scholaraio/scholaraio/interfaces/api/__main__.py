@@ -7,7 +7,6 @@ import os
 import socket
 import sys
 import threading
-import uuid
 from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Literal
@@ -167,7 +166,7 @@ def create_app(root: Path, token: str) -> FastAPI:
             for file in files:
                 if not (file.filename or "").lower().endswith(".pdf"):
                     raise HTTPException(400, "Only PDF files are supported")
-                destination = app.state.library.cfg.inbox_dir / f"{uuid.uuid4().hex}.pdf"
+                destination = app.state.library.imports.stage(file.filename)
                 staged.append((destination, Path(file.filename).name))
                 with destination.open("wb") as output:
                     while block := await file.read(1024 * 1024):

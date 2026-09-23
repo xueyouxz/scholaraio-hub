@@ -28,6 +28,14 @@ export function useSessionChat(initial: StoredSession) {
   // useChat reports failures through onError, not the sendMessage promise;
   // send() reads this afterwards so the composer keeps a draft that failed.
   const sendError = useRef<Error | undefined>(undefined);
+  /**
+   * Resolves once the server has taken the message. `sendMessage` only settles
+   * when the whole turn has streamed, which is far too late for the composer:
+   * it would hold the draft and its "sending" state for the entire answer.
+   */
+  const accepted = useRef<{ resolve: () => void; reject: (error: Error) => void } | undefined>(
+    undefined,
+  );
   const refresh = useCallback(() => {
     void client.invalidateQueries({ queryKey: ["session", id] });
     void client.invalidateQueries({ queryKey: ["sessions"] });
@@ -66,6 +74,7 @@ export function useSessionChat(initial: StoredSession) {
     onFinish: refresh,
     onError: (error) => {
       sendError.current = error;
+      accepted.current?.reject(error);
       refresh();
     },
     onData: (part) => {
@@ -79,6 +88,10 @@ export function useSessionChat(initial: StoredSession) {
     throttle: 50,
   });
   const busy = chat.status === "submitted" || chat.status === "streaming";
+  // The first chunk means the turn is running; the composer is free again.
+  useEffect(() => {
+    if (chat.status === "streaming" || chat.status === "ready") accepted.current?.resolve();
+  }, [chat.status]);
 
   const snapshot = useQuery({
     queryKey: ["session", id],
@@ -147,15 +160,29 @@ export function useSessionChat(initial: StoredSession) {
   const send = async (text: string, attachments: SessionAttachment[]) => {
     sendError.current = undefined;
     chat.clearError();
-    await chat.sendMessage({
-      text,
-      files: attachments.map((file) => ({
-        type: "file",
-        mediaType: file.mediaType,
-        filename: file.filename,
-        url: file.url,
-      })),
+    const taken = new Promise<void>((resolve, reject) => {
+      accepted.current = { resolve, reject };
     });
+    const streamed = chat
+      .sendMessage({
+        text,
+        files: attachments.map((file) => ({
+          type: "file",
+          mediaType: file.mediaType,
+          filename: file.filename,
+          url: file.url,
+        })),
+      })
+      .then(
+        () => accepted.current?.resolve(),
+        (error: Error) => accepted.current?.reject(error),
+      );
+    void streamed;
+    try {
+      await taken;
+    } finally {
+      accepted.current = undefined;
+    }
     if (sendError.current) throw sendError.current;
   };
 

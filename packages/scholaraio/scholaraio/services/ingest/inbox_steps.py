@@ -428,6 +428,7 @@ def step_dedup(ctx: InboxCtx) -> StepResult:
         if ctx.existing_pub_nums and pub_num in ctx.existing_pub_nums:
             existing_json = ctx.existing_pub_nums[pub_num]
             _log_debug("duplicate patent: %s -> %s", pub_num, existing_json.parent.name)
+            ctx.duplicate_of = existing_json.parent
             move_to_pending(
                 ctx,
                 issue="duplicate",
@@ -455,6 +456,7 @@ def step_dedup(ctx: InboxCtx) -> StepResult:
     arxiv_key = normalize_arxiv_id(ctx.meta.arxiv_id)
     if arxiv_key and ctx.existing_arxiv_ids and arxiv_key in ctx.existing_arxiv_ids:
         existing_json = ctx.existing_arxiv_ids[arxiv_key]
+        ctx.duplicate_of = existing_json.parent
         move_to_pending(
             ctx,
             issue="duplicate",
@@ -480,6 +482,7 @@ def step_dedup(ctx: InboxCtx) -> StepResult:
                 return StepResult.FAIL
             if ctx.existing_pub_nums and pub_num in ctx.existing_pub_nums:
                 existing_json = ctx.existing_pub_nums[pub_num]
+                ctx.duplicate_of = existing_json.parent
                 move_to_pending(
                     ctx,
                     issue="duplicate",
@@ -507,15 +510,23 @@ def step_dedup(ctx: InboxCtx) -> StepResult:
                 ctx.meta.paper_type = "preprint"
             _ui(f"Detected arXiv preprint ({ctx.meta.arxiv_id}); ingesting directly without DOI")
             return StepResult.OK
-        # Not thesis/book/patent/arXiv -> move to pending
+        # Not thesis/book/patent/arXiv: either hold for review, or ingest with
+        # the gap recorded, depending on what the caller asked for.
+        if ctx.opts.get("no_doi_policy") == "ingest":
+            ctx.meta.metadata_status = "incomplete"
+            ctx.meta.missing_metadata = sorted({*ctx.meta.missing_metadata, "doi"})
+            _ui("No DOI; ingesting with metadata marked incomplete")
+            return StepResult.OK
         _log_debug("no DOI and not thesis/book/patent/arXiv, moving to pending")
         move_to_pending(ctx)
         ctx.status = "needs_review"
+        ctx.error = "查询后仍无 DOI，需人工确认"
         return StepResult.FAIL
 
     doi_key = ctx.meta.doi.lower().strip()
     if doi_key in ctx.existing_dois:
         existing_json = ctx.existing_dois[doi_key]
+        ctx.duplicate_of = existing_json.parent
         existing_md = existing_json.parent / "paper.md"
         if not existing_md.exists() and ctx.md_path and ctx.md_path.exists():
             existing_dir = existing_json.parent
@@ -549,6 +560,7 @@ def step_dedup(ctx: InboxCtx) -> StepResult:
         else:
             # Normal duplicate: move to pending for user review
             _log_debug("duplicate: DOI %s exists -> %s", ctx.meta.doi, existing_json.parent.name)
+            ctx.duplicate_of = existing_json.parent
             move_to_pending(
                 ctx,
                 issue="duplicate",

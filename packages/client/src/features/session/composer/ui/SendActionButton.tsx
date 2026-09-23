@@ -13,14 +13,9 @@ interface Props {
 }
 
 /**
- * Renders the right-side send/queue/stop trio.
- *
- * Visibility rules:
- *  - Stop is shown whenever a process is running (isRunning && isThinking).
- *    When the user also has draft content, Stop renders as a secondary button
- *    next to Queue; the primary button reverts to Send.
- *  - Queue is shown when the user has draft content AND a process is running.
- *  - The primary button is Send by default, Stop when there is no draft.
+ * The composer's one action button. What it does follows the session: send a
+ * message, queue it while a turn runs, or stop that turn when there is nothing
+ * to send.
  */
 export function SendActionButton({
   busy,
@@ -33,63 +28,50 @@ export function SendActionButton({
   onQueue,
   onStop,
 }: Props) {
-  const showStop = hasStopAction && isRunning && isThinking;
-  const stopAsSecondary = showStop && canSend;
-  const showQueue = hasQueueAction && canSend && isRunning;
-  const primaryIsStop = showStop && !canSend;
+  const canStop = hasStopAction && isRunning && isThinking;
+  const action = busy
+    ? "busy"
+    : isRunning && canSend && hasQueueAction
+      ? "queue"
+      : canStop && !canSend
+        ? "stop"
+        : "send";
+
+  const label =
+    action === "busy"
+      ? "Sending…"
+      : action === "queue"
+        ? "Queue message"
+        : action === "stop"
+          ? "Stop"
+          : "Send";
 
   return (
-    <>
-      {stopAsSecondary ? (
-        <button
-          type="button"
-          onClick={onStop}
-          title="停止"
-          aria-label="停止"
-          className="w-8 h-8 flex items-center justify-center rounded-full border border-error/30 text-error hover:bg-error/10 active:scale-95 transition"
-        >
-          <Square size={10} fill="currentColor" aria-hidden="true" />
-        </button>
-      ) : null}
-
-      {showQueue ? (
-        <button
-          type="button"
-          onClick={onQueue}
-          disabled={busy}
-          title="加入队列"
-          aria-label="加入队列"
-          className="w-8 h-8 flex items-center justify-center rounded-full bg-surface-container text-on-surface-variant hover:bg-surface-container-high hover:text-on-surface active:scale-95 transition disabled:opacity-40"
-        >
-          <ListPlus size={15} aria-hidden="true" />
-        </button>
-      ) : null}
-
-      <button
-        type="button"
-        onClick={() => {
-          if (primaryIsStop) {
-            onStop?.();
-            return;
-          }
-          onSend();
-        }}
-        disabled={busy || (!canSend && !primaryIsStop)}
-        aria-label={primaryIsStop ? "停止" : busy ? "发送中…" : "发送"}
-        className={`hub-composer-send w-9 h-9 flex items-center justify-center rounded-full transition active:scale-95 disabled:bg-surface-container-high disabled:text-on-surface-variant/40 disabled:shadow-none ${
-          primaryIsStop
-            ? "bg-error text-on-error hover:brightness-110"
-            : "bg-[var(--composer-accent)] text-on-primary shadow-sm hover:brightness-110"
-        }`}
-      >
-        {busy ? (
-          <Loader2 size={16} className="animate-spin" aria-hidden="true" />
-        ) : primaryIsStop ? (
-          <Square size={10} fill="currentColor" aria-hidden="true" />
-        ) : (
-          <ArrowUp size={17} strokeWidth={2.5} aria-hidden="true" />
-        )}
-      </button>
-    </>
+    <button
+      type="button"
+      title={label}
+      aria-label={label}
+      disabled={action === "busy" || (action === "send" && !canSend)}
+      onClick={() => {
+        if (action === "stop") onStop?.();
+        else if (action === "queue") onQueue?.();
+        else onSend();
+      }}
+      className={`hub-composer-send w-9 h-9 flex items-center justify-center rounded-full transition active:scale-95 disabled:bg-surface-container-high disabled:text-on-surface-variant/40 disabled:shadow-none ${
+        action === "stop"
+          ? "bg-error text-on-error hover:brightness-110"
+          : "bg-[var(--composer-accent)] text-on-primary shadow-sm hover:brightness-110"
+      }`}
+    >
+      {action === "busy" ? (
+        <Loader2 size={16} className="animate-spin" aria-hidden="true" />
+      ) : action === "stop" ? (
+        <Square size={10} fill="currentColor" aria-hidden="true" />
+      ) : action === "queue" ? (
+        <ListPlus size={16} aria-hidden="true" />
+      ) : (
+        <ArrowUp size={17} strokeWidth={2.5} aria-hidden="true" />
+      )}
+    </button>
   );
 }

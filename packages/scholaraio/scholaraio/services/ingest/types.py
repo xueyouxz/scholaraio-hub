@@ -50,6 +50,8 @@ class InboxCtx:
         meta: 提取后的 :class:`~scholaraio.services.ingest_metadata.PaperMetadata`。
         status: 当前状态，``"pending"`` | ``"ingested"`` | ``"duplicate"``
             | ``"needs_review"`` | ``"failed"`` | ``"skipped"``。
+        error: 失败原因，供逐篇汇报的调用方使用。
+        duplicate_of: 重复命中的已入库论文目录。
     """
 
     pdf_path: Path | None
@@ -63,6 +65,8 @@ class InboxCtx:
     md_path: Path | None = None
     meta: Any = None  # PaperMeta instance after extraction
     status: str = "pending"  # pending | ingested | duplicate | needs_review | failed | skipped
+    error: str | None = None  # why the file stopped, for callers that report per-file results
+    duplicate_of: Path | None = None  # the already ingested paper directory, when duplicate
     ingested_json: Path | None = None  # set by step_ingest on success
     is_thesis: bool = False  # thesis inbox or LLM-detected thesis
     is_patent: bool = False  # patent inbox or detected patent

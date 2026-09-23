@@ -56,6 +56,11 @@ def metadata_to_dict(meta: PaperMetadata) -> dict:
         "references": meta.references,
         "extracted_at": meta.extracted_at,
     }
+    # Only carry the flag for papers it applies to, so complete records keep
+    # the metadata shape they had before incomplete ingestion was allowed.
+    if meta.metadata_status:
+        d["metadata_status"] = meta.metadata_status
+        d["missing_metadata"] = list(meta.missing_metadata)
     # Citation counts
     if meta.citation_count_crossref is not None:
         d["citation_count"]["crossref"] = meta.citation_count_crossref

@@ -42,6 +42,9 @@ class PaperMetadata:
         arxiv_id: arXiv 标识符（如 ``2401.12345`` 或 ``hep-th/9901001``，不含版本后缀）。
         extraction_method: 提取方式（``doi_lookup`` | ``arxiv_lookup`` | ``title_search`` |
             ``title_search_relaxed`` | ``title_search_s2`` | ``local_only``）。
+        metadata_status: 元数据完整度，``""`` 表示完整，``"incomplete"`` 表示缺少
+            DOI 等关键字段但已按调用方策略入库。
+        missing_metadata: 缺失的关键字段名，配合 ``metadata_status`` 使用。
     """
 
     id: str = ""  # UUID, assigned at ingest time
@@ -74,6 +77,8 @@ class PaperMetadata:
     source_type: str = ""
     extracted_at: str = ""
     extraction_method: str = ""
+    metadata_status: str = ""  # "" when complete, "incomplete" when key fields are missing
+    missing_metadata: list[str] = field(default_factory=list)
 
 
 # ============================================================================

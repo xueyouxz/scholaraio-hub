@@ -60,7 +60,7 @@ export function useStagedAttachments(target: AttachmentTarget) {
         })
         .catch((error: unknown) => {
           if (controller.signal.aborted) return undefined;
-          const failure = error instanceof Error ? error : new Error("附件上传失败");
+          const failure = error instanceof Error ? error : new Error("Upload failed");
           outcomes.current.set(key, failure);
           update(key, { status: "failed", error: failure.message });
           return undefined;
@@ -110,7 +110,7 @@ export function useStagedAttachments(target: AttachmentTarget) {
       if (uploaded && !(uploaded instanceof Error)) {
         sessionApi
           .removeAttachment(targetRef.current, uploaded.id)
-          .catch((error: unknown) => console.warn("无法删除已上传的附件", error));
+          .catch((error: unknown) => console.warn("Could not delete the uploaded file", error));
       }
       setItems((current) => current.filter((candidate) => candidate.key !== key));
     },
@@ -138,7 +138,7 @@ export function useStagedAttachments(target: AttachmentTarget) {
       .map((item) => outcomes.current.get(item.key))
       .filter((outcome) => outcome !== undefined);
     if (settled.some((outcome) => outcome instanceof Error))
-      throw new Error("有附件上传失败，请重试或移除后再发送");
+      throw new Error("An attachment failed to upload. Retry or remove it before sending.");
     return settled.filter((outcome): outcome is SessionAttachment => !(outcome instanceof Error));
   }, []);
 

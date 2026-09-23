@@ -133,7 +133,7 @@ describe("effort menu", () => {
       onChange,
     });
     act(() => pill("Thinking on · max")?.click());
-    expect(groups()).toEqual(["思考", "推理强度"]);
+    expect(groups()).toEqual(["Thinking", "Effort"]);
     choose("low");
     expect(onChange).toHaveBeenCalledWith({ effort: "low" });
   });
@@ -146,7 +146,7 @@ describe("effort menu", () => {
       onChange: () => {},
     });
     act(() => pill("Thinking off")?.click());
-    expect(groups()).toEqual(["思考"]);
+    expect(groups()).toEqual(["Thinking"]);
   });
 
   it("offers Codex only its reasoning efforts, starting at the model default", () => {
@@ -165,8 +165,8 @@ describe("effort menu", () => {
       onChange: () => {},
     });
     act(() => pill("none")?.click());
-    expect(groups()).toEqual(["推理强度"]);
-    expect(menuItems().map((item) => item.label)).toEqual(["默认 (none)", "none", "xhigh"]);
+    expect(groups()).toEqual(["Effort"]);
+    expect(menuItems().map((item) => item.label)).toEqual(["Default (none)", "none", "xhigh"]);
   });
 });
 
@@ -197,7 +197,7 @@ describe("model menu", () => {
       onChange: () => {},
       pending: true,
     });
-    expect(container?.textContent).toContain("下一轮生效");
+    expect(container?.textContent).toContain("Applies next turn");
   });
 });
 
@@ -220,6 +220,6 @@ describe("provider menu", () => {
       document.querySelectorAll<HTMLButtonElement>('[role="menuitemradio"]') ?? [],
     ).find((node) => node.textContent?.startsWith("Codex"));
     expect(codex?.disabled).toBe(true);
-    expect(codex?.textContent).toContain("未登录");
+    expect(codex?.textContent).toContain("Not signed in");
   });
 });

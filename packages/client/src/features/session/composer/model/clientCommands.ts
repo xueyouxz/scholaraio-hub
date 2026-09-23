@@ -4,11 +4,11 @@ import type { SlashCommand } from "@scholaraio-hub/shared";
 export type ClientCommandName = "model" | "effort" | "permissions" | "attach" | "stop";
 
 const CLIENT_COMMANDS: Record<ClientCommandName, string> = {
-  model: "切换模型",
-  effort: "调整思考与推理强度",
-  permissions: "切换权限模式",
-  attach: "添加附件",
-  stop: "停止当前回合",
+  model: "Switch model",
+  effort: "Adjust thinking and effort",
+  permissions: "Switch permission mode",
+  attach: "Attach files",
+  stop: "Stop this turn",
 };
 
 /** The client commands usable right now, as leading `/name` commands. */

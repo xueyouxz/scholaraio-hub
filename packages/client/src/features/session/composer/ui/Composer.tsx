@@ -61,7 +61,7 @@ export function Composer({
   onStop,
   stopPending = false,
   disabled = false,
-  placeholder = "您想更改或创建什么内容？",
+  placeholder = "What would you like to build or change?",
   controls,
   extraCommands,
   text: controlledText,
@@ -210,7 +210,7 @@ export function Composer({
       }
       textarea.current?.focus();
     } catch (error) {
-      setError(error instanceof Error ? error.message : "发送失败，请重试。");
+      setError(error instanceof Error ? error.message : "Could not send. Try again.");
     } finally {
       submitting.current = false;
       setSending(false);
@@ -218,7 +218,7 @@ export function Composer({
   };
   const attachmentCount = staged.items.length;
   return (
-    <div className="relative w-full" aria-label="会话输入区">
+    <div className="relative w-full" aria-label="Message composer">
       {picker.showList && picker.filter ? (
         <SlashCommandSuggestions
           commands={picker.filter}
@@ -252,13 +252,13 @@ export function Composer({
           <SlashCommandBadge token={picker.selectedToken} command={picker.selectedCommand} />
         ) : null}
         <label className="sr-only" htmlFor={inputId}>
-          输入问题
+          Message
         </label>
         <textarea
           ref={textarea}
           id={inputId}
           name="message"
-          className="block w-full bg-transparent text-sm text-on-surface px-4 pt-3 pb-2 resize-none outline-none border-none placeholder:text-on-surface-variant/50 min-h-[60px] max-h-[45vh] leading-relaxed"
+          className="block w-full bg-transparent text-sm text-on-surface px-4 pt-3 pb-1 resize-none outline-none border-none placeholder:text-on-surface-variant/50 min-h-[48px] max-h-[45vh] leading-relaxed"
           rows={2}
           maxLength={50000}
           readOnly={disabled}
@@ -340,12 +340,12 @@ export function Composer({
           }}
           placeholder={placeholder}
         />
-        <div className="flex items-center justify-between px-3 pb-3 gap-2">
+        <div className="flex items-center justify-between px-3 pb-2 gap-2">
           <div className="flex items-center gap-1 min-w-0 flex-1">
             <button
               type="button"
-              aria-label="添加附件"
-              title="添加附件"
+              aria-label="Attach files"
+              title="Attach files"
               disabled={disabled || sending}
               onClick={() => fileInput.current?.click()}
               className="relative p-1.5 rounded-lg text-on-surface-variant hover:bg-surface-container hover:text-on-surface transition-colors disabled:opacity-40"
@@ -401,7 +401,7 @@ export function Composer({
         multiple
         className="hidden"
         ref={fileInput}
-        aria-label="选择附件"
+        aria-label="Choose files"
         onChange={(event) => {
           addFiles(Array.from(event.target.files ?? []));
           event.target.value = "";
@@ -409,7 +409,7 @@ export function Composer({
       />
       {skills.error && text.startsWith("/") ? (
         <p role="alert" className="text-xs text-error mt-2">
-          命令列表加载失败：{skills.error.message}
+          Could not load commands: {skills.error.message}
         </p>
       ) : null}
       {error ? (

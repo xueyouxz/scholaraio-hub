@@ -6,6 +6,7 @@ import logging
 import shutil
 import sys
 import time
+from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
@@ -40,6 +41,53 @@ def _logger() -> logging.Logger:
 def _ui(message: str = "") -> None:
     legacy_ui = _pipeline_attr("ui", _base_ui)
     legacy_ui(message)
+
+
+def run_file_steps(
+    ctx: InboxCtx,
+    step_names: list[str],
+    *,
+    label: str,
+    is_proceedings: bool = False,
+    step_times: dict[str, float] | None = None,
+    on_step: Callable[[str, StepResult], None] | None = None,
+) -> str:
+    """Run the inbox steps for one file and return its final status.
+
+    *on_step* is called after each step so a caller that owns a job queue can
+    persist progress; the scanning pipeline passes nothing and only prints.
+    """
+    ingest_proceedings_ctx = _pipeline_attr("_ingest_proceedings_ctx", proceedings.ingest_proceedings_ctx)
+    if is_proceedings and ctx.md_path and ingest_proceedings_ctx(ctx, force=True):
+        return ctx.status if ctx.status != "pending" else "skipped"
+
+    for step_name in step_names:
+        try:
+            timer_func = _pipeline_attr("timer", timer)
+            with timer_func(f"pipeline.inbox.{step_name}", "step") as t:
+                result = _steps()[step_name].fn(ctx)
+            if step_times is not None:
+                step_times[step_name] = step_times.get(step_name, 0) + t.elapsed
+            _logger().debug("%s: %.1fs", step_name, t.elapsed)
+        except Exception as exc:
+            _logger().exception("step %s failed for %s: %s", step_name, label, exc)
+            ctx.status = "failed"
+            if ctx.error is None:
+                ctx.error = f"{step_name}: {exc}"
+            if on_step:
+                on_step(step_name, StepResult.FAIL)
+            break
+        if is_proceedings and step_name == "mineru" and result == StepResult.OK and ctx.md_path:
+            if ingest_proceedings_ctx(ctx, force=True):
+                if on_step:
+                    on_step(step_name, StepResult.FAIL)
+                break
+        if on_step:
+            on_step(step_name, result)
+        if result != StepResult.OK:
+            break
+
+    return ctx.status if ctx.status != "pending" else "skipped"
 
 
 def process_inbox(
@@ -293,31 +341,13 @@ def process_inbox(
             existing_pub_nums=existing_pub_nums,
             existing_arxiv_ids=existing_arxiv_ids,
         )
-        ingest_proceedings_ctx = _pipeline_attr("_ingest_proceedings_ctx", proceedings.ingest_proceedings_ctx)
-        if is_proceedings and ctx.md_path and ingest_proceedings_ctx(ctx, force=True):
-            final_status = ctx.status if ctx.status != "pending" else "skipped"
-            stats[final_status] += 1
-            continue
-        for step_name in file_steps:
-            try:
-                timer_func = _pipeline_attr("timer", timer)
-                with timer_func(f"pipeline.inbox.{step_name}", "step") as t:
-                    result = _steps()[step_name].fn(ctx)
-                step_times[step_name] = step_times.get(step_name, 0) + t.elapsed
-                _logger().debug("%s: %.1fs", step_name, t.elapsed)
-            except Exception as exc:
-                _logger().exception("step %s failed for %s: %s", step_name, file_label, exc)
-                ctx.status = "failed"
-                result = StepResult.FAIL
-                break
-            if is_proceedings and step_name == "mineru" and result == StepResult.OK and ctx.md_path:
-                if ingest_proceedings_ctx(ctx, force=True):
-                    result = StepResult.FAIL
-                    break
-            if result != StepResult.OK:
-                break
-
-        final_status = ctx.status if ctx.status != "pending" else "skipped"
+        final_status = run_file_steps(
+            ctx,
+            file_steps,
+            label=file_label,
+            is_proceedings=is_proceedings,
+            step_times=step_times,
+        )
         stats[final_status] += 1
         if final_status == "ingested" and ctx.ingested_json:
             ingested_jsons.append(ctx.ingested_json)

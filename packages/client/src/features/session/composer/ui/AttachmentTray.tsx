@@ -15,7 +15,7 @@ export function AttachmentTray({
 }) {
   if (items.length === 0) return null;
   return (
-    <ul className="flex flex-wrap gap-2 px-4 pt-3 pb-1" aria-label="附件">
+    <ul className="flex flex-wrap gap-2 px-4 pt-3 pb-1" aria-label="Attachments">
       {items.map((item) => {
         const failed = item.status === "failed";
         const uploading = item.status === "uploading";
@@ -37,14 +37,14 @@ export function AttachmentTray({
             )}
             <span className="truncate">{item.file.name}</span>
             {uploading ? (
-              <Loader2 size={11} aria-label="上传中" className="animate-spin shrink-0" />
+              <Loader2 size={11} aria-label="Uploading" className="animate-spin shrink-0" />
             ) : null}
             {failed ? (
               <button
                 type="button"
                 disabled={disabled}
                 onClick={() => onRetry(item.key)}
-                aria-label={`重试上传 ${item.file.name}`}
+                aria-label={`Retry upload of ${item.file.name}`}
                 className="shrink-0 hover:text-on-surface transition-colors"
               >
                 <RotateCw size={11} />
@@ -54,7 +54,7 @@ export function AttachmentTray({
               type="button"
               disabled={disabled}
               onClick={() => onRemove(item.key)}
-              aria-label={`移除 ${item.file.name}`}
+              aria-label={`Remove ${item.file.name}`}
               className="text-on-surface-variant hover:text-error transition-colors shrink-0"
             >
               <X size={11} />

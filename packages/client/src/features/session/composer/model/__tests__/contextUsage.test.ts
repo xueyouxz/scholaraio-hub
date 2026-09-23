@@ -15,10 +15,10 @@ describe("context usage display", () => {
       percent: 50,
       display: "remaining",
     } as const;
-    expect(contextLabel(claude)).toBe("25%");
-    expect(contextLabel(codex)).toBe("50% 剩余");
+    expect(contextLabel(claude)).toBe("25% used");
+    expect(contextLabel(codex)).toBe("50% left");
     expect(contextTitle({ ...claude, autoCompactThreshold: 167_000 })).toBe(
-      "上下文已用 25%（50k / 200k tokens），达到 167k 时自动压缩",
+      "Context 25% used (50k / 200k tokens); auto-compacts at 167k",
     );
   });
 

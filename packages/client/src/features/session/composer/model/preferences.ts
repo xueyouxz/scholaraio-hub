@@ -14,7 +14,7 @@ export function readComposerPreference(provider: ProviderName): ComposerPreferen
     const stored = localStorage.getItem(key(provider));
     return stored ? (JSON.parse(stored) as ComposerPreference) : {};
   } catch (error) {
-    console.warn("无法读取上次的会话选项", error);
+    console.warn("Could not read the last composer choices", error);
     return {};
   }
 }
@@ -31,6 +31,6 @@ export function rememberComposerChoice(provider: ProviderName, patch: SessionOpt
       JSON.stringify({ ...readComposerPreference(provider), ...remembered }),
     );
   } catch (error) {
-    console.warn("无法保存会话选项", error);
+    console.warn("Could not save the composer choices", error);
   }
 }

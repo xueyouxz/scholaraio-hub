@@ -16,16 +16,16 @@ export function formatTokens(tokens: number): string {
 
 /** The pill text in the provider's own phrasing: share used, or share left. */
 export function contextLabel(usage: SessionContextUsage): string {
-  return usage.display === "used" ? `${usage.percent}%` : `${usage.percent}% 剩余`;
+  return usage.display === "used" ? `${usage.percent}% used` : `${usage.percent}% left`;
 }
 
 export function contextTitle(usage: SessionContextUsage): string {
   const tokens = `${formatTokens(usage.usedTokens)} / ${formatTokens(usage.contextWindow)} tokens`;
   const head =
     usage.display === "used"
-      ? `上下文已用 ${usage.percent}%（${tokens}）`
-      : `上下文剩余 ${usage.percent}%（${tokens}）`;
+      ? `Context ${usage.percent}% used (${tokens})`
+      : `Context ${usage.percent}% left (${tokens})`;
   return usage.autoCompactThreshold
-    ? `${head}，达到 ${formatTokens(usage.autoCompactThreshold)} 时自动压缩`
+    ? `${head}; auto-compacts at ${formatTokens(usage.autoCompactThreshold)}`
     : head;
 }

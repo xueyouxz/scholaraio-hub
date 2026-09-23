@@ -42,11 +42,11 @@ test("import → keyword search → read → cited conversation → reload", asy
   await page.getByRole("button", { name: "PDF", exact: true }).click();
   await expect(page.locator("canvas").first()).toBeVisible();
   await page.getByRole("link", { name: "询问本文" }).click();
-  await page.getByRole("textbox", { name: "输入问题" }).fill("总结本文");
-  await page.getByRole("button", { name: "发送", exact: true }).click();
+  await page.getByRole("textbox", { name: "Message" }).fill("总结本文");
+  await page.getByRole("button", { name: "Send", exact: true }).click();
   await expect(page).toHaveURL(/\/sessions\/[^/?]+$/);
   await expect(page.getByText("文献回答", { exact: false })).toBeVisible();
-  await expect(page.getByRole("button", { name: "发送", exact: true })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Send", exact: true })).toBeVisible();
   await page.reload();
   await expect(page.getByText("文献回答", { exact: false })).toHaveCount(1);
   await page.getByRole("link", { name: "1", exact: true }).click();
@@ -58,16 +58,16 @@ test("refresh during a run keeps approval and stop attached to the same session"
   page,
 }) => {
   await page.goto("/sessions");
-  await page.getByRole("textbox", { name: "输入问题" }).fill("approval slow");
-  await page.getByRole("button", { name: "发送", exact: true }).click();
+  await page.getByRole("textbox", { name: "Message" }).fill("approval slow");
+  await page.getByRole("button", { name: "Send", exact: true }).click();
   await expect(page).toHaveURL(/\/sessions\/[^/?]+$/);
   await expect(page.getByRole("button", { name: "Approve", exact: true })).toBeVisible();
   await expect(page.getByRole("button", { name: "Approve + Accept Edits" })).toBeVisible();
   const url = page.url();
   await page.reload();
   await page.getByRole("button", { name: "Deny", exact: true }).click();
-  await page.getByRole("button", { name: "停止", exact: true }).click();
-  await expect(page.getByRole("button", { name: "发送", exact: true })).toBeVisible();
+  await page.getByRole("button", { name: "Stop", exact: true }).click();
+  await expect(page.getByRole("button", { name: "Send", exact: true })).toBeVisible();
   await expect(page).toHaveURL(url);
   await expect(page.getByText("文献回答", { exact: false })).toHaveCount(1);
 });
@@ -138,7 +138,7 @@ test("imported history renders tables, math, diff and incomplete Markdown safely
   await expect(page.locator("diffs-container")).toBeVisible();
   expect(await page.evaluate(() => Reflect.get(window, "__unsafeExecuted"))).toBeUndefined();
   expect(await page.locator('a[href^="javascript:"]').count()).toBe(0);
-  await expect(page.getByRole("textbox", { name: "输入问题" })).toHaveCount(0);
+  await expect(page.getByRole("textbox", { name: "Message" })).toHaveCount(0);
   await page.setViewportSize({ width: 390, height: 844 });
   await expect(page.getByText("这是导入的只读历史。新建会话后可继续提问。")).toBeVisible();
 });
@@ -197,8 +197,8 @@ test("internal project → cards → reading → first message preserves project
   await page.getByRole("button", { name: "阅读文献", exact: true }).click();
   await page.getByRole("link", { name: "询问本文" }).click();
   await expect(page.getByRole("heading", { name: projectName, exact: true })).toBeVisible();
-  await page.getByRole("textbox", { name: "输入问题" }).fill("总结项目中的文献");
-  await page.getByRole("button", { name: "发送", exact: true }).click();
+  await page.getByRole("textbox", { name: "Message" }).fill("总结项目中的文献");
+  await page.getByRole("button", { name: "Send", exact: true }).click();
   await expect(page).toHaveURL(/\/sessions\/[\w-]+$/);
   await expect(page.getByText("文献回答", { exact: false })).toBeVisible();
   const response = await request.get(
@@ -240,8 +240,8 @@ test("settings persist defaults, sidebar resizes and Skills navigation works on 
   await page.screenshot({ path: test.info().outputPath("settings.png") });
   await page.getByRole("link", { name: "新对话", exact: true }).click();
   await expect(page.getByRole("combobox", { name: "模型（可选）" })).toHaveValue("test-model");
-  await page.getByRole("textbox", { name: "输入问题" }).fill("使用默认工具");
-  await page.getByRole("button", { name: "发送", exact: true }).click();
+  await page.getByRole("textbox", { name: "Message" }).fill("使用默认工具");
+  await page.getByRole("button", { name: "Send", exact: true }).click();
   await expect(page).toHaveURL(/\/sessions\/[\w-]+$/);
   const sessionPath = new URL(page.url()).pathname;
   await page.getByRole("link", { name: "设置", exact: true }).click();
@@ -286,7 +286,7 @@ test("composer keeps project drafts, handles IME and recovers failed sends", asy
     data: { name: projectName },
   });
   await page.goto("/sessions");
-  const input = page.getByRole("textbox", { name: "输入问题" });
+  const input = page.getByRole("textbox", { name: "Message" });
   await input.fill("第一行");
   await input.press("Shift+Enter");
   await input.pressSequentially("second line");
@@ -311,11 +311,11 @@ test("composer keeps project drafts, handles IME and recovers failed sends", asy
       await route.fulfill({ status: 503, json: { error: "模拟服务暂不可用" } });
     else await route.continue();
   });
-  await page.getByRole("button", { name: "发送", exact: true }).click();
+  await page.getByRole("button", { name: "Send", exact: true }).click();
   await expect(page.getByText("模拟服务暂不可用").first()).toBeVisible();
   await expect(input).toHaveValue("项目草稿");
   await page.unroute("**/api/sessions");
-  await page.getByRole("button", { name: "发送", exact: true }).click();
+  await page.getByRole("button", { name: "Send", exact: true }).click();
   await expect(page).toHaveURL(/\/sessions\/[\w-]+$/);
   await expect(page.getByText("文献回答", { exact: false })).toBeVisible();
   await input.fill("已有会话草稿");
@@ -336,11 +336,11 @@ test("composer permission menu uses the provider's modes and saves settings", as
   await page.goto("/sessions");
   // A new chat offers the provider's own permission modes before the first turn.
   await expect(page.getByRole("button", { name: "Default", exact: true })).toBeVisible();
-  await page.getByRole("textbox", { name: "输入问题" }).fill("验证原权限控件");
-  await page.getByRole("button", { name: "发送", exact: true }).click();
+  await page.getByRole("textbox", { name: "Message" }).fill("验证原权限控件");
+  await page.getByRole("button", { name: "Send", exact: true }).click();
   await expect(page).toHaveURL(/\/sessions\/[\w-]+$/);
   await expect(page.getByText("文献回答", { exact: false })).toBeVisible();
-  await expect(page.getByRole("button", { name: "发送", exact: true })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Send", exact: true })).toBeVisible();
   const id = new URL(page.url()).pathname.split("/").at(-1);
   await page.getByRole("button", { name: "Default", exact: true }).click();
   await page.getByRole("menuitemradio", { name: "Plan Mode", exact: true }).click();
@@ -381,7 +381,7 @@ test("original voice control inserts a transcript without sending or leaving rec
   });
   await page.goto("/sessions");
   await page.getByRole("button", { name: "Start voice input", exact: true }).click();
-  await expect(page.getByRole("textbox", { name: "输入问题" })).toHaveValue("语音文献问题");
+  await expect(page.getByRole("textbox", { name: "Message" })).toHaveValue("语音文献问题");
   await expect(page).toHaveURL(/\/sessions$/);
   await page.getByRole("link", { name: "文献库", exact: true }).click();
   await expect.poll(() => page.evaluate(() => Reflect.get(window, "voiceStopped"))).toBe(true);

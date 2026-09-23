@@ -28,7 +28,7 @@ vi.mock("../../../../../core/library", () => ({
       uploads.targets.push(target);
       if (uploads.hold)
         await new Promise<void>((resolve) => uploads.holding.set(file.name, resolve));
-      if (uploads.failing.has(file.name)) throw new Error(`上传失败：${file.name}`);
+      if (uploads.failing.has(file.name)) throw new Error(`Upload failed: ${file.name}`);
       return {
         id: `id-${file.name}`,
         filename: file.name,
@@ -155,11 +155,11 @@ function chooseFiles(files: File[]) {
 }
 
 const chips = () =>
-  Array.from(container?.querySelectorAll('[aria-label="附件"] li') ?? []).map(
+  Array.from(container?.querySelectorAll('[aria-label="Attachments"] li') ?? []).map(
     (node) => node.querySelector("span")?.textContent,
   );
 const chipStatus = () =>
-  Array.from(container?.querySelectorAll('[aria-label="附件"] li') ?? []).map((node) =>
+  Array.from(container?.querySelectorAll('[aria-label="Attachments"] li') ?? []).map((node) =>
     node.getAttribute("data-status"),
   );
 
@@ -188,7 +188,7 @@ describe("Composer keyboard submission", () => {
     await flush();
     expect(event.defaultPrevented).toBe(false);
     expect(onSend).not.toHaveBeenCalled();
-    act(() => button("发送")?.click());
+    act(() => button("Send")?.click());
     await flush();
     expect(onSend).toHaveBeenCalledWith("line one", []);
     matchMedia.mockRestore();
@@ -225,7 +225,7 @@ describe("Composer keyboard submission", () => {
     type("   ");
     await press({ key: "Enter" });
     expect(onSend).not.toHaveBeenCalled();
-    expect(button("发送")?.disabled).toBe(true);
+    expect(button("Send")?.disabled).toBe(true);
   });
 
   it("queues with Ctrl+Enter while idle when a queue action exists", async () => {
@@ -261,11 +261,11 @@ describe("Composer keyboard submission", () => {
 
 describe("Composer send outcome", () => {
   it("keeps the text and shows the error when sending fails", async () => {
-    render({ onSend: vi.fn(async () => Promise.reject(new Error("网络断开"))) });
+    render({ onSend: vi.fn(async () => Promise.reject(new Error("Network down"))) });
     type("hello");
     await press({ key: "Enter" });
     expect(textarea().value).toBe("hello");
-    expect(alerts()).toContain("网络断开");
+    expect(alerts()).toContain("Network down");
   });
 
   it("does not clear text the user edited while the send was in flight", async () => {
@@ -529,13 +529,15 @@ describe("Composer attachments", () => {
     await flush();
     expect(chipStatus()).toEqual(["failed"]);
     type("with file");
-    expect(button("发送")?.disabled).toBe(true);
+    expect(button("Send")?.disabled).toBe(true);
     await press({ key: "Enter" });
     expect(onSend).not.toHaveBeenCalled();
-    expect(alerts()).toContain("有附件上传失败，请重试或移除后再发送");
+    expect(alerts()).toContain(
+      "An attachment failed to upload. Retry or remove it before sending.",
+    );
 
     uploads.failing.clear();
-    act(() => button("重试上传 bad.txt")?.click());
+    act(() => button("Retry upload of bad.txt")?.click());
     await flush();
     expect(chipStatus()).toEqual(["uploaded"]);
     await press({ key: "Enter" });
@@ -546,7 +548,7 @@ describe("Composer attachments", () => {
     render();
     chooseFiles([file("a.txt"), file("b.txt")]);
     await flush();
-    act(() => button("移除 a.txt")?.click());
+    act(() => button("Remove a.txt")?.click());
     expect(chips()).toEqual(["b.txt"]);
     await flush();
     expect(uploads.removed).toEqual(["id-a.txt"]);
@@ -556,14 +558,14 @@ describe("Composer attachments", () => {
     render();
     chooseFiles([file("empty.txt", 0)]);
     expect(chips()).toEqual([]);
-    expect(alerts()).toContain("附件不能为空，且单个文件不能超过 25 MB");
+    expect(alerts()).toContain("Files cannot be empty and must stay under 25 MB each");
   });
 
   it("rejects more than ten files per message", () => {
     render();
     chooseFiles(Array.from({ length: 11 }, (_, index) => file(`${index}.txt`)));
     expect(chips()).toEqual([]);
-    expect(alerts()).toContain("每条消息最多添加 10 个附件");
+    expect(alerts()).toContain("A message can carry at most 10 files");
   });
 
   it("takes pasted files instead of pasting text", () => {
@@ -592,26 +594,44 @@ describe("Composer attachments", () => {
   });
 });
 
-describe("Composer send/stop actions", () => {
-  it("turns the primary action into Stop while running with no draft", () => {
+describe("Composer action button", () => {
+  const actions = () =>
+    Array.from(container?.querySelectorAll("button.hub-composer-send") ?? []).map((node) =>
+      node.getAttribute("aria-label"),
+    );
+
+  it("is one button that sends while the session is idle", async () => {
+    const { onSend } = render();
+    expect(actions()).toEqual(["Send"]);
+    expect(button("Send")?.disabled).toBe(true);
+    type("ready");
+    act(() => button("Send")?.click());
+    await flush();
+    expect(onSend).toHaveBeenCalledWith("ready", []);
+  });
+
+  it("stops the running turn while there is nothing to send", () => {
     const onStop = vi.fn();
     render({ running: true, onStop, onQueue: vi.fn(async () => {}) });
-    act(() => button("停止")?.click());
+    expect(actions()).toEqual(["Stop"]);
+    act(() => button("Stop")?.click());
     expect(onStop).toHaveBeenCalled();
-    expect(button("发送")).toBeNull();
   });
 
-  it("shows Send, Queue and a secondary Stop while running with a draft", () => {
-    render({ running: true, onStop: vi.fn(), onQueue: vi.fn(async () => {}) });
+  it("queues the draft instead while the turn runs", async () => {
+    const onQueue = vi.fn(async () => {});
+    const { onSend } = render({ running: true, onStop: vi.fn(), onQueue });
     type("next");
-    expect(button("发送")).not.toBeNull();
-    expect(button("加入队列")).not.toBeNull();
-    expect(button("停止")).not.toBeNull();
+    expect(actions()).toEqual(["Queue message"]);
+    act(() => button("Queue message")?.click());
+    await flush();
+    expect(onQueue).toHaveBeenCalledWith("next", []);
+    expect(onSend).not.toHaveBeenCalled();
   });
 
-  it("hides Stop once the agent is waiting for input", () => {
-    render({ running: true, thinking: false, onStop: vi.fn(), onQueue: vi.fn(async () => {}) });
-    expect(button("停止")).toBeNull();
+  it("sends again once the agent is waiting for input", () => {
+    render({ running: true, thinking: false, onStop: vi.fn() });
+    expect(actions()).toEqual(["Send"]);
   });
 
   it("renders the provider's option pills when given controls", () => {
@@ -667,7 +687,7 @@ describe("Composer send/stop actions", () => {
       },
     });
     chooseFiles([file("a.txt"), file("b.txt")]);
-    expect(alerts()).toContain("每条消息最多添加 1 个附件");
+    expect(alerts()).toContain("A message can carry at most 1 files");
   });
 });
 

@@ -27,7 +27,7 @@ export interface ComposerControls {
   onProviderChange?: (provider: ProviderName) => void;
 }
 
-const DEFAULT_LABEL = "默认";
+const DEFAULT_LABEL = "Default";
 
 /** A request, e.g. from a /command, to open one of the option menus. */
 export interface MenuRequest {
@@ -69,7 +69,11 @@ export function ProviderMenu({ controls }: { controls: ComposerControls }) {
             label: item.displayName,
             icon: <ProviderLogo provider={item.name} size={15} />,
             disabled: !item.installed || !item.authenticated,
-            description: !item.installed ? "未安装" : !item.authenticated ? "未登录" : undefined,
+            description: !item.installed
+              ? "Not installed"
+              : !item.authenticated
+                ? "Not signed in"
+                : undefined,
           })),
         },
       ]}
@@ -129,7 +133,7 @@ export function EffortMenu({
   const sections: MenuSection[] = [];
   if (thinkingModes.length > 0) {
     sections.push({
-      title: "思考",
+      title: "Thinking",
       selected: thinking,
       onSelect: (id) => void controls.onChange({ thinking: id as typeof thinking }),
       items: thinkingModes.map((mode) => ({ id: mode.id, label: mode.label })),
@@ -138,7 +142,7 @@ export function EffortMenu({
   if (showEffort) {
     const defaultEffort = model?.defaultEffort;
     sections.push({
-      title: "推理强度",
+      title: "Effort",
       selected: controls.options.effort ?? "",
       onSelect: (id) => void controls.onChange({ effort: id }),
       items: [
@@ -159,7 +163,7 @@ export function EffortMenu({
     <MenuButton
       icon={<Brain size={12} aria-hidden="true" />}
       label={label}
-      title="思考与推理强度"
+      title="Thinking and effort"
       disabled={controls.disabled}
       openRequest={requested(request, "effort")}
       sections={sections}
@@ -187,7 +191,7 @@ export function ModelMenu({
     <MenuButton
       icon={<ProviderLogo provider={controls.provider} size={13} />}
       label={current?.name ?? selected}
-      title="模型"
+      title="Model"
       align="right"
       disabled={controls.disabled}
       openRequest={requested(request, "model")}
@@ -225,7 +229,9 @@ export function ComposerTrailingOptions({
     <>
       {controls.contextUsage ? <ContextMeter usage={controls.contextUsage} /> : null}
       {controls.pending ? (
-        <span className="text-[11px] text-on-surface-variant whitespace-nowrap">下一轮生效</span>
+        <span className="text-[11px] text-on-surface-variant whitespace-nowrap">
+          Applies next turn
+        </span>
       ) : null}
       {controls.error ? (
         <span role="alert" className="text-error text-xs">

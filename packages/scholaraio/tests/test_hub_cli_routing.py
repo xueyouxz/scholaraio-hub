@@ -6,7 +6,8 @@ import argparse
 import pytest
 
 from scholaraio.core.config import Config
-from scholaraio.interfaces.cli import hub_client, hub_routing, workspace as workspace_cli
+from scholaraio.interfaces.cli import hub_client, hub_routing
+from scholaraio.interfaces.cli import workspace as workspace_cli
 from scholaraio.projects import workspace as workspace_mod
 
 

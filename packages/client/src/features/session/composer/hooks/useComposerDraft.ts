@@ -6,7 +6,7 @@ export function readComposerDraft(draftKey: string): string {
   try {
     return sessionStorage.getItem(draftStorageKey(draftKey)) ?? "";
   } catch (error) {
-    console.warn("无法读取会话草稿", error);
+    console.warn("Could not read the saved draft", error);
     return "";
   }
 }
@@ -16,7 +16,7 @@ function writeComposerDraft(draftKey: string, text: string) {
     if (text) sessionStorage.setItem(draftStorageKey(draftKey), text);
     else sessionStorage.removeItem(draftStorageKey(draftKey));
   } catch (error) {
-    console.warn("无法保存会话草稿", error);
+    console.warn("Could not save the draft", error);
   }
 }
 

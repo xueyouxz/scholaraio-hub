@@ -14,6 +14,6 @@ describe("rejectAttachments", () => {
   });
 
   it("rejects going over the per-message count", () => {
-    expect(rejectAttachments(10, [sized(1)])).toBe("每条消息最多添加 10 个附件");
+    expect(rejectAttachments(10, [sized(1)])).toBe("A message can carry at most 10 files");
   });
 });

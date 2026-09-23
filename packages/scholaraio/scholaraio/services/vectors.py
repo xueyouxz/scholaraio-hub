@@ -21,6 +21,7 @@ import os
 import sqlite3
 import struct
 import time
+from collections.abc import Callable
 from functools import lru_cache
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -51,6 +52,44 @@ CREATE TABLE IF NOT EXISTS vector_metadata (
 
 _MIGRATE_HASH = "ALTER TABLE paper_vectors ADD COLUMN content_hash TEXT NOT NULL DEFAULT ''"
 _EMBED_SIG_KEY = "embed_signature"
+# Papers per write: small enough to report progress and stop promptly, large
+# enough that the model's own batching still does the work.
+_EMBED_SLICE = 64
+
+
+def embedding_provider(cfg: Config | None = None) -> str:
+    """Which embedding backend this library uses: local, openai-compat or none."""
+    return _embed_provider(cfg)
+
+
+def model_available(cfg: Config | None = None) -> bool:
+    """Whether embedding can start without downloading anything first."""
+    if _embed_provider(cfg) != "local":
+        return True
+    model_name = cfg.embed.model if cfg is not None else "Qwen/Qwen3-Embedding-0.6B"
+    cache_dir = os.path.expanduser(cfg.embed.cache_dir if cfg is not None else "~/.cache/modelscope/hub/models")
+    return _find_local_model_path(model_name, cache_dir) is not None
+
+
+def prepare_model(cfg: Config | None = None) -> None:
+    """Make the embedding model usable, downloading it on first run."""
+    if _embed_provider(cfg) == "local":
+        _load_model(cfg)
+
+
+def vector_count(db_path: Path) -> int:
+    """How many papers already carry an embedding."""
+    if not db_path.exists():
+        return 0
+    conn = sqlite3.connect(db_path)
+    try:
+        if not conn.execute(
+            "SELECT name FROM sqlite_master WHERE type='table' AND name='paper_vectors'"
+        ).fetchone():
+            return 0
+        return int(conn.execute("SELECT COUNT(*) FROM paper_vectors").fetchone()[0])
+    finally:
+        conn.close()
 
 
 def _embed_provider(cfg: Config | None = None) -> str:
@@ -867,7 +906,15 @@ def _append_faiss(db_path: Path, new_ids: list[str], new_vecs: list[list[float]]
 # ============================================================================
 
 
-def build_vectors(papers_dir: Path, db_path: Path, rebuild: bool = False, cfg: Config | None = None) -> int:
+def build_vectors(
+    papers_dir: Path,
+    db_path: Path,
+    rebuild: bool = False,
+    cfg: Config | None = None,
+    *,
+    on_progress: Callable[[int, int], None] | None = None,
+    should_stop: Callable[[], bool] | None = None,
+) -> int:
     """为论文生成语义嵌入向量并写入 ``paper_vectors`` 表。
 
     嵌入文本 = ``title`` + ``abstract`` 拼接。
@@ -881,6 +928,9 @@ def build_vectors(papers_dir: Path, db_path: Path, rebuild: bool = False, cfg: C
         db_path: SQLite 数据库路径，不存在时自动创建。
         rebuild: 为 ``True`` 时清空旧向量后重建。
         cfg: 可选的 :class:`~scholaraio.core.config.Config`，用于读取模型/设备配置。
+        on_progress: 可选回调 ``(已完成, 总数)``，每写入一批向量后调用。
+        should_stop: 可选回调，返回 ``True`` 时在下一批之前停止；已写入的向量保留，
+            下次运行会从剩余论文继续。
 
     Returns:
         本次新写入的向量数量。
@@ -948,28 +998,35 @@ def build_vectors(papers_dir: Path, db_path: Path, rebuild: bool = False, cfg: C
             return 0
 
         _log.info("embedding %d papers", len(to_embed))
-        texts = [t for _, t, _ in to_embed]
-        vecs = _embed_batch(texts, cfg)
-
         new_ids = []
         new_vecs_raw = []
         updated_ids = set()
-        for (paper_id, _, h), vec in zip(to_embed, vecs):
-            is_update = paper_id in existing_hashes
-            conn.execute(
-                "INSERT OR REPLACE INTO paper_vectors (paper_id, embedding, content_hash) VALUES (?, ?, ?)",
-                (paper_id, _pack(vec), h),
-            )
-            new_ids.append(paper_id)
-            new_vecs_raw.append(vec)
-            if is_update:
-                updated_ids.add(paper_id)
+        if on_progress:
+            on_progress(0, len(to_embed))
+        # Embed in slices so a long run reports progress, can be stopped, and
+        # keeps what it has already written.
+        for start in range(0, len(to_embed), _EMBED_SLICE):
+            if should_stop and should_stop():
+                break
+            batch = to_embed[start : start + _EMBED_SLICE]
+            for (paper_id, _, h), vec in zip(batch, _embed_batch([t for _, t, _ in batch], cfg)):
+                if paper_id in existing_hashes:
+                    updated_ids.add(paper_id)
+                conn.execute(
+                    "INSERT OR REPLACE INTO paper_vectors (paper_id, embedding, content_hash) VALUES (?, ?, ?)",
+                    (paper_id, _pack(vec), h),
+                )
+                new_ids.append(paper_id)
+                new_vecs_raw.append(vec)
+            conn.commit()
+            if on_progress:
+                on_progress(len(new_ids), len(to_embed))
 
         conn.commit()
     finally:
         conn.close()
 
-    if to_embed:
+    if new_ids:
         if updated_ids:
             # Content changed for existing papers — must rebuild FAISS
             _invalidate_faiss(db_path)
@@ -977,7 +1034,7 @@ def build_vectors(papers_dir: Path, db_path: Path, rebuild: bool = False, cfg: C
             # Pure additions — try incremental append
             _append_faiss(db_path, new_ids, new_vecs_raw)
 
-    return len(to_embed)
+    return len(new_ids)
 
 
 # ============================================================================

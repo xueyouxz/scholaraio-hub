@@ -189,7 +189,6 @@ export function ModelMenu({
   ];
   return (
     <MenuButton
-      icon={<ProviderLogo provider={controls.provider} size={13} />}
       label={current?.name ?? selected}
       title="Model"
       align="right"

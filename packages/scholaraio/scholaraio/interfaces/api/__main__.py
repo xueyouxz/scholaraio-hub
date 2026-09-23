@@ -200,6 +200,18 @@ def create_app(root: Path, token: str) -> FastAPI:
         atomic_json(directory / "reading-position.json", body.model_dump())
         return body
 
+    @app.get("/tasks")
+    def tasks():
+        return app.state.library.tasks.status()
+
+    @app.post("/tasks/{kind}", status_code=202)
+    def start_task(kind: str):
+        return app.state.library.tasks.start(kind)
+
+    @app.delete("/tasks/{kind}")
+    def cancel_task(kind: str):
+        return app.state.library.tasks.cancel(kind)
+
     @app.get("/imports")
     def jobs():
         return {"jobs": app.state.library.list_jobs()}

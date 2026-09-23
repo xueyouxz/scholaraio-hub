@@ -66,6 +66,10 @@
   --color-attention: #d97706;
   --color-thinking: #d97757;
 
+  /* Each agent's own accent, used by the composer. */
+  --provider-claude: #d97757;
+  --provider-codex: #10a37f;
+
   /*
    * Streamdown's output uses shadcn token names (bg-muted, border-border,
    * text-muted-foreground, bg-sidebar, ...). Without these its code blocks,
@@ -328,11 +332,11 @@
 }
 
 .hub-composer[data-provider="claude"] {
-  --composer-accent: var(--color-thinking);
+  --composer-accent: var(--provider-claude);
 }
 
 .hub-composer[data-provider="codex"] {
-  --composer-accent: var(--color-on-surface);
+  --composer-accent: var(--provider-codex);
 }
 
 .hub-composer:focus-within {
@@ -342,12 +346,6 @@
 
 .hub-composer [data-accent] {
   color: var(--composer-accent);
-}
-
-/* The send button carries the agent's accent; Codex's is the text colour. */
-.hub-composer[data-provider="codex"] .hub-composer-send:not(:disabled) {
-  background: var(--color-on-surface);
-  color: var(--color-surface);
 }
 
 /* Option pills keep one row: on narrow composers they shrink to their icons. */

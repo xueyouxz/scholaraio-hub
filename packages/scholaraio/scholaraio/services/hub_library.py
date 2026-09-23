@@ -17,6 +17,7 @@ from scholaraio.services.hub_config import ensure_config
 from scholaraio.services.hub_metadata import HubMetadata
 from scholaraio.services.hub_import import ImportQueue
 from scholaraio.services.hub_projects import HubProjects
+from scholaraio.services.hub_tasks import MaintenanceTasks
 from scholaraio.services.index import build_index, search
 from scholaraio.stores.papers import authors_text, find_pdf, iter_paper_dirs, read_meta
 
@@ -58,10 +59,12 @@ class HubLibrary:
         self.citations = HubCitations(self)
         self.metadata = HubMetadata(self)
         self.imports = ImportQueue(self)
+        self.tasks = MaintenanceTasks(self)
         self.reindex()
 
     def close(self):
         self.imports.close()
+        self.tasks.close()
 
     def reindex(self):
         with self.lock:

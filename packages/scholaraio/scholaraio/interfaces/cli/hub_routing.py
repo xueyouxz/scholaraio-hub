@@ -63,6 +63,63 @@ MANAGED_COMMANDS: dict[str, tuple[Predicate, str]] = {
 }
 
 
+def _set(args: argparse.Namespace, *names: str) -> bool:
+    """Whether any of these options was asked for."""
+    return any(getattr(args, name, None) for name in names)
+
+
+def _locators(args: argparse.Namespace) -> list[str]:
+    """What this invocation asks the library to fetch, in Hub's own terms.
+
+    Only the plain form delegates. An invocation carrying options the Hub's
+    import does not offer — a dry run, a forced overwrite, a bulk refetch —
+    falls through to the refusal, which says what to do instead.
+    """
+    command = getattr(args, "command", "")
+    if command == "fetch-pdf" and not _set(args, "paper", "all", "force", "direct"):
+        return [args.locator] if getattr(args, "locator", None) else []
+    if command == "ingest-link" and not _set(args, "dry_run", "force", "no_index", "json"):
+        return list(getattr(args, "urls", []) or [])
+    if command == "patent-fetch":
+        return [args.id_or_url]
+    if command == "arxiv" and _fetching_arxiv(args) and not _set(args, "dry_run", "force"):
+        return [args.arxiv_ref]
+    return []
+
+
+def _task(args: argparse.Namespace) -> str | None:
+    """The Hub task this invocation corresponds to, if any."""
+    command = getattr(args, "command", "")
+    if command == "embed" and not _set(args, "rebuild"):
+        return "semantic"
+    if command == "topics" and getattr(args, "build", False) and not _set(args, "reduce_to"):
+        return "topics"
+    if command in ("enrich-toc", "enrich-l3") and not _set(args, "force"):
+        return "deep"
+    return None
+
+
+def delegate(args: argparse.Namespace) -> str | None:
+    """Run this invocation through the Hub, or return None if it has no equivalent.
+
+    Fetching a paper and building an index are things the Hub can do on the
+    agent's behalf; asking it is better than refusing an agent that only wants
+    the outcome. Anything with options the Hub does not offer still stops.
+    """
+    if not hub_client.active():
+        return None
+    locators = _locators(args)
+    if locators:
+        for locator in locators:
+            hub_client.request("POST", "/api/library/imports/fetch", {"locator": locator})
+        return f"已交给 Hub 获取并入库（{len(locators)} 项），可在前端查看导入进度。"
+    kind = _task(args)
+    if kind is None:
+        return None
+    hub_client.request("POST", f"/api/library/tasks/{kind}")
+    return f"已在 Hub 中启动 {kind} 任务，可在前端查看进度。"
+
+
 def refusal(args: argparse.Namespace) -> str | None:
     """Return why this invocation must go through the Hub, or None."""
     if not hub_client.active():

@@ -65,6 +65,11 @@ def main() -> None:
 
     from scholaraio.interfaces.cli import hub_routing
 
+    delegated = hub_routing.delegate(args)
+    if delegated:
+        _ui(delegated)
+        return
+
     refusal = hub_routing.refusal(args)
     if refusal:
         _ui(refusal)

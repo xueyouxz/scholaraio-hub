@@ -28,8 +28,20 @@ scholaraio citing <论文标识> --ws {name}      # 库内被引
 
 ## 写操作
 
-导入、建索引、补全元数据等写操作由 Hub 统一执行，CLI 中已停用；
-需要时请在前端触发。`scholaraio ws add/remove` 可以直接用，它们会转交 Hub。
+写操作由 Hub 统一执行。下面这些命令可以直接用，它们会转交 Hub 排队执行：
+
+```bash
+scholaraio ws add/remove <论文标识> --ws {name}   # 增删项目文献
+scholaraio fetch-pdf <DOI 或链接>                 # 获取并入库
+scholaraio arxiv fetch <arXiv 编号>
+scholaraio patent-fetch <专利号>
+scholaraio embed                                  # 准备语义检索
+scholaraio topics --build                         # 构建主题
+scholaraio enrich-toc / enrich-l3                 # 深度解析
+```
+
+带 `--force`、`--dry-run`、`--rebuild` 等 Hub 不提供的选项时命令会停用，
+请改在前端触发。
 """
 
 

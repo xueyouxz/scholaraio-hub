@@ -340,7 +340,7 @@ export function SearchPage() {
 
             {mode === "semantic" ? (
               <div className="mt-3">
-                <CapabilityPrompt kind="semantic" hideWhenReady framed />
+                <CapabilityPrompt kind="semantic" hideWhenReady />
               </div>
             ) : null}
 

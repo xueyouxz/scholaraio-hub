@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Download, MessageSquare, X } from "lucide-react";
-import { useState } from "react";
+import { ChevronDown, Download, MessageSquare, X } from "lucide-react";
+import { useEffect, useRef, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import { libraryApi, newSessionUrl } from "../../../core/library";
 import { useLibrarySelection } from "../selection";
@@ -24,7 +24,6 @@ export function LibrarySelectionBar() {
   const [params] = useSearchParams();
   const projectId = params.get("project") ?? undefined;
   const client = useQueryClient();
-  const [format, setFormat] = useState("bibtex");
   const ids = [...selection.selected];
 
   const projects = useQuery({
@@ -73,32 +72,15 @@ export function LibrarySelectionBar() {
         </p>
       ) : null}
       <div className="flex-1" />
-      <label className="sr-only" htmlFor="selection-export-format">
-        导出格式
-      </label>
-      <select
-        id="selection-export-format"
-        className="hub-input py-1 text-sm"
-        value={format}
-        onChange={(event) => setFormat(event.target.value)}
+      <ExportMenu
+        pending={save.isPending}
+        onExport={(format) => save.mutate({ paperIds: ids, projectId, format })}
+      />
+      <Link
+        to={newSessionUrl(projectId, ids)}
+        className="inline-flex items-center gap-1.5 rounded-full bg-surface-container-high px-3 py-1.5 text-sm font-medium text-on-surface active:scale-95"
       >
-        {FORMATS.map((option) => (
-          <option key={option.value} value={option.value}>
-            {option.label}
-          </option>
-        ))}
-      </select>
-      <button
-        type="button"
-        className="hub-button"
-        disabled={save.isPending}
-        onClick={() => save.mutate({ paperIds: ids, projectId, format })}
-      >
-        <Download size={14} />
-        {save.isPending ? "导出中…" : "导出引用"}
-      </button>
-      <Link className="hub-button" to={newSessionUrl(projectId, ids)}>
-        <MessageSquare size={14} />
+        <MessageSquare className="w-3.5 h-3.5" aria-hidden="true" />
         询问选中的
       </Link>
       <BatchAddDropdown
@@ -111,11 +93,66 @@ export function LibrarySelectionBar() {
       <button
         type="button"
         aria-label="清除选择"
-        className="p-1.5 rounded-lg text-on-surface-variant hover:bg-surface-container-high border-0 bg-transparent cursor-pointer"
+        className="rounded-full p-1.5 text-on-surface-variant hover:bg-surface-container-high active:opacity-80 border-0 bg-transparent cursor-pointer"
         onClick={selection.clear}
       >
         <X className="w-4 h-4" />
       </button>
+    </div>
+  );
+}
+
+/** Export the selection, in the format chosen at the moment of asking. */
+function ExportMenu({
+  pending,
+  onExport,
+}: {
+  pending: boolean;
+  onExport: (format: string) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const menu = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!open) return;
+    const away = (event: MouseEvent) => {
+      if (menu.current && !menu.current.contains(event.target as Node)) setOpen(false);
+    };
+    document.addEventListener("mousedown", away);
+    return () => document.removeEventListener("mousedown", away);
+  }, [open]);
+  return (
+    <div className="relative" ref={menu}>
+      <button
+        type="button"
+        disabled={pending}
+        aria-expanded={open}
+        onClick={() => setOpen((value) => !value)}
+        className="inline-flex items-center gap-1.5 rounded-full bg-surface-container-high px-3 py-1.5 text-sm font-medium text-on-surface active:scale-95 disabled:opacity-40 border-0 cursor-pointer"
+      >
+        <Download className="w-3.5 h-3.5" aria-hidden="true" />
+        {pending ? "导出中…" : "导出引用"}
+        <ChevronDown
+          className={`w-3.5 h-3.5 transition-transform ${open ? "rotate-180" : ""}`}
+          aria-hidden="true"
+        />
+      </button>
+      {open ? (
+        <div className="absolute bottom-[calc(100%+6px)] right-0 z-30 w-40 rounded-xl border border-outline-variant/20 bg-surface-container-high p-2 shadow-xl">
+          {FORMATS.map((option) => (
+            <button
+              key={option.value}
+              type="button"
+              onClick={() => {
+                setOpen(false);
+                onExport(option.value);
+              }}
+              className="w-full rounded-lg px-3 py-2 text-left text-sm text-on-surface hover:bg-surface-container-low border-0 bg-transparent cursor-pointer"
+            >
+              {option.label}
+            </button>
+          ))}
+        </div>
+      ) : null}
     </div>
   );
 }

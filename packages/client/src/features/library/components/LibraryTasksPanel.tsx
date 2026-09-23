@@ -29,16 +29,15 @@ const SEVERITY: Record<string, string> = { error: "错误", warning: "警告", i
 /** Start, watch and stop the library work that costs model time. */
 export function LibraryTasksPanel() {
   return (
-    <section
-      aria-label="文献库能力"
-      className="shrink-0 bg-surface-container-low border border-outline-variant/10 rounded-lg p-3 flex flex-col gap-2"
-    >
-      <div className="grid gap-2 md:grid-cols-4">
+    <section aria-label="文献库能力" className="shrink-0 flex flex-col gap-3">
+      <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
         {CAPABILITIES.map((item) => (
           <CapabilityPrompt key={item.kind} kind={item.kind} />
         ))}
       </div>
-      <AuditSummary />
+      <div className="rounded-xl border border-outline-variant/10 bg-surface-container-low p-4">
+        <AuditSummary />
+      </div>
     </section>
   );
 }
@@ -53,7 +52,9 @@ function AuditSummary() {
   });
   return (
     <details onToggle={(event) => setOpen(event.currentTarget.open)}>
-      <summary className="cursor-pointer text-xs text-primary">文献库自检</summary>
+      <summary className="cursor-pointer text-[10px] font-mono font-bold uppercase tracking-widest text-on-surface-variant hover:text-primary">
+        文献库自检
+      </summary>
       {audit.error ? <p className="text-xs text-error mt-1">{audit.error.message}</p> : null}
       {audit.isFetching ? <p className="text-xs text-on-surface-variant mt-1">检查中…</p> : null}
       {audit.data ? (

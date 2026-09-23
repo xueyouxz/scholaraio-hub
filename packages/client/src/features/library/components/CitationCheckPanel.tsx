@@ -15,7 +15,9 @@ export function CitationCheckPanel({ projectId }: { projectId?: string }) {
   const report = check.data;
   return (
     <details className="text-sm">
-      <summary className="cursor-pointer text-primary">核查正文引用</summary>
+      <summary className="cursor-pointer text-[10px] font-mono font-bold uppercase tracking-widest text-on-surface-variant hover:text-primary">
+        核查正文引用
+      </summary>
       <div className="mt-2 flex flex-col gap-3">
         <form
           className="flex flex-col gap-2"
@@ -24,10 +26,10 @@ export function CitationCheckPanel({ projectId }: { projectId?: string }) {
             if (draft.trim()) check.mutate();
           }}
         >
-          <label className="text-sm">
-            正文
+          <label className="flex flex-col gap-1.5">
+            <span className="sr-only">正文</span>
             <textarea
-              className="hub-input w-full block mt-1 h-24"
+              className="h-24 w-full resize-none rounded-xl border border-outline-variant/20 bg-surface-container px-3 py-2 text-[13px] text-on-surface outline-none focus:ring-2 focus:ring-primary/20"
               value={draft}
               onChange={(event) => setDraft(event.target.value)}
               placeholder="粘贴正文，检查其中的 作者（年份）引用是否在库中…"
@@ -35,14 +37,14 @@ export function CitationCheckPanel({ projectId }: { projectId?: string }) {
           </label>
           <button
             type="submit"
-            className="hub-button self-start"
+            className="self-start rounded-full bg-surface-container-high px-3 py-1.5 text-sm font-medium text-on-surface active:scale-95 disabled:opacity-40 border-0 cursor-pointer"
             disabled={check.isPending || !draft.trim()}
           >
             {check.isPending ? "核查中…" : "核查引用"}
           </button>
         </form>
         {check.error ? (
-          <p role="alert" className="text-error">
+          <p role="alert" className="text-xs text-error">
             {check.error.message}
           </p>
         ) : null}

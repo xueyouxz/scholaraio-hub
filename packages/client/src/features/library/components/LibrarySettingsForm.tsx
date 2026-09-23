@@ -2,6 +2,7 @@ import type { LibrarySettings } from "@scholaraio-hub/shared";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import { libraryApi } from "../../../core/library";
+import { ChipGroup } from "../../../shared/ui/ChipGroup";
 import { CapabilityPrompt } from "./CapabilityPrompt";
 
 type Field =
@@ -114,6 +115,11 @@ const GROUPS: Group[] = [
   },
 ];
 
+/** The choices, plus whatever config.yaml already says if it is not among them. */
+function withCurrent(options: string[], current: string): string[] {
+  return current && !options.includes(current) ? [...options, current] : options;
+}
+
 /** The library settings a user would otherwise have to edit config.yaml for. */
 export function LibrarySettingsForm() {
   const client = useQueryClient();
@@ -165,7 +171,9 @@ export function LibrarySettingsForm() {
             key={group.title}
             className="space-y-3 rounded-xl bg-surface-container-low border border-outline-variant/15 p-4"
           >
-            <legend className="text-sm font-semibold text-on-surface px-1">{group.title}</legend>
+            <legend className="font-serif text-base font-semibold text-on-surface px-1">
+              {group.title}
+            </legend>
             <p className="text-xs text-on-surface-variant">{group.purpose}</p>
             {current ? (
               <p className="text-[10px] font-mono uppercase tracking-wider text-primary">
@@ -175,31 +183,24 @@ export function LibrarySettingsForm() {
             <div className="grid gap-3 md:grid-cols-2">
               {group.fields.map((item) =>
                 item.kind === "choice" ? (
-                  <label key={item.field} className="text-sm">
-                    {item.label}
-                    <select
-                      className="hub-input w-full block mt-2"
-                      disabled={disabled}
-                      value={value(item.field)}
-                      onChange={(event) => edit(item.field, event.target.value)}
-                    >
-                      {item.options.map((option) => (
-                        <option key={option} value={option}>
-                          {option}
-                        </option>
-                      ))}
-                    </select>
-                    {item.hint ? (
-                      <span className="block mt-1 text-xs text-on-surface-variant">
-                        {item.hint}
-                      </span>
-                    ) : null}
-                  </label>
+                  <ChipGroup
+                    key={item.field}
+                    label={item.label}
+                    hint={item.hint}
+                    value={value(item.field)}
+                    options={withCurrent(item.options, value(item.field)).map((option) => ({
+                      value: option,
+                    }))}
+                    disabled={disabled}
+                    onChange={(next) => edit(item.field, next)}
+                  />
                 ) : item.kind === "text" ? (
-                  <label key={item.field} className="text-sm">
-                    {item.label}
+                  <label key={item.field} className="flex flex-col gap-1.5">
+                    <span className="text-[10px] font-mono font-bold uppercase tracking-widest text-on-surface-variant">
+                      {item.label}
+                    </span>
                     <input
-                      className="hub-input w-full block mt-2"
+                      className="rounded-xl border border-outline-variant/20 bg-surface-container px-3 py-2 text-[13px] text-on-surface outline-none focus:ring-2 focus:ring-primary/20 disabled:opacity-40"
                       disabled={disabled}
                       value={value(item.field)}
                       placeholder={item.placeholder}
@@ -219,14 +220,14 @@ export function LibrarySettingsForm() {
                 ),
               )}
             </div>
-            {group.title === "语义检索" ? <CapabilityPrompt kind="semantic" framed /> : null}
+            {group.title === "语义检索" ? <CapabilityPrompt kind="semantic" /> : null}
           </fieldset>
         ))}
         <div className="flex flex-wrap items-center gap-3">
           <button
-            className="hub-button"
             type="submit"
             disabled={disabled || Object.keys(draft).length === 0}
+            className="signature-gradient rounded-full px-4 py-2 text-sm font-semibold text-on-primary active:scale-95 disabled:opacity-40 border-0 cursor-pointer"
           >
             保存
           </button>
@@ -274,12 +275,14 @@ function SecretField({
   const configured = Boolean(settings?.[item.configured]);
   const clearing = draft === "";
   return (
-    <label className="text-sm">
-      {item.label}
+    <label className="flex flex-col gap-1.5">
+      <span className="text-[10px] font-mono font-bold uppercase tracking-widest text-on-surface-variant">
+        {item.label}
+      </span>
       <input
         type="password"
         autoComplete="off"
-        className="hub-input w-full block mt-2"
+        className="rounded-xl border border-outline-variant/20 bg-surface-container px-3 py-2 text-[13px] text-on-surface outline-none focus:ring-2 focus:ring-primary/20 disabled:opacity-40"
         disabled={disabled}
         value={draft ?? ""}
         placeholder={configured ? "已配置，输入可替换" : "尚未配置"}
@@ -288,7 +291,7 @@ function SecretField({
       {configured ? (
         <button
           type="button"
-          className="mt-1 text-[10px] font-mono font-bold text-on-surface-variant hover:text-error disabled:opacity-40 border-0 bg-transparent cursor-pointer p-0"
+          className="self-start text-[10px] font-mono font-bold text-on-surface-variant hover:text-error disabled:opacity-40 border-0 bg-transparent cursor-pointer p-0"
           disabled={disabled}
           onClick={() => (clearing ? onKeep() : onChange(""))}
         >

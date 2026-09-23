@@ -4,6 +4,7 @@ import { ArrowRight, FolderOpen, Upload } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { libraryApi } from "../../../core/library";
 import { useLibraryEvents } from "../../../core/libraryEvents";
+import { ChipGroup } from "../../../shared/ui/ChipGroup";
 import { Dialog } from "../../../shared/ui/Dialog";
 
 /** The ingest pipeline, in the order the import queue runs it. */
@@ -27,9 +28,9 @@ const STATUS: Record<string, { label: string; tone: string }> = {
 const ACTIVE = ["queued", "running"];
 
 const SOURCES = [
-  { id: "files", label: "本地文件" },
-  { id: "locator", label: "按标识获取" },
-  { id: "references", label: "书目文件" },
+  { value: "files", label: "本地文件" },
+  { value: "locator", label: "按标识获取" },
+  { value: "references", label: "书目文件" },
 ];
 
 /**
@@ -56,22 +57,7 @@ export function ImportDialog({ onClose }: { onClose: () => void }) {
       onClose={onClose}
     >
       <div className="flex flex-col gap-4">
-        <div className="flex flex-wrap gap-2">
-          {SOURCES.map((item) => (
-            <button
-              key={item.id}
-              type="button"
-              onClick={() => setSource(item.id)}
-              className={`px-3 py-1.5 text-xs font-medium rounded-full border transition-colors ${
-                source === item.id
-                  ? "bg-primary text-on-primary border-primary"
-                  : "bg-surface-container-high text-on-surface-variant border-outline-variant/30 hover:text-on-surface"
-              }`}
-            >
-              {item.label}
-            </button>
-          ))}
-        </div>
+        <ChipGroup label="来源" value={source} options={SOURCES} onChange={setSource} />
 
         {source === "files" ? (
           <FileSource pending={upload.isPending} onFiles={(files) => upload.mutate(files)} />

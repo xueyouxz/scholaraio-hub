@@ -16,15 +16,12 @@ export function CapabilityPrompt({
   kind,
   hideWhenReady = false,
   explain = false,
-  framed = false,
 }: {
   kind: LibraryTaskKind;
   /** Say nothing once the capability is available. */
   hideWhenReady?: boolean;
   /** Lead with what the capability is for, for readers who arrived by accident. */
   explain?: boolean;
-  /** Stand on its own, outside the panel that groups the capabilities. */
-  framed?: boolean;
 }) {
   const spec = capability(kind);
   const client = useQueryClient();
@@ -51,39 +48,44 @@ export function CapabilityPrompt({
   if (hideWhenReady && spec.ready(state) && !running) return null;
   const blocked = running ? null : spec.blocked(state);
   const error = start.error ?? cancel.error;
+  const ready = spec.ready(state);
+  const suggested = !running && !ready && blocked === null;
   return (
-    <article
-      className={`flex flex-col gap-1.5 ${
-        framed
-          ? "rounded-xl border border-outline-variant/15 bg-surface-container-low p-3 text-left"
-          : ""
-      }`}
-    >
-      <div className="flex items-baseline justify-between gap-2">
-        <h2 className="text-sm font-semibold text-on-surface">{spec.title}</h2>
-        <div className="flex items-center gap-2">
-          {blocked?.remedy ? (
-            <Link
-              to={blocked.remedy.to}
-              className="text-[10px] font-mono font-bold text-primary hover:text-primary-container transition-colors"
-            >
-              {blocked.remedy.label}
-            </Link>
-          ) : null}
-          <button
-            type="button"
-            disabled={start.isPending || cancel.isPending || (!running && blocked !== null)}
-            onClick={() => (running ? cancel.mutate(kind) : start.mutate(kind))}
-            className="text-[10px] font-mono font-bold text-primary disabled:text-on-surface-variant/40 hover:text-primary-container transition-colors"
-          >
-            {running ? "停止" : "开始"}
-          </button>
-        </div>
+    <article className="flex flex-col gap-2 rounded-xl border border-outline-variant/10 bg-surface-container-low p-4">
+      <div className="flex items-start justify-between gap-3">
+        <h2 className="font-serif text-base font-semibold text-on-surface">{spec.title}</h2>
+        {ready && !running && blocked === null ? (
+          <span className="rounded bg-primary-container/10 px-2 py-0.5 text-[10px] font-mono font-bold uppercase leading-none text-primary">
+            就绪
+          </span>
+        ) : null}
       </div>
       {explain ? <p className="text-xs text-on-surface-variant">{spec.purpose}</p> : null}
       <p className="text-xs text-on-surface-variant">{blocked?.message ?? spec.describe(state)}</p>
       <TaskProgress task={task} />
       {error ? <p className="text-[10px] text-error">{error.message}</p> : null}
+      <div className="mt-1 flex flex-wrap items-center gap-2">
+        <button
+          type="button"
+          disabled={start.isPending || cancel.isPending || (!running && blocked !== null)}
+          onClick={() => (running ? cancel.mutate(kind) : start.mutate(kind))}
+          className={`rounded-full px-3 py-1.5 text-xs font-semibold active:scale-95 disabled:opacity-40 border-0 cursor-pointer ${
+            suggested
+              ? "signature-gradient text-on-primary"
+              : "bg-surface-container-high text-on-surface"
+          }`}
+        >
+          {running ? "停止" : ready ? "重新运行" : "开始"}
+        </button>
+        {blocked?.remedy ? (
+          <Link
+            to={blocked.remedy.to}
+            className="text-[10px] font-mono font-bold uppercase tracking-wider text-primary hover:text-primary-container"
+          >
+            {blocked.remedy.label}
+          </Link>
+        ) : null}
+      </div>
     </article>
   );
 }

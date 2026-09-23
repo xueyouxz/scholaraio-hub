@@ -75,7 +75,7 @@ export default function LibraryDashboard() {
   };
 
   return (
-    <div className="flex flex-col flex-1 min-h-0 overflow-auto gap-2 p-2">
+    <div className="flex flex-col flex-1 min-h-0 overflow-auto gap-3 p-4">
       {error ? (
         <div className="shrink-0 rounded-lg bg-error-container/10 border border-error/20 p-4 text-center text-sm text-error">
           {error}
@@ -83,7 +83,7 @@ export default function LibraryDashboard() {
       ) : null}
 
       <LibraryTasksPanel />
-      <section className="shrink-0 rounded-lg border border-outline-variant/10 bg-surface-container-low p-3">
+      <section className="shrink-0 rounded-xl border border-outline-variant/10 bg-surface-container-low p-4">
         <CitationCheckPanel />
       </section>
 
@@ -102,7 +102,7 @@ export default function LibraryDashboard() {
         // one thing that would fill it instead of drawing nothing.
         <div className="flex-1 flex items-center justify-center py-20">
           <div className="w-full max-w-sm">
-            <CapabilityPrompt kind="topics" explain framed />
+            <CapabilityPrompt kind="topics" explain />
           </div>
         </div>
       ) : (

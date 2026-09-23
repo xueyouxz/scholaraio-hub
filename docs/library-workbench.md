@@ -7,12 +7,25 @@
 - client/app：文献库、阅读器、会话、设置的导航。features/library 负责导入、检索和阅读，features/session 负责标准消息显示；shared/components/Markdown 统一 Streamdown。
 - server/routes：校验、响应、二进制文件流和订阅连接。仅显式挂载 /api/library 与 /api/sessions 等应用接口。
 - LibraryService：启动 Python、就绪检查、内部认证、HTTP 调用、关闭子进程。浏览器不能直接配置或调用 Python 地址。
-- Python HubLibrary：文件、元数据、哈希去重、解析任务、索引和检索，复用 ScholarAIO stores 与 chunks/index 服务。业务代码与运行数据完全分离。
+- Python HubLibrary（`scholaraio/hub/`）：文件、元数据、哈希去重、解析任务、索引和检索，复用 ScholarAIO stores 与 chunks/index 服务。业务代码与运行数据完全分离。分层见下节。
 - SessionStore：应用稳定 ID、关联文献、标准消息和私有原生 ID，按会话 JSON 原子写入。
 - SessionService：组织文献上下文和当前输入、检查重复提交、持久化运行、流订阅与审批。
 - Supervisor / Provider：CLI 协议、进程生命周期、登录、原生恢复、中断与权限。
 
 依赖方向是 UI → HTTP → 文献 / 会话服务；会话服务调用文献服务和 Supervisor，不让文献模块管理对话，也不把 CLI 原始协议传到浏览器。
+
+### Python 文献服务分层
+
+依赖只向下：`interfaces/api` → `hub` 服务 → `hub.runtime` / `hub.repository` → 上游 `services` / `stores`。
+
+- `interfaces/api/routes/*`：按领域拆分的薄控制器，只做参数解析、调用一个服务、返回结果；通过 `dependencies.py` 声明依赖的服务，不读 `app.state`，不导入 stores。`schemas.py` 定义请求体（Python 属性 snake_case，线上字段 camelCase）；`errors.py` 统一 `{"error": ...}` 响应。
+- `hub/*` 服务：`PaperService`、`SearchService`、`RetrievalService`、`ProjectService`、`CitationService`、`MetadataService`、`ExportService`、`SettingsService`、`AnalyticsService`、`LibraryStatus`；后台为 `ImportQueue`、`AcquireService`、`TaskRunner`（通用执行器）+ `MaintenanceJobs`（各任务类型的策略函数）、`ProjectWatcher`。服务经构造函数接收 `LibraryRuntime` 与所用的兄弟服务，不回引 `HubLibrary`。
+- `hub/runtime.py`：配置、写锁、`PaperRepository`、`EventBus`、重建索引——所有服务共享的基础设施。
+- `hub/repository.py` 与 `hub/views.py`：磁盘上的论文（按 UUID 寻址）及其对浏览器的行结构，其余模块不再各自遍历目录或拼装行。
+- `hub/errors.py`：`InvalidRequest`(400)、`NotFound`(404)、`TooLarge`(413)。上游沿用 `ValueError`=拒绝请求、`RuntimeError`=数据损坏(500)；普通 `KeyError` 等视为缺陷，返回 500 而不是 404。
+- `hub/library.py`：组合根，唯一负责装配与生命周期。
+
+`tests/test_hub_layers.py` 从 import 语句校验上述方向。
 
 ## 会话协议与恢复
 
@@ -49,6 +62,6 @@ Node 为 Python 保持专用 stdin 管道，并传入 `--watch-stdin`。热重�
 
 ## 迁移与恢复
 
-hub_migration 显式执行 plan / apply / rollback。清单包含每个文件的源、目标、大小及哈希，并保留 UUID 集合。apply 检查目标冲突、磁盘空间与源快照，先独立备份，再使用持久化移动日志记录操作。同文件系统移动避免再复制一份大库。配置原子发布，最后重建关键词索引；任何失败保留清单供 rollback。
+`python -m scholaraio.hub.migration`（`pnpm migrate`）显式执行 plan / apply / rollback。清单包含每个文件的源、目标、大小及哈希，并保留 UUID 集合。apply 检查目标冲突、磁盘空间与源快照，先独立备份，再使用持久化移动日志记录操作。同文件系统移动避免再复制一份大库。配置原子发布，最后重建关键词索引；任何失败保留清单供 rollback。
 
 回滚先验证所有备份、现有文件和配置，再恢复。新修改发生冲突时拒绝覆盖。配置与清单以 0600 写入，含本地密钥的原配置不进入版本库。开发环境从不自动使用生产文献。

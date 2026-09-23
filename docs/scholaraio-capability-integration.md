@@ -180,6 +180,9 @@ agent 通过 CLI 改动 `refs/papers.json` 后，Hub 监听该文件变化并推
 **P6 界面细化 — 已完成**（`0501fe0`、`4df3b8b`）
 导入改为弹窗：本地 PDF（拖放或选择文件/目录）、按标识获取（DOI / arXiv / 专利 / 链接）、书目文件（Zotero / EndNote 导出的 BibTeX / RIS）三个来源共用一条入库流水线，弹窗内按 解析 · 提取 · 查重 · 入库 展示每篇的进度并可重试；文献库因此只剩 检索 与 分析 两个视图，导入是它们旁边的动作，`/library/import` 仍指向该弹窗。界面按 `.design/DESIGN.md` 收敛：短选项用 chip 代替下拉，字段用 mono 标签与紧凑输入面，能力卡片改为 serif 标题 + 就绪徽章 + 单个 pill 动作（仅在"建议现在执行"时用签名渐变），图标统一用 lucide 并按幽灵图标按钮规范。
 
+**P7 Python 服务分层 — 已完成**
+`services/hub_*.py` 迁入 `scholaraio/hub/` 包，HTTP 按领域拆为 `interfaces/api/routes/*`（见上文"能力分层"）；服务不再回引 `HubLibrary`，改为构造注入；接口路径与响应结构不变。分层说明见 `docs/library-workbench.md`。
+
 未做：只读 MCP 层（现有 CLI 与接口已覆盖同样的读取能力，暂无独立需求）。
 
 ## 实施顺序

@@ -55,7 +55,7 @@ export function ProviderMenu({ controls }: { controls: ComposerControls }) {
   const current = providers.find((item) => item.name === controls.provider);
   return (
     <MenuButton
-      icon={<Bot size={12} aria-hidden="true" />}
+      icon={<Bot size={12} aria-hidden="true" data-accent="" />}
       label={current?.displayName ?? controls.provider}
       title="Agent"
       disabled={controls.disabled}

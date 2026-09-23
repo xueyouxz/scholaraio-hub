@@ -481,7 +481,7 @@ describe("Composer slash commands", () => {
     type("/mod");
     key({ key: "Enter" });
     await flush();
-    expect(container?.querySelector('[role="menu"]')?.textContent).toContain("Opus (默认)");
+    expect(document.querySelector('[role="menu"]')?.textContent).toContain("Opus (默认)");
     expect(textarea().value).toBe("");
   });
 });
@@ -638,7 +638,7 @@ describe("Composer send/stop actions", () => {
       },
     });
     const labels = Array.from(container?.querySelectorAll("button") ?? []).map(
-      (node) => node.textContent,
+      (node) => node.getAttribute("aria-label") ?? node.textContent,
     );
     expect(labels).toContain("Default");
     expect(labels).toContain("Opus");

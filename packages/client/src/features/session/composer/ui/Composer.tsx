@@ -235,7 +235,8 @@ export function Composer({
           event.preventDefault();
           addFiles(Array.from(event.dataTransfer.files));
         }}
-        className={`hub-composer bg-surface-container-low border border-outline-variant/20 rounded-xl transition-all focus-within:border-primary/30 focus-within:ring-1 focus-within:ring-primary/10 ${interim ? "ring-1 ring-error/30 border-error/30" : ""}`}
+        data-provider={provider}
+        className={`hub-composer bg-surface-container-low border border-outline-variant/20 rounded-xl transition-all ${interim ? "ring-1 ring-error/30 border-error/30" : ""}`}
         onSubmit={(event) => {
           event.preventDefault();
           void submit();
@@ -340,7 +341,7 @@ export function Composer({
           placeholder={placeholder}
         />
         <div className="flex items-center justify-between px-3 pb-3 gap-2">
-          <div className="flex items-center gap-1 min-w-0">
+          <div className="flex items-center gap-1 min-w-0 flex-1">
             <button
               type="button"
               aria-label="添加附件"
@@ -356,7 +357,7 @@ export function Composer({
                 </span>
               ) : null}
             </button>
-            <div className="flex items-center gap-0.5 flex-wrap">
+            <div className="hub-composer-options flex items-center gap-0.5 min-w-0 overflow-x-auto">
               {controls ? (
                 <ComposerLeadingOptions controls={controls} request={menuRequest} />
               ) : null}

@@ -75,20 +75,20 @@ function render(controls: ComposerControls) {
 
 const pill = (label: string) =>
   Array.from(container?.querySelectorAll<HTMLButtonElement>("button[aria-haspopup]") ?? []).find(
-    (node) => node.textContent === label,
+    (node) => node.getAttribute("aria-label") === label,
   );
 const menuItems = () =>
-  Array.from(container?.querySelectorAll('[role="menuitemradio"]') ?? []).map((node) => ({
+  Array.from(document.querySelectorAll('[role="menuitemradio"]') ?? []).map((node) => ({
     label: node.querySelector("span span")?.textContent,
     checked: node.getAttribute("aria-checked") === "true",
   }));
 const groups = () =>
-  Array.from(container?.querySelectorAll('[role="menu"] fieldset') ?? []).map((node) =>
+  Array.from(document.querySelectorAll('[role="menu"] fieldset') ?? []).map((node) =>
     node.getAttribute("aria-label"),
   );
 function choose(label: string) {
   const item = Array.from(
-    container?.querySelectorAll<HTMLButtonElement>('[role="menuitemradio"]') ?? [],
+    document.querySelectorAll<HTMLButtonElement>('[role="menuitemradio"]') ?? [],
   ).find((node) => node.querySelector("span span")?.textContent === label);
   act(() => item?.click());
 }
@@ -216,7 +216,7 @@ describe("provider menu", () => {
     });
     act(() => pill("Claude")?.click());
     const codex = Array.from(
-      container?.querySelectorAll<HTMLButtonElement>('[role="menuitemradio"]') ?? [],
+      document.querySelectorAll<HTMLButtonElement>('[role="menuitemradio"]') ?? [],
     ).find((node) => node.textContent?.startsWith("Codex"));
     expect(codex?.disabled).toBe(true);
     expect(codex?.textContent).toContain("未登录");

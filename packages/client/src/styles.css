@@ -317,3 +317,44 @@
 .hub-composer textarea:focus-visible {
   outline: none;
 }
+
+/*
+ * Each agent tints the composer with its own accent: focus ring and the agent
+ * pill. The rest of the composer stays in the app's palette.
+ */
+.hub-composer {
+  --composer-accent: var(--color-primary);
+  container-type: inline-size;
+}
+
+.hub-composer[data-provider="claude"] {
+  --composer-accent: var(--color-thinking);
+}
+
+.hub-composer[data-provider="codex"] {
+  --composer-accent: var(--color-on-surface);
+}
+
+.hub-composer:focus-within {
+  border-color: color-mix(in srgb, var(--composer-accent) 40%, transparent);
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--composer-accent) 14%, transparent);
+}
+
+.hub-composer [data-accent] {
+  color: var(--composer-accent);
+}
+
+/* Option pills keep one row: on narrow composers they shrink to their icons. */
+.hub-composer-options {
+  scrollbar-width: none;
+}
+
+.hub-composer-options::-webkit-scrollbar {
+  display: none;
+}
+
+@container (max-width: 34rem) {
+  .hub-composer-pill .hub-composer-pill-label {
+    display: none;
+  }
+}

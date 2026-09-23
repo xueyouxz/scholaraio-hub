@@ -1,4 +1,4 @@
-import type { LibraryTaskKind } from "@scholaraio-hub/shared";
+import type { LibraryCapabilities, LibraryTaskKind } from "@scholaraio-hub/shared";
 
 /** Task states that mean the worker still has it. */
 export const ACTIVE_TASK = ["queued", "running"];
@@ -25,4 +25,82 @@ export const TASK_PHASES: Record<string, string> = {
 /** How far a task has got, as the user reads it. */
 export function taskProgress(done: number, total: number): string {
   return total ? ` · ${done}/${total}（${Math.round((done / total) * 100)}%）` : "…";
+}
+
+/** Why a task cannot start, and where the user can go to change that. */
+export interface Blocked {
+  message: string;
+  remedy?: { label: string; to: string };
+}
+
+export interface Capability {
+  kind: LibraryTaskKind;
+  title: string;
+  /** What this capability buys the user, said before they pay for it. */
+  purpose: string;
+  describe: (state: LibraryCapabilities) => string;
+  ready: (state: LibraryCapabilities) => boolean;
+  blocked: (state: LibraryCapabilities) => Blocked | null;
+}
+
+export const CAPABILITIES: Capability[] = [
+  {
+    kind: "semantic",
+    title: "语义检索",
+    purpose: "按意思而不是字面检索文献",
+    describe: (state) =>
+      state.semanticReady
+        ? `${state.vectors}/${state.papers} 篇已有向量`
+        : `需要为 ${state.papers} 篇论文生成向量（模型 ${state.embedModel}${
+            state.modelReady ? " 已就绪" : " 需先下载"
+          }）`,
+    ready: (state) => state.semanticReady,
+    blocked: (state) =>
+      state.embedProvider === "none"
+        ? { message: "配置中关闭了向量嵌入", remedy: { label: "前往设置", to: "/settings" } }
+        : state.papers === 0
+          ? { message: "文献库还没有论文", remedy: { label: "导入文献", to: "/library/import" } }
+          : null,
+  },
+  {
+    kind: "topics",
+    title: "主题地图",
+    purpose: "把文献库聚成主题，并画出它们的分布与趋势",
+    describe: (state) =>
+      state.topicsBuilt ? "已建立主题与二维投影" : "尚未建立主题，分析页会是空的",
+    ready: (state) => state.topicsBuilt,
+    blocked: (state) => (state.semanticReady ? null : { message: "请先准备语义检索" }),
+  },
+  {
+    kind: "deep",
+    title: "深度解析",
+    purpose: "提取每篇论文的目录与结论",
+    describe: (state) =>
+      state.deepPending ? `${state.deepPending} 篇缺少目录或结论` : "所有论文都已解析",
+    ready: (state) => state.deepPending === 0,
+    blocked: (state) =>
+      !state.llmConfigured
+        ? {
+            message: "需要先配置 LLM API Key",
+            remedy: { label: "前往设置", to: "/settings" },
+          }
+        : state.deepPending === 0
+          ? { message: "没有待处理的论文" }
+          : null,
+  },
+  {
+    kind: "quality",
+    title: "质量补全",
+    purpose: "为缺少摘要的论文补回摘要",
+    describe: (state) =>
+      state.missingAbstracts ? `${state.missingAbstracts} 篇缺少摘要` : "所有论文都有摘要",
+    ready: (state) => state.missingAbstracts === 0,
+    blocked: (state) => (state.missingAbstracts ? null : { message: "没有待补全的论文" }),
+  },
+];
+
+export function capability(kind: LibraryTaskKind): Capability {
+  const found = CAPABILITIES.find((item) => item.kind === kind);
+  if (!found) throw new Error(`未知的文献库任务：${kind}`);
+  return found;
 }

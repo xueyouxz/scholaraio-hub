@@ -1,8 +1,10 @@
 import { useQuery } from "@tanstack/react-query";
 import { Library } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
+import { Link } from "react-router-dom";
 import { usePageTitle } from "../../app/components/NavigationLayout";
 import { libraryApi } from "../../core/library";
+import { CapabilityPrompt } from "./components/CapabilityPrompt";
 import { LibraryAnalyticsPanel } from "./components/LibraryAnalyticsPanel";
 import { LibraryTasksPanel } from "./components/LibraryTasksPanel";
 import { TopicSimilarityHeatmap } from "./components/charts/TopicSimilarityHeatmap";
@@ -85,7 +87,19 @@ export default function LibraryDashboard() {
         <div className="text-center text-on-surface-variant text-sm py-20">加载中…</div>
       ) : papers.length === 0 && !error ? (
         <div className="text-center text-on-surface-variant text-sm py-20">
-          暂无论文。打开“文献卡片”导入 PDF。
+          还没有论文。
+          <Link className="text-primary" to="/library/import">
+            先导入文献
+          </Link>
+          ，这里会画出它们的主题分布。
+        </div>
+      ) : topics.length === 0 ? (
+        // Without topics every chart here is empty, so the page asks for the
+        // one thing that would fill it instead of drawing nothing.
+        <div className="flex-1 flex items-center justify-center py-20">
+          <div className="w-full max-w-sm">
+            <CapabilityPrompt kind="topics" explain framed />
+          </div>
         </div>
       ) : (
         <div className="flex flex-col lg:grid flex-1 min-h-0 gap-2 lg:grid-cols-[21rem_minmax(0,1fr)]">

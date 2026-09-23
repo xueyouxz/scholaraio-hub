@@ -4,6 +4,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import { usePageTitle } from "../../app/components/NavigationLayout";
 import type { ScholarPaper } from "../../core/scholarTypes";
+import { CapabilityPrompt } from "../library/components/CapabilityPrompt";
 import { PaperDetailPanel } from "../library/components/PaperDetailPanel";
 import { PaperGridCard } from "../library/components/PaperGridCard";
 import { PaperVirtualList } from "../library/components/PaperVirtualList";
@@ -336,6 +337,12 @@ export function SearchPage() {
                 </button>
               ) : null}
             </div>
+
+            {mode === "semantic" ? (
+              <div className="mt-3">
+                <CapabilityPrompt kind="semantic" hideWhenReady framed />
+              </div>
+            ) : null}
 
             {loading && (
               <div className="absolute -bottom-2.5 inset-x-0 h-0.5 rounded-full overflow-hidden bg-outline-variant/10">

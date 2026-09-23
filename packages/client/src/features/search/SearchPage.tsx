@@ -161,6 +161,7 @@ export function SearchPage() {
   });
 
   const rawResults: ScholarPaper[] = searchQuery.data?.results ?? [];
+  const unavailable = searchQuery.data?.unavailable;
   const loading = searched && searchQuery.isFetching;
   const error =
     searchQuery.error instanceof Error
@@ -540,10 +541,19 @@ export function SearchPage() {
           )}
 
           {searchPapers.length === 0 ? (
-            <div className="flex-1 flex flex-col items-center justify-center text-center">
-              <p className="text-sm font-medium text-on-surface mb-1">无结果</p>
-              <p className="text-xs text-on-surface-variant">尝试更换检索词或切换检索模式</p>
-            </div>
+            unavailable ? (
+              // The mode could not run at all. The card says why and fixes it.
+              <div className="flex-1 flex items-center justify-center">
+                <div className="w-full max-w-sm">
+                  <CapabilityPrompt kind="semantic" explain />
+                </div>
+              </div>
+            ) : (
+              <div className="flex-1 flex flex-col items-center justify-center text-center">
+                <p className="text-sm font-medium text-on-surface mb-1">无结果</p>
+                <p className="text-xs text-on-surface-variant">尝试更换检索词或切换检索模式</p>
+              </div>
+            )
           ) : view === "list" ? (
             <div className="flex-1 min-h-0">
               <PaperVirtualList

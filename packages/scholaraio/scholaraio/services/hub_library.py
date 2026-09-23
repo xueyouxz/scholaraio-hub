@@ -216,11 +216,22 @@ class HubLibrary:
                        and query.casefold() in p["authors"].casefold()]
             return {"results": [{"paper": p, "matches": []} for p in results[:limit]]}
         if mode == "semantic":
+            from scholaraio.services import vectors
+
+            # Semantic search has three distinct ways of not being ready, and the
+            # browser offers a different remedy for each, so say which one it is
+            # rather than handing back one opaque failure.
+            if not vectors.runtime_available():
+                return {"results": [], "unavailable": "runtime_missing",
+                        "notice": "语义检索运行时尚未安装。"}
+            if vectors.embedding_provider(self.cfg) == "none":
+                return {"results": [], "unavailable": "provider_none",
+                        "notice": "配置中关闭了向量嵌入。"}
             try:
-                from scholaraio.services.vectors import vsearch
-                ranked = vsearch(query, self.cfg.index_db, top_k=limit, cfg=self.cfg, paper_ids=paper_ids)
+                ranked = vectors.vsearch(query, self.cfg.index_db, top_k=limit, cfg=self.cfg, paper_ids=paper_ids)
             except (ImportError, FileNotFoundError, RuntimeError, ValueError) as error:
-                raise ValueError(f"语义检索不可用，请检查原向量索引与嵌入配置：{error}") from error
+                return {"results": [], "unavailable": "no_vectors",
+                        "notice": f"语义检索不可用：{error}"}
         else:
             ranked, diagnostics = unified_search(query, self.cfg.index_db, top_k=limit,
                                                   cfg=self.cfg, paper_ids=paper_ids, return_diagnostics=True)

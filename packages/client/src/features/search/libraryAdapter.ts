@@ -42,13 +42,16 @@ export const searchLibrary = {
       limit: String(body.limit),
     });
     if (body.projectId) params.set("projectId", body.projectId);
-    const data = await requestJson<{ results: { paper: LibraryPaper }[]; notice?: string }>(
-      `/api/library/search?${params}`,
-      options,
-    );
+    const data = await requestJson<{
+      results: { paper: LibraryPaper }[];
+      notice?: string;
+      /** Set when the mode itself cannot run, so the page can offer the remedy. */
+      unavailable?: string;
+    }>(`/api/library/search?${params}`, options);
     return {
       results: data.results.map((result) => paperForSearch(result.paper)),
       notice: data.notice,
+      unavailable: data.unavailable,
     };
   },
 };

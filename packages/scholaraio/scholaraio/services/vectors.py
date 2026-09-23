@@ -84,7 +84,7 @@ def model_available(cfg: Config | None = None) -> bool:
     if _embed_provider(cfg) != "local":
         return True
     model_name = cfg.embed.model if cfg is not None else "Qwen/Qwen3-Embedding-0.6B"
-    cache_dir = os.path.expanduser(cfg.embed.cache_dir if cfg is not None else "~/.cache/modelscope/hub/models")
+    cache_dir = str(cfg.embed_cache_dir) if cfg is not None else os.path.expanduser("~/.cache/modelscope/hub/models")
     return _find_local_model_path(model_name, cache_dir) is not None
 
 
@@ -222,7 +222,9 @@ def _load_model(cfg: Config | None = None):
     # Resolve config
     if cfg is not None:
         model_name = cfg.embed.model
-        cache_dir = os.path.expanduser(cfg.embed.cache_dir)
+        # A relative cache_dir belongs to the data directory, not to whatever
+        # directory the process happens to have been started in.
+        cache_dir = str(cfg.embed_cache_dir)
         device_cfg = cfg.embed.device
         source = cfg.embed.source
         hf_endpoint = cfg.embed.hf_endpoint

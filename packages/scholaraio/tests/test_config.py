@@ -448,6 +448,14 @@ class TestConfigProperties:
         assert cfg.index_db.is_absolute()
         assert cfg.index_db == (tmp_path / "data" / "state" / "search" / "index.db").resolve()
 
+    def test_embed_cache_dir_relative_to_the_config_root(self, tmp_path):
+        cfg = _build_config({"embed": {"cache_dir": "data/cache/models"}}, tmp_path)
+        assert cfg.embed_cache_dir == (tmp_path / "data" / "cache" / "models").resolve()
+
+    def test_embed_cache_dir_keeps_a_home_path(self, tmp_path):
+        cfg = _build_config({"embed": {"cache_dir": "~/.cache/modelscope/hub/models"}}, tmp_path)
+        assert cfg.embed_cache_dir == (Path.home() / ".cache/modelscope/hub/models").resolve()
+
     def test_log_file_absolute(self, tmp_path):
         cfg = _build_config({}, tmp_path)
         assert cfg.log_file.is_absolute()

@@ -507,6 +507,11 @@ class Config:
         return (self.metrics_state_dir / "metrics.db").resolve()
 
     @property
+    def embed_cache_dir(self) -> Path:
+        """本地嵌入模型缓存目录的绝对路径。"""
+        return self._resolve_path(self.embed.cache_dir)
+
+    @property
     def topics_model_dir(self) -> Path:
         """BERTopic 模型保存目录的绝对路径。"""
         if self.topics.model_dir:

@@ -1,6 +1,7 @@
 import type { HttpBindings } from "@hono/node-server";
 import { Hono } from "hono";
 import { getDataDir } from "./data-dir.js";
+import { openInFileManager } from "./files/reveal.js";
 import { createStaticRoutes } from "./frontend/static.js";
 import { hostCheckMiddleware, requireCustomHeader } from "./middleware/security.js";
 import { createAppSessionRoutes } from "./routes/app-sessions.js";
@@ -91,6 +92,16 @@ export function createApp(options: AppOptions) {
       library: library.available,
     }),
   );
+  // Reveals the one directory this Hub owns. No path comes from the browser:
+  // the only thing it can open is the data directory itself.
+  app.post("/api/status/data-dir/open", (c) => {
+    try {
+      openInFileManager(dataDir);
+      return c.json({ opened: true, dataDir });
+    } catch (error) {
+      return c.json({ error: error instanceof Error ? error.message : "无法打开数据目录" }, 500);
+    }
+  });
   if (options.serverSettingsService)
     app.route(
       "/api/settings",

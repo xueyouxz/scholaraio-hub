@@ -232,23 +232,19 @@ test("settings persist defaults, sidebar resizes and Skills navigation works on 
   await page.goto("/settings");
   await page.getByRole("button", { name: /^Codex/ }).click();
   await expect(page.getByText("设置已保存", { exact: true })).toBeVisible();
-  await page.getByRole("combobox", { name: "默认模型" }).fill("test-model");
-  await page.getByRole("button", { name: "保存模型" }).click();
   await expect
     .poll(
       async () =>
-        (await (await request.get("/api/settings")).json()).settings.newSessionDefaults.model,
+        (await (await request.get("/api/settings")).json()).settings.newSessionDefaults.provider,
     )
-    .toBe("test-model");
+    .toBe("codex");
   await page.reload();
   await expect(page.getByRole("button", { name: /^Codex/ })).toHaveAttribute(
     "aria-pressed",
     "true",
   );
-  await expect(page.getByRole("combobox", { name: "默认模型" })).toHaveValue("test-model");
   await page.screenshot({ path: test.info().outputPath("settings.png") });
   await page.getByRole("link", { name: "新对话", exact: true }).click();
-  await expect(page.getByRole("combobox", { name: "模型（可选）" })).toHaveValue("test-model");
   await page.getByRole("textbox", { name: "Message" }).fill("使用默认工具");
   await page.getByRole("button", { name: "Send", exact: true }).click();
   await expect(page).toHaveURL(/\/sessions\/[\w-]+$/);
@@ -279,7 +275,7 @@ test("settings persist defaults, sidebar resizes and Skills navigation works on 
   await page.setViewportSize({ width: 390, height: 844 });
   await page.getByRole("button", { name: "打开导航" }).click();
   await page.getByRole("link", { name: "设置", exact: true }).click();
-  await expect(page.getByRole("heading", { name: "Agent", exact: true })).toBeVisible();
+  await expect(page.getByRole("button", { name: /^Claude Code/ })).toBeVisible();
   await expect(sidebar).toBeHidden();
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
   expect(errors).toEqual([]);

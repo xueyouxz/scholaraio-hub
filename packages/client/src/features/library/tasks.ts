@@ -65,7 +65,10 @@ export const CAPABILITIES: Capability[] = [
             install: "vector-runtime",
           }
         : state.embedProvider === "none"
-          ? { message: "配置中关闭了向量嵌入", remedy: { label: "前往设置", to: "/settings" } }
+          ? {
+              message: "配置中关闭了向量嵌入，在设置里保存一次即可切回本地模型",
+              remedy: { label: "前往设置", to: "/settings" },
+            }
           : state.papers === 0
             ? {
                 message: "文献库还没有论文",

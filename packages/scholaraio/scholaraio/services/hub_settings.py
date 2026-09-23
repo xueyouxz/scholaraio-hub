@@ -82,10 +82,23 @@ class HubSettings:
             changes.setdefault(section, {})[key] = text
         if not changes:
             raise ValueError("没有要修改的配置项")
+        self.normalize(changes)
         with self.library.lock:
             self.write(changes)
             self.library.reload_config()
             return self.read()
+
+    def normalize(self, changes: dict[str, dict[str, str]]) -> None:
+        """Hold the two settings the browser no longer offers a choice for.
+
+        Parsing runs on MinerU and embedding runs on the downloaded local
+        model. Someone who edits ``config.yaml`` by hand can still say
+        otherwise; saving from the settings page says this instead.
+        """
+        if "embed" in changes:
+            changes["embed"]["provider"] = "local"
+        if "ingest" in changes:
+            changes["ingest"]["pdf_preferred_parser"] = "mineru"
 
     def write(self, changes: dict[str, dict[str, str]]) -> None:
         """Merge the change into the overlay, keeping every other stored value."""

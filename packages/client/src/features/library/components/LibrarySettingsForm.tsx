@@ -2,17 +2,9 @@ import type { LibrarySettings } from "@scholaraio-hub/shared";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import { libraryApi } from "../../../core/library";
-import { ChipGroup } from "../../../shared/ui/ChipGroup";
 import { CapabilityPrompt } from "./CapabilityPrompt";
 
 type Field =
-  | {
-      kind: "choice";
-      field: keyof LibrarySettings;
-      label: string;
-      options: string[];
-      hint?: string;
-    }
   | { kind: "text"; field: keyof LibrarySettings; label: string; placeholder: string }
   | { kind: "secret"; field: string; label: string; configured: keyof LibrarySettings };
 
@@ -27,18 +19,12 @@ interface Group {
 const GROUPS: Group[] = [
   {
     title: "解析",
-    purpose: "把 PDF 变成可检索的正文。",
+    purpose: "把 PDF 变成可检索的正文，由 MinerU 完成。",
     status: (settings) =>
       settings.mineruConfigured
         ? "MinerU 已配置 · 云端解析"
         : "MinerU 未配置 · 导入时降级为本地解析器",
     fields: [
-      {
-        kind: "choice",
-        field: "pdfParser",
-        label: "PDF 解析器",
-        options: ["mineru", "docling", "pymupdf"],
-      },
       {
         kind: "secret",
         field: "mineruApiKey",
@@ -53,72 +39,30 @@ const GROUPS: Group[] = [
     status: (settings) =>
       settings.llmConfigured ? "LLM 已配置" : "LLM 未配置 · 导入按 regex 提取，深度解析不可用",
     fields: [
-      {
-        kind: "choice",
-        field: "extractor",
-        label: "元数据提取",
-        options: ["robust", "auto", "llm", "regex"],
-        hint: "robust 与 llm 需要 LLM API Key。",
-      },
-      {
-        kind: "choice",
-        field: "llmBackend",
-        label: "LLM 协议",
-        options: ["openai-compat", "anthropic", "google"],
-      },
-      { kind: "text", field: "llmModel", label: "LLM 模型", placeholder: "deepseek-chat" },
+      { kind: "text", field: "llmModel", label: "模型", placeholder: "deepseek-chat" },
       {
         kind: "text",
         field: "llmBaseUrl",
-        label: "LLM 地址",
+        label: "API 地址",
         placeholder: "https://api.deepseek.com",
       },
-      { kind: "secret", field: "llmApiKey", label: "LLM API Key", configured: "llmConfigured" },
+      { kind: "secret", field: "llmApiKey", label: "API Key", configured: "llmConfigured" },
     ],
   },
   {
     title: "语义检索",
-    purpose: "按意思检索，以及主题地图所依赖的向量。",
-    status: (settings) =>
-      settings.embedProvider === "none"
-        ? "已关闭向量嵌入 · 语义检索与主题地图不可用"
-        : settings.embedProvider === "local"
-          ? `本地模型 ${settings.embedModel}`
-          : `远程嵌入服务${settings.embedApiConfigured ? " · 已配置 Key" : " · 尚未配置 Key"}`,
+    purpose: "按意思检索，以及主题地图所依赖的向量。模型在本机运行，首次使用自动下载。",
+    status: (settings) => `本地模型 ${settings.embedModel}`,
     fields: [
-      {
-        kind: "choice",
-        field: "embedProvider",
-        label: "嵌入后端",
-        options: ["local", "openai-compat", "none"],
-      },
       {
         kind: "text",
         field: "embedModel",
         label: "嵌入模型",
         placeholder: "Qwen/Qwen3-Embedding-0.6B",
       },
-      {
-        kind: "choice",
-        field: "embedSource",
-        label: "模型下载源",
-        options: ["modelscope", "huggingface"],
-      },
-      { kind: "choice", field: "embedDevice", label: "推理设备", options: ["auto", "cpu", "cuda"] },
-      {
-        kind: "secret",
-        field: "embedApiKey",
-        label: "嵌入 API Key",
-        configured: "embedApiConfigured",
-      },
     ],
   },
 ];
-
-/** The choices, plus whatever config.yaml already says if it is not among them. */
-function withCurrent(options: string[], current: string): string[] {
-  return current && !options.includes(current) ? [...options, current] : options;
-}
 
 /** The library settings a user would otherwise have to edit config.yaml for. */
 export function LibrarySettingsForm() {
@@ -148,9 +92,6 @@ export function LibrarySettingsForm() {
   const disabled = !current || save.isPending;
   return (
     <section className="space-y-3">
-      <h2 className="text-[10px] font-mono uppercase tracking-widest text-on-surface-variant">
-        Library
-      </h2>
       <p className="text-sm text-on-surface-variant">
         文献解析与检索使用的服务。密钥只写入本机配置，不会回显。
       </p>
@@ -169,7 +110,7 @@ export function LibrarySettingsForm() {
         {GROUPS.map((group) => (
           <fieldset
             key={group.title}
-            className="space-y-3 rounded-xl bg-surface-container-low border border-outline-variant/15 p-4"
+            className="space-y-2.5 rounded-lg bg-surface-container-low border border-outline-variant/15 px-4 py-3"
           >
             <legend className="font-serif text-base font-semibold text-on-surface px-1">
               {group.title}
@@ -182,19 +123,7 @@ export function LibrarySettingsForm() {
             ) : null}
             <div className="grid gap-3 md:grid-cols-2">
               {group.fields.map((item) =>
-                item.kind === "choice" ? (
-                  <ChipGroup
-                    key={item.field}
-                    label={item.label}
-                    hint={item.hint}
-                    value={value(item.field)}
-                    options={withCurrent(item.options, value(item.field)).map((option) => ({
-                      value: option,
-                    }))}
-                    disabled={disabled}
-                    onChange={(next) => edit(item.field, next)}
-                  />
-                ) : item.kind === "text" ? (
+                item.kind === "text" ? (
                   <label key={item.field} className="flex flex-col gap-1.5">
                     <span className="text-[10px] font-mono font-bold uppercase tracking-widest text-on-surface-variant">
                       {item.label}

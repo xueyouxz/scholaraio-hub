@@ -30,11 +30,11 @@ function UsageLimitRow({
   const width = percent === null ? 0 : Math.min(100, Math.max(0, percent));
   const barColor = getUsageLimitBarColor(percent);
   return (
-    <span className="block px-4 pt-1.5 pb-1.5 first:pt-2 last:pb-3">
+    <span className="block px-3 py-1 first:pt-1.5 last:pb-2">
       <span className="flex items-center justify-between gap-4">
         <span className="block min-w-0">
-          <span className="text-[12px] font-medium text-on-surface">{label}</span>
-          <span className="block text-[10px] text-on-surface-variant/50 mt-0.5">
+          <span className="text-[11px] font-medium text-on-surface">{label}</span>
+          <span className="block text-[10px] text-on-surface-variant/50 leading-tight">
             {formatResetTime(resetsAt)}
           </span>
         </span>
@@ -42,7 +42,7 @@ function UsageLimitRow({
           {percent === null ? "—" : `${percent}%`}
         </span>
       </span>
-      <span className="block mt-1.5 h-1 rounded-full bg-surface-container-high overflow-hidden">
+      <span className="block mt-1 h-0.5 rounded-full bg-surface-container-high overflow-hidden">
         <span
           className="block h-full rounded-full transition-[width,background-color] duration-500 ease-out"
           style={{ width: `${width}%`, backgroundColor: barColor }}
@@ -86,7 +86,7 @@ export function UsageLimitBlock({
           />
         </span>
       ) : (
-        <span className="block px-4 pt-2 pb-3 text-[11px] text-on-surface-variant/50">
+        <span className="block px-3 py-1.5 text-[10px] text-on-surface-variant/50">
           {loading ? "Loading…" : (limits?.error ?? "No usage limit data has been reported yet.")}
         </span>
       )}

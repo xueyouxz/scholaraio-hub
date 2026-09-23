@@ -23,6 +23,7 @@ import type {
   SessionInput,
   SlashCommand,
   StoredSession,
+  VectorRuntimeStatus,
 } from "@scholaraio-hub/shared";
 import { pathSegment, requestJson } from "./http";
 
@@ -147,6 +148,10 @@ export const libraryApi = {
   audit: (signal?: AbortSignal) => requestJson<LibraryAudit>("/api/library/audit", { signal }),
   capabilities: (signal?: AbortSignal) =>
     requestJson<LibraryCapabilities>("/api/library/tasks", { signal }),
+  vectorRuntime: (signal?: AbortSignal) =>
+    requestJson<VectorRuntimeStatus>("/api/library/runtime", { signal }),
+  installVectorRuntime: () =>
+    requestJson<VectorRuntimeStatus>("/api/library/runtime/embed", { method: "POST" }),
   startTask: (kind: LibraryTaskKind) =>
     requestJson<LibraryTask>(`/api/library/tasks/${pathSegment(kind)}`, { method: "POST" }),
   cancelTask: (kind: LibraryTaskKind) =>

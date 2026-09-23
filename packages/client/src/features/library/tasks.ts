@@ -14,6 +14,7 @@ export const TASK_NAMES: Record<LibraryTaskKind, string> = {
 /** Stages a task reports while it runs, in the order they happen. */
 export const TASK_PHASES: Record<string, string> = {
   preparing: "准备中",
+  runtime: "安装向量依赖",
   model: "下载嵌入模型",
   embed: "生成向量",
   cluster: "聚类建模",
@@ -31,6 +32,8 @@ export function taskProgress(done: number, total: number): string {
 export interface Blocked {
   message: string;
   remedy?: { label: string; to: string };
+  /** The capability is one install away, and the Hub can run it from here. */
+  install?: "vector-runtime";
 }
 
 export interface Capability {
@@ -56,11 +59,19 @@ export const CAPABILITIES: Capability[] = [
           }）`,
     ready: (state) => state.semanticReady,
     blocked: (state) =>
-      state.embedProvider === "none"
-        ? { message: "配置中关闭了向量嵌入", remedy: { label: "前往设置", to: "/settings" } }
-        : state.papers === 0
-          ? { message: "文献库还没有论文", remedy: { label: "导入文献", to: "/library?import=1" } }
-          : null,
+      !state.vectorRuntimeReady
+        ? {
+            message: "语义检索运行时尚未安装（向量模型依赖，首次安装需要下载数 GB）",
+            install: "vector-runtime",
+          }
+        : state.embedProvider === "none"
+          ? { message: "配置中关闭了向量嵌入", remedy: { label: "前往设置", to: "/settings" } }
+          : state.papers === 0
+            ? {
+                message: "文献库还没有论文",
+                remedy: { label: "导入文献", to: "/library?import=1" },
+              }
+            : null,
   },
   {
     kind: "topics",

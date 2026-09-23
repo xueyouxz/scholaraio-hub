@@ -5,6 +5,7 @@ import { createStaticRoutes } from "./frontend/static.js";
 import { hostCheckMiddleware, requireCustomHeader } from "./middleware/security.js";
 import { createAppSessionRoutes } from "./routes/app-sessions.js";
 import { health } from "./routes/health.js";
+import { createLibraryRuntimeRoutes } from "./routes/library-runtime.js";
 import { createLibraryRoutes } from "./routes/library.js";
 import { createProjectRoutes } from "./routes/projects.js";
 import { createProvidersRoutes } from "./routes/providers.js";
@@ -20,6 +21,7 @@ import type { ModelInfoService } from "./services/ModelInfoService.js";
 import { ProviderUsageLimitService } from "./services/ProviderUsageLimitService.js";
 import type { ServerSettingsService } from "./services/ServerSettingsService.js";
 import { SessionService } from "./services/SessionService.js";
+import { VectorRuntimeService } from "./services/VectorRuntimeService.js";
 import { SessionStore } from "./sessions/SessionStore.js";
 import { skillsDirectory } from "./skills/skillsDirectory.js";
 import { Supervisor } from "./supervisor/Supervisor.js";
@@ -47,6 +49,7 @@ export function createApp(options: AppOptions) {
   const store = new SessionStore(dataDir);
   const library = options.libraryService ?? new LibraryService(dataDir);
   const usage = new ProviderUsageLimitService();
+  const vectorRuntime = new VectorRuntimeService(dataDir, library);
   const supervisor = new Supervisor({
     provider: options.provider ?? claudeProvider,
     idleTimeoutMs: options.idleTimeoutMs,
@@ -69,6 +72,7 @@ export function createApp(options: AppOptions) {
   app.route("/api/version", createVersionRoutes({ installId: options.installId }));
   // Registered first: these two also decide where a project's sessions run.
   app.route("/api/library/projects", createProjectRoutes(library, store));
+  app.route("/api/library/runtime", createLibraryRuntimeRoutes(vectorRuntime));
   app.route("/api/library", createLibraryRoutes(library));
   app.route("/api/sessions", createAppSessionRoutes(sessions, options.serverSettingsService));
   app.route("/api/skills", createSkillsRoutes({ scholaraioSkillsDir: skillsDir }));
@@ -97,6 +101,7 @@ export function createApp(options: AppOptions) {
   if (options.frontendDistPath)
     app.route("/", createStaticRoutes({ distPath: options.frontendDistPath }));
   const close = async () => {
+    await vectorRuntime.close();
     await supervisor.close();
     await sessions.close();
     await library.close();

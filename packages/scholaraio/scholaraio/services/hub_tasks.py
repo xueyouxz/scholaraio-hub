@@ -145,6 +145,8 @@ class MaintenanceTasks:
         cfg = self.library.cfg
         if vectors.embedding_provider(cfg) == "none":
             raise ValueError("当前配置关闭了向量嵌入（embed.provider=none）")
+        if not vectors.runtime_available():
+            raise ValueError("向量依赖尚未安装，请先在前端安装语义检索运行时")
         self.update(record, phase="model")
         vectors.prepare_model(cfg)
         if stop.is_set():
@@ -295,6 +297,7 @@ class MaintenanceTasks:
                 "embedProvider": vectors.embedding_provider(cfg),
                 "embedModel": cfg.embed.model,
                 "modelReady": vectors.model_available(cfg),
+                "vectorRuntimeReady": vectors.runtime_available(),
                 "semanticReady": vector_count > 0,
                 "topicsBuilt": topics_built,
                 "deepPending": sum(1 for directory in directories if needs_deep(directory)),

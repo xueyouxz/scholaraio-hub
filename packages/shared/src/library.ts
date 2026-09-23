@@ -120,6 +120,8 @@ export interface LibraryCapabilities {
   embedProvider: string;
   embedModel: string;
   modelReady: boolean;
+  /** Whether the optional embedding packages are installed in the Python env. */
+  vectorRuntimeReady: boolean;
   semanticReady: boolean;
   topicsBuilt: boolean;
   deepPending: number;
@@ -127,6 +129,16 @@ export interface LibraryCapabilities {
   llmConfigured: boolean;
   mineruConfigured: boolean;
   tasks: LibraryTask[];
+}
+
+/** How the optional embedding packages install is going. */
+export interface VectorRuntimeStatus {
+  state: "idle" | "installing" | "ready" | "failed";
+  /** Tail of the installer's output, so the browser can show what it is doing. */
+  log: string[];
+  error?: string;
+  startedAt?: string;
+  finishedAt?: string;
 }
 
 /** Library settings the browser owns; API keys are write-only. */

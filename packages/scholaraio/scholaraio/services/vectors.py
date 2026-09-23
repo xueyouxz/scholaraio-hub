@@ -57,6 +57,23 @@ _EMBED_SIG_KEY = "embed_signature"
 _EMBED_SLICE = 64
 
 
+# The optional packages an embedding run needs; without them nothing here works.
+_RUNTIME_MODULES = ("numpy", "sentence_transformers", "faiss")
+
+
+def runtime_available() -> bool:
+    """Whether the optional embedding dependencies are installed in this env."""
+    from importlib.util import find_spec
+
+    for name in _RUNTIME_MODULES:
+        try:
+            if find_spec(name) is None:
+                return False
+        except (ImportError, ValueError):
+            return False
+    return True
+
+
 def embedding_provider(cfg: Config | None = None) -> str:
     """Which embedding backend this library uses: local, openai-compat or none."""
     return _embed_provider(cfg)

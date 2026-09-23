@@ -1,5 +1,6 @@
 import type { LibraryTask, LibraryTaskKind } from "@scholaraio-hub/shared";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useEffect, useRef } from "react";
 import { Link } from "react-router-dom";
 import { libraryApi } from "../../../core/library";
 import { useLibraryEvents } from "../../../core/libraryEvents";
@@ -64,6 +65,7 @@ export function CapabilityPrompt({
       <p className="text-xs text-on-surface-variant">{blocked?.message ?? spec.describe(state)}</p>
       <TaskProgress task={task} />
       {error ? <p className="text-[10px] text-error">{error.message}</p> : null}
+      {blocked?.install === "vector-runtime" ? <VectorRuntimeInstall /> : null}
       <div className="mt-1 flex flex-wrap items-center gap-2">
         <button
           type="button"
@@ -87,6 +89,62 @@ export function CapabilityPrompt({
         ) : null}
       </div>
     </article>
+  );
+}
+
+/**
+ * The one install that stands between a fresh Hub and semantic search.
+ *
+ * The packages are a multi-gigabyte download that most installs never need, so
+ * setup leaves them out and this button fetches them when they are first asked
+ * for. The Hub restarts the library service itself once they land.
+ */
+function VectorRuntimeInstall() {
+  const client = useQueryClient();
+  const runtime = useQuery({
+    queryKey: ["library", "runtime"],
+    queryFn: ({ signal }) => libraryApi.vectorRuntime(signal),
+    refetchInterval: (query) => (query.state.data?.state === "installing" ? 2000 : false),
+  });
+  const install = useMutation({
+    mutationFn: libraryApi.installVectorRuntime,
+    onSuccess: (status) => client.setQueryData(["library", "runtime"], status),
+  });
+  const state = runtime.data?.state;
+  const installing = state === "installing";
+  // The capability list is what says whether the packages are importable now.
+  const settled = useRef(state);
+  useEffect(() => {
+    if (settled.current === state) return;
+    settled.current = state;
+    if (state === "ready") void client.invalidateQueries({ queryKey: ["library"] });
+  }, [state, client]);
+  const log = runtime.data?.log ?? [];
+  return (
+    <div className="flex flex-col gap-1.5">
+      <button
+        type="button"
+        disabled={installing || install.isPending}
+        onClick={() => install.mutate()}
+        className="self-start rounded-full signature-gradient px-3 py-1.5 text-xs font-semibold text-on-primary active:scale-95 disabled:opacity-40 border-0 cursor-pointer"
+      >
+        {installing ? "安装中…" : state === "failed" ? "重新安装" : "安装语义检索运行时"}
+      </button>
+      {runtime.data?.error ? (
+        <p className="text-[10px] text-error break-words">{runtime.data.error}</p>
+      ) : null}
+      {install.error ? (
+        <p className="text-[10px] text-error break-words">{install.error.message}</p>
+      ) : null}
+      {log.length ? (
+        <pre
+          aria-live="polite"
+          className="max-h-24 overflow-auto rounded-lg bg-surface-container px-2 py-1.5 text-[10px] font-mono leading-relaxed text-on-surface-variant whitespace-pre-wrap"
+        >
+          {log.slice(-6).join("\n")}
+        </pre>
+      ) : null}
+    </div>
   );
 }
 

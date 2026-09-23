@@ -17,6 +17,7 @@ from scholaraio.services.hub_config import ensure_config
 from scholaraio.services.hub_import import ImportQueue
 from scholaraio.services.hub_metadata import HubMetadata
 from scholaraio.services.hub_projects import HubProjects
+from scholaraio.services.hub_settings import HubSettings
 from scholaraio.services.hub_tasks import MaintenanceTasks
 from scholaraio.services.index import build_index, search
 from scholaraio.stores.papers import authors_text, find_pdf, iter_paper_dirs, read_meta
@@ -60,11 +61,22 @@ class HubLibrary:
         self.metadata = HubMetadata(self)
         self.imports = ImportQueue(self)
         self.tasks = MaintenanceTasks(self)
+        self.settings = HubSettings(self)
         self.reindex()
 
     def close(self):
         self.imports.close()
         self.tasks.close()
+
+    def reload_config(self):
+        """Re-read the configuration after a settings change.
+
+        Only keys, models and extraction choices are editable, so every path
+        the library and its workers resolved at start-up still holds.
+        """
+        with self.lock:
+            self.cfg = ensure_config(self.root)
+            return self.cfg
 
     def reindex(self):
         with self.lock:

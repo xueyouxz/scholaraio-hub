@@ -5,6 +5,7 @@ import type {
   LibraryPaperDetail,
   LibraryReference,
   LibrarySearchResult,
+  LibrarySettings,
   LibraryTask,
   LibraryTaskKind,
   LiteratureProject,
@@ -106,6 +107,13 @@ export const libraryApi = {
   },
   retry: (id: string) =>
     requestJson<ImportJob>(`/api/library/imports/${pathSegment(id)}/retry`, { method: "POST" }),
+  settings: (signal?: AbortSignal) =>
+    requestJson<LibrarySettings>("/api/library/settings", { signal }),
+  saveSettings: (fields: Partial<Record<string, string>>) =>
+    requestJson<LibrarySettings>("/api/library/settings", {
+      method: "PATCH",
+      body: JSON.stringify(fields),
+    }),
   capabilities: (signal?: AbortSignal) =>
     requestJson<LibraryCapabilities>("/api/library/tasks", { signal }),
   startTask: (kind: LibraryTaskKind) =>

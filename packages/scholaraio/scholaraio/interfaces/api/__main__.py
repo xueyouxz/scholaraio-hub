@@ -45,6 +45,23 @@ class MetadataInput(BaseModel):
     paper_type: str | None = Field(default=None, max_length=100)
 
 
+class SettingsInput(BaseModel):
+    """Library settings the browser may change; keys are write-only."""
+
+    extractor: str | None = Field(default=None, max_length=40)
+    pdfParser: str | None = Field(default=None, max_length=40)
+    llmBackend: str | None = Field(default=None, max_length=40)
+    llmModel: str | None = Field(default=None, max_length=200)
+    llmBaseUrl: str | None = Field(default=None, max_length=500)
+    llmApiKey: str | None = Field(default=None, max_length=500)
+    mineruApiKey: str | None = Field(default=None, max_length=500)
+    embedProvider: str | None = Field(default=None, max_length=40)
+    embedModel: str | None = Field(default=None, max_length=200)
+    embedSource: str | None = Field(default=None, max_length=40)
+    embedDevice: str | None = Field(default=None, max_length=40)
+    embedApiKey: str | None = Field(default=None, max_length=500)
+
+
 class ReadingPosition(BaseModel):
     page: int = Field(default=1, ge=1)
     line: int = Field(default=1, ge=1)
@@ -199,6 +216,14 @@ def create_app(root: Path, token: str) -> FastAPI:
         directory, _ = app.state.library.find(paper_id)
         atomic_json(directory / "reading-position.json", body.model_dump())
         return body
+
+    @app.get("/settings")
+    def settings():
+        return app.state.library.settings.read()
+
+    @app.patch("/settings")
+    def update_settings(body: SettingsInput):
+        return app.state.library.settings.update(body.model_dump(exclude_unset=True, exclude_none=True))
 
     @app.get("/tasks")
     def tasks():

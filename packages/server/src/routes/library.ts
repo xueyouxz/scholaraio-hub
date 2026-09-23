@@ -26,6 +26,8 @@ export function createLibraryRoutes(service: LibraryService) {
     ["GET", "/papers/:id/attachments/*"],
     ["GET", "/papers/:id/position"],
     ["PUT", "/papers/:id/position"],
+    ["GET", "/settings"],
+    ["PATCH", "/settings"],
     ["GET", "/tasks"],
     ["POST", "/tasks/:kind"],
     ["DELETE", "/tasks/:kind"],

@@ -5,6 +5,7 @@ import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { requestJson } from "../../core/http";
 import { settingsApi } from "../../core/library";
+import { LibrarySettingsForm } from "../../features/library/components/LibrarySettingsForm";
 import { usePageTitle } from "../components/NavigationLayout";
 import { UsageLimitBlock } from "../components/ProviderUsage";
 
@@ -180,6 +181,7 @@ export function SettingsPage() {
           {error.message}
         </p>
       ) : null}
+      <LibrarySettingsForm />
       <section className="space-y-3">
         <h2 className="text-[10px] font-mono uppercase tracking-widest text-on-surface-variant">
           History

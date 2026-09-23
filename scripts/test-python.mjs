@@ -42,6 +42,7 @@ try {
       "tests/test_hub_cli_routing.py",
       "tests/test_hub_import.py",
       "tests/test_hub_tasks.py",
+      "tests/test_hub_settings.py",
       "tests/test_ingest_pipeline.py",
       "tests/test_chunks.py",
       "tests/test_papers.py",

@@ -127,3 +127,21 @@ export interface LibraryCapabilities {
   mineruConfigured: boolean;
   tasks: LibraryTask[];
 }
+
+/** Library settings the browser owns; API keys are write-only. */
+export interface LibrarySettings {
+  extractor: string;
+  pdfParser: string;
+  llmBackend: string;
+  llmModel: string;
+  llmBaseUrl: string;
+  embedProvider: string;
+  embedModel: string;
+  embedSource: string;
+  embedDevice: string;
+  mineruConfigured: boolean;
+  llmConfigured: boolean;
+  embedApiConfigured: boolean;
+  /** The documented file a user can still edit by hand. */
+  configPath: string;
+}

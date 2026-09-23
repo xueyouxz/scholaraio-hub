@@ -7,7 +7,7 @@ from pathlib import Path
 import pymupdf
 import pytest
 
-from scholaraio.services.hub_library import HubLibrary
+from scholaraio.hub import HubLibrary
 from scholaraio.services.ingest import identifiers
 
 
@@ -33,7 +33,7 @@ def library(tmp_path):
 def wait_for_job(library, job_id: str, *, timeout: float = 60.0) -> dict:
     deadline = time.monotonic() + timeout
     while time.monotonic() < deadline:
-        job = next(j for j in library.list_jobs() if j["id"] == job_id)
+        job = next(j for j in library.imports.list() if j["id"] == job_id)
         if all(item["status"] not in ("queued", "running") for item in job["items"]):
             return job
         time.sleep(0.02)
@@ -77,7 +77,7 @@ def test_a_batch_reports_each_file_and_leaves_the_library_searchable(library, tm
     assert results["Broken.pdf"]["status"] == "failed"
     assert results["Broken.pdf"]["error"]
     # A finished import is immediately searchable: the batch reindexed once.
-    assert library.search("spectroscopy")[0]["paper"]["id"] == results["Spectroscopy.pdf"]["paperId"]
+    assert library.search.keyword("spectroscopy")[0]["paper"]["id"] == results["Spectroscopy.pdf"]["paperId"]
     # Progress fields are cleared once an item stops running.
     assert all(item.get("step") is None for item in finished["items"])
 
@@ -123,7 +123,7 @@ def test_papers_ingested_here_are_visible_to_the_pipeline_dedup(library, tmp_pat
 
     dois, pub_nums, arxiv_ids = identifiers.collect_existing_ids(library.cfg.papers_dir)
     assert (dois, pub_nums, arxiv_ids) == ({}, {}, {})  # no DOI was found, and none was invented
-    assert len(library.papers()) == 1
+    assert len(library.papers.list()) == 1
 
 
 def test_a_pdf_that_names_itself_keeps_that_title(library, tmp_path):
@@ -135,7 +135,7 @@ def test_a_pdf_that_names_itself_keeps_that_title(library, tmp_path):
 
     result = library.imports.import_file(tmp_path / "titled.pdf", "upload-8471.pdf", no_api=True)
 
-    paper = library.detail(result["paperId"])
+    paper = library.papers.detail(result["paperId"])
     assert paper["title"] == "Spectroscopy Research"
     assert paper["authors"] == "Ada Lovelace"
     # Still incomplete: a self-declared title is not an identified paper.

@@ -6,8 +6,8 @@ import time
 
 import pytest
 
+from scholaraio.hub import HubLibrary
 from scholaraio.services import vectors
-from scholaraio.services.hub_library import HubLibrary
 
 
 @pytest.fixture
@@ -110,15 +110,15 @@ def test_semantic_search_says_when_its_packages_are_missing(library, monkeypatch
 
     assert task["status"] == "failed"
     assert "向量依赖" in task["error"]
-    assert library.tasks.status()["vectorRuntimeReady"] is False
+    assert library.status.readiness()["vectorRuntimeReady"] is False
 
 
 def test_deep_processing_needs_a_key_and_counts_what_is_pending(library, monkeypatch):
     paper(library)
     monkeypatch.setattr(type(library.cfg), "resolved_api_key", lambda _self: "")
 
-    assert library.tasks.status()["deepPending"] == 1
-    assert library.tasks.status()["llmConfigured"] is False
+    assert library.status.readiness()["deepPending"] == 1
+    assert library.status.readiness()["llmConfigured"] is False
 
     library.tasks.start("deep")
     task = wait_for(library, "deep")
@@ -131,7 +131,7 @@ def test_status_describes_what_the_library_can_already_do(library, monkeypatch):
     monkeypatch.setattr(vectors, "model_available", lambda cfg=None: False)
     library.reindex()
 
-    status = library.tasks.status()
+    status = library.status.readiness()
 
     assert status["papers"] == 1
     assert status["vectors"] == 0
@@ -162,7 +162,7 @@ def test_the_audit_groups_what_is_wrong_with_the_library(library):
     directory.mkdir(parents=True, exist_ok=True)
     (directory / "meta.json").write_text(json.dumps({"id": "broken", "title": ""}), encoding="utf-8")
 
-    report = library.tasks.audit()
+    report = library.status.audit()
 
     assert report["total"] > 0
     assert all({"rule", "severity", "count", "papers"} <= set(group) for group in report["groups"])

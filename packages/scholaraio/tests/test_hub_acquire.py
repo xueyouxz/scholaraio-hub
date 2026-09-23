@@ -5,8 +5,8 @@ from pathlib import Path
 
 import pytest
 
-from scholaraio.services import hub_acquire
-from scholaraio.services.hub_library import HubLibrary
+from scholaraio.hub import HubLibrary
+from scholaraio.hub import acquire as hub_acquire
 
 
 @pytest.fixture
@@ -39,7 +39,7 @@ def test_an_arxiv_link_is_downloaded_and_queued_for_import(library, monkeypatch,
         path.write_bytes(b"%PDF-1.4\n")
         return path
 
-    monkeypatch.setattr(hub_acquire.HubAcquire, "download_url", lambda self, locator, work: download(locator, work))
+    monkeypatch.setattr(hub_acquire.AcquireService, "download_url", lambda self, locator, work: download(locator, work))
 
     job = library.acquire.fetch(" arXiv:2401.12345 ")
 
@@ -115,7 +115,7 @@ def test_entries_that_cannot_be_fetched_are_reported_not_hidden(library, monkeyp
         path.write_bytes(b"%PDF-1.4\n")
         return path, "doi"
 
-    monkeypatch.setattr(hub_acquire.HubAcquire, "download", download)
+    monkeypatch.setattr(hub_acquire.AcquireService, "download", download)
 
     result = library.acquire.import_references(BIBTEX)
 

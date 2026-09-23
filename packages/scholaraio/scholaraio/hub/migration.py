@@ -16,7 +16,8 @@ from pathlib import Path
 import yaml
 
 from scholaraio.core.config import Config, load_config
-from scholaraio.services.hub_library import HubLibrary, atomic_json, content_hash
+from scholaraio.hub.library import HubLibrary
+from scholaraio.hub.storage import atomic_json, content_hash
 from scholaraio.stores.papers import iter_paper_dirs, read_meta
 
 EXCLUDED_NAMES = {".git", ".venv", "node_modules", "__pycache__", ".DS_Store"}
@@ -254,6 +255,7 @@ def main():
             parser.error("--manifest is required; stop both old and new writers before apply/rollback")
         (apply if args.action == "apply" else rollback)(args.manifest)
         print(f"Migration {args.action} complete: {args.manifest}")
+
 
 if __name__ == "__main__":
     main()

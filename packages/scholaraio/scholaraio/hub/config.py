@@ -7,11 +7,10 @@ directory before ``SCHOLARAIO_CONFIG`` can point at it.
 """
 from __future__ import annotations
 
-import os
-import uuid
 from pathlib import Path
 
 from scholaraio.core.config import Config, load_config
+from scholaraio.hub.storage import atomic_write_text
 
 TEMPLATE = """\
 # ScholarAIO Hub 应用配置。
@@ -44,11 +43,16 @@ def config_path(root: Path) -> Path:
     return root / "config.yaml"
 
 
+def local_config_path(root: Path) -> Path:
+    """The overlay the settings page writes, merged on top of ``config.yaml``."""
+    return root / "config.local.yaml"
+
+
 def ensure_config(root: Path) -> Config:
     """Return the application config, creating the file when it is missing."""
     path = config_path(root)
     if not path.exists():
-        write_template(path)
+        atomic_write_text(path, TEMPLATE, replace=False)
     config = load_config(path)
     # load_config falls back to the caller's cwd when the file disappeared
     # between the check and the read; an unrelated root is never acceptable.
@@ -56,17 +60,4 @@ def ensure_config(root: Path) -> Config:
     return config
 
 
-def write_template(path: Path) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    temporary = path.with_name(f".{path.name}.{uuid.uuid4().hex}.tmp")
-    try:
-        with temporary.open("x", encoding="utf-8") as output:
-            temporary.chmod(0o600)
-            output.write(TEMPLATE)
-            output.flush()
-            os.fsync(output.fileno())
-        # Another starter may have won the race; keep the existing file.
-        if not path.exists():
-            temporary.replace(path)
-    finally:
-        temporary.unlink(missing_ok=True)
+__all__ = ["TEMPLATE", "config_path", "ensure_config", "local_config_path"]

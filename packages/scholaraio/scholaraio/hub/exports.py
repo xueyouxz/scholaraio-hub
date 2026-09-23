@@ -7,6 +7,10 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 
+from scholaraio.hub.errors import InvalidRequest
+from scholaraio.hub.projects import ProjectService
+from scholaraio.hub.runtime import LibraryRuntime
+
 FORMATS = {
     "bibtex": (".bib", "application/x-bibtex"),
     "ris": (".ris", "application/x-research-info-systems"),
@@ -15,18 +19,19 @@ FORMATS = {
 STYLES = ("apa", "vancouver", "chicago-author-date", "mla")
 
 
-class HubExport:
-    def __init__(self, library):
-        self.library = library
+class ExportService:
+    def __init__(self, runtime: LibraryRuntime, projects: ProjectService):
+        self.runtime = runtime
+        self.projects = projects
 
     def directories(self, paper_ids: list[str], project_id: str | None) -> list[str] | None:
         """Resolve a selection to paper directory names; None means the whole library."""
-        scoped = self.library.projects.scope(project_id, paper_ids)
+        scoped = self.projects.scope(project_id, paper_ids)
         if scoped is None:
             return None
         if not scoped:
-            raise ValueError("没有可导出的文献")
-        return [self.library.find(paper_id)[0].name for paper_id in scoped]
+            raise InvalidRequest("没有可导出的文献")
+        return [self.runtime.papers.find(paper_id).directory.name for paper_id in scoped]
 
     def export(
         self,
@@ -38,20 +43,20 @@ class HubExport:
         from scholaraio.services.export import export_bibtex, export_markdown_refs, export_ris
 
         if fmt not in FORMATS:
-            raise ValueError(f"不支持的导出格式：{fmt}")
+            raise InvalidRequest(f"不支持的导出格式：{fmt}")
         if style not in STYLES:
-            raise ValueError(f"不支持的引用格式：{style}")
-        with self.library.lock:
+            raise InvalidRequest(f"不支持的引用格式：{style}")
+        with self.runtime.lock:
             names = self.directories(paper_ids, project_id)
-            papers_dir = self.library.cfg.papers_dir
+            papers_dir = self.runtime.cfg.papers_dir
             if fmt == "bibtex":
                 content = export_bibtex(papers_dir, paper_ids=names)
             elif fmt == "ris":
                 content = export_ris(papers_dir, paper_ids=names)
             else:
-                content = export_markdown_refs(papers_dir, cfg=self.library.cfg, paper_ids=names, style=style)
+                content = export_markdown_refs(papers_dir, cfg=self.runtime.cfg, paper_ids=names, style=style)
         if not content.strip():
-            raise ValueError("没有可导出的文献")
+            raise InvalidRequest("没有可导出的文献")
         suffix, content_type = FORMATS[fmt]
         stamp = datetime.now(timezone.utc).strftime("%Y%m%d")
         return {
@@ -65,16 +70,15 @@ class HubExport:
         from scholaraio.services.citation_check import check_citations, extract_citations
 
         if not text.strip():
-            raise ValueError("请粘贴要核查的正文")
+            raise InvalidRequest("请粘贴要核查的正文")
         citations = extract_citations(text)
         if not citations:
             return {"citations": [], "verified": 0, "missing": 0, "ambiguous": 0}
-        with self.library.lock:
-            scoped = self.library.projects.scope(project_id, [])
+        with self.runtime.lock:
             results = check_citations(
                 citations,
-                self.library.cfg.index_db,
-                paper_ids=set(scoped) if scoped is not None else None,
+                self.runtime.cfg.index_db,
+                paper_ids=self.projects.scope_set(project_id),
             )
         return {
             "citations": [
@@ -96,4 +100,4 @@ class HubExport:
         }
 
 
-__all__ = ["FORMATS", "STYLES", "HubExport"]
+__all__ = ["FORMATS", "STYLES", "ExportService"]

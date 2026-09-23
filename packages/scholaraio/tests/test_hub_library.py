@@ -4,8 +4,8 @@ from pathlib import Path
 import pymupdf
 from fastapi.testclient import TestClient
 
-from scholaraio.interfaces.api.__main__ import create_app
-from scholaraio.services.hub_library import HubLibrary
+from scholaraio.hub import HubLibrary
+from scholaraio.interfaces.api.app import create_app
 
 
 def test_existing_analysis_artifacts_are_scoped_without_rebuilding(tmp_path):
@@ -15,11 +15,11 @@ def test_existing_analysis_artifacts_are_scoped_without_rebuilding(tmp_path):
     library = HubLibrary(root)
     try:
         pid = ingest(library, source, "Analysis.pdf")["paperId"]
-        directory, meta = library.find(pid)
+        directory, meta = library.repository.find(pid)
         meta["citation_count"] = {"crossref": 3, "semantic_scholar": 6}
         meta["l3_conclusion"] = "Saved original conclusion"
         (directory / "meta.json").write_text(json.dumps(meta))
-        row = library.detail(pid)
+        row = library.papers.detail(pid)
         assert row["citationCount"] is None
         assert row["citationCounts"] == meta["citation_count"]
         assert row["l3Conclusion"] == "Saved original conclusion"
@@ -30,14 +30,14 @@ def test_existing_analysis_artifacts_are_scoped_without_rebuilding(tmp_path):
         projection = {"built": True, "points": [{"id": pid, "x": 1, "y": 2, "topicId": 1, "year": 2025, "title": "Analysis"}, {"id": "deleted", "topicId": 1}]}
         (state / "topics/overview.json").write_text(json.dumps(overview))
         (state / "projection/projection.json").write_text(json.dumps(projection))
-        result = library.analytics()
+        result = library.analytics.overview()
         assert len(result["projection"]["points"]) == 1
         assert not result["similarity"]["built"]
         library.projects.create("empty")
-        assert library.analytics("empty")["projection"]["points"] == []
-        assert library.analytics("empty")["topics"]["topics"] == []
+        assert library.analytics.overview("empty")["projection"]["points"] == []
+        assert library.analytics.overview("empty")["topics"]["topics"] == []
         library.projects.update_papers("empty", [pid], "add")
-        assert library.analytics("empty")["topics"]["topics"][0]["paperCount"] == 1
+        assert library.analytics.overview("empty")["topics"]["topics"][0]["paperCount"] == 1
         assert json.loads((state / "projection/projection.json").read_text()) == projection
     finally:
         library.close()
@@ -70,19 +70,19 @@ def test_import_search_duplicate_and_context(tmp_path):
         assert first["status"] == "completed_incomplete"
         assert first["missingMetadata"] == ["doi", "title"]
         pid = first["paperId"]
-        assert library.detail(pid)["title"] == "Research"
-        assert library.detail(pid)["metadataStatus"] == "incomplete"
+        assert library.papers.detail(pid)["title"] == "Research"
+        assert library.papers.detail(pid)["metadataStatus"] == "incomplete"
         again = ingest(library, source, "Another.pdf")
         assert (again["status"], again["paperId"]) == ("duplicate", pid)
         library.reindex()
-        results = library.search("molecular")
+        results = library.search.keyword("molecular")
         assert results[0]["paper"]["id"] == pid
         assert results[0]["matches"][0]["start_line"] >= 1
-        assert library.context("Summarize", [pid])["citations"][0]["paperId"] == pid
-        assert library.detail(pid)["hasPdf"]
-        assert library.context("What does spectroscopy detect?", [])["citations"][0]["paperId"] == pid
-        assert library.search("???") == []
-        assert library.search("OR") == []
+        assert library.retrieval.context("Summarize", [pid])["citations"][0]["paperId"] == pid
+        assert library.papers.detail(pid)["hasPdf"]
+        assert library.retrieval.context("What does spectroscopy detect?", [])["citations"][0]["paperId"] == pid
+        assert library.search.keyword("???") == []
+        assert library.search.keyword("OR") == []
     finally:
         library.close()
 
@@ -111,7 +111,7 @@ def test_an_unparseable_pdf_is_kept_for_retry_and_not_half_ingested(tmp_path):
         assert result["status"] == "failed"
         assert result["error"]
         # Nothing half-written into the library, and the upload survives a retry.
-        assert library.papers() == []
+        assert library.papers.list() == []
         assert Path(result["source"]).exists()
     finally:
         library.close()
@@ -124,7 +124,7 @@ def test_attachment_boundaries_and_batch_results(tmp_path):
     with TestClient(create_app(tmp_path / "app", "test-secret")) as client:
         client.headers["x-hub-token"] = "test-secret"
         pid = ingest(client.app.state.library, source, "Paper.pdf")["paperId"]
-        directory, _ = client.app.state.library.find(pid)
+        directory, _ = client.app.state.library.repository.find(pid)
         (directory / "images").mkdir()
         (directory / "images/a.png").write_bytes(b"image")
         assert client.get(f"/papers/{pid}/attachments/images/a.png").content == b"image"
@@ -208,7 +208,7 @@ def test_original_search_modes_and_image_gallery_are_scoped(tmp_path, monkeypatc
     library = HubLibrary(tmp_path / "app")
     try:
         pid = ingest(library, source)["paperId"]
-        directory, meta = library.find(pid)
+        directory, meta = library.repository.find(pid)
         meta["authors"] = ["张三", "Alice Smith"]
         (directory / "meta.json").write_text(json.dumps(meta))
         images = directory / "images"
@@ -217,17 +217,17 @@ def test_original_search_modes_and_image_gallery_are_scoped(tmp_path, monkeypatc
         (images / "second.jpg").write_bytes(b"image")
         (images / "metadata.txt").write_text("not an image")
         (images / "outside.png").symlink_to(source)
-        assert library.images(pid) == ["first.png", "second.jpg"]
-        assert library.browse_search("张三", "author", 20)["results"][0]["paper"]["id"] == pid
-        assert library.browse_search("molecular", "author", 20)["results"] == []
-        assert library.browse_search("molecular", "keyword", 20)["results"][0]["paper"]["id"] == pid
+        assert library.papers.images(pid) == ["first.png", "second.jpg"]
+        assert library.search.browse("张三", "author", 20)["results"][0]["paper"]["id"] == pid
+        assert library.search.browse("molecular", "author", 20)["results"] == []
+        assert library.search.browse("molecular", "keyword", 20)["results"][0]["paper"]["id"] == pid
         for mode in ("author", "keyword", "unified", "semantic"):
-            assert library.browse_search("张三", mode, 20, set())["results"] == []
+            assert library.search.browse("张三", mode, 20, set())["results"] == []
         def unified(query, db, **kwargs):
             assert kwargs["paper_ids"] == {pid}
             return [{"paper_id": pid}, {"paper_id": "deleted"}], {"vector_degraded": True}
         monkeypatch.setattr("scholaraio.services.index.unified_search", unified)
-        result = library.browse_search("research", "unified", 20, {pid})
+        result = library.search.browse("research", "unified", 20, {pid})
         assert [r["paper"]["id"] for r in result["results"]] == [pid]
         assert result["notice"]
     finally:
@@ -237,7 +237,7 @@ def test_original_search_modes_and_image_gallery_are_scoped(tmp_path, monkeypatc
 def test_cli_shares_the_application_library_through_the_generated_config(tmp_path, monkeypatch):
     """An agent's CLI run must resolve the same paths as the Hub service."""
     from scholaraio.core.config import load_config
-    from scholaraio.services.hub_config import config_path
+    from scholaraio.hub.config import config_path
 
     root = tmp_path / "app"
     source = tmp_path / "source.pdf"
@@ -254,13 +254,13 @@ def test_cli_shares_the_application_library_through_the_generated_config(tmp_pat
         assert cli_cfg.papers_dir == library.cfg.papers_dir
         assert cli_cfg.index_db == library.cfg.index_db
         assert cli_cfg.workspace_dir == library.cfg.workspace_dir
-        assert (cli_cfg.papers_dir / library.find(pid)[0].name).is_dir()
+        assert (cli_cfg.papers_dir / library.repository.find(pid)[0].name).is_dir()
     finally:
         library.close()
 
 
 def test_an_existing_configuration_is_never_rewritten(tmp_path):
-    from scholaraio.services.hub_config import config_path
+    from scholaraio.hub.config import config_path
 
     root = tmp_path / "app"
     root.mkdir()
@@ -293,7 +293,7 @@ def test_projects_can_be_renamed_and_archived(tmp_path):
         assert client.get("/projects").json()["projects"] == []
         # Archived, not deleted: the agent's work is still on disk.
         assert Path(archived.json()["path"]).is_dir()
-        assert library.detail(pid)["id"] == pid
+        assert library.papers.detail(pid)["id"] == pid
 
 
 def test_renaming_onto_an_existing_project_is_refused(tmp_path):
@@ -328,7 +328,7 @@ def ingest_with_meta(library, tmp_path, name: str, doi: str, references: list[st
     source = tmp_path / f"{name}.pdf"
     pdf_file(source, title=name)
     pid = ingest(library, source, f"{name}.pdf")["paperId"]
-    directory, meta = library.find(pid)
+    directory, meta = library.repository.find(pid)
     meta.update(doi=doi, title=name, year=2024, references=references or [])
     (directory / "meta.json").write_text(json.dumps(meta), encoding="utf-8")
     library.reindex()
@@ -380,7 +380,7 @@ def test_filling_in_a_missing_doi_clears_the_incomplete_mark(tmp_path):
     with TestClient(create_app(tmp_path / "app", "test"), headers={"x-hub-token": "test"}) as client:
         library = client.app.state.library
         pid = ingest(library, source, "Research.pdf")["paperId"]
-        assert library.detail(pid)["metadataStatus"] == "incomplete"
+        assert library.papers.detail(pid)["metadataStatus"] == "incomplete"
 
         response = client.patch(
             f"/papers/{pid}",
@@ -391,7 +391,7 @@ def test_filling_in_a_missing_doi_clears_the_incomplete_mark(tmp_path):
         assert response.json()["doi"] == "10.1/known"
         assert response.json()["authors"] == "Ada Lovelace"
         # The correction is searchable, not just stored.
-        assert library.search("spectroscopy")[0]["paper"]["id"] == pid
+        assert library.search.keyword("spectroscopy")[0]["paper"]["id"] == pid
 
         assert client.patch(f"/papers/{pid}", json={}).status_code == 400
         assert client.patch(f"/papers/{pid}", json={"year": "not a year"}).status_code == 422

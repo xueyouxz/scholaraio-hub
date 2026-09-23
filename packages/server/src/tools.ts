@@ -127,7 +127,7 @@ if (command === "setup") {
   const args = process.argv.slice(3).filter((arg) => arg !== "--production");
   const result = spawnSync(
     libraryPythonPath(config.dataDir),
-    ["-m", "scholaraio.services.hub_migration", ...args],
+    ["-m", "scholaraio.hub.migration", ...args],
     { stdio: "inherit", cwd: scholarSourceDir },
   );
   if (result.error) console.error(result.error.message);

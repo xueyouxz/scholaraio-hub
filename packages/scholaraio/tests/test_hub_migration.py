@@ -4,7 +4,7 @@ from unittest.mock import patch
 
 import pytest
 
-from scholaraio.services.hub_migration import apply, plan, rollback
+from scholaraio.hub.migration import apply, plan, rollback
 
 
 def fixture(tmp_path):
@@ -45,7 +45,7 @@ def test_preflight_never_moves_source_on_failure(tmp_path, failure):
         conflict.write_text("Do not overwrite")
     elif failure == "missing":
         (paper / "paper.md").unlink()
-    with patch("scholaraio.services.hub_migration.shutil.disk_usage") as disk:
+    with patch("scholaraio.hub.migration.shutil.disk_usage") as disk:
         disk.return_value.free = 0 if failure == "space" else 10**12
         with pytest.raises((ValueError, OSError)):
             apply(manifest)
@@ -64,7 +64,7 @@ def test_mid_move_failure_rolls_back_from_verified_backup(tmp_path):
         if calls == 2:
             raise OSError("interrupted")
         return move(*args)
-    with patch("scholaraio.services.hub_migration.shutil.move", side_effect=fail_second):
+    with patch("scholaraio.hub.migration.shutil.move", side_effect=fail_second):
         with pytest.raises(OSError, match="interrupted"):
             apply(manifest)
     rollback(manifest)
@@ -85,7 +85,7 @@ def test_rollback_refuses_to_overwrite_new_user_content(tmp_path):
 def test_reindex_failure_and_config_change_rollback(tmp_path):
     source, target, paper = fixture(tmp_path)
     manifest = plan(source, target)
-    with patch("scholaraio.services.hub_migration.HubLibrary", side_effect=RuntimeError("index failure")):
+    with patch("scholaraio.hub.migration.HubLibrary", side_effect=RuntimeError("index failure")):
         with pytest.raises(RuntimeError):
             apply(manifest)
     assert manifest.stat().st_mode & 0o777 == 0o600
@@ -103,7 +103,7 @@ def test_reindex_failure_and_config_change_rollback(tmp_path):
 def test_atomic_config_failure_rolls_back_files(tmp_path):
     source, target, paper = fixture(tmp_path)
     manifest = plan(source, target)
-    with patch("scholaraio.services.hub_migration.os.link", side_effect=OSError("write failed")):
+    with patch("scholaraio.hub.migration.os.link", side_effect=OSError("write failed")):
         with pytest.raises(OSError):
             apply(manifest)
     rollback(manifest)

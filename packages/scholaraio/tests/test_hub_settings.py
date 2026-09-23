@@ -4,7 +4,7 @@ from __future__ import annotations
 import pytest
 import yaml
 
-from scholaraio.services.hub_library import HubLibrary
+from scholaraio.hub import HubLibrary
 
 
 @pytest.fixture

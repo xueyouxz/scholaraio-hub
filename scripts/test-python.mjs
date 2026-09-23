@@ -46,6 +46,8 @@ try {
       "tests/test_hub_acquire.py",
       "tests/test_hub_export.py",
       "tests/test_hub_events.py",
+      "tests/test_hub_api_contract.py",
+      "tests/test_hub_layers.py",
       "tests/test_ingest_pipeline.py",
       "tests/test_chunks.py",
       "tests/test_papers.py",

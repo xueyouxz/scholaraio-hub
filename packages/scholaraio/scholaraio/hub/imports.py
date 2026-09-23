@@ -8,7 +8,7 @@ work.
 """
 from __future__ import annotations
 
-import copy as copy_module
+import copy
 import json
 import os
 import shutil
@@ -18,10 +18,13 @@ from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from typing import Any
 
+from scholaraio.hub.errors import InvalidRequest, NotFound
+from scholaraio.hub.runtime import LibraryRuntime
+from scholaraio.hub.storage import atomic_json, content_hash
 from scholaraio.services.ingest import identifiers
 from scholaraio.services.ingest.inbox_orchestration import run_file_steps
 from scholaraio.services.ingest.types import InboxCtx
-from scholaraio.stores.papers import iter_paper_dirs, read_meta, write_meta
+from scholaraio.stores.papers import read_meta, write_meta
 
 STEPS = ["mineru", "extract", "dedup", "ingest"]
 # Split so the queue can fill gaps the browser can live with (a missing title)
@@ -42,16 +45,17 @@ def lookups_disabled() -> bool:
     return os.environ.get("SCHOLARAIO_HUB_NO_API", "").strip().lower() not in ("", "0", "false")
 
 
-def copy(value):
+def snapshot(value):
+    """A copy the caller may keep while the worker goes on changing the original."""
     return json.loads(json.dumps(value))
 
 
 class ImportQueue:
-    """Serial import worker owned by one :class:`HubLibrary`."""
+    """Serial import worker: one job at a time, each item through the pipeline."""
 
-    def __init__(self, library):
-        self.library = library
-        self.root = library.cfg.state_root / "imports"
+    def __init__(self, runtime: LibraryRuntime):
+        self.runtime = runtime
+        self.root = runtime.cfg.state_root / "imports"
         self.staging = self.root / "staging"
         for directory in (self.root, self.staging):
             directory.mkdir(parents=True, exist_ok=True)
@@ -75,17 +79,15 @@ class ImportQueue:
     # ---- queue ---------------------------------------------------------
 
     def save(self, job):
-        from scholaraio.services.hub_library import atomic_json
-
         atomic_json(self.root / f'{job["id"]}.json', job)
-        self.library.events.publish("imports")
+        self.runtime.events.publish("imports")
 
     def list(self):
-        with self.library.lock:
-            return copy(list(self.jobs.values()))
+        with self.runtime.lock:
+            return snapshot(list(self.jobs.values()))
 
     def enqueue(self, files: list[tuple[Path, str]]):
-        with self.library.lock:
+        with self.runtime.lock:
             pending = {
                 item["source"]
                 for job in self.jobs.values()
@@ -98,33 +100,35 @@ class ImportQueue:
                 if str(source) not in pending
             ]
             if not items:
-                raise ValueError("These files are already being imported")
+                raise InvalidRequest("These files are already being imported")
             job = {"id": uuid.uuid4().hex, "items": items}
             self.jobs[job["id"]] = job
             self.save(job)
             self.executor.submit(self.run, job)
-            return copy(job)
+            return snapshot(job)
 
     def retry(self, job_id):
-        with self.library.lock:
-            job = self.jobs[job_id]
+        with self.runtime.lock:
+            job = self.jobs.get(job_id)
+            if job is None:
+                raise NotFound(f"导入任务不存在：{job_id}")
             if any(item["status"] in ACTIVE for item in job["items"]):
-                raise ValueError("Import already running")
+                raise InvalidRequest("Import already running")
             for item in job["items"]:
                 if item["status"] == "failed":
                     item.update(status="queued", error=None, step=None)
             self.save(job)
             self.executor.submit(self.run, job)
-            return copy(job)
+            return snapshot(job)
 
     # ---- execution -----------------------------------------------------
 
     def run(self, job):
-        papers_dir = self.library.cfg.papers_dir
+        papers_dir = self.runtime.cfg.papers_dir
         dois, pub_nums, arxiv_ids = identifiers.collect_existing_ids(papers_dir)
         ingested = False
         for item in job["items"]:
-            with self.library.lock:
+            with self.runtime.lock:
                 if item["status"] != "queued":
                     continue
                 item.update(status="running", step=STEPS[0], error=None)
@@ -139,16 +143,16 @@ class ImportQueue:
                 )
             except Exception as exc:  # a failed item must not stop the batch
                 result = {"status": "failed", "error": str(exc)}
-            with self.library.lock:
+            with self.runtime.lock:
                 item.update(step=None, **result)
                 self.save(job)
             ingested |= result["status"] in INGESTED
         if ingested:
-            self.library.reindex()
-            self.library.events.publish("papers")
+            self.runtime.reindex()
+            self.runtime.events.publish("papers")
 
     def record_step(self, job, item, step: str) -> None:
-        with self.library.lock:
+        with self.runtime.lock:
             item["step"] = step
             self.save(job)
 
@@ -162,11 +166,9 @@ class ImportQueue:
         on_step: Callable[[str], None] | None = None,
     ) -> dict[str, Any]:
         """Run one file through the ingest pipeline and describe the outcome."""
-        from scholaraio.services.hub_library import content_hash
-
         cfg = self.extraction_config()
         fingerprint = content_hash(source)
-        already = self.find_by_hash(fingerprint)
+        already = self.runtime.papers.find_by_hash(fingerprint)
         if already is not None:
             return {"status": "duplicate", "paperId": already, "error": None}
         dois, pub_nums, arxiv_ids = existing or identifiers.collect_existing_ids(cfg.papers_dir)
@@ -234,19 +236,11 @@ class ImportQueue:
         extractor refuses to run at all, which would fail every import; regex
         extraction still yields a title, authors and often a DOI.
         """
-        cfg = self.library.cfg
+        cfg = self.runtime.cfg
         if cfg.ingest.extractor in ("robust", "llm", "auto") and not cfg.resolved_api_key():
-            cfg = copy_module.deepcopy(cfg)
+            cfg = copy.deepcopy(cfg)
             cfg.ingest.extractor = "regex"
         return cfg
-
-    def find_by_hash(self, fingerprint: str) -> str | None:
-        """Return the paper already holding this exact file, if any."""
-        for directory in iter_paper_dirs(self.library.cfg.papers_dir):
-            meta = read_meta(directory)
-            if meta.get("hub", {}).get("sha256") == fingerprint:
-                return str(meta.get("id") or directory.name)
-        return None
 
     def describe(self, ctx: InboxCtx, status: str, work: Path, staged: Path) -> dict[str, Any]:
         if status == "ingested" and ctx.ingested_json:

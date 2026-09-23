@@ -46,7 +46,8 @@ def service(tmp_path, *, watch=True, blocked_cleanup=False):
     if blocked_cleanup:
         command = [sys.executable, "-c", """
 import time
-from scholaraio.interfaces.api.__main__ import HubLibrary, main
+from scholaraio.hub import HubLibrary
+from scholaraio.interfaces.api.server import main
 HubLibrary.close = lambda self: time.sleep(60)
 main()
 """]

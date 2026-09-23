@@ -10,6 +10,10 @@ import re
 import shutil
 from pathlib import Path
 
+from scholaraio.hub.errors import InvalidRequest
+from scholaraio.hub.imports import ImportQueue
+from scholaraio.hub.runtime import LibraryRuntime
+
 ARXIV = re.compile(r"^(?:arxiv:)?(\d{4}\.\d{4,5}(?:v\d+)?)$", re.IGNORECASE)
 ARXIV_URL = re.compile(r"arxiv\.org/(?:abs|pdf)/(\d{4}\.\d{4,5}(?:v\d+)?)", re.IGNORECASE)
 PATENT = re.compile(r"^(?:[A-Z]{2})\d{6,}[A-Z]?\d?$", re.IGNORECASE)
@@ -27,23 +31,27 @@ def is_patent(locator: str) -> bool:
     return bool(PATENT_URL.search(text) or PATENT.match(text.replace(" ", "")))
 
 
-class HubAcquire:
+class AcquireService:
     """Download by identifier, then hand the file to the import queue."""
 
-    def __init__(self, library):
-        self.library = library
+    def __init__(self, runtime: LibraryRuntime, imports: ImportQueue):
+        self.runtime = runtime
+        self.imports = imports
+
+    @property
+    def work(self) -> Path:
+        """Where downloads land before the import queue takes them over."""
+        work = self.imports.root / "fetched"
+        work.mkdir(parents=True, exist_ok=True)
+        return work
 
     def fetch(self, locator: str) -> dict:
         """Download what this locator names and queue it for import."""
         locator = locator.strip()
         if not locator:
-            raise ValueError("请填写 DOI、arXiv 编号、专利号或论文链接")
-        work = self.library.imports.root / "fetched"
-        work.mkdir(parents=True, exist_ok=True)
-        downloaded, source = self.download(locator, work)
-        staged = self.library.imports.stage(downloaded.name)
-        shutil.move(str(downloaded), staged)
-        job = self.library.imports.enqueue([(staged, downloaded.name)])
+            raise InvalidRequest("请填写 DOI、arXiv 编号、专利号或论文链接")
+        downloaded, source = self.download(locator, self.work)
+        job = self.imports.enqueue([self.stage(downloaded)])
         return {**job, "source": source}
 
     def import_references(self, text: str) -> dict:
@@ -54,9 +62,8 @@ class HubAcquire:
         """
         entries = parse_references(text)
         if not entries:
-            raise ValueError("没有从该文件中解析出条目，请导出 BibTeX 或 RIS 后重试")
-        work = self.library.imports.root / "fetched"
-        work.mkdir(parents=True, exist_ok=True)
+            raise InvalidRequest("没有从该文件中解析出条目，请导出 BibTeX 或 RIS 后重试")
+        work = self.work
         staged: list[tuple[Path, str]] = []
         skipped: list[dict] = []
         for entry in entries:
@@ -65,13 +72,17 @@ class HubAcquire:
             except (ValueError, OSError) as error:
                 skipped.append({"title": entry["title"], "locator": entry["locator"], "error": str(error)})
                 continue
-            destination = self.library.imports.stage(downloaded.name)
-            shutil.move(str(downloaded), destination)
-            staged.append((destination, downloaded.name))
+            staged.append(self.stage(downloaded))
         if not staged:
-            raise ValueError(f"共 {len(entries)} 条，全部未能获取 PDF；请检查网络或改用文件导入")
-        job = self.library.imports.enqueue(staged)
+            raise InvalidRequest(f"共 {len(entries)} 条，全部未能获取 PDF；请检查网络或改用文件导入")
+        job = self.imports.enqueue(staged)
         return {**job, "source": "references", "skipped": skipped}
+
+    def stage(self, downloaded: Path) -> tuple[Path, str]:
+        """Hand a download to the import queue's private staging area."""
+        staged = self.imports.stage(downloaded.name)
+        shutil.move(str(downloaded), staged)
+        return staged, downloaded.name
 
     def download(self, locator: str, work: Path) -> tuple[Path, str]:
         identifier = arxiv_id(locator)
@@ -80,9 +91,9 @@ class HubAcquire:
         if is_patent(locator):
             from scholaraio.services.patent_fetch import download_patent_pdf
 
-            path = download_patent_pdf(locator, output_dir=work, cfg=self.library.cfg)
+            path = download_patent_pdf(locator, output_dir=work, cfg=self.runtime.cfg)
             if path is None:
-                raise ValueError(f"未能下载该专利：{locator}")
+                raise InvalidRequest(f"未能下载该专利：{locator}")
             return Path(path), "patent"
         return self.download_url(locator, work), "doi"
 
@@ -94,9 +105,9 @@ class HubAcquire:
         try:
             result = fetch_pdf(locator, work)
         except (PdfFetchError, requests.RequestException) as error:
-            raise ValueError(f"未能获取 PDF：{error}") from error
+            raise InvalidRequest(f"未能获取 PDF：{error}") from error
         if result.path is None:
-            raise ValueError(f"未能获取 PDF：{result.message or locator}")
+            raise InvalidRequest(f"未能获取 PDF：{result.message or locator}")
         return result.path
 
 
@@ -131,4 +142,4 @@ def arxiv_id_in(block: str) -> str:
     return match.group(1) if match else ""
 
 
-__all__ = ["HubAcquire", "arxiv_id", "is_patent", "parse_references"]
+__all__ = ["AcquireService", "arxiv_id", "is_patent", "parse_references"]

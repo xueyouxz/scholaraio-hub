@@ -7,16 +7,15 @@ import time
 
 import pytest
 
-from scholaraio.services import hub_events
-from scholaraio.services.hub_events import HubEvents
-from scholaraio.services.hub_library import HubLibrary
+from scholaraio.hub import HubLibrary, watcher
+from scholaraio.hub.events import EventBus
 
 
 def test_a_change_on_a_worker_thread_reaches_a_stream():
     async def main():
-        events = HubEvents()
+        events = EventBus()
         events.bind(asyncio.get_running_loop())
-        queue = events.add()
+        queue = events.subscribe()
         threading.Thread(target=lambda: events.publish("imports")).start()
         return await asyncio.wait_for(queue.get(), timeout=5)
 
@@ -24,10 +23,10 @@ def test_a_change_on_a_worker_thread_reaches_a_stream():
 
 
 def test_a_stream_that_left_stops_receiving():
-    events = HubEvents()
+    events = EventBus()
     events.bind(asyncio.new_event_loop())
-    queue = events.add()
-    events.remove(queue)
+    queue = events.subscribe()
+    events.unsubscribe(queue)
     events.publish("tasks")
 
     assert queue.empty()
@@ -35,7 +34,7 @@ def test_a_stream_that_left_stops_receiving():
 
 @pytest.fixture
 def watched(tmp_path, monkeypatch):
-    monkeypatch.setattr(hub_events, "PROJECT_POLL_SECONDS", 0.05)
+    monkeypatch.setattr(watcher, "POLL_SECONDS", 0.05)
     library = HubLibrary(tmp_path / "app")
     try:
         yield library

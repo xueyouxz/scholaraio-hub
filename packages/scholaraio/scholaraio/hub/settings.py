@@ -7,13 +7,15 @@ browser only learns whether one is configured.
 """
 from __future__ import annotations
 
-import os
-import uuid
 from pathlib import Path
 
 import yaml
 
 from scholaraio.core.config import VALID_PDF_PREFERRED_PARSERS
+from scholaraio.hub.config import config_path, local_config_path
+from scholaraio.hub.errors import InvalidRequest
+from scholaraio.hub.runtime import LibraryRuntime
+from scholaraio.hub.storage import atomic_write_text
 
 VALID_LLM_BACKENDS = {"openai-compat", "anthropic", "google"}
 VALID_EXTRACTORS = {"regex", "auto", "robust", "llm"}
@@ -41,17 +43,20 @@ SECRETS: dict[str, tuple[str, str]] = {
 }
 
 
-class HubSettings:
-    def __init__(self, library):
-        self.library = library
+OVERLAY_HEADER = "# 由 ScholarAIO Hub 设置页写入，覆盖 config.yaml 中的同名字段。\n"
+
+
+class SettingsService:
+    def __init__(self, runtime: LibraryRuntime):
+        self.runtime = runtime
 
     @property
     def path(self) -> Path:
-        return self.library.root / "config.local.yaml"
+        return local_config_path(self.runtime.root)
 
     def read(self) -> dict:
-        with self.library.lock:
-            cfg = self.library.cfg
+        with self.runtime.lock:
+            cfg = self.runtime.cfg
             settings = {
                 field: str(getattr(getattr(cfg, section), key) or "")
                 for field, (section, key, _) in FIELDS.items()
@@ -62,7 +67,7 @@ class HubSettings:
                 "mineruConfigured": bool(cfg.resolved_mineru_api_key()),
                 "llmConfigured": bool(cfg.resolved_api_key()),
                 "embedApiConfigured": bool((cfg.embed.api_key or "").strip()),
-                "configPath": str(self.library.root / "config.yaml"),
+                "configPath": str(config_path(self.runtime.root)),
             }
 
     def update(self, fields: dict) -> dict:
@@ -74,18 +79,18 @@ class HubSettings:
                 changes.setdefault(section, {})[key] = str(value).strip()
                 continue
             if field not in FIELDS:
-                raise ValueError(f"无法修改该配置项：{field}")
+                raise InvalidRequest(f"无法修改该配置项：{field}")
             section, key, allowed = FIELDS[field]
             text = str(value).strip()
             if allowed is not None and text not in allowed:
-                raise ValueError(f"{field} 只能是：{'、'.join(sorted(allowed))}")
+                raise InvalidRequest(f"{field} 只能是：{'、'.join(sorted(allowed))}")
             changes.setdefault(section, {})[key] = text
         if not changes:
-            raise ValueError("没有要修改的配置项")
+            raise InvalidRequest("没有要修改的配置项")
         self.normalize(changes)
-        with self.library.lock:
+        with self.runtime.lock:
             self.write(changes)
-            self.library.reload_config()
+            self.runtime.reload_config()
             return self.read()
 
     def normalize(self, changes: dict[str, dict[str, str]]) -> None:
@@ -106,7 +111,8 @@ class HubSettings:
         if self.path.exists():
             loaded = yaml.safe_load(self.path.read_text(encoding="utf-8"))
             if loaded is not None and not isinstance(loaded, dict):
-                raise ValueError("config.local.yaml 格式无效，请手动检查")
+                # Exists but unreadable: a storage fault the user must fix by hand.
+                raise RuntimeError(f"config.local.yaml 格式无效，请手动检查：{self.path}")
             current = loaded or {}
         for section, values in changes.items():
             existing = current.get(section)
@@ -122,18 +128,8 @@ class HubSettings:
                 current[section] = merged
             else:
                 current.pop(section, None)
-        temporary = self.path.with_name(f".config.local.yaml.{uuid.uuid4().hex}.tmp")
-        try:
-            with temporary.open("x", encoding="utf-8") as output:
-                # The file holds API keys: readable by this user only.
-                temporary.chmod(0o600)
-                output.write("# 由 ScholarAIO Hub 设置页写入，覆盖 config.yaml 中的同名字段。\n")
-                yaml.safe_dump(current, output, allow_unicode=True, sort_keys=True)
-                output.flush()
-                os.fsync(output.fileno())
-            temporary.replace(self.path)
-        finally:
-            temporary.unlink(missing_ok=True)
+        # The file holds API keys: atomic_write_text keeps it readable by this user only.
+        atomic_write_text(self.path, OVERLAY_HEADER + yaml.safe_dump(current, allow_unicode=True, sort_keys=True))
 
 
-__all__ = ["FIELDS", "SECRETS", "HubSettings"]
+__all__ = ["FIELDS", "SECRETS", "SettingsService"]

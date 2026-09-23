@@ -23,6 +23,8 @@ export function createLibraryRoutes(service: LibraryService) {
     ["GET", "/papers/:id/citing"],
     ["GET", "/citations/shared"],
     ["GET", "/citations/top"],
+    ["POST", "/citations/export"],
+    ["POST", "/citations/check"],
     ["GET", "/papers/:id/attachments/*"],
     ["GET", "/papers/:id/position"],
     ["PUT", "/papers/:id/position"],

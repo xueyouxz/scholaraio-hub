@@ -62,6 +62,18 @@ class SettingsInput(BaseModel):
     embedApiKey: str | None = Field(default=None, max_length=500)
 
 
+class ExportInput(BaseModel):
+    paperIds: list[str] = Field(default_factory=list, max_length=1000)
+    projectId: str | None = Field(default=None, min_length=1, max_length=120)
+    format: Literal["bibtex", "ris", "markdown"] = "bibtex"
+    style: Literal["apa", "vancouver", "chicago-author-date", "mla"] = "apa"
+
+
+class CitationCheckInput(BaseModel):
+    text: str = Field(min_length=1, max_length=400000)
+    projectId: str | None = Field(default=None, min_length=1, max_length=120)
+
+
 class AcquireInput(BaseModel):
     locator: str = Field(min_length=1, max_length=2000)
 
@@ -146,6 +158,14 @@ def create_app(root: Path, token: str) -> FastAPI:
         if len(ids) < 2:
             raise ValueError("共同参考文献至少需要两篇论文")
         return app.state.library.citations.shared(ids, projectId, max(min(minShared, len(ids)), 2))
+
+    @app.post("/citations/export")
+    def export_references(body: ExportInput):
+        return app.state.library.exports.export(body.paperIds, body.projectId, body.format, body.style)
+
+    @app.post("/citations/check")
+    def check_references(body: CitationCheckInput):
+        return app.state.library.exports.check(body.text, body.projectId)
 
     @app.get("/citations/top")
     def most_cited(limit: int = 20, projectId: str | None = None):

@@ -1,4 +1,5 @@
 import type {
+  CitationCheckReport,
   ImportJob,
   LibraryCapabilities,
   LibraryPaper,
@@ -105,6 +106,21 @@ export const libraryApi = {
     for (const file of files) body.append("files", file);
     return requestJson<ImportJob>("/api/library/imports", { method: "POST", body });
   },
+  exportReferences: (body: {
+    paperIds: string[];
+    projectId?: string;
+    format: string;
+    style?: string;
+  }) =>
+    requestJson<{ filename: string; contentType: string; content: string }>(
+      "/api/library/citations/export",
+      { method: "POST", body: JSON.stringify(body) },
+    ),
+  checkCitations: (text: string, projectId?: string) =>
+    requestJson<CitationCheckReport>("/api/library/citations/check", {
+      method: "POST",
+      body: JSON.stringify({ text, projectId }),
+    }),
   fetchPaper: (locator: string) =>
     requestJson<ImportJob & { source: string }>("/api/library/imports/fetch", {
       method: "POST",

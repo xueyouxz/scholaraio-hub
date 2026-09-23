@@ -145,3 +145,17 @@ export interface LibrarySettings {
   /** The documented file a user can still edit by hand. */
   configPath: string;
 }
+
+/** How a draft's author-year citations line up with what the library holds. */
+export interface CitationCheckReport {
+  citations: {
+    raw: string;
+    author: string;
+    year: string;
+    status: "VERIFIED" | "NOT_IN_LIBRARY" | "AMBIGUOUS";
+    matches: { paperId: string; title: string }[];
+  }[];
+  verified: number;
+  missing: number;
+  ambiguous: number;
+}

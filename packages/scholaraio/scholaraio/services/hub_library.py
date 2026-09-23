@@ -15,6 +15,7 @@ from scholaraio.services.chunks import build_chunk_index, chunk_search, iter_pap
 from scholaraio.services.hub_acquire import HubAcquire
 from scholaraio.services.hub_citations import HubCitations
 from scholaraio.services.hub_config import ensure_config
+from scholaraio.services.hub_export import HubExport
 from scholaraio.services.hub_import import ImportQueue
 from scholaraio.services.hub_metadata import HubMetadata
 from scholaraio.services.hub_projects import HubProjects
@@ -64,6 +65,7 @@ class HubLibrary:
         self.tasks = MaintenanceTasks(self)
         self.settings = HubSettings(self)
         self.acquire = HubAcquire(self)
+        self.exports = HubExport(self)
         self.reindex()
 
     def close(self):

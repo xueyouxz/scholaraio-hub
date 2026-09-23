@@ -6,6 +6,7 @@ import { usePageTitle } from "../../app/components/NavigationLayout";
 import { libraryApi, newSessionUrl } from "../../core/library";
 
 import { PaperCollection } from "./components/PaperCollection";
+import { ReferenceTools } from "./components/ReferenceTools";
 
 /** Ingest pipeline steps, in the order the import queue runs them. */
 const IMPORT_STEPS: Record<string, string> = {
@@ -269,6 +270,7 @@ function LibraryContent() {
           {acquire.error.message}
         </p>
       ) : null}
+      <ReferenceTools paperIds={[...selected]} projectId={projectId || undefined} />
       <details open={params.has("newProject") || undefined} className="text-sm">
         <summary className="cursor-pointer text-primary">新建文献项目</summary>
         <form

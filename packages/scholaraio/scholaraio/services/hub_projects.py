@@ -1,6 +1,8 @@
 """Managed literature projects backed by the existing workspace paper index."""
 from __future__ import annotations
 
+import shutil
+from datetime import datetime, timezone
 from pathlib import Path
 
 from scholaraio.projects import workspace
@@ -33,7 +35,14 @@ class HubProjects:
         with self.library.lock:
             directory = self.directory(project_id)
             ids = sorted(workspace.read_paper_ids(directory))
-            return {"id": project_id, "name": project_id, "paperIds": ids, "paperCount": len(ids)}
+            return {
+                "id": project_id,
+                "name": project_id,
+                # The agent works in this directory; only this module resolves it.
+                "path": str(directory),
+                "paperIds": ids,
+                "paperCount": len(ids),
+            }
 
     def list(self):
         with self.library.lock:
@@ -50,6 +59,25 @@ class HubProjects:
                 raise ValueError("项目或同名目录已存在")
             workspace.create(directory)
             return self.get(name)
+
+    def rename(self, project_id: str, name: str):
+        with self.library.lock:
+            self.directory(project_id)
+            target = self.directory(name, existing=False)
+            if target.exists():
+                raise ValueError("目标项目名称已被占用")
+            workspace.rename(self.root, project_id, name)
+            return self.get(name)
+
+    def delete(self, project_id: str):
+        """Move a project aside instead of deleting the agent's work outright."""
+        with self.library.lock:
+            directory = self.directory(project_id)
+            stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+            trash = self.root / ".trash" / f"{project_id}-{stamp}"
+            trash.parent.mkdir(parents=True, exist_ok=True)
+            shutil.move(str(directory), str(trash))
+            return {"id": project_id, "archivedAt": stamp, "path": str(trash)}
 
     def update_papers(self, project_id: str, paper_ids: list[str], action: str):
         with self.library.lock:

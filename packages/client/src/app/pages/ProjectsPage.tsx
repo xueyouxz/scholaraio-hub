@@ -1,5 +1,13 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { FolderOpen, FolderPlus, MessageSquare, RefreshCw, Zap } from "lucide-react";
+import {
+  Archive,
+  FolderOpen,
+  FolderPlus,
+  MessageSquare,
+  Pencil,
+  RefreshCw,
+  Zap,
+} from "lucide-react";
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { libraryApi, newSessionUrl, sessionApi } from "../../core/library";
@@ -27,6 +35,26 @@ export function ProjectsPage() {
     onError: (err) => {
       setError(err instanceof Error ? err.message : "Failed to add project");
     },
+  });
+
+  const renameProject = useMutation({
+    mutationFn: ({ id, name }: { id: string; name: string }) => libraryApi.renameProject(id, name),
+    onSuccess: () => {
+      setError("");
+      queryClient.invalidateQueries({ queryKey: ["library", "projects"] });
+      queryClient.invalidateQueries({ queryKey: ["sessions"] });
+    },
+    onError: (err) => setError(err instanceof Error ? err.message : "重命名失败"),
+  });
+
+  const archiveProject = useMutation({
+    mutationFn: (id: string) => libraryApi.archiveProject(id),
+    onSuccess: ({ sessions }) => {
+      setError(sessions ? `项目已归档，${sessions} 个会话已解除关联。` : "");
+      queryClient.invalidateQueries({ queryKey: ["library", "projects"] });
+      queryClient.invalidateQueries({ queryKey: ["sessions"] });
+    },
+    onError: (err) => setError(err instanceof Error ? err.message : "归档失败"),
   });
 
   useEffect(() => {
@@ -168,6 +196,34 @@ export function ProjectsPage() {
                   <span className="text-[11px] font-mono">{project.activeOwnedCount}</span>
                 </div>
               ) : null}
+              <button
+                type="button"
+                title="重命名项目"
+                aria-label={`重命名 ${project.name}`}
+                disabled={renameProject.isPending}
+                className="cursor-pointer border-0 bg-transparent p-0 text-on-surface-variant/60 hover:text-on-surface disabled:opacity-50"
+                onClick={() => {
+                  const name = window.prompt("新的项目名称", project.name)?.trim();
+                  if (name && name !== project.name) renameProject.mutate({ id: project.id, name });
+                }}
+              >
+                <Pencil className="w-3.5 h-3.5" />
+              </button>
+              <button
+                type="button"
+                title="归档项目"
+                aria-label={`归档 ${project.name}`}
+                disabled={archiveProject.isPending}
+                className="cursor-pointer border-0 bg-transparent p-0 text-on-surface-variant/60 hover:text-error disabled:opacity-50"
+                onClick={() => {
+                  const warning = project.sessionCount
+                    ? `归档「${project.name}」？${project.sessionCount} 个会话将解除项目关联，之后在各自目录中继续。`
+                    : `归档「${project.name}」？目录会移入回收区，可在数据目录中找回。`;
+                  if (window.confirm(warning)) archiveProject.mutate(project.id);
+                }}
+              >
+                <Archive className="w-3.5 h-3.5" />
+              </button>
             </div>
           </div>
         ))}

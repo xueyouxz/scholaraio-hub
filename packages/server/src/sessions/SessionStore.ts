@@ -99,6 +99,19 @@ export class SessionStore {
     return record;
   }
 
+  /**
+   * Point every session at a renamed project, or detach them from a removed
+   * one. Returns how many sessions changed.
+   */
+  async retargetProject(projectId: string, replacement?: string): Promise<number> {
+    const affected = [...this.records.values()].filter((record) => record.projectId === projectId);
+    for (const record of affected) {
+      record.projectId = replacement;
+      await this.save(record);
+    }
+    return affected.length;
+  }
+
   save(record: SessionRecord): Promise<void> {
     record.updatedAt = new Date().toISOString();
     const content = JSON.stringify(record);

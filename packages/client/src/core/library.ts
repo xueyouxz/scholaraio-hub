@@ -49,6 +49,16 @@ export const libraryApi = {
       method: "POST",
       body: JSON.stringify({ name }),
     }),
+  renameProject: (id: string, name: string) =>
+    requestJson<{ project: LiteratureProject; sessions: number }>(
+      `/api/library/projects/${pathSegment(id)}/rename`,
+      { method: "POST", body: JSON.stringify({ name }) },
+    ),
+  archiveProject: (id: string) =>
+    requestJson<{ archived: { id: string; archivedAt: string }; sessions: number }>(
+      `/api/library/projects/${pathSegment(id)}`,
+      { method: "DELETE" },
+    ),
   projectPapers: (id: string, paperIds: string[], action: "add" | "remove") =>
     requestJson<LiteratureProject>(`/api/library/projects/${pathSegment(id)}/papers`, {
       method: "POST",

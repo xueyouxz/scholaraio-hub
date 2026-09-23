@@ -114,6 +114,14 @@ def create_app(root: Path, token: str) -> FastAPI:
     def project(project_id: str):
         return app.state.library.projects.get(project_id)
 
+    @app.post("/projects/{project_id}/rename")
+    def rename_project(project_id: str, body: ProjectInput):
+        return app.state.library.projects.rename(project_id, body.name)
+
+    @app.delete("/projects/{project_id}")
+    def delete_project(project_id: str):
+        return app.state.library.projects.delete(project_id)
+
     @app.post("/projects/{project_id}/papers")
     def project_papers(project_id: str, body: ProjectPapersInput):
         return app.state.library.projects.update_papers(project_id, body.paperIds, body.action)

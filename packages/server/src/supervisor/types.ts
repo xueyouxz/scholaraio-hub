@@ -247,6 +247,11 @@ export type ProcessEvent =
 export interface ProcessOptions {
   projectPath: string;
   projectId: UrlProjectId;
+  /**
+   * The application session this process belongs to. Several sessions can share
+   * one project directory, so the path never identifies the owner.
+   */
+  ownerId?: string;
   sessionId: string;
   idleTimeoutMs?: number; // default 5 minutes
   permissionMode?: PermissionMode;

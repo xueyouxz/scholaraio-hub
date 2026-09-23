@@ -51,6 +51,8 @@ export class Process {
   readonly id: string;
   private _sessionId: string;
   readonly projectPath: string;
+  /** Application session that owns this process, when one does. */
+  readonly ownerId?: string;
   readonly projectId: UrlProjectId;
   readonly startedAt: Date;
   readonly provider: ProviderName;
@@ -135,6 +137,7 @@ export class Process {
     this.id = randomUUID();
     this._sessionId = options.sessionId;
     this.projectPath = options.projectPath;
+    this.ownerId = options.ownerId;
     this.projectId = options.projectId;
     this.startedAt = new Date();
     this.idleTimeoutMs = options.idleTimeoutMs ?? DEFAULT_IDLE_TIMEOUT_MS;

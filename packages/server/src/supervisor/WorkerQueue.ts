@@ -18,6 +18,8 @@ export interface QueuedRequest {
   type: QueuedRequestType;
   projectPath: string;
   projectId: UrlProjectId;
+  /** Our own session id, carried so the owner can find the process it waited for. */
+  ownerId?: string;
   sessionId?: string; // For resume-session requests
   message?: UserMessage;
   permissionMode?: PermissionMode;
@@ -80,6 +82,7 @@ export class WorkerQueue {
     type: QueuedRequestType;
     projectPath: string;
     projectId: UrlProjectId;
+    ownerId?: string;
     sessionId?: string;
     message?: UserMessage;
     permissionMode?: PermissionMode;
@@ -103,6 +106,7 @@ export class WorkerQueue {
       type: params.type,
       projectPath: params.projectPath,
       projectId: params.projectId,
+      ownerId: params.ownerId,
       sessionId: params.sessionId,
       message: params.message,
       permissionMode: params.permissionMode,

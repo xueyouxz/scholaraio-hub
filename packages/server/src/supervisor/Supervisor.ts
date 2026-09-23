@@ -54,6 +54,8 @@ export type SessionLaunch =
 /** Ask for a new session, sending the first message with it. */
 export interface StartSessionRequest {
   projectPath: string;
+  /** Our own session id, so its owner can find this process again. */
+  ownerId?: string;
   message: UserMessage;
   permissionMode?: PermissionMode;
   modelSettings?: ModelSettings;
@@ -67,6 +69,8 @@ export interface ResumeSessionRequest extends StartSessionRequest {
 /** Ask for a session that waits for its first message (two-phase flow). */
 export interface CreateSessionRequest {
   projectPath: string;
+  /** Our own session id, so its owner can find this process again. */
+  ownerId?: string;
   permissionMode?: PermissionMode;
   modelSettings?: ModelSettings;
 }
@@ -170,7 +174,7 @@ export class Supervisor {
   }
 
   async startSession(request: StartSessionRequest): Promise<SessionLaunch> {
-    const { projectPath, message, permissionMode, modelSettings } = request;
+    const { projectPath, ownerId, message, permissionMode, modelSettings } = request;
     const projectId = encodeProjectId(projectPath);
 
     if (!(await this.makeRoomForSession())) {
@@ -178,6 +182,7 @@ export class Supervisor {
         type: "new-session",
         projectPath,
         projectId,
+        ownerId,
         message,
         permissionMode,
         modelSettings,
@@ -194,6 +199,7 @@ export class Supervisor {
         permissionMode,
         modelSettings,
         this.resolveProvider(modelSettings),
+        ownerId,
       ),
     };
   }
@@ -224,7 +230,7 @@ export class Supervisor {
    * The agent will wait for a message to be pushed to the queue.
    */
   async createSession(request: CreateSessionRequest): Promise<SessionLaunch> {
-    const { projectPath, permissionMode, modelSettings } = request;
+    const { projectPath, ownerId, permissionMode, modelSettings } = request;
     const projectId = encodeProjectId(projectPath);
 
     if (!(await this.makeRoomForSession())) {
@@ -232,6 +238,7 @@ export class Supervisor {
         type: "create-session",
         projectPath,
         projectId,
+        ownerId,
         permissionMode,
         modelSettings,
       });
@@ -245,6 +252,7 @@ export class Supervisor {
         permissionMode,
         modelSettings,
         this.resolveProvider(modelSettings),
+        ownerId,
       ),
     };
   }
@@ -259,6 +267,7 @@ export class Supervisor {
     permissionMode?: PermissionMode,
     modelSettings?: ModelSettings,
     provider?: AgentProvider,
+    ownerId?: string,
   ): Promise<Process> {
     const activeProvider = provider ?? this.provider;
     if (!activeProvider) {
@@ -294,6 +303,7 @@ export class Supervisor {
     const options: ProcessConstructorOptions = {
       projectPath,
       projectId,
+      ownerId,
       sessionId: tempSessionId,
       idleTimeoutMs: this.idleTimeoutMs,
       queue,
@@ -338,6 +348,7 @@ export class Supervisor {
     permissionMode?: PermissionMode,
     modelSettings?: ModelSettings,
     provider?: AgentProvider,
+    ownerId?: string,
   ): Promise<Process> {
     const activeProvider = provider ?? this.provider;
     if (!activeProvider) {
@@ -381,6 +392,7 @@ export class Supervisor {
     const options: ProcessConstructorOptions = {
       projectPath,
       projectId,
+      ownerId,
       sessionId: tempSessionId,
       idleTimeoutMs: this.idleTimeoutMs,
       queue,
@@ -418,7 +430,7 @@ export class Supervisor {
   }
 
   async resumeSession(request: ResumeSessionRequest): Promise<SessionLaunch> {
-    const { sessionId, projectPath, message, permissionMode, modelSettings } = request;
+    const { sessionId, projectPath, ownerId, message, permissionMode, modelSettings } = request;
     // Check if already have a process for this session
     const existingProcessId = this.sessionToProcess.get(sessionId);
     if (existingProcessId) {
@@ -511,6 +523,7 @@ export class Supervisor {
         type: "resume-session",
         projectPath,
         projectId,
+        ownerId,
         sessionId,
         message,
         permissionMode,
@@ -528,6 +541,7 @@ export class Supervisor {
         permissionMode,
         modelSettings,
         this.resolveProvider(modelSettings),
+        ownerId,
       ),
     };
   }
@@ -1087,6 +1101,7 @@ export class Supervisor {
             request.projectId,
             request.permissionMode,
             request.modelSettings,
+            request.ownerId,
           );
           process = result;
         } else if (request.type === "new-session") {
@@ -1100,6 +1115,7 @@ export class Supervisor {
             undefined,
             request.permissionMode,
             request.modelSettings,
+            request.ownerId,
           );
           process = result;
         } else {
@@ -1116,6 +1132,7 @@ export class Supervisor {
             request.sessionId,
             request.permissionMode,
             request.modelSettings,
+            request.ownerId,
           );
           process = result;
         }
@@ -1151,6 +1168,7 @@ export class Supervisor {
     resumeSessionId?: string,
     permissionMode?: PermissionMode,
     modelSettings?: ModelSettings,
+    ownerId?: string,
   ): Promise<Process> {
     const provider = this.resolveProvider(modelSettings);
 
@@ -1162,6 +1180,7 @@ export class Supervisor {
       permissionMode,
       modelSettings,
       provider,
+      ownerId,
     );
   }
 
@@ -1174,6 +1193,7 @@ export class Supervisor {
     projectId: UrlProjectId,
     permissionMode?: PermissionMode,
     modelSettings?: ModelSettings,
+    ownerId?: string,
   ): Promise<Process> {
     const provider = this.resolveProvider(modelSettings);
 
@@ -1183,6 +1203,7 @@ export class Supervisor {
       permissionMode,
       modelSettings,
       provider,
+      ownerId,
     );
   }
 

@@ -270,3 +270,36 @@ def test_an_existing_configuration_is_never_rewritten(tmp_path):
         assert config_path(root).read_text(encoding="utf-8").startswith("paths:")
     finally:
         library.close()
+
+
+def test_projects_can_be_renamed_and_archived(tmp_path):
+    root = tmp_path / "app"
+    source = tmp_path / "source.pdf"
+    pdf_file(source)
+    with TestClient(create_app(root, "test"), headers={"x-hub-token": "test"}) as client:
+        library = client.app.state.library
+        pid = ingest(library, source, "Paper.pdf")["paperId"]
+        client.post("/projects", json={"name": "review"})
+        client.post("/projects/review/papers", json={"paperIds": [pid], "action": "add"})
+
+        renamed = client.post("/projects/review/rename", json={"name": "survey"})
+        assert renamed.status_code == 200
+        assert renamed.json()["paperIds"] == [pid]
+        assert client.get("/projects/review").status_code == 404
+        assert [p["id"] for p in client.get("/projects").json()["projects"]] == ["survey"]
+
+        archived = client.delete("/projects/survey")
+        assert archived.status_code == 200
+        assert client.get("/projects").json()["projects"] == []
+        # Archived, not deleted: the agent's work is still on disk.
+        assert Path(archived.json()["path"]).is_dir()
+        assert library.detail(pid)["id"] == pid
+
+
+def test_renaming_onto_an_existing_project_is_refused(tmp_path):
+    with TestClient(create_app(tmp_path / "app", "test"), headers={"x-hub-token": "test"}) as client:
+        client.post("/projects", json={"name": "review"})
+        client.post("/projects", json={"name": "survey"})
+        response = client.post("/projects/review/rename", json={"name": "survey"})
+        assert response.status_code == 400
+        assert client.get("/projects/review").status_code == 200

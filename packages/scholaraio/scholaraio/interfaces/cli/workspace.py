@@ -378,9 +378,16 @@ def cmd_ws(args: argparse.Namespace, cfg) -> None:
 
     elif action == "rename":
         if hub_client.active():
-            # Renaming also moves sessions and stored references; the Hub owns
-            # that move and has no endpoint for it yet.
-            _ui("Hub 会话中暂不支持重命名工作区，请在前端操作。")
+            # Renaming also moves the sessions that work in this directory,
+            # which only the Hub can do.
+            result = hub_client.request(
+                "POST",
+                f"/api/library/projects/{quote(args.old_name, safe='')}/rename",
+                {"name": args.new_name},
+            )
+            _ui(f"Workspace renamed via Hub: {args.old_name} -> {result['project']['name']}")
+            if result.get("sessions"):
+                _ui(f"  {result['sessions']} 个会话已指向新名称")
             return
         try:
             workspace_mod.rename(ws_root, args.old_name, args.new_name)

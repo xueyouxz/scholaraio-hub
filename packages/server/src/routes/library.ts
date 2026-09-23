@@ -9,6 +9,8 @@ export function createLibraryRoutes(service: LibraryService) {
     ["GET", "/projects"],
     ["POST", "/projects"],
     ["GET", "/projects/:id"],
+    ["POST", "/projects/:id/rename"],
+    ["DELETE", "/projects/:id"],
     ["POST", "/projects/:id/papers"],
     ["GET", "/papers"],
     ["GET", "/search"],

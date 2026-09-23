@@ -88,3 +88,23 @@ def test_an_unknown_paper_stops_before_calling_the_hub(tmp_path, hub_session, mo
 
     with pytest.raises(hub_client.HubUnavailable, match="未找到论文"):
         workspace_cli.cmd_ws(add_arguments("review", ["missing"]), Config(_root=tmp_path))
+
+
+def test_renaming_a_workspace_goes_through_the_hub(tmp_path, hub_session, monkeypatch):
+    calls: list[tuple[str, str, dict | None]] = []
+    monkeypatch.setattr(
+        hub_client,
+        "request",
+        lambda method, path, payload=None: (
+            calls.append((method, path, payload)),
+            {"project": {"id": "survey", "name": "survey"}, "sessions": 2},
+        )[1],
+    )
+
+    workspace_cli.cmd_ws(
+        argparse.Namespace(command="ws", ws_action="rename", old_name="review", new_name="survey"),
+        Config(_root=tmp_path),
+    )
+
+    assert calls == [("POST", "/api/library/projects/review/rename", {"name": "survey"})]
+    assert not (Config(_root=tmp_path).workspace_dir / "survey").exists()

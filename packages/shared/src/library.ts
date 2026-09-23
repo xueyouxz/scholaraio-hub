@@ -1,6 +1,8 @@
 export interface LiteratureProject {
   id: string;
   name: string;
+  /** Directory the agent works in; resolved by the library service. */
+  path?: string;
   paperIds: string[];
   paperCount: number;
 }

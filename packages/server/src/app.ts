@@ -6,6 +6,7 @@ import { hostCheckMiddleware, requireCustomHeader } from "./middleware/security.
 import { createAppSessionRoutes } from "./routes/app-sessions.js";
 import { health } from "./routes/health.js";
 import { createLibraryRoutes } from "./routes/library.js";
+import { createProjectRoutes } from "./routes/projects.js";
 import { createProvidersRoutes } from "./routes/providers.js";
 import { createSettingsRoutes } from "./routes/settings.js";
 import { createSkillsRoutes } from "./routes/skills.js";
@@ -63,6 +64,8 @@ export function createApp(options: AppOptions) {
   });
   app.route("/health", health);
   app.route("/api/version", createVersionRoutes({ installId: options.installId }));
+  // Registered first: these two also decide where a project's sessions run.
+  app.route("/api/library/projects", createProjectRoutes(library, store));
   app.route("/api/library", createLibraryRoutes(library));
   app.route("/api/sessions", createAppSessionRoutes(sessions, options.serverSettingsService));
   app.route("/api/skills", createSkillsRoutes({ scholaraioSkillsDir: skillsDir }));

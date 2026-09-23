@@ -411,32 +411,20 @@ export class ClaudeProvider implements AgentProvider {
     return limits;
   }
 
+  /**
+   * The access token the usage endpoint wants, from wherever Claude Code keeps
+   * it: the Keychain on macOS, `~/.claude/.credentials.json` elsewhere.
+   */
   protected async readClaudeCodeOAuthAccessToken(): Promise<string> {
-    if (process.platform !== "darwin") {
-      throw new Error("Claude OAuth usage limits require macOS Keychain credentials.");
-    }
-
-    const service = process.env.CLAUDE_CODE_KEYCHAIN_SERVICE ?? CLAUDE_CODE_KEYCHAIN_SERVICE;
-    const { stdout } = await execFileAsync(
-      "security",
-      ["find-generic-password", "-s", service, "-w"],
-      { timeout: USAGE_LIMITS_TIMEOUT_MS },
-    );
-
-    let credentials: { claudeAiOauth?: { accessToken?: unknown } };
-    try {
-      credentials = JSON.parse(stdout) as { claudeAiOauth?: { accessToken?: unknown } };
-    } catch {
-      throw new Error("Claude Code Keychain credentials were not valid JSON.");
-    }
-
-    const accessToken = credentials.claudeAiOauth?.accessToken;
+    const credentials = await this.readClaudeOAuthCredentials();
+    const accessToken = credentials?.accessToken;
     if (typeof accessToken !== "string" || accessToken.length === 0) {
-      throw new Error(
-        "Claude Code Keychain credentials did not contain claudeAiOauth.accessToken.",
-      );
+      throw new Error("未找到 Claude Code 的登录凭据，请先在终端运行 claude auth login。");
     }
-
+    // An expired token is refused by the API; saying so beats an opaque 401.
+    if (credentials?.expiresAt && credentials.expiresAt <= Date.now()) {
+      throw new Error("Claude Code 的登录凭据已过期，请重新登录后再查看用量。");
+    }
     return accessToken;
   }
 
@@ -456,7 +444,15 @@ export class ClaudeProvider implements AgentProvider {
       });
 
       if (!response.ok) {
-        throw new Error(`Claude OAuth usage API returned HTTP ${response.status}.`);
+        // The endpoint rate-limits polling, and refuses tokens that lost the
+        // scope. Both read as "no data" to the caller, so name which it was.
+        if (response.status === 429) {
+          throw new Error("用量接口暂时限流，稍后会自动重试。");
+        }
+        if (response.status === 401 || response.status === 403) {
+          throw new Error("当前登录凭据无权读取用量，请重新登录 Claude Code。");
+        }
+        throw new Error(`用量接口返回 HTTP ${response.status}。`);
       }
 
       return await response.json();

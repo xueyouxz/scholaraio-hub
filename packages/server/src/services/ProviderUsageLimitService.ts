@@ -250,50 +250,72 @@ function mergeLimits(
   };
 }
 
+/**
+ * How long a fetched answer stands before the provider is asked again.
+ *
+ * Claude's usage endpoint rate-limits polling, and a settings page that
+ * re-mounts is not news: within this window every reader gets the same answer.
+ */
+const FRESH_MS = 5 * 60 * 1000;
+
 export class ProviderUsageLimitService {
   private readonly cache = new Map<ProviderName, ProviderUsageLimits>();
+  /** When each cached entry was fetched from the provider, not reported to us. */
+  private readonly fetchedAt = new Map<ProviderName, number>();
+  /** One fetch per provider at a time; concurrent readers share its result. */
+  private readonly inFlight = new Map<ProviderName, Promise<ProviderUsageLimits>>();
 
   record(limits: ProviderUsageLimits): void {
     this.cache.set(limits.provider, mergeLimits(this.cache.get(limits.provider), limits));
   }
 
   async getUsageLimits(providers: ProviderUsageLimitsProvider[]): Promise<ProviderUsageLimits[]> {
-    const results: ProviderUsageLimits[] = [];
+    return Promise.all(providers.map((provider) => this.forProvider(provider)));
+  }
 
-    for (const provider of providers) {
-      if (provider.getUsageLimits) {
-        try {
-          const limits = await provider.getUsageLimits();
-          this.record(limits);
-          results.push(limits);
-          continue;
-        } catch (error) {
-          const cached = this.cache.get(provider.name);
-          if (cached) {
-            results.push(cached);
-            continue;
-          }
-          results.push({
-            provider: provider.name,
-            available: false,
-            windows: [],
-            error: error instanceof Error ? error.message : "Failed to fetch provider usage limits",
-          });
-          continue;
-        }
-      }
-
-      const cached = this.cache.get(provider.name);
-      results.push(
+  private async forProvider(provider: ProviderUsageLimitsProvider): Promise<ProviderUsageLimits> {
+    const cached = this.cache.get(provider.name);
+    if (!provider.getUsageLimits) {
+      return (
         cached ?? {
           provider: provider.name,
           available: false,
           windows: [],
-          error: "Usage limits are not available until the provider reports them.",
-        },
+          error: "用量数据要等这个工具自己报告后才有。",
+        }
       );
     }
+    const age = Date.now() - (this.fetchedAt.get(provider.name) ?? Number.NEGATIVE_INFINITY);
+    if (cached?.available && age < FRESH_MS) return cached;
+    const pending = this.inFlight.get(provider.name);
+    if (pending) return pending;
+    const fetching = this.fetch(provider);
+    this.inFlight.set(provider.name, fetching);
+    try {
+      return await fetching;
+    } finally {
+      this.inFlight.delete(provider.name);
+    }
+  }
 
-    return results;
+  private async fetch(provider: ProviderUsageLimitsProvider): Promise<ProviderUsageLimits> {
+    try {
+      const limits = await provider.getUsageLimits?.();
+      if (!limits) throw new Error("用量数据暂不可用。");
+      this.record(limits);
+      this.fetchedAt.set(provider.name, Date.now());
+      return limits;
+    } catch (error) {
+      // A throttled or failed poll is not evidence that the last answer was
+      // wrong, so keep showing it rather than blanking the card.
+      const cached = this.cache.get(provider.name);
+      if (cached?.available) return cached;
+      return {
+        provider: provider.name,
+        available: false,
+        windows: [],
+        error: error instanceof Error ? error.message : "无法获取用量数据。",
+      };
+    }
   }
 }

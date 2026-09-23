@@ -1,17 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import {
-  ChartNoAxesCombined,
-  CheckSquare,
-  ChevronDown,
-  LayoutGrid,
-  LayoutList,
-  Search,
-  SortAsc,
-  Upload,
-  X,
-} from "lucide-react";
+import { CheckSquare, ChevronDown, LayoutGrid, LayoutList, Search, SortAsc, X } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Link, useSearchParams } from "react-router-dom";
+import { useSearchParams } from "react-router-dom";
 import { usePageTitle } from "../../app/components/NavigationLayout";
 import type { ScholarPaper } from "../../core/scholarTypes";
 import { PaperDetailPanel } from "../library/components/PaperDetailPanel";
@@ -585,22 +575,6 @@ export function SearchPage() {
 
             {/* Right: select + view toggle */}
             <div className="flex items-center gap-1.5">
-              <Link
-                to={`/library?manage=1${projectId ? `&project=${encodeURIComponent(projectId)}` : ""}`}
-                aria-label="导入与管理文献"
-                title="导入与管理文献"
-                className="p-1.5 rounded-lg text-on-surface-variant hover:bg-surface-container-high"
-              >
-                <Upload size={16} />
-              </Link>
-              <Link
-                to="/library?view=analysis"
-                aria-label="文献分析"
-                title="文献分析"
-                className="p-1.5 rounded-lg text-on-surface-variant hover:bg-surface-container-high"
-              >
-                <ChartNoAxesCombined size={16} />
-              </Link>
               <button
                 type="button"
                 onClick={() => {

@@ -1,9 +1,18 @@
 import { Suspense, lazy } from "react";
 import { BrowserRouter, Navigate, Route, Routes } from "react-router-dom";
 import { NavigationLayout } from "./components/NavigationLayout";
+const LibraryLayout = lazy(() =>
+  import("../features/library/LibraryLayout").then((module) => ({ default: module.LibraryLayout })),
+);
 const LibraryPage = lazy(() =>
   import("../features/library/LibraryPage").then((module) => ({ default: module.LibraryPage })),
 );
+const LibraryImportPage = lazy(() =>
+  import("../features/library/LibraryImportPage").then((module) => ({
+    default: module.LibraryImportPage,
+  })),
+);
+const LibraryDashboard = lazy(() => import("../features/library/LibraryDashboard"));
 const ReaderPage = lazy(() =>
   import("../features/library/reader/PaperReaderPage").then((module) => ({
     default: module.PaperReaderPage,
@@ -34,7 +43,11 @@ export function App() {
         <Routes>
           <Route element={<NavigationLayout />}>
             <Route path="/" element={<Navigate to="/library" replace />} />
-            <Route path="/library" element={<LibraryPage />} />
+            <Route path="/library" element={<LibraryLayout />}>
+              <Route index element={<LibraryPage />} />
+              <Route path="import" element={<LibraryImportPage />} />
+              <Route path="insights" element={<LibraryDashboard />} />
+            </Route>
             <Route path="/library/:paperId" element={<ReaderPage />} />
             <Route path="/sessions" element={<SessionPage />} />
             <Route path="/sessions/:sessionId" element={<SessionPage />} />

@@ -168,6 +168,6 @@ export interface LibraryAudit {
     rule: string;
     severity: "error" | "warning" | "info";
     count: number;
-    papers: { paperId: string; message: string }[];
+    papers: { paperId: string; title: string; message: string }[];
   }[];
 }

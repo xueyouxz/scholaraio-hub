@@ -1,7 +1,7 @@
 import { useQuery } from "@tanstack/react-query";
 import { CheckSquare, ChevronDown, LayoutGrid, LayoutList, Search, SortAsc, X } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { useSearchParams } from "react-router-dom";
+import { Link, useSearchParams } from "react-router-dom";
 import { usePageTitle } from "../../app/components/NavigationLayout";
 import type { ScholarPaper } from "../../core/scholarTypes";
 import { CapabilityPrompt } from "../library/components/CapabilityPrompt";
@@ -488,7 +488,11 @@ export function SearchPage() {
                 <Search className="w-5 h-5 text-on-surface-variant/40" />
               </div>
               <p className="text-sm text-on-surface-variant">
-                暂无论文，请先在 scholaraio 中入库文献
+                文献库还是空的。
+                <Link className="text-primary" to="/library/import">
+                  导入第一篇
+                </Link>
+                ：拖入 PDF、按 DOI 获取，或从 Zotero 导出文件导入。
               </p>
             </div>
           ) : view === "list" ? (

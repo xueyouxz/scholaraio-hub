@@ -215,11 +215,22 @@ class MaintenanceTasks:
         from scholaraio.services.audit import audit_papers
 
         with self.library.lock:
-            issues = audit_papers(self.library.cfg.papers_dir)
+            papers_dir = self.library.cfg.papers_dir
+            issues = audit_papers(papers_dir)
+            # The audit names papers by directory; the browser opens them by
+            # the id the rest of the API uses, and shows them by title.
+            known = {}
+            for directory in iter_paper_dirs(papers_dir):
+                meta = read_meta(directory)
+                known[directory.name] = (
+                    str(meta.get("id") or directory.name),
+                    str(meta.get("title") or directory.name),
+                )
         grouped: dict[tuple[str, str], list[dict]] = {}
         for issue in issues:
+            paper_id, title = known.get(issue.paper_id, (issue.paper_id, issue.paper_id))
             grouped.setdefault((issue.rule, issue.severity), []).append(
-                {"paperId": issue.paper_id, "message": issue.message}
+                {"paperId": paper_id, "title": title, "message": issue.message}
             )
         return {
             "total": len(issues),

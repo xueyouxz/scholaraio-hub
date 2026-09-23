@@ -21,6 +21,9 @@ export interface LibraryPaper {
   citationCount?: number | null;
   citationCounts?: Record<string, number> | null;
   paperType?: string;
+  /** "incomplete" when ingestion could not establish key metadata such as the DOI. */
+  metadataStatus?: "complete" | "incomplete";
+  missingMetadata?: string[];
 }
 export interface LibraryChunk {
   chunk_id: string;
@@ -58,8 +61,19 @@ export interface ImportJob {
   items: {
     id: string;
     name: string;
-    status: "queued" | "running" | "completed" | "duplicate" | "failed";
+    status:
+      | "queued"
+      | "running"
+      | "completed"
+      /** Ingested, but key metadata such as the DOI is missing. */
+      | "completed_incomplete"
+      | "duplicate"
+      | "needs_review"
+      | "failed";
+    /** Pipeline step currently running: mineru | extract | dedup | ingest. */
+    step?: string | null;
     paperId?: string;
+    missingMetadata?: string[];
     error?: string;
   }[];
 }

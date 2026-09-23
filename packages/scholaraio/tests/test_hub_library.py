@@ -1,5 +1,5 @@
-from pathlib import Path
 import json
+from pathlib import Path
 
 import pymupdf
 from fastapi.testclient import TestClient
@@ -14,7 +14,7 @@ def test_existing_analysis_artifacts_are_scoped_without_rebuilding(tmp_path):
     pdf_file(source)
     library = HubLibrary(root)
     try:
-        pid, _ = library.import_pdf(source, "Analysis.pdf")
+        pid = ingest(library, source, "Analysis.pdf")["paperId"]
         directory, meta = library.find(pid)
         meta["citation_count"] = {"crossref": 3, "semantic_scholar": 6}
         meta["l3_conclusion"] = "Saved original conclusion"
@@ -43,10 +43,19 @@ def test_existing_analysis_artifacts_are_scoped_without_rebuilding(tmp_path):
         library.close()
 
 
-def pdf_file(path: Path):
+def ingest(library, source: Path, name: str = "Research.pdf") -> dict:
+    """Import one file the way the queue does, without external API lookups."""
+    return library.imports.import_file(source, name, no_api=True)
+
+
+def pdf_file(path: Path, title: str = "Spectroscopy of Molecular Transitions"):
+    """A PDF shaped like a paper, so metadata extraction has something to read."""
     with pymupdf.open() as pdf:
         page = pdf.new_page()
-        page.insert_text((72, 72), "Spectroscopy detects molecular transitions in local literature.")
+        page.insert_text((72, 72), title, fontsize=18)
+        page.insert_text((72, 110), "Ada Lovelace, Grace Hopper", fontsize=11)
+        page.insert_text((72, 140), "Abstract", fontsize=13)
+        page.insert_text((72, 165), "Spectroscopy detects molecular transitions in local literature.", fontsize=11)
         pdf.save(path)
 
 
@@ -55,9 +64,17 @@ def test_import_search_duplicate_and_context(tmp_path):
     pdf_file(source)
     library = HubLibrary(tmp_path / "app")
     try:
-        pid, duplicate = library.import_pdf(source, "Research.pdf")
-        assert not duplicate
-        assert library.import_pdf(source, "Another.pdf") == (pid, True)
+        first = ingest(library, source)
+        # No DOI and, without MinerU, no heading to read a title from: ingested
+        # anyway, with both gaps recorded and the file name as the title.
+        assert first["status"] == "completed_incomplete"
+        assert first["missingMetadata"] == ["doi", "title"]
+        pid = first["paperId"]
+        assert library.detail(pid)["title"] == "Research"
+        assert library.detail(pid)["metadataStatus"] == "incomplete"
+        again = ingest(library, source, "Another.pdf")
+        assert (again["status"], again["paperId"]) == ("duplicate", pid)
+        library.reindex()
         results = library.search("molecular")
         assert results[0]["paper"]["id"] == pid
         assert results[0]["matches"][0]["start_line"] >= 1
@@ -76,7 +93,7 @@ def test_pdf_range_position_and_auth(tmp_path):
     with TestClient(create_app(tmp_path / "app", "test-secret")) as client:
         assert client.get("/papers").status_code == 401
         client.headers["x-hub-token"] = "test-secret"
-        pid, _ = client.app.state.library.import_pdf(source, "Paper.pdf")
+        pid = ingest(client.app.state.library, source, "Paper.pdf")["paperId"]
         response = client.get(f"/papers/{pid}/pdf", headers={"Range": "bytes=0-19"})
         assert response.status_code == 206
         assert len(response.content) == 20
@@ -85,37 +102,17 @@ def test_pdf_range_position_and_auth(tmp_path):
         assert client.get("/papers/unknown").status_code == 404
 
 
-def test_corrupt_pdf_preserved_for_retry(tmp_path):
-    import pytest
+def test_an_unparseable_pdf_is_kept_for_retry_and_not_half_ingested(tmp_path):
     source = tmp_path / "bad.pdf"
     source.write_bytes(b"bad pdf")
     library = HubLibrary(tmp_path / "app")
     try:
-        with pytest.raises(Exception):
-            library.import_pdf(source, "bad.pdf")
-        paper = library.papers()[0]
-        assert paper["hasPdf"]
-        assert paper["parseStatus"] == "failed"
-    finally:
-        library.close()
-
-
-def test_index_failure_retry_repairs_same_paper(tmp_path):
-    from unittest.mock import patch
-    import pytest
-    source = tmp_path / "source.pdf"
-    pdf_file(source)
-    library = HubLibrary(tmp_path / "app")
-    try:
-        with patch.object(library, "reindex", side_effect=RuntimeError("index failed")):
-            with pytest.raises(RuntimeError):
-                library.import_pdf(source, "Research.pdf")
-        failed = library.papers()[0]
-        assert failed["parseStatus"] == "failed"
-        pid, duplicate = library.import_pdf(source, "Research.pdf")
-        assert not duplicate and pid == failed["id"]
-        assert library.search("molecular")[0]["paper"]["id"] == pid
-        assert len(library.papers()) == 1
+        result = ingest(library, source, "bad.pdf")
+        assert result["status"] == "failed"
+        assert result["error"]
+        # Nothing half-written into the library, and the upload survives a retry.
+        assert library.papers() == []
+        assert Path(result["source"]).exists()
     finally:
         library.close()
 
@@ -126,7 +123,7 @@ def test_attachment_boundaries_and_batch_results(tmp_path):
     pdf_file(source)
     with TestClient(create_app(tmp_path / "app", "test-secret")) as client:
         client.headers["x-hub-token"] = "test-secret"
-        pid, _ = client.app.state.library.import_pdf(source, "Paper.pdf")
+        pid = ingest(client.app.state.library, source, "Paper.pdf")["paperId"]
         directory, _ = client.app.state.library.find(pid)
         (directory / "images").mkdir()
         (directory / "images/a.png").write_bytes(b"image")
@@ -151,7 +148,7 @@ def test_projects_membership_scope_and_restart(tmp_path):
     pdf_file(source)
     headers = {"x-hub-token": "test"}
     with TestClient(create_app(root, "test"), headers=headers) as client:
-        pid, _ = client.app.state.library.import_pdf(source, "Paper.pdf")
+        pid = ingest(client.app.state.library, source, "Paper.pdf")["paperId"]
         assert client.post("/projects", json={"name": "文献项目"}).status_code == 201
         assert client.post("/projects", json={"name": "文献项目"}).status_code == 400
         assert client.post("/context", json={"query": "molecular", "projectId": "文献项目"}).json()["citations"] == []
@@ -174,6 +171,7 @@ def test_projects_membership_scope_and_restart(tmp_path):
 
 def test_project_boundaries_and_invalid_indexes(tmp_path):
     import json
+
     from scholaraio.projects.workspace import create
     root = tmp_path / "app"
     with TestClient(create_app(root, "test"), headers={"x-hub-token": "test"}) as client:
@@ -209,7 +207,7 @@ def test_original_search_modes_and_image_gallery_are_scoped(tmp_path, monkeypatc
     pdf_file(source)
     library = HubLibrary(tmp_path / "app")
     try:
-        pid, _ = library.import_pdf(source, "Research.pdf")
+        pid = ingest(library, source)["paperId"]
         directory, meta = library.find(pid)
         meta["authors"] = ["张三", "Alice Smith"]
         (directory / "meta.json").write_text(json.dumps(meta))
@@ -246,7 +244,7 @@ def test_cli_shares_the_application_library_through_the_generated_config(tmp_pat
     pdf_file(source)
     library = HubLibrary(root)
     try:
-        pid, _ = library.import_pdf(source, "Shared.pdf")
+        pid = ingest(library, source, "Shared.pdf")["paperId"]
         assert config_path(root).exists()
         elsewhere = tmp_path / "unrelated-cwd"
         elsewhere.mkdir()

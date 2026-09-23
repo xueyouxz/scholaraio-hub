@@ -19,7 +19,24 @@ TEMPLATE = """\
 # 由 Hub 自动创建，之后不再覆盖。所有相对路径以本文件所在目录为准，
 # 因此 Hub 与 `scholaraio` CLI 共享同一份文献数据。
 #
-# 本地覆盖写入同目录的 config.local.yaml，它的同名字段优先。
+# 密钥请写入同目录的 config.local.yaml（同名字段优先），或使用环境变量。
+#
+# 常用可选配置：
+#
+# ingest:
+#   # PDF 解析：优先 MinerU；配置 token 后走云端，未配置时自动降级为本地解析器。
+#   # 云端解析会把 PDF 上传到 MinerU 服务。
+#   mineru_api_key: ""        # 或环境变量 MINERU_TOKEN
+#   pdf_preferred_parser: mineru
+#   # 元数据提取：robust 需要 LLM key，没有 key 时导入按 regex 运行。
+#   extractor: robust
+#
+# llm:
+#   api_key: ""               # 或环境变量 SCHOLARAIO_LLM_API_KEY
+#
+# embed:
+#   model: Qwen/Qwen3-Embedding-0.6B
+#   source: modelscope        # 首次语义检索时自动下载到 cache_dir
 """
 
 

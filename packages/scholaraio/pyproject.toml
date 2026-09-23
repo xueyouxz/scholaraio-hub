@@ -45,6 +45,9 @@ embed = [
     "sentence-transformers>=3.0",
     "numpy>=1.24",
     "faiss-cpu>=1.7",
+    # Default model source; without it the first embedding run has no way to
+    # download the model except HuggingFace.
+    "modelscope>=1.10",
 ]
 topics = [
     "scholaraio[embed]",

@@ -15,7 +15,18 @@ if (command === "setup") {
   mkdirSync(config.dataDir, { recursive: true });
   const result = spawnSync(
     uv,
-    ["sync", "--project", scholarSourceDir, "--locked", "--extra", "hub", "--no-default-groups"],
+    [
+      "sync",
+      "--project",
+      scholarSourceDir,
+      "--locked",
+      "--extra",
+      "hub",
+      // PDF parsing runs on MinerU's cloud service, which needs its CLI.
+      "--extra",
+      "mineru-cloud",
+      "--no-default-groups",
+    ],
     {
       stdio: "inherit",
       env: {

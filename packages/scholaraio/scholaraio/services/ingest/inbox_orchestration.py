@@ -51,15 +51,17 @@ def run_file_steps(
     is_proceedings: bool = False,
     step_times: dict[str, float] | None = None,
     on_step: Callable[[str, StepResult], None] | None = None,
-) -> str:
-    """Run the inbox steps for one file and return its final status.
+) -> bool:
+    """Run the inbox steps for one file; return whether every step succeeded.
 
-    *on_step* is called after each step so a caller that owns a job queue can
-    persist progress; the scanning pipeline passes nothing and only prints.
+    The outcome itself is on ``ctx``: ``status`` stays ``"pending"`` while a
+    file is still mid-pipeline. *on_step* is called after each step so a caller
+    that owns a job queue can persist progress; the scanning pipeline passes
+    nothing and only prints.
     """
     ingest_proceedings_ctx = _pipeline_attr("_ingest_proceedings_ctx", proceedings.ingest_proceedings_ctx)
     if is_proceedings and ctx.md_path and ingest_proceedings_ctx(ctx, force=True):
-        return ctx.status if ctx.status != "pending" else "skipped"
+        return False
 
     for step_name in step_names:
         try:
@@ -76,18 +78,18 @@ def run_file_steps(
                 ctx.error = f"{step_name}: {exc}"
             if on_step:
                 on_step(step_name, StepResult.FAIL)
-            break
+            return False
         if is_proceedings and step_name == "mineru" and result == StepResult.OK and ctx.md_path:
             if ingest_proceedings_ctx(ctx, force=True):
                 if on_step:
                     on_step(step_name, StepResult.FAIL)
-                break
+                return False
         if on_step:
             on_step(step_name, result)
         if result != StepResult.OK:
-            break
+            return False
 
-    return ctx.status if ctx.status != "pending" else "skipped"
+    return True
 
 
 def process_inbox(
@@ -341,13 +343,14 @@ def process_inbox(
             existing_pub_nums=existing_pub_nums,
             existing_arxiv_ids=existing_arxiv_ids,
         )
-        final_status = run_file_steps(
+        run_file_steps(
             ctx,
             file_steps,
             label=file_label,
             is_proceedings=is_proceedings,
             step_times=step_times,
         )
+        final_status = ctx.status if ctx.status != "pending" else "skipped"
         stats[final_status] += 1
         if final_status == "ingested" and ctx.ingested_json:
             ingested_jsons.append(ctx.ingested_json)

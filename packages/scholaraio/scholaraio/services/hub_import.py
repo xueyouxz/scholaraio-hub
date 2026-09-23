@@ -8,12 +8,13 @@ work.
 """
 from __future__ import annotations
 
+import copy as copy_module
 import json
 import shutil
 import uuid
+from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
-from collections.abc import Callable
 from typing import Any
 
 from scholaraio.services.ingest import identifiers
@@ -22,6 +23,10 @@ from scholaraio.services.ingest.types import InboxCtx
 from scholaraio.stores.papers import iter_paper_dirs, read_meta, write_meta
 
 STEPS = ["mineru", "extract", "dedup", "ingest"]
+# Split so the queue can fill gaps the browser can live with (a missing title)
+# between reading the file and committing it to the library.
+PARSE_STEPS = STEPS[:2]
+STORE_STEPS = STEPS[2:]
 ACTIVE = ("queued", "running")
 # Statuses that leave a usable paper behind.
 INGESTED = ("completed", "completed_incomplete")
@@ -118,7 +123,7 @@ class ImportQueue:
                     Path(item["source"]),
                     item["name"],
                     existing=(dois, pub_nums, arxiv_ids),
-                    on_step=lambda step: self.record_step(job, item, step),
+                    on_step=lambda step, item=item: self.record_step(job, item, step),
                 )
             except Exception as exc:  # a failed item must not stop the batch
                 result = {"status": "failed", "error": str(exc)}
@@ -146,7 +151,7 @@ class ImportQueue:
         """Run one file through the ingest pipeline and describe the outcome."""
         from scholaraio.services.hub_library import content_hash
 
-        cfg = self.library.cfg
+        cfg = self.extraction_config()
         fingerprint = content_hash(source)
         already = self.find_by_hash(fingerprint)
         if already is not None:
@@ -174,13 +179,12 @@ class ImportQueue:
             existing_pub_nums=pub_nums,
             existing_arxiv_ids=arxiv_ids,
         )
+        report = (lambda step, _result: report_next(STEPS, step, on_step)) if on_step else None
         try:
-            status = run_file_steps(
-                ctx,
-                STEPS,
-                label=name,
-                on_step=(lambda step, _result: report_next(STEPS, step, on_step)) if on_step else None,
-            )
+            if run_file_steps(ctx, PARSE_STEPS, label=name, on_step=report):
+                self.fill_missing_title(ctx, name)
+                run_file_steps(ctx, STORE_STEPS, label=name, on_step=report)
+            status = ctx.status if ctx.status != "pending" else "failed"
         finally:
             if ctx.status == "ingested" or not any(work.iterdir()):
                 shutil.rmtree(work, ignore_errors=True)
@@ -193,6 +197,31 @@ class ImportQueue:
             meta["hub"] = {**meta.get("hub", {}), "sha256": fingerprint, "filename": name}
             write_meta(directory, meta)
         return result
+
+    def fill_missing_title(self, ctx: InboxCtx, name: str) -> None:
+        """Title the paper after its file when extraction found none.
+
+        Refusing the import would leave the user with a file the library never
+        mentions; a titled paper flagged as incomplete can be corrected.
+        """
+        if ctx.meta is None or (ctx.meta.title or "").strip():
+            return
+        ctx.meta.title = Path(name).stem
+        ctx.meta.metadata_status = "incomplete"
+        ctx.meta.missing_metadata = sorted({*ctx.meta.missing_metadata, "title"})
+
+    def extraction_config(self):
+        """Fall back to regex extraction when no LLM key is configured.
+
+        The packaged default is `robust`, which needs an LLM. Without a key the
+        extractor refuses to run at all, which would fail every import; regex
+        extraction still yields a title, authors and often a DOI.
+        """
+        cfg = self.library.cfg
+        if cfg.ingest.extractor in ("robust", "llm", "auto") and not cfg.resolved_api_key():
+            cfg = copy_module.deepcopy(cfg)
+            cfg.ingest.extractor = "regex"
+        return cfg
 
     def find_by_hash(self, fingerprint: str) -> str | None:
         """Return the paper already holding this exact file, if any."""

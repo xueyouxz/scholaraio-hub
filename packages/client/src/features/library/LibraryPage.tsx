@@ -7,6 +7,14 @@ import { libraryApi, newSessionUrl } from "../../core/library";
 
 import { PaperCollection } from "./components/PaperCollection";
 
+/** Ingest pipeline steps, in the order the import queue runs them. */
+const IMPORT_STEPS: Record<string, string> = {
+  mineru: "解析 PDF",
+  extract: "提取元数据",
+  dedup: "查询与查重",
+  ingest: "写入文献库",
+};
+
 const LibraryDashboard = lazy(() => import("./LibraryDashboard"));
 
 const SearchPage = lazy(() =>
@@ -346,9 +354,17 @@ function LibraryContent() {
                         {
                           {
                             queued: "排队中",
-                            running: "处理中",
+                            running: item.step
+                              ? `处理中 · ${IMPORT_STEPS[item.step] ?? item.step}`
+                              : "处理中",
                             completed: "已入库",
+                            completed_incomplete: `已入库 · 元数据不完整${
+                              item.missingMetadata?.length
+                                ? `（缺 ${item.missingMetadata.join("、")}）`
+                                : ""
+                            }`,
                             duplicate: "已存在",
+                            needs_review: "待人工确认",
                             failed: "失败",
                           }[item.status]
                         }

@@ -162,19 +162,19 @@ agent 通过 CLI 改动 `refs/papers.json` 后，Hub 监听该文件变化并推
 **P0 统一数据源 — 已完成**（`6abc32e`）
 数据目录生成 `config.yaml`；agent 进程注入 `SCHOLARAIO_CONFIG` 与运行环境 PATH；skills 移入 `<dataDir>/skills`（首启从旧位置导入一次）；CLI 写命令在 Hub 会话中停用，`ws init/add/remove/rename` 转交 Hub 接口。
 
-**P1 导入流水线 — 主体完成**（`cd9c78b`）
-逐篇执行 `mineru → extract → dedup → ingest`，上传暂存独立于原生 inbox，批次结束统一重建索引；状态含 `completed_incomplete`、`needs_review` 与当前步骤；无 DOI、无标题时按文件名入库并标记不完整；setup 安装 MinerU 云端 CLI，`embed` 依赖组补 `modelscope`。
-待办：进度改为订阅推送（现仍轮询）、设置页表单、深度处理（toc / l3）后台阶段。
+**P1 导入流水线 — 已完成**（`cd9c78b`、`dccbb20`、`293c0d6`）
+逐篇执行 `mineru → extract → dedup → ingest`，上传暂存独立于原生 inbox，批次结束统一重建索引；状态含 `completed_incomplete`、`needs_review` 与当前步骤；无 DOI、无标题时按文件名入库并标记不完整。设置页可配置 MinerU token、LLM key、提取模式与嵌入后端，写入 `config.local.yaml` 并即时生效，密钥只写不回显。进度改为事件流推送，流断开时退回轮询。深度处理（toc / l3）作为后台任务。
 
-**P2 工作空间即项目目录 — 已完成**（`08ad154`、`29a18a6`）
-会话 cwd 为项目目录（路径由 Python 提供）；进程带会话 id，`attach()` 不再按路径反查；项目重命名与归档经 Node 路由同步会话归属；新建项目生成 `AGENTS.md` 与 `outputs/`。
-待办：`refs/papers.json` 外部改动的监听推送。
+**P2 工作空间即项目目录 — 已完成**（`08ad154`、`29a18a6`、`293c0d6`）
+会话 cwd 为项目目录（路径由 Python 提供）；进程带会话 id，`attach()` 不再按路径反查；项目重命名与归档经 Node 路由同步会话归属；新建项目生成 `AGENTS.md` 与 `outputs/`；`refs/papers.json` 的外部改动由看守线程发现并推送。
 
-**P3 引用与元数据 — 引用部分完成**（`29a18a6`）
-参考文献、库内被引、共同参考文献、被引排序四个接口，按项目范围过滤；文献详情面板展示参考文献与被引。
-待办：元数据补全（refetch / backfill-abstract / audit）的接口与前端。
+**P3 引用与元数据 — 已完成**（`29a18a6`、`3c12053`、`cdbf129`）
+参考文献、库内被引、共同参考文献、被引排序四个接口，按项目范围过滤；详情面板可补 DOI、重新查询元数据；仪表盘展示 audit 结果，缺失摘要由质量补全任务填充。
 
-**P4 其余能力 — 未开始**
+**P4 其余能力 — 已完成**（`ee03361`、`ee6b131`、`ec17b32`、`5926dcf`、`81a8025`、`cdbf129`）
+语义检索、主题构建、深度解析、质量补全四类后台任务，带阶段、进度与停止；嵌入模型首次运行自动下载，向量分批写入，停止后保留已完成部分；主题任务写出仪表盘读取的 overview / projection / similarity。按 DOI、arXiv 编号、专利号或链接获取入库；Zotero / EndNote 经 BibTeX / RIS 导出文件批量获取。BibTeX / RIS / Markdown 导出与正文引用核查。agent 的 CLI 可把取文献、建索引等写操作转交 Hub 执行。
+
+未做：只读 MCP 层（现有 CLI 与接口已覆盖同样的读取能力，暂无独立需求）。
 
 ## 实施顺序
 

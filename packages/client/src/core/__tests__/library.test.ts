@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { sessionApi } from "../library";
+import { libraryApi, sessionApi } from "../library";
 
 describe("first session message recovery", () => {
   afterEach(() => vi.unstubAllGlobals());
@@ -44,5 +44,23 @@ describe("first session message recovery", () => {
     );
     await expect(sessionApi.begin("session-1", "message-1", "总结本文")).rejects.toThrow("503");
     expect(fetch).toHaveBeenCalledTimes(2);
+  });
+});
+
+describe("citation views", () => {
+  afterEach(() => vi.unstubAllGlobals());
+
+  it("asks for a paper's references within the open project", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(Response.json({ references: [] })));
+    await libraryApi.references("paper 1", undefined, "综述 A");
+    expect(vi.mocked(fetch).mock.calls[0]?.[0]).toBe(
+      "/api/library/papers/paper%201/references?projectId=%E7%BB%BC%E8%BF%B0%20A",
+    );
+  });
+
+  it("asks for cited-by across the whole library when no project is open", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(Response.json({ citing: [] })));
+    await libraryApi.citing("paper-1");
+    expect(vi.mocked(fetch).mock.calls[0]?.[0]).toBe("/api/library/papers/paper-1/citing");
   });
 });

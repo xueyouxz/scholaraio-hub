@@ -7,6 +7,31 @@ from pathlib import Path
 
 from scholaraio.projects import workspace
 
+AGENTS_GUIDE = """\
+# 文献项目 {name}
+
+这是一个 ScholarAIO Hub 文献项目目录，也是你的工作目录。
+
+- `refs/papers.json`：本项目的文献集，引用主库中的论文 UUID。
+- `outputs/`：产出文件默认放这里。
+
+## 查询文献
+
+用 `--ws {name}` 把命令限定在本项目：
+
+```bash
+scholaraio usearch "<查询词>" --ws {name}    # 融合检索
+scholaraio ws show {name}                     # 列出项目文献
+scholaraio refs <论文标识> --ws {name}        # 参考文献
+scholaraio citing <论文标识> --ws {name}      # 库内被引
+```
+
+## 写操作
+
+导入、建索引、补全元数据等写操作由 Hub 统一执行，CLI 中已停用；
+需要时请在前端触发。`scholaraio ws add/remove` 可以直接用，它们会转交 Hub。
+"""
+
 
 class HubProjects:
     def __init__(self, library):
@@ -58,7 +83,20 @@ class HubProjects:
             if directory.exists():
                 raise ValueError("项目或同名目录已存在")
             workspace.create(directory)
+            self.scaffold(directory, name)
             return self.get(name)
+
+    def scaffold(self, directory: Path, name: str) -> None:
+        """Tell an agent working here what this directory is.
+
+        Written once, at creation: afterwards the file belongs to the user and
+        the agents working in the project.
+        """
+        (directory / "outputs").mkdir(exist_ok=True)
+        guide = directory / "AGENTS.md"
+        if guide.exists():
+            return
+        guide.write_text(AGENTS_GUIDE.format(name=name), encoding="utf-8")
 
     def rename(self, project_id: str, name: str):
         with self.library.lock:

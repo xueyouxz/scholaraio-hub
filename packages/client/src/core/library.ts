@@ -2,6 +2,7 @@ import type {
   ImportJob,
   LibraryPaper,
   LibraryPaperDetail,
+  LibraryReference,
   LibrarySearchResult,
   LiteratureProject,
   NewSessionDefaults,
@@ -73,6 +74,16 @@ export const libraryApi = {
     ),
   detail: (id: string, signal?: AbortSignal) =>
     requestJson<LibraryPaperDetail>(`/api/library/papers/${pathSegment(id)}`, { signal }),
+  references: (id: string, signal?: AbortSignal, projectId?: string) =>
+    requestJson<{ references: LibraryReference[] }>(
+      `/api/library/papers/${pathSegment(id)}/references${projectId ? `?projectId=${encodeURIComponent(projectId)}` : ""}`,
+      { signal },
+    ),
+  citing: (id: string, signal?: AbortSignal, projectId?: string) =>
+    requestJson<{ citing: LibraryPaper[] }>(
+      `/api/library/papers/${pathSegment(id)}/citing${projectId ? `?projectId=${encodeURIComponent(projectId)}` : ""}`,
+      { signal },
+    ),
   jobs: (signal?: AbortSignal) =>
     requestJson<{ jobs: ImportJob[] }>("/api/library/imports", { signal }),
   upload: (files: File[]) => {

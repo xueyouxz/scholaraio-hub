@@ -79,6 +79,19 @@ export interface ImportJob {
     error?: string;
   }[];
 }
+/** A work this paper cites; `paper` is set when the library holds it. */
+export interface LibraryReference {
+  doi: string;
+  title: string;
+  year?: string;
+  paper: LibraryPaper | null;
+}
+export interface SharedReference {
+  doi: string;
+  title: string;
+  sharedCount: number;
+  paper: LibraryPaper | null;
+}
 export interface ReadingPosition {
   page: number;
   line: number;

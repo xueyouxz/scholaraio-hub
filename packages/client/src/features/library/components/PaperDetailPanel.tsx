@@ -46,6 +46,19 @@ export function PaperDetailPanel({ paper, onClose }: Props) {
     enabled: !!paper,
   });
   const images = imageQuery.data?.images ?? (paper?.coverImage ? [paper.coverImage] : []);
+  const projectId = params.get("project") || undefined;
+  const referencesQuery = useQuery({
+    queryKey: ["library", "references", paper?.id, projectId],
+    queryFn: ({ signal }) => libraryApi.references(paper?.id ?? "", signal, projectId),
+    enabled: !!paper,
+  });
+  const citingQuery = useQuery({
+    queryKey: ["library", "citing", paper?.id, projectId],
+    queryFn: ({ signal }) => libraryApi.citing(paper?.id ?? "", signal, projectId),
+    enabled: !!paper,
+  });
+  const references = referencesQuery.data?.references ?? [];
+  const citing = citingQuery.data?.citing ?? [];
   useEffect(() => {
     if (!paper) return;
     const handler = (event: KeyboardEvent) => {
@@ -189,6 +202,61 @@ export function PaperDetailPanel({ paper, onClose }: Props) {
                   摘要
                 </p>
                 <p className="text-xs text-on-surface leading-relaxed">{paper.abstract}</p>
+              </div>
+            ) : null}
+
+            {/* Citations recorded at ingestion */}
+            {references.length ? (
+              <div>
+                <p className="text-[10px] font-mono uppercase tracking-[0.2em] text-on-surface-variant/60 mb-2">
+                  参考文献 · {references.length}
+                </p>
+                <ul className="space-y-1.5">
+                  {references.slice(0, 20).map((reference) => (
+                    <li key={reference.doi || reference.paper?.id} className="text-xs">
+                      {reference.paper ? (
+                        <button
+                          type="button"
+                          className="cursor-pointer border-0 bg-transparent p-0 text-left text-primary"
+                          onClick={() =>
+                            navigate(
+                              `/library/${encodeURIComponent(reference.paper?.id ?? "")}?mode=overview`,
+                            )
+                          }
+                        >
+                          {reference.paper.title}
+                        </button>
+                      ) : (
+                        <span className="text-on-surface-variant" title="不在本库中">
+                          {reference.title || reference.doi}
+                        </span>
+                      )}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            ) : null}
+
+            {citing.length ? (
+              <div>
+                <p className="text-[10px] font-mono uppercase tracking-[0.2em] text-on-surface-variant/60 mb-2">
+                  库内被引 · {citing.length}
+                </p>
+                <ul className="space-y-1.5">
+                  {citing.slice(0, 20).map((source) => (
+                    <li key={source.id} className="text-xs">
+                      <button
+                        type="button"
+                        className="cursor-pointer border-0 bg-transparent p-0 text-left text-primary"
+                        onClick={() =>
+                          navigate(`/library/${encodeURIComponent(source.id)}?mode=overview`)
+                        }
+                      >
+                        {source.title}
+                      </button>
+                    </li>
+                  ))}
+                </ul>
               </div>
             ) : null}
           </div>

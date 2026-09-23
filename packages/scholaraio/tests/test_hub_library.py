@@ -303,3 +303,72 @@ def test_renaming_onto_an_existing_project_is_refused(tmp_path):
         response = client.post("/projects/review/rename", json={"name": "survey"})
         assert response.status_code == 400
         assert client.get("/projects/review").status_code == 200
+
+
+def test_a_new_project_tells_an_agent_what_the_directory_is(tmp_path):
+    library = HubLibrary(tmp_path / "app")
+    try:
+        project = library.projects.create("review")
+        directory = Path(project["path"])
+        guide = (directory / "AGENTS.md").read_text(encoding="utf-8")
+        assert "--ws review" in guide
+        assert (directory / "outputs").is_dir()
+        assert (directory / "refs" / "papers.json").is_file()
+
+        # The file belongs to the project once it exists.
+        (directory / "AGENTS.md").write_text("我的说明", encoding="utf-8")
+        library.projects.scaffold(directory, "review")
+        assert (directory / "AGENTS.md").read_text(encoding="utf-8") == "我的说明"
+    finally:
+        library.close()
+
+
+def ingest_with_meta(library, tmp_path, name: str, doi: str, references: list[str] | None = None):
+    """Import a paper and give it the identifiers an API lookup would have."""
+    source = tmp_path / f"{name}.pdf"
+    pdf_file(source, title=name)
+    pid = ingest(library, source, f"{name}.pdf")["paperId"]
+    directory, meta = library.find(pid)
+    meta.update(doi=doi, title=name, year=2024, references=references or [])
+    (directory / "meta.json").write_text(json.dumps(meta), encoding="utf-8")
+    library.reindex()
+    return pid
+
+
+def test_citation_views_follow_the_relations_ingestion_recorded(tmp_path):
+    library = HubLibrary(tmp_path / "app")
+    try:
+        cited = ingest_with_meta(library, tmp_path, "Foundations", "10.1/foundations")
+        citing_a = ingest_with_meta(
+            library, tmp_path, "FollowUpA", "10.1/a", ["10.1/foundations", "10.9/outside"]
+        )
+        citing_b = ingest_with_meta(
+            library, tmp_path, "FollowUpB", "10.1/b", ["10.1/foundations", "10.9/outside"]
+        )
+
+        references = library.citations.references(citing_a)["references"]
+        assert [r["paper"]["id"] if r["paper"] else r["doi"] for r in references] == [
+            cited,
+            "10.9/outside",
+        ]
+        assert {p["id"] for p in library.citations.citing(cited)["citing"]} == {citing_a, citing_b}
+
+        shared = library.citations.shared([citing_a, citing_b])["shared"]
+        assert {entry["doi"] for entry in shared} == {"10.1/foundations", "10.9/outside"}
+        assert all(entry["sharedCount"] == 2 for entry in shared)
+    finally:
+        library.close()
+
+
+def test_citation_views_respect_the_project_scope(tmp_path):
+    library = HubLibrary(tmp_path / "app")
+    try:
+        cited = ingest_with_meta(library, tmp_path, "Foundations", "10.1/foundations")
+        citing = ingest_with_meta(library, tmp_path, "FollowUp", "10.1/a", ["10.1/foundations"])
+        library.projects.create("narrow")
+        library.projects.update_papers("narrow", [cited], "add")
+
+        assert library.citations.citing(cited, "narrow")["citing"] == []
+        assert library.citations.citing(cited)["citing"][0]["id"] == citing
+    finally:
+        library.close()

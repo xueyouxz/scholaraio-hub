@@ -90,6 +90,25 @@ def create_app(root: Path, token: str) -> FastAPI:
     def analytics(projectId: str | None = None):
         return app.state.library.analytics(projectId)
 
+    @app.get("/papers/{paper_id}/references")
+    def references(paper_id: str, projectId: str | None = None):
+        return app.state.library.citations.references(paper_id, projectId)
+
+    @app.get("/papers/{paper_id}/citing")
+    def citing(paper_id: str, projectId: str | None = None):
+        return app.state.library.citations.citing(paper_id, projectId)
+
+    @app.get("/citations/shared")
+    def shared_references(paperIds: str = "", projectId: str | None = None, minShared: int = 2):
+        ids = [value for value in paperIds.split(",") if value][:100]
+        if len(ids) < 2:
+            raise ValueError("共同参考文献至少需要两篇论文")
+        return app.state.library.citations.shared(ids, projectId, max(min(minShared, len(ids)), 2))
+
+    @app.get("/citations/top")
+    def most_cited(limit: int = 20, projectId: str | None = None):
+        return app.state.library.citations.most_cited(min(max(limit, 1), 200), projectId)
+
     @app.get("/papers/{paper_id}/images")
     def images(paper_id: str):
         return {"images": app.state.library.images(paper_id)}

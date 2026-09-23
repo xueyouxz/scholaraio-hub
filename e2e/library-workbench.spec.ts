@@ -153,8 +153,12 @@ test("internal project → cards → reading → first message preserves project
   page.on("pageerror", (error) => errors.push(error.message));
   const projectName = `阅读项目-${Date.now()}`;
   await page.goto("/projects");
-  await page.getByRole("textbox", { name: "项目名称" }).fill(projectName);
-  await page.getByRole("button", { name: "创建", exact: true }).click();
+  await page.getByRole("button", { name: "新建", exact: true }).click();
+  const createDialog = page.getByRole("dialog", { name: "新建 Workspace" });
+  await createDialog.getByRole("textbox", { name: "Workspace 名称" }).fill(projectName);
+  await createDialog.getByRole("button", { name: "创建并开始会话" }).click();
+  await expect(page).toHaveURL(/\/sessions\?project=/);
+  await page.goto("/projects");
   await expect(
     page.getByRole("main").getByRole("link", { name: projectName, exact: true }),
   ).toBeVisible();

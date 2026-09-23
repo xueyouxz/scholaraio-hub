@@ -1,6 +1,7 @@
 import type { StoredSession } from "@scholaraio-hub/shared";
 import { useQuery } from "@tanstack/react-query";
 import {
+  FolderCog,
   FolderOpen,
   Library,
   Loader2,
@@ -14,6 +15,7 @@ import { useEffect, useMemo, useState } from "react";
 import { Link, NavLink, useParams, useSearchParams } from "react-router-dom";
 import { libraryApi, newSessionUrl, sessionApi } from "../../core/library";
 import { LibraryActivityTray } from "../../features/library/components/LibraryActivityTray";
+import { WorkspaceCreateDialog } from "../../features/library/components/WorkspaceCreateDialog";
 
 function relativeTime(iso: string): string {
   const diff = Date.now() - new Date(iso).getTime();
@@ -113,6 +115,7 @@ export function Sidebar({
   const close = isDesktop ? undefined : onClose;
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
   const [sectionOpen, setSectionOpen] = useState(true);
+  const [creating, setCreating] = useState(false);
   const [unassignedOpen, setUnassignedOpen] = useState(true);
   useEffect(() => {
     if (activeProject) setExpanded((previous) => new Set([...previous, activeProject]));
@@ -208,15 +211,26 @@ export function Sidebar({
                 open={sectionOpen}
                 onToggle={() => setSectionOpen((v) => !v)}
                 action={
-                  <Link
-                    to="/projects"
-                    aria-label="管理文献项目"
-                    title="管理文献项目"
-                    onClick={close}
-                    className="shrink-0 p-1 rounded-lg opacity-0 group-hover/section:opacity-100 focus:opacity-100 hover:bg-surface-container transition-all text-on-surface-variant hover:text-primary"
-                  >
-                    <Plus className="w-3.5 h-3.5" />
-                  </Link>
+                  <>
+                    <button
+                      type="button"
+                      aria-label="新建 Workspace"
+                      title="新建 Workspace"
+                      onClick={() => setCreating(true)}
+                      className="shrink-0 p-1 rounded-lg opacity-0 group-hover/section:opacity-100 focus:opacity-100 hover:bg-surface-container transition-all text-on-surface-variant hover:text-primary border-0 bg-transparent cursor-pointer"
+                    >
+                      <Plus className="w-3.5 h-3.5" />
+                    </button>
+                    <Link
+                      to="/projects"
+                      aria-label="管理 Workspace"
+                      title="管理 Workspace"
+                      onClick={close}
+                      className="shrink-0 p-1 rounded-lg opacity-0 group-hover/section:opacity-100 focus:opacity-100 hover:bg-surface-container transition-all text-on-surface-variant hover:text-primary"
+                    >
+                      <FolderCog className="w-3.5 h-3.5" />
+                    </Link>
+                  </>
                 }
               >
                 {projects.isLoading ? (
@@ -341,6 +355,7 @@ export function Sidebar({
           />
         ) : null}
       </aside>
+      {creating ? <WorkspaceCreateDialog onClose={() => setCreating(false)} /> : null}
     </>
   );
 }

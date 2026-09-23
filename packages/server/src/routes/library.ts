@@ -31,6 +31,7 @@ export function createLibraryRoutes(service: LibraryService) {
     ["GET", "/events"],
     ["GET", "/settings"],
     ["PATCH", "/settings"],
+    ["GET", "/audit"],
     ["GET", "/tasks"],
     ["POST", "/tasks/:kind"],
     ["DELETE", "/tasks/:kind"],

@@ -99,7 +99,7 @@ export interface ReadingPosition {
 }
 
 /** Optional library work that costs model time: run it when the user asks. */
-export type LibraryTaskKind = "semantic" | "topics" | "deep";
+export type LibraryTaskKind = "semantic" | "topics" | "deep" | "quality";
 export interface LibraryTask {
   id: string;
   kind: LibraryTaskKind;
@@ -123,6 +123,7 @@ export interface LibraryCapabilities {
   semanticReady: boolean;
   topicsBuilt: boolean;
   deepPending: number;
+  missingAbstracts: number;
   llmConfigured: boolean;
   mineruConfigured: boolean;
   tasks: LibraryTask[];
@@ -158,4 +159,15 @@ export interface CitationCheckReport {
   verified: number;
   missing: number;
   ambiguous: number;
+}
+
+/** What the library's own audit finds wrong with what it holds. */
+export interface LibraryAudit {
+  total: number;
+  groups: {
+    rule: string;
+    severity: "error" | "warning" | "info";
+    count: number;
+    papers: { paperId: string; message: string }[];
+  }[];
 }

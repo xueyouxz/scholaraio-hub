@@ -285,6 +285,10 @@ def create_app(root: Path, token: str) -> FastAPI:
     def tasks():
         return app.state.library.tasks.status()
 
+    @app.get("/audit")
+    def audit():
+        return app.state.library.tasks.audit()
+
     @app.post("/tasks/{kind}", status_code=202)
     def start_task(kind: str):
         return app.state.library.tasks.start(kind)

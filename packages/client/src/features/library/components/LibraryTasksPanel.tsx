@@ -1,5 +1,6 @@
 import type { LibraryCapabilities, LibraryTask, LibraryTaskKind } from "@scholaraio-hub/shared";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useState } from "react";
 import { libraryApi } from "../../../core/library";
 import { useLibraryEvents } from "../../../core/libraryEvents";
 
@@ -57,6 +58,13 @@ const CAPABILITIES: Capability[] = [
           ? "没有待处理的论文"
           : null,
   },
+  {
+    kind: "quality",
+    title: "质量补全",
+    describe: (state) =>
+      state.missingAbstracts ? `${state.missingAbstracts} 篇缺少摘要` : "所有论文都有摘要",
+    blocked: (state) => (state.missingAbstracts ? null : "没有待补全的论文"),
+  },
 ];
 
 /** Start, watch and stop the library work that costs model time. */
@@ -86,7 +94,7 @@ export function LibraryTasksPanel() {
       className="shrink-0 bg-surface-container-low border border-outline-variant/10 rounded-lg p-3 flex flex-col gap-2"
     >
       {error ? <p className="text-xs text-error">{error.message}</p> : null}
-      <div className="grid gap-2 md:grid-cols-3">
+      <div className="grid gap-2 md:grid-cols-4">
         {CAPABILITIES.map((capability) => {
           const task = state.tasks.find((item) => item.kind === capability.kind);
           const running = task ? RUNNING.includes(task.status) : false;
@@ -114,7 +122,43 @@ export function LibraryTasksPanel() {
           );
         })}
       </div>
+      <AuditSummary />
     </section>
+  );
+}
+
+/** What the library's own audit finds, once the user asks for it. */
+function AuditSummary() {
+  const [open, setOpen] = useState(false);
+  const audit = useQuery({
+    queryKey: ["library", "audit"],
+    queryFn: ({ signal }) => libraryApi.audit(signal),
+    enabled: open,
+  });
+  return (
+    <details onToggle={(event) => setOpen(event.currentTarget.open)}>
+      <summary className="cursor-pointer text-xs text-primary">文献库自检</summary>
+      {audit.error ? <p className="text-xs text-error mt-1">{audit.error.message}</p> : null}
+      {audit.isFetching ? <p className="text-xs text-on-surface-variant mt-1">检查中…</p> : null}
+      {audit.data ? (
+        <ul className="mt-1 flex flex-col gap-0.5">
+          {audit.data.total === 0 ? (
+            <li className="text-xs text-on-surface-variant">没有发现问题。</li>
+          ) : (
+            audit.data.groups.map((group) => (
+              <li key={`${group.rule}-${group.severity}`} className="text-[10px] font-mono">
+                <span
+                  className={group.severity === "error" ? "text-error" : "text-on-surface-variant"}
+                >
+                  {group.severity}
+                </span>{" "}
+                {group.rule} · {group.count} 篇
+              </li>
+            ))
+          )}
+        </ul>
+      ) : null}
+    </details>
   );
 }
 

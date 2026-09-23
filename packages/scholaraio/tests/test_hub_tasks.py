@@ -138,3 +138,15 @@ def test_an_interrupted_task_is_restartable_after_a_restart(library, tmp_path):
 
     assert task["status"] == "failed"
     assert "可重新开始" in task["error"]
+
+
+def test_the_audit_groups_what_is_wrong_with_the_library(library):
+    directory = library.cfg.papers_dir / "broken"
+    directory.mkdir(parents=True, exist_ok=True)
+    (directory / "meta.json").write_text(json.dumps({"id": "broken", "title": ""}), encoding="utf-8")
+
+    report = library.tasks.audit()
+
+    assert report["total"] > 0
+    assert all({"rule", "severity", "count", "papers"} <= set(group) for group in report["groups"])
+    assert any(entry["paperId"] == "broken" for group in report["groups"] for entry in group["papers"])

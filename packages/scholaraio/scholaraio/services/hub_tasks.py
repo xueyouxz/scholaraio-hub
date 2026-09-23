@@ -16,7 +16,7 @@ from pathlib import Path
 
 from scholaraio.stores.papers import iter_paper_dirs, read_meta
 
-KINDS = ("semantic", "topics", "deep")
+KINDS = ("semantic", "topics", "deep", "quality")
 ACTIVE = ("queued", "running")
 
 
@@ -30,6 +30,10 @@ def needs_deep(directory: Path) -> bool:
         return False
     meta = read_meta(directory)
     return not meta.get("toc") or not (meta.get("l3_conclusion") or "").strip()
+
+
+def has_abstract(directory: Path) -> bool:
+    return bool((read_meta(directory).get("abstract") or "").strip())
 
 
 class MaintenanceTasks:
@@ -113,7 +117,12 @@ class MaintenanceTasks:
     # ---- execution -----------------------------------------------------
 
     def run(self, kind: str, record: dict, stop: threading.Event) -> None:
-        runner = {"semantic": self.run_semantic, "topics": self.run_topics, "deep": self.run_deep}[kind]
+        runner = {
+            "semantic": self.run_semantic,
+            "topics": self.run_topics,
+            "deep": self.run_deep,
+            "quality": self.run_quality,
+        }[kind]
         self.update(record, status="running", phase="preparing", error=None)
         try:
             summary = runner(record, stop)
@@ -187,6 +196,39 @@ class MaintenanceTasks:
             self.library.reindex()
         return f"处理 {done} 篇" + (f"，其中 {failed} 篇未能完成" if failed else "")
 
+    def run_quality(self, record: dict, stop: threading.Event) -> str:
+        """Fill in the abstracts the library is missing, from the papers and the DOI."""
+        from scholaraio.services.ingest_metadata import backfill_abstracts
+
+        cfg = self.library.cfg
+        self.update(record, phase="abstracts")
+        # backfill_abstracts walks the library itself; stopping applies to the
+        # reindex that follows, which is the part this task owns.
+        stats = backfill_abstracts(cfg.papers_dir, dry_run=False, doi_fetch=True, cfg=cfg)
+        if not stop.is_set():
+            self.library.reindex()
+            self.library.events.publish("papers")
+        return f"补全 {stats['filled']} 篇摘要，{stats['failed']} 篇未能补全"
+
+    def audit(self) -> dict:
+        """What is wrong with the library right now, as the audit sees it."""
+        from scholaraio.services.audit import audit_papers
+
+        with self.library.lock:
+            issues = audit_papers(self.library.cfg.papers_dir)
+        grouped: dict[tuple[str, str], list[dict]] = {}
+        for issue in issues:
+            grouped.setdefault((issue.rule, issue.severity), []).append(
+                {"paperId": issue.paper_id, "message": issue.message}
+            )
+        return {
+            "total": len(issues),
+            "groups": [
+                {"rule": rule, "severity": severity, "count": len(entries), "papers": entries[:50]}
+                for (rule, severity), entries in sorted(grouped.items(), key=lambda item: -len(item[1]))
+            ],
+        }
+
     # ---- topic artifacts ----------------------------------------------
 
     def write_topic_artifacts(self, model) -> int:
@@ -245,6 +287,7 @@ class MaintenanceTasks:
                 "semanticReady": vector_count > 0,
                 "topicsBuilt": topics_built,
                 "deepPending": sum(1 for directory in directories if needs_deep(directory)),
+                "missingAbstracts": sum(1 for directory in directories if not has_abstract(directory)),
                 "llmConfigured": bool(cfg.resolved_api_key()),
                 "mineruConfigured": bool(cfg.resolved_mineru_api_key()),
                 "tasks": self.list(),

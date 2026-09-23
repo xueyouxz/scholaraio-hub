@@ -1,6 +1,7 @@
 import type {
   CitationCheckReport,
   ImportJob,
+  LibraryAudit,
   LibraryCapabilities,
   LibraryPaper,
   LibraryPaperDetail,
@@ -143,6 +144,7 @@ export const libraryApi = {
       method: "PATCH",
       body: JSON.stringify(fields),
     }),
+  audit: (signal?: AbortSignal) => requestJson<LibraryAudit>("/api/library/audit", { signal }),
   capabilities: (signal?: AbortSignal) =>
     requestJson<LibraryCapabilities>("/api/library/tasks", { signal }),
   startTask: (kind: LibraryTaskKind) =>

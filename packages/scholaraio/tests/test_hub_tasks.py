@@ -19,6 +19,12 @@ def library(tmp_path):
         library.close()
 
 
+@pytest.fixture(autouse=True)
+def embedding_runtime(monkeypatch):
+    """The optional embedding packages are absent here; assume them installed."""
+    monkeypatch.setattr(vectors, "runtime_available", lambda: True)
+
+
 def wait_for(library, kind: str, *, timeout: float = 10.0) -> dict:
     deadline = time.monotonic() + timeout
     while time.monotonic() < deadline:
@@ -94,6 +100,17 @@ def test_a_failed_task_reports_why(library, monkeypatch):
 
     assert task["status"] == "failed"
     assert "embed.provider=none" in task["error"]
+
+
+def test_semantic_search_says_when_its_packages_are_missing(library, monkeypatch):
+    monkeypatch.setattr(vectors, "runtime_available", lambda: False)
+
+    library.tasks.start("semantic")
+    task = wait_for(library, "semantic")
+
+    assert task["status"] == "failed"
+    assert "向量依赖" in task["error"]
+    assert library.tasks.status()["vectorRuntimeReady"] is False
 
 
 def test_deep_processing_needs_a_key_and_counts_what_is_pending(library, monkeypatch):

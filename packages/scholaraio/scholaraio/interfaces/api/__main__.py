@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import asyncio
 import hmac
 import json
 import os
@@ -13,11 +14,14 @@ from typing import Literal
 
 import uvicorn
 from fastapi import FastAPI, File, HTTPException, Request, UploadFile
-from fastapi.responses import FileResponse, JSONResponse
+from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
 from pydantic import BaseModel, Field
 
 from scholaraio.services.hub_library import HubLibrary, atomic_json
 from scholaraio.stores.papers import find_pdf
+
+# Idle gap after which an open event stream sends a comment to stay alive.
+HEARTBEAT_SECONDS = 15.0
 
 
 class ContextInput(BaseModel):
@@ -117,6 +121,34 @@ def create_app(root: Path, token: str) -> FastAPI:
     @app.get("/health")
     def health():
         return {"status": "ok"}
+
+    @app.get("/events")
+    async def events(request: Request):
+        """Stream library changes, so the browser does not have to ask for them."""
+        library = app.state.library
+        library.events.bind(asyncio.get_running_loop())
+        queue = library.events.add()
+
+        async def stream():
+            try:
+                while True:
+                    try:
+                        event = await asyncio.wait_for(queue.get(), timeout=HEARTBEAT_SECONDS)
+                    except TimeoutError:
+                        # Keeps the connection open through idle proxies.
+                        yield ": keep-alive\n\n"
+                        continue
+                    yield f"data: {json.dumps(event, ensure_ascii=False)}\n\n"
+                    if await request.is_disconnected():
+                        return
+            finally:
+                library.events.remove(queue)
+
+        return StreamingResponse(
+            stream(),
+            media_type="text/event-stream",
+            headers={"cache-control": "no-store", "x-accel-buffering": "no"},
+        )
 
     @app.get("/papers")
     def papers():

@@ -162,6 +162,11 @@ def _normalize_manifest_v1(raw: dict, source: Path) -> dict:
     return normalized
 
 
+def paper_index_path(ws_dir: Path) -> Path:
+    """The file holding this workspace's paper set, whether or not it exists."""
+    return _paper_index_path(ws_dir)
+
+
 def has_paper_index(ws_dir: Path) -> bool:
     return _paper_index_path(ws_dir).exists()
 

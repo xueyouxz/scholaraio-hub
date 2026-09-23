@@ -15,6 +15,7 @@ from scholaraio.services.chunks import build_chunk_index, chunk_search, iter_pap
 from scholaraio.services.hub_acquire import HubAcquire
 from scholaraio.services.hub_citations import HubCitations
 from scholaraio.services.hub_config import ensure_config
+from scholaraio.services.hub_events import HubEvents, ProjectWatcher
 from scholaraio.services.hub_export import HubExport
 from scholaraio.services.hub_import import ImportQueue
 from scholaraio.services.hub_metadata import HubMetadata
@@ -58,6 +59,7 @@ class HubLibrary:
                 raise ValueError(f"Library path is outside the application data directory: {directory}")
             directory.mkdir(parents=True, exist_ok=True)
         self.lock = threading.RLock()
+        self.events = HubEvents()
         self.projects = HubProjects(self)
         self.citations = HubCitations(self)
         self.metadata = HubMetadata(self)
@@ -66,9 +68,11 @@ class HubLibrary:
         self.settings = HubSettings(self)
         self.acquire = HubAcquire(self)
         self.exports = HubExport(self)
+        self.watcher = ProjectWatcher(self)
         self.reindex()
 
     def close(self):
+        self.watcher.close()
         self.imports.close()
         self.tasks.close()
 

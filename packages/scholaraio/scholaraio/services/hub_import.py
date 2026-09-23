@@ -78,6 +78,7 @@ class ImportQueue:
         from scholaraio.services.hub_library import atomic_json
 
         atomic_json(self.root / f'{job["id"]}.json', job)
+        self.library.events.publish("imports")
 
     def list(self):
         with self.library.lock:
@@ -144,6 +145,7 @@ class ImportQueue:
             ingested |= result["status"] in INGESTED
         if ingested:
             self.library.reindex()
+            self.library.events.publish("papers")
 
     def record_step(self, job, item, step: str) -> None:
         with self.library.lock:

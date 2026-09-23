@@ -4,6 +4,7 @@ import { Suspense, lazy, useEffect, useRef, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { usePageTitle } from "../../app/components/NavigationLayout";
 import { libraryApi, newSessionUrl } from "../../core/library";
+import { useLibraryEvents } from "../../core/libraryEvents";
 
 import { PaperCollection } from "./components/PaperCollection";
 import { ReferenceTools } from "./components/ReferenceTools";
@@ -82,10 +83,13 @@ function LibraryContent() {
             })),
           },
   });
+  const streaming = useLibraryEvents();
   const jobs = useQuery({
     queryKey: ["library", "imports"],
     queryFn: ({ signal }) => libraryApi.jobs(signal),
+    // The change stream normally reports progress; polling covers it being down.
     refetchInterval: (q) =>
+      !streaming &&
       q.state.data?.jobs.some((job) =>
         job.items.some((item) => ["running", "queued"].includes(item.status)),
       )

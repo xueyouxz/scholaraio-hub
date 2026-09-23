@@ -63,6 +63,7 @@ class MaintenanceTasks:
         from scholaraio.services.hub_library import atomic_json
 
         atomic_json(self.root / f'{record["kind"]}.json', record)
+        self.library.events.publish("tasks")
 
     def update(self, record: dict, **fields) -> None:
         with self.library.lock:

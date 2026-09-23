@@ -1,6 +1,7 @@
 import type { LibraryCapabilities, LibraryTask, LibraryTaskKind } from "@scholaraio-hub/shared";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { libraryApi } from "../../../core/library";
+import { useLibraryEvents } from "../../../core/libraryEvents";
 
 /** Stages a task reports while it runs, in the order they happen. */
 const PHASES: Record<string, string> = {
@@ -61,11 +62,15 @@ const CAPABILITIES: Capability[] = [
 /** Start, watch and stop the library work that costs model time. */
 export function LibraryTasksPanel() {
   const client = useQueryClient();
+  const streaming = useLibraryEvents();
   const capabilities = useQuery({
     queryKey: ["library", "capabilities"],
     queryFn: ({ signal }) => libraryApi.capabilities(signal),
+    // Task progress arrives on the change stream; polling covers it being down.
     refetchInterval: (query) =>
-      query.state.data?.tasks.some((task) => RUNNING.includes(task.status)) ? 1000 : false,
+      !streaming && query.state.data?.tasks.some((task) => RUNNING.includes(task.status))
+        ? 1000
+        : false,
   });
   const refresh = () => {
     void client.invalidateQueries({ queryKey: ["library"] });

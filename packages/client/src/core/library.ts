@@ -1,7 +1,5 @@
 import type {
-  CitationCheckReport,
   ImportJob,
-  LibraryAudit,
   LibraryCapabilities,
   LibraryPaper,
   LibraryPaperDetail,
@@ -118,11 +116,6 @@ export const libraryApi = {
       "/api/library/citations/export",
       { method: "POST", body: JSON.stringify(body) },
     ),
-  checkCitations: (text: string, projectId?: string) =>
-    requestJson<CitationCheckReport>("/api/library/citations/check", {
-      method: "POST",
-      body: JSON.stringify({ text, projectId }),
-    }),
   fetchPaper: (locator: string) =>
     requestJson<ImportJob & { source: string }>("/api/library/imports/fetch", {
       method: "POST",
@@ -145,7 +138,6 @@ export const libraryApi = {
       method: "PATCH",
       body: JSON.stringify(fields),
     }),
-  audit: (signal?: AbortSignal) => requestJson<LibraryAudit>("/api/library/audit", { signal }),
   capabilities: (signal?: AbortSignal) =>
     requestJson<LibraryCapabilities>("/api/library/tasks", { signal }),
   vectorRuntime: (signal?: AbortSignal) =>

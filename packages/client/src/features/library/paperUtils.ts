@@ -91,17 +91,6 @@ export function findPaperById(papers: PaperReference[], id: string): PaperRefere
   return papers.find((p) => p.id === id);
 }
 
-/** 构建年份计数数组，按年份升序。 */
-export function buildYearCounts(papers: PaperReference[]): { year: number; count: number }[] {
-  const map = new Map<number, number>();
-  for (const p of papers) {
-    if (p.year && p.year > 1900) {
-      map.set(p.year, (map.get(p.year) ?? 0) + 1);
-    }
-  }
-  return [...map.entries()].sort((a, b) => a[0] - b[0]).map(([year, count]) => ({ year, count }));
-}
-
 const SOURCE_ABBREV: Record<string, string> = {
   "IEEE Transactions on Visualization and Computer Graphics": "IEEE TVCG",
   "IEEE Transactions on Pattern Analysis and Machine Intelligence": "IEEE TPAMI",

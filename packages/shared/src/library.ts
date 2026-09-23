@@ -159,20 +159,6 @@ export interface LibrarySettings {
   configPath: string;
 }
 
-/** How a draft's author-year citations line up with what the library holds. */
-export interface CitationCheckReport {
-  citations: {
-    raw: string;
-    author: string;
-    year: string;
-    status: "VERIFIED" | "NOT_IN_LIBRARY" | "AMBIGUOUS";
-    matches: { paperId: string; title: string }[];
-  }[];
-  verified: number;
-  missing: number;
-  ambiguous: number;
-}
-
 /** What the library's own audit finds wrong with what it holds. */
 export interface LibraryAudit {
   total: number;

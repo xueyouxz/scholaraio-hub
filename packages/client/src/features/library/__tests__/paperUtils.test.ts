@@ -5,7 +5,6 @@ import {
   buildPdfUrl,
   buildSourceDist,
   buildTypeDist,
-  buildYearCounts,
   canNavigateToReader,
   canReadLayers,
   canReadPdf,
@@ -253,32 +252,6 @@ describe("abbreviateSource", () => {
   it("returns the source unchanged when not in the map", () => {
     expect(abbreviateSource("Unknown Journal")).toBe("Unknown Journal");
     expect(abbreviateSource("Nature")).toBe("Nature");
-  });
-});
-
-// ─── buildYearCounts ─────────────────────────────────────────────────────────
-
-describe("buildYearCounts", () => {
-  it("counts papers by year in ascending order", () => {
-    const papers = [
-      makePaper({ year: 2022 }),
-      makePaper({ year: 2021 }),
-      makePaper({ year: 2022 }),
-    ];
-    const result = buildYearCounts(papers);
-    expect(result.map((r) => r.year)).toEqual([2021, 2022]);
-    expect(result.find((r) => r.year === 2022)?.count).toBe(2);
-  });
-
-  it("excludes years <= 1900", () => {
-    const papers = [makePaper({ year: 0 }), makePaper({ year: 2023 })];
-    const result = buildYearCounts(papers);
-    expect(result).toHaveLength(1);
-    expect(result[0].year).toBe(2023);
-  });
-
-  it("returns empty array for empty input", () => {
-    expect(buildYearCounts([])).toEqual([]);
   });
 });
 

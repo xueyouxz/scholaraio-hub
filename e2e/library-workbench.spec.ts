@@ -17,6 +17,7 @@ test("import → keyword search → read → cited conversation → reload", asy
   await page
     .getByLabel("选择 PDF 文件")
     .setInputFiles(path.resolve("e2e/fixtures/library/spectroscopy.pdf"));
+  await importDialog.getByRole("button", { name: /确定导入/ }).click();
   await expect(importDialog.getByText(/已入库/)).toBeVisible({ timeout: 20000 });
   await page.keyboard.press("Escape");
   await expect(importDialog).toHaveCount(0);
@@ -161,9 +162,11 @@ test("internal project → cards → reading → first message preserves project
   await page
     .getByLabel("选择 PDF 文件")
     .setInputFiles(path.resolve("e2e/fixtures/library/spectroscopy.pdf"));
-  await expect(page.getByRole("dialog", { name: "导入文献" }).getByText(/已入库/)).toBeVisible({
-    timeout: 20000,
-  });
+  const dialog = page.getByRole("dialog", { name: "导入文献" });
+  await dialog.getByRole("button", { name: /确定导入/ }).click();
+  // Another test may have imported the same fixture already; either outcome
+  // means the queue is done with it.
+  await expect(dialog.getByText(/已入库|已存在/)).toBeVisible({ timeout: 20000 });
   await page.keyboard.press("Escape");
   await page.getByRole("button", { name: "多选", exact: true }).click();
   await page.getByRole("button", { name: /Spectroscopy Research/ }).click();

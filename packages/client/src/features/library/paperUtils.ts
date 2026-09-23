@@ -24,6 +24,8 @@ export function toLibraryPaperRef(p: LibraryPaper): PaperReference {
     coverImage: p.coverImage,
     paperType: p.paperType,
     doi: p.doi,
+    metadataStatus: p.metadataStatus,
+    missingMetadata: p.missingMetadata,
   };
 }
 

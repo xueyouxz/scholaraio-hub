@@ -124,3 +124,19 @@ def test_papers_ingested_here_are_visible_to_the_pipeline_dedup(library, tmp_pat
     dois, pub_nums, arxiv_ids = identifiers.collect_existing_ids(library.cfg.papers_dir)
     assert (dois, pub_nums, arxiv_ids) == ({}, {}, {})  # no DOI was found, and none was invented
     assert len(library.papers()) == 1
+
+
+def test_a_pdf_that_names_itself_keeps_that_title(library, tmp_path):
+    source = tmp_path / "paper.pdf"
+    paper_pdf(source)
+    with pymupdf.open(source) as pdf:
+        pdf.set_metadata({"title": "Spectroscopy Research", "author": "Ada Lovelace"})
+        pdf.save(tmp_path / "titled.pdf")
+
+    result = library.imports.import_file(tmp_path / "titled.pdf", "upload-8471.pdf", no_api=True)
+
+    paper = library.detail(result["paperId"])
+    assert paper["title"] == "Spectroscopy Research"
+    assert paper["authors"] == "Ada Lovelace"
+    # Still incomplete: a self-declared title is not an identified paper.
+    assert result["status"] == "completed_incomplete"

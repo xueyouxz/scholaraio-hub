@@ -31,6 +31,9 @@ export interface PaperReference {
   abstract?: string;
   coverImage?: string | null;
   paperType?: string;
+  /** "incomplete" when ingestion could not establish a DOI or a title. */
+  metadataStatus?: "complete" | "incomplete";
+  missingMetadata?: string[];
 }
 
 export interface YearGroup {

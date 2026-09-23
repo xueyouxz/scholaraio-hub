@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import copy as copy_module
 import json
+import os
 import shutil
 import uuid
 from collections.abc import Callable
@@ -30,6 +31,15 @@ STORE_STEPS = STEPS[2:]
 ACTIVE = ("queued", "running")
 # Statuses that leave a usable paper behind.
 INGESTED = ("completed", "completed_incomplete")
+
+
+def lookups_disabled() -> bool:
+    """Whether external metadata lookups are switched off for this instance.
+
+    Set by tests and offline runs; imports then keep whatever the file itself
+    states and mark the missing identifiers.
+    """
+    return os.environ.get("SCHOLARAIO_HUB_NO_API", "").strip().lower() not in ("", "0", "false")
 
 
 def copy(value):
@@ -123,6 +133,7 @@ class ImportQueue:
                     Path(item["source"]),
                     item["name"],
                     existing=(dois, pub_nums, arxiv_ids),
+                    no_api=lookups_disabled(),
                     on_step=lambda step, item=item: self.record_step(job, item, step),
                 )
             except Exception as exc:  # a failed item must not stop the batch
@@ -199,16 +210,20 @@ class ImportQueue:
         return result
 
     def fill_missing_title(self, ctx: InboxCtx, name: str) -> None:
-        """Title the paper after its file when extraction found none.
+        """Fall back to the file's own title when extraction found none.
 
         Refusing the import would leave the user with a file the library never
         mentions; a titled paper flagged as incomplete can be corrected.
         """
         if ctx.meta is None or (ctx.meta.title or "").strip():
             return
-        ctx.meta.title = Path(name).stem
+        ctx.meta.title = embedded_title(ctx.pdf_path) or Path(name).stem
         ctx.meta.metadata_status = "incomplete"
         ctx.meta.missing_metadata = sorted({*ctx.meta.missing_metadata, "title"})
+        if not ctx.meta.authors:
+            author = embedded_author(ctx.pdf_path)
+            if author:
+                ctx.meta.authors = [author]
 
     def extraction_config(self):
         """Fall back to regex extraction when no LLM key is configured.
@@ -256,6 +271,27 @@ class ImportQueue:
             "source": str(staged) if staged.exists() else str(work),
             "error": ctx.error or f"导入未完成（{status}）",
         }
+
+
+def embedded_title(pdf_path: Path | None) -> str:
+    """The title the PDF itself carries, when it has one."""
+    return _document_field(pdf_path, "title")
+
+
+def embedded_author(pdf_path: Path | None) -> str:
+    return _document_field(pdf_path, "author")
+
+
+def _document_field(pdf_path: Path | None, field: str) -> str:
+    if pdf_path is None or not pdf_path.exists():
+        return ""
+    import pymupdf
+
+    try:
+        with pymupdf.open(pdf_path) as document:
+            return str((document.metadata or {}).get(field) or "").strip()
+    except Exception:  # a file we could still parse for text may have broken metadata
+        return ""
 
 
 def report_next(steps: list[str], finished: str, on_step: Callable[[str], None]) -> None:

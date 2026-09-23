@@ -35,6 +35,16 @@ class ProjectPapersInput(BaseModel):
     action: Literal["add", "remove"] = "add"
 
 
+class MetadataInput(BaseModel):
+    title: str | None = Field(default=None, max_length=2000)
+    doi: str | None = Field(default=None, max_length=300)
+    authors: list[str] | None = Field(default=None, max_length=200)
+    year: int | None = Field(default=None, ge=1000, le=2200)
+    journal: str | None = Field(default=None, max_length=500)
+    abstract: str | None = Field(default=None, max_length=20000)
+    paper_type: str | None = Field(default=None, max_length=100)
+
+
 class ReadingPosition(BaseModel):
     page: int = Field(default=1, ge=1)
     line: int = Field(default=1, ge=1)
@@ -89,6 +99,17 @@ def create_app(root: Path, token: str) -> FastAPI:
     @app.get("/analytics")
     def analytics(projectId: str | None = None):
         return app.state.library.analytics(projectId)
+
+    @app.patch("/papers/{paper_id}")
+    def update_metadata(paper_id: str, body: MetadataInput):
+        fields = body.model_dump(exclude_unset=True, exclude_none=True)
+        if not fields:
+            raise ValueError("没有要修改的字段")
+        return app.state.library.metadata.update(paper_id, fields)
+
+    @app.post("/papers/{paper_id}/refetch")
+    def refetch_metadata_endpoint(paper_id: str):
+        return app.state.library.metadata.refetch(paper_id)
 
     @app.get("/papers/{paper_id}/references")
     def references(paper_id: str, projectId: str | None = None):

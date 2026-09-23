@@ -59,6 +59,18 @@ export function PaperDetailPanel({ paper, onClose }: Props) {
   });
   const references = referencesQuery.data?.references ?? [];
   const citing = citingQuery.data?.citing ?? [];
+  const [doiDraft, setDoiDraft] = useState("");
+  const refreshPaper = () => {
+    queryClient.invalidateQueries({ queryKey: ["library"] });
+  };
+  const correctMetadata = useMutation({
+    mutationFn: ({ id, doi }: { id: string; doi: string }) => libraryApi.updatePaper(id, { doi }),
+    onSuccess: refreshPaper,
+  });
+  const refetchMetadata = useMutation({
+    mutationFn: (id: string) => libraryApi.refetchPaper(id),
+    onSuccess: refreshPaper,
+  });
   useEffect(() => {
     if (!paper) return;
     const handler = (event: KeyboardEvent) => {
@@ -203,6 +215,59 @@ export function PaperDetailPanel({ paper, onClose }: Props) {
                 </p>
                 <p className="text-xs text-on-surface leading-relaxed">{paper.abstract}</p>
               </div>
+            ) : null}
+
+            {/* Metadata the pipeline could not establish */}
+            {paper.metadataStatus === "incomplete" ? (
+              <div className="rounded-xl bg-surface-container p-3">
+                <p className="text-[10px] font-mono uppercase tracking-[0.2em] text-on-surface-variant/60 mb-2">
+                  元数据不完整
+                  {paper.missingMetadata?.length ? ` · 缺 ${paper.missingMetadata.join("、")}` : ""}
+                </p>
+                <form
+                  className="flex gap-2"
+                  onSubmit={(event) => {
+                    event.preventDefault();
+                    const doi = doiDraft.trim();
+                    if (doi) correctMetadata.mutate({ id: paper.id, doi });
+                  }}
+                >
+                  <input
+                    value={doiDraft}
+                    onChange={(event) => setDoiDraft(event.target.value)}
+                    placeholder="补充 DOI"
+                    aria-label="补充 DOI"
+                    className="min-w-0 flex-1 rounded-lg bg-surface-container-low px-3 py-1.5 text-xs outline-none"
+                  />
+                  <button
+                    type="submit"
+                    disabled={correctMetadata.isPending || !doiDraft.trim()}
+                    className="hub-button shrink-0 disabled:opacity-50"
+                  >
+                    保存
+                  </button>
+                </form>
+                <p className="mt-2 text-[11px] text-on-surface-variant/70">
+                  保存后可重新查询，补齐期刊、年份与引用数据。
+                </p>
+              </div>
+            ) : null}
+
+            {paper.doi ? (
+              <button
+                type="button"
+                disabled={refetchMetadata.isPending}
+                onClick={() => refetchMetadata.mutate(paper.id)}
+                className="hub-button disabled:opacity-50"
+              >
+                {refetchMetadata.isPending ? "查询中…" : "重新查询元数据"}
+              </button>
+            ) : null}
+
+            {correctMetadata.error || refetchMetadata.error ? (
+              <p role="alert" className="text-xs text-error">
+                {(correctMetadata.error ?? refetchMetadata.error)?.message}
+              </p>
             ) : null}
 
             {/* Citations recorded at ingestion */}

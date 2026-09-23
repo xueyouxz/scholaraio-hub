@@ -2,7 +2,7 @@ import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
-import { withScholaraioCli } from "../../src/sdk/providers/scholaraio-cli.js";
+import { setLibraryDataDir, withScholaraioCli } from "../../src/sdk/providers/scholaraio-cli.js";
 
 const executable = process.platform === "win32" ? "scholaraio.exe" : "scholaraio";
 const binDirName = process.platform === "win32" ? "Scripts" : "bin";
@@ -32,6 +32,14 @@ describe("withScholaraioCli", () => {
     const env = withScholaraioCli({ PATH: "/opt/other/bin" }, root);
     expect(env.PATH?.split(path.delimiter)[0]).toBe(
       path.join(root, "runtime", "python", binDirName),
+    );
+  });
+
+  it("follows the data directory the application was given", () => {
+    const root = dataDir({ config: true, cli: true });
+    setLibraryDataDir(root);
+    expect(withScholaraioCli({ PATH: "/usr/bin" }).SCHOLARAIO_CONFIG).toBe(
+      path.join(root, "config.yaml"),
     );
   });
 

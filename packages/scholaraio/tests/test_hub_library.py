@@ -372,3 +372,36 @@ def test_citation_views_respect_the_project_scope(tmp_path):
         assert library.citations.citing(cited)["citing"][0]["id"] == citing
     finally:
         library.close()
+
+
+def test_filling_in_a_missing_doi_clears_the_incomplete_mark(tmp_path):
+    source = tmp_path / "source.pdf"
+    pdf_file(source)
+    with TestClient(create_app(tmp_path / "app", "test"), headers={"x-hub-token": "test"}) as client:
+        library = client.app.state.library
+        pid = ingest(library, source, "Research.pdf")["paperId"]
+        assert library.detail(pid)["metadataStatus"] == "incomplete"
+
+        response = client.patch(
+            f"/papers/{pid}",
+            json={"doi": " 10.1/known ", "title": "Spectroscopy", "authors": ["Ada Lovelace", " "]},
+        )
+        assert response.status_code == 200
+        assert response.json()["metadataStatus"] == "complete"
+        assert response.json()["doi"] == "10.1/known"
+        assert response.json()["authors"] == "Ada Lovelace"
+        # The correction is searchable, not just stored.
+        assert library.search("spectroscopy")[0]["paper"]["id"] == pid
+
+        assert client.patch(f"/papers/{pid}", json={}).status_code == 400
+        assert client.patch(f"/papers/{pid}", json={"year": "not a year"}).status_code == 422
+
+
+def test_a_paper_without_a_doi_cannot_be_refetched(tmp_path):
+    source = tmp_path / "source.pdf"
+    pdf_file(source)
+    with TestClient(create_app(tmp_path / "app", "test"), headers={"x-hub-token": "test"}) as client:
+        pid = ingest(client.app.state.library, source, "Research.pdf")["paperId"]
+        response = client.post(f"/papers/{pid}/refetch")
+        assert response.status_code == 400
+        assert "DOI" in response.json()["error"]

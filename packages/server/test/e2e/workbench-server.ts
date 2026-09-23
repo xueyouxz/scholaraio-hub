@@ -18,6 +18,9 @@ for (const provider of [claudeProvider, codexProvider]) {
 }
 
 const dataDir = await mkdtemp(path.join(tmpdir(), "hub-browser-test-"));
+// Browser tests must not depend on Crossref, Semantic Scholar or OpenAlex:
+// imports keep what the file itself states and mark the identifiers as missing.
+process.env.SCHOLARAIO_HUB_NO_API = "1";
 const library = new LibraryService(dataDir);
 let application: ReturnType<typeof createApp> | undefined;
 let server: ReturnType<typeof serve> | undefined;

@@ -74,6 +74,16 @@ export const libraryApi = {
     ),
   detail: (id: string, signal?: AbortSignal) =>
     requestJson<LibraryPaperDetail>(`/api/library/papers/${pathSegment(id)}`, { signal }),
+  updatePaper: (id: string, fields: Record<string, unknown>) =>
+    requestJson<LibraryPaper>(`/api/library/papers/${pathSegment(id)}`, {
+      method: "PATCH",
+      body: JSON.stringify(fields),
+    }),
+  refetchPaper: (id: string) =>
+    requestJson<{ changed: boolean; paper: LibraryPaper }>(
+      `/api/library/papers/${pathSegment(id)}/refetch`,
+      { method: "POST" },
+    ),
   references: (id: string, signal?: AbortSignal, projectId?: string) =>
     requestJson<{ references: LibraryReference[] }>(
       `/api/library/papers/${pathSegment(id)}/references${projectId ? `?projectId=${encodeURIComponent(projectId)}` : ""}`,

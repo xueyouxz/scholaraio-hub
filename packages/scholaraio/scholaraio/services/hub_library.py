@@ -14,6 +14,7 @@ from pathlib import Path
 from scholaraio.services.chunks import build_chunk_index, chunk_search, iter_paper_chunks
 from scholaraio.services.hub_citations import HubCitations
 from scholaraio.services.hub_config import ensure_config
+from scholaraio.services.hub_metadata import HubMetadata
 from scholaraio.services.hub_import import ImportQueue
 from scholaraio.services.hub_projects import HubProjects
 from scholaraio.services.index import build_index, search
@@ -55,6 +56,7 @@ class HubLibrary:
         self.lock = threading.RLock()
         self.projects = HubProjects(self)
         self.citations = HubCitations(self)
+        self.metadata = HubMetadata(self)
         self.imports = ImportQueue(self)
         self.reindex()
 

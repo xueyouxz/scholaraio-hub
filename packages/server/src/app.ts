@@ -12,6 +12,7 @@ import { createSettingsRoutes } from "./routes/settings.js";
 import { createSkillsRoutes } from "./routes/skills.js";
 import { createVersionRoutes } from "./routes/version.js";
 import { claudeProvider } from "./sdk/providers/claude.js";
+import { setLibraryDataDir } from "./sdk/providers/scholaraio-cli.js";
 import type { AgentProvider } from "./sdk/providers/types.js";
 import type { PermissionMode } from "./sdk/types.js";
 import { LibraryService } from "./services/LibraryService.js";
@@ -41,6 +42,8 @@ export interface AppOptions {
 export function createApp(options: AppOptions) {
   const app = new Hono<{ Bindings: HttpBindings }>();
   const dataDir = options.dataDir ?? getDataDir();
+  // The agent's CLI must read the same library this application serves.
+  setLibraryDataDir(dataDir);
   const store = new SessionStore(dataDir);
   const library = options.libraryService ?? new LibraryService(dataDir);
   const usage = new ProviderUsageLimitService();

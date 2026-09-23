@@ -3,6 +3,15 @@ import path from "node:path";
 import { getDataDir } from "../../data-dir.js";
 
 let apiBaseUrl: string | undefined;
+let libraryDataDir: string | undefined;
+
+/**
+ * Which data directory the running application owns. Providers are shared
+ * singletons, so they cannot read it from the app they belong to.
+ */
+export function setLibraryDataDir(dataDir: string): void {
+  libraryDataDir = dataDir;
+}
 
 /**
  * Tell agent CLI runs where this server listens, so their write commands go
@@ -21,7 +30,7 @@ export function setHubApiBaseUrl(url: string | undefined): void {
  */
 export function withScholaraioCli(
   env: Record<string, string | undefined>,
-  dataDir: string = getDataDir(),
+  dataDir: string = libraryDataDir ?? getDataDir(),
 ): Record<string, string | undefined> {
   const config = path.join(dataDir, "config.yaml");
   // A missing config would make the CLI treat the agent's project directory as

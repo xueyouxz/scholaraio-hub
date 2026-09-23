@@ -339,7 +339,8 @@ export function SearchPage() {
               ) : null}
             </div>
 
-            {mode === "semantic" ? (
+            {mode === "semantic" && !searched ? (
+              // Once a query has run, the results area carries this instead.
               <div className="mt-3">
                 <CapabilityPrompt kind="semantic" hideWhenReady />
               </div>

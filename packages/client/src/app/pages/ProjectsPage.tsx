@@ -72,10 +72,7 @@ export function ProjectsPage() {
 
   return (
     <div className="w-full max-w-2xl mx-auto pt-2 pb-6">
-      <div className="flex items-center gap-2 pb-2">
-        <h2 className="flex-1 min-w-0 font-serif text-lg font-semibold text-on-surface">
-          Workspaces
-        </h2>
+      <div className="flex items-center justify-end gap-2 pb-2">
         <button
           type="button"
           onClick={() => projectsQuery.refetch()}

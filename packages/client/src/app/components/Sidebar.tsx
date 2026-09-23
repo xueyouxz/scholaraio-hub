@@ -13,6 +13,7 @@ import {
 import { useEffect, useMemo, useState } from "react";
 import { Link, NavLink, useParams, useSearchParams } from "react-router-dom";
 import { libraryApi, newSessionUrl, sessionApi } from "../../core/library";
+import { LibraryActivityTray } from "../../features/library/components/LibraryActivityTray";
 
 function relativeTime(iso: string): string {
   const diff = Date.now() - new Date(iso).getTime();
@@ -302,6 +303,7 @@ export function Sidebar({
           ) : null}
         </div>
         <div className="pt-3 mt-2 border-t border-outline-variant/15 shrink-0">
+          <LibraryActivityTray collapsed={collapsed} />
           <NavLink onClick={close} className={navClass} aria-label="设置" to="/settings">
             <Settings size={20} aria-hidden="true" />
             {!collapsed ? "Settings" : null}

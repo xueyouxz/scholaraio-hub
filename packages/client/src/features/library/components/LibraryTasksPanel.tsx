@@ -3,19 +3,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import { libraryApi } from "../../../core/library";
 import { useLibraryEvents } from "../../../core/libraryEvents";
-
-/** Stages a task reports while it runs, in the order they happen. */
-const PHASES: Record<string, string> = {
-  preparing: "准备中",
-  model: "下载嵌入模型",
-  embed: "生成向量",
-  cluster: "聚类建模",
-  artifacts: "写入分析结果",
-  deep: "提取目录与结论",
-  stopping: "正在停止",
-};
-
-const RUNNING = ["queued", "running"];
+import { ACTIVE_TASK, TASK_PHASES, taskProgress } from "../tasks";
 
 type Capability = {
   kind: LibraryTaskKind;
@@ -76,7 +64,7 @@ export function LibraryTasksPanel() {
     queryFn: ({ signal }) => libraryApi.capabilities(signal),
     // Task progress arrives on the change stream; polling covers it being down.
     refetchInterval: (query) =>
-      !streaming && query.state.data?.tasks.some((task) => RUNNING.includes(task.status))
+      !streaming && query.state.data?.tasks.some((task) => ACTIVE_TASK.includes(task.status))
         ? 1000
         : false,
   });
@@ -97,7 +85,7 @@ export function LibraryTasksPanel() {
       <div className="grid gap-2 md:grid-cols-4">
         {CAPABILITIES.map((capability) => {
           const task = state.tasks.find((item) => item.kind === capability.kind);
-          const running = task ? RUNNING.includes(task.status) : false;
+          const running = task ? ACTIVE_TASK.includes(task.status) : false;
           const blocked = running ? null : capability.blocked(state);
           return (
             <article key={capability.kind} className="flex flex-col gap-1.5">
@@ -164,13 +152,11 @@ function AuditSummary() {
 
 function TaskProgress({ task }: { task?: LibraryTask }) {
   if (!task) return null;
-  if (RUNNING.includes(task.status)) {
-    const phase = PHASES[task.phase ?? ""] ?? task.phase ?? "进行中";
-    const percent = task.total ? Math.round((task.done / task.total) * 100) : null;
+  if (ACTIVE_TASK.includes(task.status)) {
     return (
       <p className="text-[10px] font-mono text-primary">
-        {phase}
-        {percent === null ? "…" : ` · ${task.done}/${task.total} (${percent}%)`}
+        {TASK_PHASES[task.phase ?? ""] ?? task.phase ?? "进行中"}
+        {taskProgress(task.done, task.total)}
       </p>
     );
   }

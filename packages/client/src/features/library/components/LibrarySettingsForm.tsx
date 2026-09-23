@@ -2,38 +2,116 @@ import type { LibrarySettings } from "@scholaraio-hub/shared";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import { libraryApi } from "../../../core/library";
+import { CapabilityPrompt } from "./CapabilityPrompt";
 
-type Choice = { field: keyof LibrarySettings; label: string; options: string[]; hint?: string };
+type Field =
+  | {
+      kind: "choice";
+      field: keyof LibrarySettings;
+      label: string;
+      options: string[];
+      hint?: string;
+    }
+  | { kind: "text"; field: keyof LibrarySettings; label: string; placeholder: string }
+  | { kind: "secret"; field: string; label: string; configured: keyof LibrarySettings };
 
-const CHOICES: Choice[] = [
+/** The settings that make up one job, and what that job can do right now. */
+interface Group {
+  title: string;
+  purpose: string;
+  status: (settings: LibrarySettings) => string;
+  fields: Field[];
+}
+
+const GROUPS: Group[] = [
   {
-    field: "pdfParser",
-    label: "PDF 解析器",
-    options: ["mineru", "docling", "pymupdf"],
-    hint: "MinerU 需要 token，未配置时自动降级为本地解析器。",
+    title: "解析",
+    purpose: "把 PDF 变成可检索的正文。",
+    status: (settings) =>
+      settings.mineruConfigured
+        ? "MinerU 已配置 · 云端解析"
+        : "MinerU 未配置 · 导入时降级为本地解析器",
+    fields: [
+      {
+        kind: "choice",
+        field: "pdfParser",
+        label: "PDF 解析器",
+        options: ["mineru", "docling", "pymupdf"],
+      },
+      {
+        kind: "secret",
+        field: "mineruApiKey",
+        label: "MinerU Token",
+        configured: "mineruConfigured",
+      },
+    ],
   },
   {
-    field: "extractor",
-    label: "元数据提取",
-    options: ["robust", "auto", "llm", "regex"],
-    hint: "robust 与 llm 需要 LLM API Key，没有 key 时导入按 regex 运行。",
+    title: "元数据与深度解析",
+    purpose: "提取标题、作者、摘要，以及每篇论文的目录与结论。",
+    status: (settings) =>
+      settings.llmConfigured ? "LLM 已配置" : "LLM 未配置 · 导入按 regex 提取，深度解析不可用",
+    fields: [
+      {
+        kind: "choice",
+        field: "extractor",
+        label: "元数据提取",
+        options: ["robust", "auto", "llm", "regex"],
+        hint: "robust 与 llm 需要 LLM API Key。",
+      },
+      {
+        kind: "choice",
+        field: "llmBackend",
+        label: "LLM 协议",
+        options: ["openai-compat", "anthropic", "google"],
+      },
+      { kind: "text", field: "llmModel", label: "LLM 模型", placeholder: "deepseek-chat" },
+      {
+        kind: "text",
+        field: "llmBaseUrl",
+        label: "LLM 地址",
+        placeholder: "https://api.deepseek.com",
+      },
+      { kind: "secret", field: "llmApiKey", label: "LLM API Key", configured: "llmConfigured" },
+    ],
   },
-  { field: "llmBackend", label: "LLM 协议", options: ["openai-compat", "anthropic", "google"] },
-  { field: "embedProvider", label: "嵌入后端", options: ["local", "openai-compat", "none"] },
-  { field: "embedSource", label: "模型下载源", options: ["modelscope", "huggingface"] },
-  { field: "embedDevice", label: "推理设备", options: ["auto", "cpu", "cuda"] },
-];
-
-const TEXTS: { field: keyof LibrarySettings; label: string; placeholder: string }[] = [
-  { field: "llmModel", label: "LLM 模型", placeholder: "deepseek-chat" },
-  { field: "llmBaseUrl", label: "LLM 地址", placeholder: "https://api.deepseek.com" },
-  { field: "embedModel", label: "嵌入模型", placeholder: "Qwen/Qwen3-Embedding-0.6B" },
-];
-
-const KEYS: { field: string; label: string; configured: keyof LibrarySettings }[] = [
-  { field: "mineruApiKey", label: "MinerU Token", configured: "mineruConfigured" },
-  { field: "llmApiKey", label: "LLM API Key", configured: "llmConfigured" },
-  { field: "embedApiKey", label: "嵌入 API Key", configured: "embedApiConfigured" },
+  {
+    title: "语义检索",
+    purpose: "按意思检索，以及主题地图所依赖的向量。",
+    status: (settings) =>
+      settings.embedProvider === "none"
+        ? "已关闭向量嵌入 · 语义检索与主题地图不可用"
+        : settings.embedProvider === "local"
+          ? `本地模型 ${settings.embedModel}`
+          : `远程嵌入服务${settings.embedApiConfigured ? " · 已配置 Key" : " · 尚未配置 Key"}`,
+    fields: [
+      {
+        kind: "choice",
+        field: "embedProvider",
+        label: "嵌入后端",
+        options: ["local", "openai-compat", "none"],
+      },
+      {
+        kind: "text",
+        field: "embedModel",
+        label: "嵌入模型",
+        placeholder: "Qwen/Qwen3-Embedding-0.6B",
+      },
+      {
+        kind: "choice",
+        field: "embedSource",
+        label: "模型下载源",
+        options: ["modelscope", "huggingface"],
+      },
+      { kind: "choice", field: "embedDevice", label: "推理设备", options: ["auto", "cpu", "cuda"] },
+      {
+        kind: "secret",
+        field: "embedApiKey",
+        label: "嵌入 API Key",
+        configured: "embedApiConfigured",
+      },
+    ],
+  },
 ];
 
 /** The library settings a user would otherwise have to edit config.yaml for. */
@@ -53,8 +131,15 @@ export function LibrarySettingsForm() {
     },
   });
   const current = settings.data;
+  const edit = (field: string, value: string) => setDraft((d) => ({ ...d, [field]: value }));
+  const forget = (field: string) =>
+    setDraft((d) => {
+      const { [field]: _dropped, ...rest } = d;
+      return rest;
+    });
   const value = (field: keyof LibrarySettings) =>
     draft[field] ?? (current ? String(current[field] ?? "") : "");
+  const disabled = !current || save.isPending;
   return (
     <section className="space-y-3">
       <h2 className="text-[10px] font-mono uppercase tracking-widest text-on-surface-variant">
@@ -69,65 +154,79 @@ export function LibrarySettingsForm() {
         </p>
       ) : null}
       <form
-        className="space-y-4 rounded-xl bg-surface-container-low border border-outline-variant/15 p-4"
+        className="space-y-4"
         onSubmit={(event) => {
           event.preventDefault();
           if (Object.keys(draft).length) save.mutate(draft);
         }}
       >
-        <div className="grid gap-3 md:grid-cols-2">
-          {CHOICES.map(({ field, label, options, hint }) => (
-            <label key={field} className="text-sm">
-              {label}
-              <select
-                className="hub-input w-full block mt-2"
-                disabled={!current || save.isPending}
-                value={value(field)}
-                onChange={(event) => setDraft((d) => ({ ...d, [field]: event.target.value }))}
-              >
-                {options.map((option) => (
-                  <option key={option} value={option}>
-                    {option}
-                  </option>
-                ))}
-              </select>
-              {hint ? (
-                <span className="block mt-1 text-xs text-on-surface-variant">{hint}</span>
-              ) : null}
-            </label>
-          ))}
-          {TEXTS.map(({ field, label, placeholder }) => (
-            <label key={field} className="text-sm">
-              {label}
-              <input
-                className="hub-input w-full block mt-2"
-                disabled={!current || save.isPending}
-                value={value(field)}
-                placeholder={placeholder}
-                onChange={(event) => setDraft((d) => ({ ...d, [field]: event.target.value }))}
-              />
-            </label>
-          ))}
-          {KEYS.map(({ field, label, configured }) => (
-            <label key={field} className="text-sm">
-              {label}
-              <input
-                type="password"
-                autoComplete="off"
-                className="hub-input w-full block mt-2"
-                disabled={!current || save.isPending}
-                value={draft[field] ?? ""}
-                placeholder={current?.[configured] ? "已配置，输入可替换" : "尚未配置"}
-                onChange={(event) => setDraft((d) => ({ ...d, [field]: event.target.value }))}
-              />
-            </label>
-          ))}
-        </div>
+        {GROUPS.map((group) => (
+          <fieldset
+            key={group.title}
+            className="space-y-3 rounded-xl bg-surface-container-low border border-outline-variant/15 p-4"
+          >
+            <legend className="text-sm font-semibold text-on-surface px-1">{group.title}</legend>
+            <p className="text-xs text-on-surface-variant">{group.purpose}</p>
+            {current ? (
+              <p className="text-[10px] font-mono uppercase tracking-wider text-primary">
+                {group.status(current)}
+              </p>
+            ) : null}
+            <div className="grid gap-3 md:grid-cols-2">
+              {group.fields.map((item) =>
+                item.kind === "choice" ? (
+                  <label key={item.field} className="text-sm">
+                    {item.label}
+                    <select
+                      className="hub-input w-full block mt-2"
+                      disabled={disabled}
+                      value={value(item.field)}
+                      onChange={(event) => edit(item.field, event.target.value)}
+                    >
+                      {item.options.map((option) => (
+                        <option key={option} value={option}>
+                          {option}
+                        </option>
+                      ))}
+                    </select>
+                    {item.hint ? (
+                      <span className="block mt-1 text-xs text-on-surface-variant">
+                        {item.hint}
+                      </span>
+                    ) : null}
+                  </label>
+                ) : item.kind === "text" ? (
+                  <label key={item.field} className="text-sm">
+                    {item.label}
+                    <input
+                      className="hub-input w-full block mt-2"
+                      disabled={disabled}
+                      value={value(item.field)}
+                      placeholder={item.placeholder}
+                      onChange={(event) => edit(item.field, event.target.value)}
+                    />
+                  </label>
+                ) : (
+                  <SecretField
+                    key={item.field}
+                    item={item}
+                    settings={current}
+                    disabled={disabled}
+                    draft={draft[item.field]}
+                    onChange={(next) => edit(item.field, next)}
+                    onKeep={() => forget(item.field)}
+                  />
+                ),
+              )}
+            </div>
+            {group.title === "语义检索" ? <CapabilityPrompt kind="semantic" framed /> : null}
+          </fieldset>
+        ))}
         <div className="flex flex-wrap items-center gap-3">
           <button
             className="hub-button"
             type="submit"
-            disabled={!current || save.isPending || Object.keys(draft).length === 0}
+            disabled={disabled || Object.keys(draft).length === 0}
           >
             保存
           </button>
@@ -147,5 +246,55 @@ export function LibrarySettingsForm() {
         ) : null}
       </form>
     </section>
+  );
+}
+
+/**
+ * A key the browser may set but never read back.
+ *
+ * An empty box means "leave it alone", so clearing a stored key needs to be
+ * something the user can say: the button says it, and saving removes the key
+ * from the overlay.
+ */
+function SecretField({
+  item,
+  settings,
+  disabled,
+  draft,
+  onChange,
+  onKeep,
+}: {
+  item: { field: string; label: string; configured: keyof LibrarySettings };
+  settings?: LibrarySettings;
+  disabled: boolean;
+  draft?: string;
+  onChange: (value: string) => void;
+  onKeep: () => void;
+}) {
+  const configured = Boolean(settings?.[item.configured]);
+  const clearing = draft === "";
+  return (
+    <label className="text-sm">
+      {item.label}
+      <input
+        type="password"
+        autoComplete="off"
+        className="hub-input w-full block mt-2"
+        disabled={disabled}
+        value={draft ?? ""}
+        placeholder={configured ? "已配置，输入可替换" : "尚未配置"}
+        onChange={(event) => onChange(event.target.value)}
+      />
+      {configured ? (
+        <button
+          type="button"
+          className="mt-1 text-[10px] font-mono font-bold text-on-surface-variant hover:text-error disabled:opacity-40 border-0 bg-transparent cursor-pointer p-0"
+          disabled={disabled}
+          onClick={() => (clearing ? onKeep() : onChange(""))}
+        >
+          {clearing ? "保存后清除 · 点此取消" : "清除已存的密钥"}
+        </button>
+      ) : null}
+    </label>
   );
 }

@@ -1,9 +1,12 @@
 import type {
   ImportJob,
+  LibraryCapabilities,
   LibraryPaper,
   LibraryPaperDetail,
   LibraryReference,
   LibrarySearchResult,
+  LibraryTask,
+  LibraryTaskKind,
   LiteratureProject,
   NewSessionDefaults,
   ProjectFsBrowseResponse,
@@ -103,6 +106,12 @@ export const libraryApi = {
   },
   retry: (id: string) =>
     requestJson<ImportJob>(`/api/library/imports/${pathSegment(id)}/retry`, { method: "POST" }),
+  capabilities: (signal?: AbortSignal) =>
+    requestJson<LibraryCapabilities>("/api/library/tasks", { signal }),
+  startTask: (kind: LibraryTaskKind) =>
+    requestJson<LibraryTask>(`/api/library/tasks/${pathSegment(kind)}`, { method: "POST" }),
+  cancelTask: (kind: LibraryTaskKind) =>
+    requestJson<LibraryTask>(`/api/library/tasks/${pathSegment(kind)}`, { method: "DELETE" }),
   position: (id: string, signal?: AbortSignal) =>
     requestJson<ReadingPosition>(`/api/library/papers/${pathSegment(id)}/position`, { signal }),
   savePosition: (id: string, position: ReadingPosition) =>

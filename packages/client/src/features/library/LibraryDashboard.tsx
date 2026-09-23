@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import { usePageTitle } from "../../app/components/NavigationLayout";
 import { libraryApi } from "../../core/library";
 import { LibraryAnalyticsPanel } from "./components/LibraryAnalyticsPanel";
+import { LibraryTasksPanel } from "./components/LibraryTasksPanel";
 import { TopicSimilarityHeatmap } from "./components/charts/TopicSimilarityHeatmap";
 import { TopicTimeTrend } from "./components/charts/TopicTimeTrend";
 import { buildYearCounts, toLibraryPaperRef } from "./paperUtils";
@@ -77,6 +78,8 @@ export default function LibraryDashboard() {
           {error}
         </div>
       ) : null}
+
+      <LibraryTasksPanel />
 
       {loading ? (
         <div className="text-center text-on-surface-variant text-sm py-20">加载中…</div>

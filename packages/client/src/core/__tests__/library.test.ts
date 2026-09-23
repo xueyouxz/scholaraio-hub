@@ -64,3 +64,24 @@ describe("citation views", () => {
     expect(vi.mocked(fetch).mock.calls[0]?.[0]).toBe("/api/library/papers/paper-1/citing");
   });
 });
+
+describe("library capabilities", () => {
+  afterEach(() => vi.unstubAllGlobals());
+
+  it("starts a named task and can stop the same one", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockImplementation(async () => Response.json({ kind: "semantic" })),
+    );
+    await libraryApi.startTask("semantic");
+    await libraryApi.cancelTask("semantic");
+    expect(vi.mocked(fetch).mock.calls[0]).toEqual([
+      "/api/library/tasks/semantic",
+      expect.objectContaining({ method: "POST" }),
+    ]);
+    expect(vi.mocked(fetch).mock.calls[1]).toEqual([
+      "/api/library/tasks/semantic",
+      expect.objectContaining({ method: "DELETE" }),
+    ]);
+  });
+});

@@ -1,0 +1,140 @@
+"""The browser can prepare semantic search, and stop it part-way."""
+from __future__ import annotations
+
+import json
+import time
+
+import pytest
+
+from scholaraio.services import vectors
+from scholaraio.services.hub_library import HubLibrary
+
+
+@pytest.fixture
+def library(tmp_path):
+    library = HubLibrary(tmp_path / "app")
+    try:
+        yield library
+    finally:
+        library.close()
+
+
+def wait_for(library, kind: str, *, timeout: float = 10.0) -> dict:
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        task = next(t for t in library.tasks.list() if t["kind"] == kind)
+        if task["status"] not in ("queued", "running"):
+            return task
+        time.sleep(0.01)
+    raise AssertionError(f"{kind} task did not finish in time")
+
+
+def paper(library, title: str = "Spectroscopy") -> None:
+    directory = library.cfg.papers_dir / title.lower()
+    directory.mkdir(parents=True, exist_ok=True)
+    (directory / "meta.json").write_text(json.dumps({"id": title.lower(), "title": title}), encoding="utf-8")
+    (directory / "paper.md").write_text(f"# {title}\n\nText.\n", encoding="utf-8")
+
+
+def test_preparing_semantic_search_downloads_the_model_then_embeds(library, monkeypatch):
+    downloads = []
+    monkeypatch.setattr(vectors, "prepare_model", lambda cfg=None: downloads.append(cfg.embed.model))
+    monkeypatch.setattr(
+        vectors,
+        "build_vectors",
+        lambda papers, db, cfg=None, on_progress=None, should_stop=None: (on_progress(2, 2), 2)[1],
+    )
+
+    library.tasks.start("semantic")
+    task = wait_for(library, "semantic")
+
+    assert downloads == [library.cfg.embed.model]
+    assert task["status"] == "completed"
+    assert task["summary"] == "新增 2 篇论文的向量"
+    assert (task["done"], task["total"]) == (2, 2)
+
+
+def test_a_running_task_stops_where_it_is_and_keeps_its_work(library, monkeypatch):
+    started = __import__("threading").Event()
+
+    def build(papers, db, cfg=None, on_progress=None, should_stop=None):
+        on_progress(1, 10)
+        started.set()
+        while not should_stop():
+            time.sleep(0.01)
+        return 1
+
+    monkeypatch.setattr(vectors, "prepare_model", lambda cfg=None: None)
+    monkeypatch.setattr(vectors, "build_vectors", build)
+
+    library.tasks.start("semantic")
+    assert started.wait(5)
+    library.tasks.cancel("semantic")
+    task = wait_for(library, "semantic")
+
+    assert task["status"] == "cancelled"
+    assert task["done"] == 1  # what it embedded before stopping is kept
+
+
+def test_one_task_of_a_kind_runs_at_a_time(library, monkeypatch):
+    monkeypatch.setattr(vectors, "prepare_model", lambda cfg=None: time.sleep(0.2))
+    monkeypatch.setattr(vectors, "build_vectors", lambda *a, **k: 0)
+
+    library.tasks.start("semantic")
+    with pytest.raises(ValueError, match="已在运行"):
+        library.tasks.start("semantic")
+    wait_for(library, "semantic")
+
+
+def test_a_failed_task_reports_why(library, monkeypatch):
+    monkeypatch.setattr(vectors, "embedding_provider", lambda cfg=None: "none")
+
+    library.tasks.start("semantic")
+    task = wait_for(library, "semantic")
+
+    assert task["status"] == "failed"
+    assert "embed.provider=none" in task["error"]
+
+
+def test_deep_processing_needs_a_key_and_counts_what_is_pending(library, monkeypatch):
+    paper(library)
+    monkeypatch.setattr(type(library.cfg), "resolved_api_key", lambda _self: "")
+
+    assert library.tasks.status()["deepPending"] == 1
+    assert library.tasks.status()["llmConfigured"] is False
+
+    library.tasks.start("deep")
+    task = wait_for(library, "deep")
+    assert task["status"] == "failed"
+    assert "LLM API Key" in task["error"]
+
+
+def test_status_describes_what_the_library_can_already_do(library, monkeypatch):
+    paper(library)
+    monkeypatch.setattr(vectors, "model_available", lambda cfg=None: False)
+    library.reindex()
+
+    status = library.tasks.status()
+
+    assert status["papers"] == 1
+    assert status["vectors"] == 0
+    assert status["semanticReady"] is False
+    assert status["modelReady"] is False
+    assert status["topicsBuilt"] is False
+
+
+def test_an_interrupted_task_is_restartable_after_a_restart(library, tmp_path):
+    record = {"id": "x", "kind": "semantic", "status": "running", "phase": "embed",
+              "done": 3, "total": 9, "summary": None, "error": None,
+              "startedAt": "2026-01-01T00:00:00+00:00", "finishedAt": None}
+    (library.cfg.state_root / "tasks").mkdir(parents=True, exist_ok=True)
+    (library.cfg.state_root / "tasks/semantic.json").write_text(json.dumps(record), encoding="utf-8")
+
+    restarted = HubLibrary(tmp_path / "app")
+    try:
+        task = next(t for t in restarted.tasks.list() if t["kind"] == "semantic")
+    finally:
+        restarted.close()
+
+    assert task["status"] == "failed"
+    assert "可重新开始" in task["error"]

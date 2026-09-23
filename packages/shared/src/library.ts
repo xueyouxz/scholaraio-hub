@@ -97,3 +97,33 @@ export interface ReadingPosition {
   line: number;
   mode: "pdf" | "markdown";
 }
+
+/** Optional library work that costs model time: run it when the user asks. */
+export type LibraryTaskKind = "semantic" | "topics" | "deep";
+export interface LibraryTask {
+  id: string;
+  kind: LibraryTaskKind;
+  status: "queued" | "running" | "completed" | "cancelled" | "failed";
+  /** Stage within the task, e.g. downloading the model before embedding. */
+  phase?: string | null;
+  done: number;
+  total: number;
+  summary?: string | null;
+  error?: string | null;
+  startedAt: string;
+  finishedAt?: string | null;
+}
+/** What the library can do right now, and what it would take to do more. */
+export interface LibraryCapabilities {
+  papers: number;
+  vectors: number;
+  embedProvider: string;
+  embedModel: string;
+  modelReady: boolean;
+  semanticReady: boolean;
+  topicsBuilt: boolean;
+  deepPending: number;
+  llmConfigured: boolean;
+  mineruConfigured: boolean;
+  tasks: LibraryTask[];
+}

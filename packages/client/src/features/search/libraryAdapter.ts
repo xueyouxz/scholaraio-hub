@@ -51,18 +51,4 @@ export const searchLibrary = {
       notice: data.notice,
     };
   },
-  async getWorkspaces(options: { signal?: AbortSignal }) {
-    return { workspaces: (await libraryApi.projects(options.signal)).projects };
-  },
-  createWorkspace: libraryApi.createProject,
-  async batchAddPapersToWorkspace(id: string, ids: string[]) {
-    const project = await libraryApi.project(id);
-    await libraryApi.projectPapers(id, ids, "add");
-    const existing = new Set(project.paperIds);
-    return {
-      added: ids.filter((id) => !existing.has(id)),
-      skipped: ids.filter((id) => existing.has(id)).map((id) => ({ id })),
-      failed: [] as { id: string; reason: string }[],
-    };
-  },
 };

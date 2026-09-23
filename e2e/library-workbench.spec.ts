@@ -162,9 +162,11 @@ test("internal project → cards → reading → first message preserves project
     page.getByRole("link", { name: "Spectroscopy Research", exact: true }),
   ).toBeVisible();
   await page.getByRole("checkbox", { name: "选择 Spectroscopy Research" }).check();
-  await page.getByRole("combobox", { name: "添加到项目" }).selectOption(projectName);
-  await page.getByRole("button", { name: "添加到项目", exact: true }).click();
-  await expect(page.getByText("已选 1 / 100 篇", { exact: true })).toHaveCount(0);
+  const selectionBar = page.getByLabel("选中文献的操作");
+  await expect(selectionBar.getByText("已选 1 篇", { exact: true })).toBeVisible();
+  await selectionBar.getByRole("button", { name: "加入 Workspace" }).click();
+  await selectionBar.getByRole("button", { name: projectName, exact: true }).click();
+  await expect(selectionBar).toHaveCount(0);
   await page.getByRole("combobox", { name: "查看文献项目" }).selectOption(projectName);
   await page.goto(`/library?project=${encodeURIComponent(projectName)}`);
   await page.getByRole("button", { name: "列表视图" }).click();

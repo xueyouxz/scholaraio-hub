@@ -5,9 +5,10 @@ import { useNavigate, useSearchParams } from "react-router-dom";
 import { usePageTitle } from "../../app/components/NavigationLayout";
 import { libraryApi, newSessionUrl } from "../../core/library";
 import { useLibraryEvents } from "../../core/libraryEvents";
+import { useLibrarySelection } from "./selection";
 
+import { CitationCheckPanel } from "./components/CitationCheckPanel";
 import { PaperCollection } from "./components/PaperCollection";
-import { ReferenceTools } from "./components/ReferenceTools";
 
 /** Ingest pipeline steps, in the order the import queue runs them. */
 const IMPORT_STEPS: Record<string, string> = {
@@ -28,7 +29,6 @@ export function LibraryImportPage() {
   const projectId = params.get("project") ?? "";
   const view = params.get("view") === "list" ? "list" : "grid";
   const [newProject, setNewProject] = useState("");
-  const [addTarget, setAddTarget] = useState("");
   const projects = useQuery({
     queryKey: ["library", "projects"],
     queryFn: ({ signal }) => libraryApi.projects(signal),
@@ -44,7 +44,7 @@ export function LibraryImportPage() {
       return next;
     });
   const [draft, setDraft] = useState(query);
-  const [selected, setSelected] = useState<Set<string>>(new Set());
+  const selection = useLibrarySelection();
   const client = useQueryClient();
   const navigate = useNavigate();
   const fileInput = useRef<HTMLInputElement>(null);
@@ -112,14 +112,6 @@ export function LibraryImportPage() {
       updateParams({ project: data.id, newProject: "", manage: "1" });
     },
   });
-  const membership = useMutation({
-    mutationFn: ({ id, action }: { id: string; action: "add" | "remove" }) =>
-      libraryApi.projectPapers(id, [...selected], action),
-    onSuccess: () => {
-      refresh();
-      setSelected(new Set());
-    },
-  });
   const acceptFiles = (files: FileList | null) => {
     if (!files?.length) return;
     const pdfs = Array.from(files).filter((file) => file.name.toLowerCase().endsWith(".pdf"));
@@ -129,7 +121,6 @@ export function LibraryImportPage() {
     papers.error ??
     projects.error ??
     createProject.error ??
-    membership.error ??
     upload.error ??
     retry.error ??
     jobs.error;
@@ -290,7 +281,7 @@ export function LibraryImportPage() {
           {acquire.error.message}
         </p>
       ) : null}
-      <ReferenceTools paperIds={[...selected]} projectId={projectId || undefined} />
+      <CitationCheckPanel projectId={projectId || undefined} />
       <details open={params.has("newProject") || undefined} className="text-sm">
         <summary className="cursor-pointer text-primary">新建文献项目</summary>
         <form
@@ -345,50 +336,11 @@ export function LibraryImportPage() {
         <button
           className="hub-button"
           type="button"
-          onClick={() => navigate(newSessionUrl(projectId || undefined, [...selected]))}
+          onClick={() => navigate(newSessionUrl(projectId || undefined))}
         >
-          {selected.size ? `询问选中的 ${selected.size} 篇` : projectId ? "询问项目" : "询问文献库"}
+          {projectId ? "询问项目" : "询问文献库"}
         </button>
       </form>
-      {selected.size > 0 ? (
-        <div className="flex flex-wrap items-center gap-2 text-sm">
-          <span>已选 {selected.size} / 100 篇</span>
-          <select
-            aria-label="添加到项目"
-            className="hub-input"
-            value={addTarget}
-            onChange={(e) => setAddTarget(e.target.value)}
-          >
-            <option value="">选择目标项目…</option>
-            {projects.data?.projects.map((p) => (
-              <option key={p.id} value={p.id}>
-                {p.name}
-              </option>
-            ))}
-          </select>
-          <button
-            type="button"
-            className="hub-button"
-            disabled={!addTarget || membership.isPending}
-            onClick={() => membership.mutate({ id: addTarget, action: "add" })}
-          >
-            添加到项目
-          </button>
-          {project ? (
-            <button
-              type="button"
-              className="hub-button"
-              disabled={membership.isPending}
-              onClick={() => membership.mutate({ id: project.id, action: "remove" })}
-            >
-              从项目移除
-            </button>
-          ) : null}
-          <button type="button" className="hub-button" onClick={() => setSelected(new Set())}>
-            清除选择
-          </button>
-        </div>
-      ) : null}
       {error ? (
         <p role="alert" className="text-error">
           {error.message}
@@ -465,16 +417,9 @@ export function LibraryImportPage() {
         <PaperCollection
           results={results}
           view={view}
-          selected={selected}
+          selected={selection.selected}
           projectId={projectId || undefined}
-          onToggle={(id) =>
-            setSelected((previous) => {
-              const next = new Set(previous);
-              if (next.has(id)) next.delete(id);
-              else next.add(id);
-              return next;
-            })
-          }
+          onToggle={selection.toggle}
         />
       )}
     </div>

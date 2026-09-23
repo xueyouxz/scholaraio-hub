@@ -234,3 +234,41 @@ def test_original_search_modes_and_image_gallery_are_scoped(tmp_path, monkeypatc
         assert result["notice"]
     finally:
         library.close()
+
+
+def test_cli_shares_the_application_library_through_the_generated_config(tmp_path, monkeypatch):
+    """An agent's CLI run must resolve the same paths as the Hub service."""
+    from scholaraio.core.config import load_config
+    from scholaraio.services.hub_config import config_path
+
+    root = tmp_path / "app"
+    source = tmp_path / "source.pdf"
+    pdf_file(source)
+    library = HubLibrary(root)
+    try:
+        pid, _ = library.import_pdf(source, "Shared.pdf")
+        assert config_path(root).exists()
+        elsewhere = tmp_path / "unrelated-cwd"
+        elsewhere.mkdir()
+        monkeypatch.chdir(elsewhere)
+        monkeypatch.setenv("SCHOLARAIO_CONFIG", str(config_path(root)))
+        cli_cfg = load_config()
+        assert cli_cfg.papers_dir == library.cfg.papers_dir
+        assert cli_cfg.index_db == library.cfg.index_db
+        assert cli_cfg.workspace_dir == library.cfg.workspace_dir
+        assert (cli_cfg.papers_dir / library.find(pid)[0].name).is_dir()
+    finally:
+        library.close()
+
+
+def test_an_existing_configuration_is_never_rewritten(tmp_path):
+    from scholaraio.services.hub_config import config_path
+
+    root = tmp_path / "app"
+    root.mkdir()
+    config_path(root).write_text("paths:\n  papers_dir: data/libraries/papers\n", encoding="utf-8")
+    library = HubLibrary(root)
+    try:
+        assert config_path(root).read_text(encoding="utf-8").startswith("paths:")
+    finally:
+        library.close()

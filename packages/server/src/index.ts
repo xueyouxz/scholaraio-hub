@@ -11,6 +11,7 @@ import { initLogger, interceptConsole } from "./logging/index.js";
 import { closeMessageLogger, initMessageLogger } from "./sdk/messageLogger.js";
 import { LibraryService } from "./services/LibraryService.js";
 import { InstallService, ModelInfoService, ServerSettingsService } from "./services/index.js";
+import { ensureSkillsDirectory } from "./skills/skillsDirectory.js";
 
 const config = loadConfig();
 initLogger({
@@ -52,7 +53,12 @@ for (const signal of ["SIGINT", "SIGTERM"])
     );
   });
 try {
-  await Promise.all([library.start(), settings.initialize(), install.initialize()]);
+  await Promise.all([
+    library.start(),
+    settings.initialize(),
+    install.initialize(),
+    ensureSkillsDirectory(config.dataDir),
+  ]);
   application = createApp({
     dataDir: config.dataDir,
     libraryService: library,

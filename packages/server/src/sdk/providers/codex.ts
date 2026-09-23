@@ -1,4 +1,5 @@
 import { filterEnvForChildProcess } from "./env-filter.js";
+import { withScholaraioCli } from "./scholaraio-cli.js";
 /**
  * Codex Provider implementation using codex app-server JSON-RPC.
  *
@@ -175,7 +176,7 @@ export class CodexProvider implements AgentProvider {
    * Build environment overrides for Codex subprocesses.
    */
   private getCodexEnv(): NodeJS.ProcessEnv {
-    const env: NodeJS.ProcessEnv = filterEnvForChildProcess();
+    const env: NodeJS.ProcessEnv = withScholaraioCli(filterEnvForChildProcess());
     if (this.config.baseUrl) {
       env.OPENAI_BASE_URL = this.config.baseUrl;
     }

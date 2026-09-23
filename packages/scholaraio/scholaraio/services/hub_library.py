@@ -12,7 +12,7 @@ from concurrent.futures import ThreadPoolExecutor
 from dataclasses import asdict
 from pathlib import Path
 
-from scholaraio.core.config import Config, load_config
+from scholaraio.services.hub_config import ensure_config
 from scholaraio.services.hub_projects import HubProjects
 from scholaraio.services.chunks import build_chunk_index, chunk_search, iter_paper_chunks
 from scholaraio.services.index import build_index, search
@@ -44,10 +44,9 @@ def content_hash(path: Path) -> str:
 class HubLibrary:
     def __init__(self, root: Path):
         self.root = root.resolve()
-        config_file = self.root / "config.yaml"
-        self.cfg = load_config(config_file) if config_file.exists() else Config(_root=self.root)
         # Explicit root: never discover config from the code checkout or caller cwd.
-        self.cfg._root = self.root
+        # The file is also what an agent's CLI run resolves through SCHOLARAIO_CONFIG.
+        self.cfg = ensure_config(self.root)
         for directory in (self.cfg.papers_dir, self.cfg.state_root, self.cfg.inbox_dir, self.cfg.index_db.parent):
             if not directory.is_relative_to(self.root):
                 raise ValueError(f"Library path is outside the application data directory: {directory}")

@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * Scan SCHOLARAIO_SKILLS_DIR (default ~/scholaraio/skills) and report any skill
+ * Scan the application's skills directory and report any skill
  * that is not present in packages/server/src/skills/scholaraioCategories.ts.
  * Appends the unknown skill names to the file as a JS comment block at the bottom
  * so the maintainer can paste them into the right category.
@@ -13,7 +13,14 @@ import { fileURLToPath } from "node:url";
 const __filename = fileURLToPath(import.meta.url);
 const repoRoot = resolve(__filename, "..", "..");
 const manifestPath = join(repoRoot, "packages/server/src/skills/scholaraioCategories.ts");
-const skillsDir = process.env.SCHOLARAIO_SKILLS_DIR ?? join(homedir(), "scholaraio", "skills");
+// Skills are user data in the application data directory, not repository code.
+const dataDir =
+  process.env.SCHOLARAIO_HUB_DATA_DIR ??
+  join(
+    homedir(),
+    process.env.NODE_ENV === "production" ? ".scholaraio-hub" : ".scholaraio-hub-dev",
+  );
+const skillsDir = process.env.SCHOLARAIO_SKILLS_DIR ?? join(dataDir, "skills");
 
 async function listSkillNames(dir) {
   let entries;

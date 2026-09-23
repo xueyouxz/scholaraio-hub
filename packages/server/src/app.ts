@@ -1,5 +1,3 @@
-import { homedir } from "node:os";
-import path from "node:path";
 import type { HttpBindings } from "@hono/node-server";
 import { Hono } from "hono";
 import { getDataDir } from "./data-dir.js";
@@ -21,6 +19,7 @@ import { ProviderUsageLimitService } from "./services/ProviderUsageLimitService.
 import type { ServerSettingsService } from "./services/ServerSettingsService.js";
 import { SessionService } from "./services/SessionService.js";
 import { SessionStore } from "./sessions/SessionStore.js";
+import { skillsDirectory } from "./skills/skillsDirectory.js";
 import { Supervisor } from "./supervisor/Supervisor.js";
 
 export interface AppOptions {
@@ -53,7 +52,7 @@ export function createApp(options: AppOptions) {
       if (event.type === "rate-limit") usage.record(event.limits);
     },
   });
-  const skillsDir = options.scholaraioSkillsDir ?? path.join(homedir(), "scholaraio", "skills");
+  const skillsDir = options.scholaraioSkillsDir ?? skillsDirectory(dataDir);
   const sessions = new SessionService(store, supervisor, library, skillsDir);
   const ready = store.initialize();
   app.use("/api/*", hostCheckMiddleware);
@@ -66,13 +65,7 @@ export function createApp(options: AppOptions) {
   app.route("/api/version", createVersionRoutes({ installId: options.installId }));
   app.route("/api/library", createLibraryRoutes(library));
   app.route("/api/sessions", createAppSessionRoutes(sessions, options.serverSettingsService));
-  app.route(
-    "/api/skills",
-    createSkillsRoutes({
-      scholaraioSkillsDir:
-        options.scholaraioSkillsDir ?? path.join(homedir(), "scholaraio", "skills"),
-    }),
-  );
+  app.route("/api/skills", createSkillsRoutes({ scholaraioSkillsDir: skillsDir }));
   app.route(
     "/api/providers",
     createProvidersRoutes({

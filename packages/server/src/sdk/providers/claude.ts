@@ -26,6 +26,7 @@ import type { SDKMessage } from "../types.js";
 import { ClaudeEventAdapter } from "./claude-events.js";
 import { filterEnvForChildProcess } from "./env-filter.js";
 import { providerPosture } from "./permission-policy.js";
+import { withScholaraioCli } from "./scholaraio-cli.js";
 import type {
   AgentProvider,
   AgentSession,
@@ -469,7 +470,7 @@ export class ClaudeProvider implements AgentProvider {
    * Subclasses can override to inject custom env vars (e.g., ANTHROPIC_BASE_URL).
    */
   protected getEnv(): Record<string, string | undefined> {
-    return filterEnvForChildProcess();
+    return withScholaraioCli(filterEnvForChildProcess());
   }
 
   /**

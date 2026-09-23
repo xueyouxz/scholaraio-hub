@@ -46,6 +46,33 @@ class HubAcquire:
         job = self.library.imports.enqueue([(staged, downloaded.name)])
         return {**job, "source": source}
 
+    def import_references(self, text: str) -> dict:
+        """Fetch everything a BibTeX or RIS export names, and say what was missed.
+
+        This is how a Zotero or EndNote library arrives: export it there, hand
+        the file over here, and each entry is fetched by its own identifier.
+        """
+        entries = parse_references(text)
+        if not entries:
+            raise ValueError("没有从该文件中解析出条目，请导出 BibTeX 或 RIS 后重试")
+        work = self.library.imports.root / "fetched"
+        work.mkdir(parents=True, exist_ok=True)
+        staged: list[tuple[Path, str]] = []
+        skipped: list[dict] = []
+        for entry in entries:
+            try:
+                downloaded, _ = self.download(entry["locator"], work)
+            except (ValueError, OSError) as error:
+                skipped.append({"title": entry["title"], "locator": entry["locator"], "error": str(error)})
+                continue
+            destination = self.library.imports.stage(downloaded.name)
+            shutil.move(str(downloaded), destination)
+            staged.append((destination, downloaded.name))
+        if not staged:
+            raise ValueError(f"共 {len(entries)} 条，全部未能获取 PDF；请检查网络或改用文件导入")
+        job = self.library.imports.enqueue(staged)
+        return {**job, "source": "references", "skipped": skipped}
+
     def download(self, locator: str, work: Path) -> tuple[Path, str]:
         identifier = arxiv_id(locator)
         if identifier:
@@ -73,4 +100,35 @@ class HubAcquire:
         return result.path
 
 
-__all__ = ["HubAcquire", "arxiv_id", "is_patent"]
+DOI_FIELD = re.compile(r"\b(?:doi\s*[=:]\s*|DO\s+-\s+)\{?\s*(10\.\d{4,9}/[^\s,}\"']+)", re.IGNORECASE)
+TITLE_FIELD = re.compile(r"\b(?:title\s*=\s*[{\"]|TI\s+-\s+)\s*([^\n}\"]+)", re.IGNORECASE)
+ENTRY_LIMIT = 500
+
+
+def parse_references(text: str) -> list[dict]:
+    """Read a BibTeX or RIS export down to what the library can fetch with.
+
+    Only the identifier and the title are taken: the metadata itself comes
+    from the ingest pipeline, the same way an uploaded PDF's does.
+    """
+    blocks = re.split(r"\n(?=@)|\bER\s+-\s*\n", text)
+    entries = []
+    seen = set()
+    for block in blocks:
+        doi = DOI_FIELD.search(block)
+        identifier = doi.group(1).rstrip(".,;") if doi else arxiv_id_in(block)
+        if not identifier or identifier in seen:
+            continue
+        seen.add(identifier)
+        title = TITLE_FIELD.search(block)
+        entries.append({"locator": identifier, "title": title.group(1).strip() if title else identifier})
+    return entries[:ENTRY_LIMIT]
+
+
+def arxiv_id_in(block: str) -> str:
+    """The arXiv id mentioned anywhere in this entry, if any."""
+    match = ARXIV_URL.search(block) or re.search(r"arxiv\s*[=:]?\s*\{?\s*(\d{4}\.\d{4,5})", block, re.IGNORECASE)
+    return match.group(1) if match else ""
+
+
+__all__ = ["HubAcquire", "arxiv_id", "is_patent", "parse_references"]

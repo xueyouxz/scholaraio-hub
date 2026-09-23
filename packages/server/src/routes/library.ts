@@ -37,6 +37,7 @@ export function createLibraryRoutes(service: LibraryService) {
     ["GET", "/imports"],
     ["POST", "/imports"],
     ["POST", "/imports/fetch"],
+    ["POST", "/imports/references"],
     ["POST", "/imports/:id/retry"],
   ];
   for (const [method, resource] of resources) {

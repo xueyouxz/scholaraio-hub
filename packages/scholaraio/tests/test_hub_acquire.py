@@ -65,3 +65,64 @@ def test_a_locator_that_yields_no_pdf_says_so(library, monkeypatch):
 def test_an_empty_locator_is_refused_before_any_request(library):
     with pytest.raises(ValueError, match="请填写"):
         library.acquire.fetch("   ")
+
+
+BIBTEX = """
+@article{lovelace2024,
+  title = {Spectroscopy of Molecules},
+  doi = {10.1038/s41586-021-03819-2},
+}
+@inproceedings{hopper2019,
+  title = {Compiling Programs},
+  doi = {10.1000/xyz123},
+}
+@misc{preprint2024,
+  title = {A Preprint},
+  eprint = {arXiv:2401.12345},
+  url = {https://arxiv.org/abs/2401.12345},
+}
+"""
+
+RIS = """TY  - JOUR
+TI  - Spectroscopy of Molecules
+DO  - 10.1038/s41586-021-03819-2
+ER  -
+"""
+
+
+def test_a_bibtex_export_yields_one_locator_per_entry():
+    entries = hub_acquire.parse_references(BIBTEX)
+
+    assert [entry["locator"] for entry in entries] == [
+        "10.1038/s41586-021-03819-2",
+        "10.1000/xyz123",
+        "2401.12345",
+    ]
+    assert entries[0]["title"] == "Spectroscopy of Molecules"
+
+
+def test_a_ris_export_is_read_the_same_way():
+    assert hub_acquire.parse_references(RIS) == [
+        {"locator": "10.1038/s41586-021-03819-2", "title": "Spectroscopy of Molecules"}
+    ]
+
+
+def test_entries_that_cannot_be_fetched_are_reported_not_hidden(library, monkeypatch):
+    def download(self, locator, work):
+        if locator == "10.1000/xyz123":
+            raise ValueError("未能获取 PDF：paywalled")
+        path = work / f"{locator.replace('/', '-')}.pdf"
+        path.write_bytes(b"%PDF-1.4\n")
+        return path, "doi"
+
+    monkeypatch.setattr(hub_acquire.HubAcquire, "download", download)
+
+    result = library.acquire.import_references(BIBTEX)
+
+    assert len(result["items"]) == 2
+    assert [entry["title"] for entry in result["skipped"]] == ["Compiling Programs"]
+
+
+def test_a_file_with_no_entries_says_so(library):
+    with pytest.raises(ValueError, match="没有从该文件中解析出条目"):
+        library.acquire.import_references("just some prose")

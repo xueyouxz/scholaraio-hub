@@ -126,6 +126,14 @@ export const libraryApi = {
       method: "POST",
       body: JSON.stringify({ locator }),
     }),
+  importReferences: (file: File) => {
+    const body = new FormData();
+    body.append("file", file);
+    return requestJson<ImportJob & { skipped: { title: string; error: string }[] }>(
+      "/api/library/imports/references",
+      { method: "POST", body },
+    );
+  },
   retry: (id: string) =>
     requestJson<ImportJob>(`/api/library/imports/${pathSegment(id)}/retry`, { method: "POST" }),
   settings: (signal?: AbortSignal) =>

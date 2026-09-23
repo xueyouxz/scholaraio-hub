@@ -328,6 +328,16 @@ def create_app(root: Path, token: str) -> FastAPI:
     def acquire(body: AcquireInput):
         return app.state.library.acquire.fetch(body.locator)
 
+    @app.post("/imports/references", status_code=202)
+    async def import_references(file: UploadFile = File(...)):
+        if not (file.filename or "").lower().endswith((".bib", ".ris", ".txt", ".enw")):
+            raise HTTPException(400, "Only BibTeX or RIS exports are supported")
+        try:
+            payload = await file.read(4 * 1024 * 1024)
+        finally:
+            await file.close()
+        return app.state.library.acquire.import_references(payload.decode("utf-8", "replace"))
+
     @app.post("/imports/{job_id}/retry", status_code=202)
     def retry(job_id: str):
         return app.state.library.retry(job_id)

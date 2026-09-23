@@ -101,6 +101,8 @@ function LibraryContent() {
   };
   const upload = useMutation({ mutationFn: libraryApi.upload, onSuccess: refresh });
   const [locator, setLocator] = useState("");
+  const referenceInput = useRef<HTMLInputElement>(null);
+  const references = useMutation({ mutationFn: libraryApi.importReferences, onSuccess: refresh });
   const acquire = useMutation({
     mutationFn: libraryApi.fetchPaper,
     onSuccess: () => {
@@ -268,7 +270,42 @@ function LibraryContent() {
           <Download size={16} />
           {acquire.isPending ? "获取中…" : "获取并入库"}
         </button>
+        <input
+          ref={referenceInput}
+          type="file"
+          accept=".bib,.ris,.enw,.txt"
+          className="sr-only"
+          aria-label="选择 BibTeX 或 RIS 文件"
+          onChange={(event) => {
+            const file = event.target.files?.[0];
+            if (file) references.mutate(file);
+            event.target.value = "";
+          }}
+        />
+        <button
+          className="hub-button"
+          type="button"
+          disabled={references.isPending}
+          onClick={() => referenceInput.current?.click()}
+        >
+          {references.isPending ? "导入中…" : "从 Zotero/EndNote 导出文件导入"}
+        </button>
       </form>
+      {references.data?.skipped.length ? (
+        <p className="text-sm text-on-surface-variant">
+          {references.data.skipped.length} 条未能获取 PDF：
+          {references.data.skipped
+            .slice(0, 3)
+            .map((entry) => entry.title)
+            .join("、")}
+          {references.data.skipped.length > 3 ? " 等" : ""}
+        </p>
+      ) : null}
+      {references.error ? (
+        <p role="alert" className="text-error text-sm">
+          {references.error.message}
+        </p>
+      ) : null}
       {acquire.error ? (
         <p role="alert" className="text-error text-sm">
           {acquire.error.message}

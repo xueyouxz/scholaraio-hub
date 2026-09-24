@@ -8,6 +8,7 @@ export {
   DEFAULT_PORT,
   resolveBasePort,
   resolveDerivedPorts,
+  resolveProfileName,
 } from "./ports.js";
 
 export type {

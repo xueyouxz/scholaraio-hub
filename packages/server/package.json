@@ -1,26 +1,17 @@
 {
   "name": "@scholaraio-hub/server",
   "version": "0.1.0",
-  "private": false,
+  "private": true,
   "type": "module",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
-  "files": ["dist"],
-  "bin": {
-    "scholaraio-hub": "dist/cli.js"
-  },
   "scripts": {
-    "dev": "NODE_ENV=development tsx watch --conditions scholaraio-source src/index.ts",
-    "start": "NODE_ENV=production node dist/index.js",
     "build": "tsc -p tsconfig.build.json",
     "typecheck": "tsc -p tsconfig.json --pretty false",
     "test": "vitest run --config vitest.config.ts",
     "test:e2e": "vitest run test/e2e",
     "test:e2e:real": "REAL_SDK_TESTS=true vitest run test/e2e",
     "test:e2e:real:fg": "REAL_SDK_TESTS=true FOREGROUND=1 vitest run test/e2e"
-  },
-  "publishConfig": {
-    "access": "public"
   },
   "dependencies": {
     "@anthropic-ai/claude-agent-sdk": "^0.2.90",

@@ -10,7 +10,7 @@
 
 ```sh
 pnpm install
-pnpm run setup --production
+pnpm hub setup --production
 pnpm build
 pnpm start
 ```
@@ -20,7 +20,7 @@ pnpm start
 开发时使用独立环境：
 
 ```sh
-pnpm run setup
+pnpm hub setup
 pnpm dev
 ```
 
@@ -33,29 +33,33 @@ pnpm dev:client      # 只启动前端，代理到已运行的服务端
 PORT=3800 pnpm dev   # 换端口（前端自动使用 3801）
 ```
 
-端口可通过 `PORT` / `CLIENT_PORT` 覆盖，默认值统一来自 `packages/shared/src/ports.ts`。
+### 入口与 profile
 
-浏览器测试使用独立临时数据目录和默认端口 3600，可与默认开发、生产服务同时运行；显式设置 `PORT` 时使用指定端口。
+所有命令都经过 `scripts/hub.mjs`：`pnpm dev`、`pnpm start`，以及 `pnpm hub <setup | doctor | migrate | skills-sync>`。profile 决定数据目录和默认端口：
 
-**setup 和 doctor 请加 `run`**：`pnpm setup`、`pnpm doctor` 是 pnpm 自身的内置命令，不会执行项目的同名脚本。
+| profile | 数据目录 | 默认端口 | 默认用于 |
+|---|---|---|---|
+| `production` | `~/.scholaraio-hub` | 3400 | `pnpm start` |
+| `dev` | `~/.scholaraio-hub-dev` | 3500 | `pnpm dev`、`pnpm hub …` |
+| `test` | 临时目录 | 3600 | 单元与浏览器测试 |
+| 其他名字 | `~/.scholaraio-hub-<名字>` | 3500 | 显式指定 |
+
+任一命令加 `--production` 或 `--profile <名字>` 切换，也可设 `SCHOLARAIO_HUB_PROFILE`。`PORT`、`SCHOLARAIO_HUB_DATA_DIR` 覆盖默认值；端口默认值来自 `packages/shared/src/ports.ts`，数据目录来自 `packages/server/src/runtime/profile.ts`。
 
 ```sh
-pnpm run doctor                 # 开发环境检查
-pnpm run doctor --production    # 生产环境检查
+pnpm hub doctor                 # 开发环境检查
+pnpm hub doctor --production    # 生产环境检查
 ```
 
-诊断检查数据目录、端口、Python、CLI 可执行性及本地登录状态。远端撤销的令牌只能在实际请求时发现；Claude 可用 `claude auth login` 重新登录，Codex 使用 `codex login`。
+诊断检查 profile、数据目录、端口、前端构建（生产）、Python 及其已装能力、CLI 可执行性及本地登录状态。远端撤销的令牌只能在实际请求时发现；Claude 可用 `claude auth login` 重新登录，Codex 使用 `codex login`。
 
 ## 数据与配置
 
-- 正式环境：`~/.scholaraio-hub`
-- 开发环境：`~/.scholaraio-hub-dev`
-- 测试：独立临时目录
-- `SCHOLARAIO_HUB_DATA_DIR` 可指定绝对路径，优先于默认目录。
+数据目录按 profile 区分（见上表），`SCHOLARAIO_HUB_DATA_DIR` 可指定绝对路径，优先于默认目录。
 
-数据目录保存 `data/` 文献与索引、`workspace/`、`sessions/` 应用会话、设置、日志、`backups/` 迁移记录及 `runtime/python/` 运行环境。应用配置见 [.env.example](.env.example)。CLI 的登录凭据和原生记录仍在 CLI 自己的目录，应用不自动扫描外部会话。
+数据目录保存 `data/` 文献与索引、`workspace/`、`sessions/` 应用会话、设置、日志、`backups/` 迁移记录及 `runtime/` 运行环境（`python/` 虚拟环境与记录已装能力的 `manifest.json`）。应用配置见 [.env.example](.env.example)。CLI 的登录凭据和原生记录仍在 CLI 自己的目录，应用不自动扫描外部会话。
 
-Python 依赖由 `packages/scholaraio/uv.lock` 锁定。更新依赖后重新执行对应环境的 setup。业务源码在仓库，运行数据不写回源码目录。
+Python 依赖由 `packages/scholaraio/uv.lock` 锁定。更新依赖后重新执行对应环境的 `pnpm hub setup`；它会保留已安装的可选能力（如语义检索），不会把它们卸掉。业务源码在仓库，运行数据不写回源码目录。
 
 ## 使用
 
@@ -73,11 +77,11 @@ Python 依赖由 `packages/scholaraio/uv.lock` 锁定。更新依赖后重新执
 迁移不会随启动执行。先停止旧 ScholarAIO 和目标 Hub，准备生产运行环境，然后生成清单：
 
 ```sh
-pnpm run setup --production
-pnpm migrate --production plan --source /absolute/path/to/old-scholaraio --target /absolute/path/to/.scholaraio-hub
-pnpm migrate --production apply --manifest /absolute/path/to/manifest.json
+pnpm hub setup --production
+pnpm hub migrate --production plan --source /absolute/path/to/old-scholaraio --target /absolute/path/to/.scholaraio-hub
+pnpm hub migrate --production apply --manifest /absolute/path/to/manifest.json
 # 如需恢复，先停止目标应用，再执行：
-pnpm migrate --production rollback --manifest /absolute/path/to/manifest.json
+pnpm hub migrate --production rollback --manifest /absolute/path/to/manifest.json
 ```
 
 清单会列出目录、文件数、总大小与目标。工具先备份、校验 SHA-256，再移动用户数据、验证 UUID，最后切换配置并重建关键词索引。冲突或源文件变化会停止，绝不覆盖目标文献。备份独立保存在目标的 `backups/`；回滚遇到迁移后修改过的用户文件或配置也会停止，避免丢失新修改。旧代码、虚拟环境、缓存和临时运行文件不会迁移。迁移后请使用 Hub 启动命令，旧项目入口不会自动改写。

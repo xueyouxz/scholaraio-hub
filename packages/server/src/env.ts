@@ -1,6 +1,7 @@
 import { existsSync, readFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { resolveProfileName } from "@scholaraio-hub/shared";
 import { parse as parseDotenv } from "dotenv";
 import { z } from "zod";
 
@@ -78,6 +79,12 @@ const RuntimeEnvSchema = z
 
 let hasLoadedEnvFiles = false;
 
+/**
+ * Fill unset variables from the repo-root env files: `.env`, `.env.local`,
+ * then `.env.<profile>` and `.env.<profile>.local`, later files winning. The
+ * shell always wins over every file. The profile is read after the first two,
+ * so `.env.local` may choose it.
+ */
 function loadEnvFilesIntoProcessEnv(env: NodeJS.ProcessEnv): void {
   if (hasLoadedEnvFiles) {
     return;
@@ -85,28 +92,19 @@ function loadEnvFilesIntoProcessEnv(env: NodeJS.ProcessEnv): void {
 
   hasLoadedEnvFiles = true;
 
-  const nodeEnv = env.NODE_ENV || "development";
-  const profile = env.SCHOLARAIO_HUB_PROFILE;
-  const fileNames = [
-    ".env",
-    ".env.local",
-    `.env.${nodeEnv}`,
-    `.env.${nodeEnv}.local`,
-    profile ? `.env.profile.${profile}` : undefined,
-    profile ? `.env.profile.${profile}.local` : undefined,
-  ].filter((value): value is string => Boolean(value));
-
   const loadedValues: Record<string, string> = {};
-
-  for (const fileName of fileNames) {
+  const load = (fileName: string) => {
     const filePath = path.join(repoRoot, fileName);
-
-    if (!existsSync(filePath)) {
-      continue;
+    if (existsSync(filePath)) {
+      Object.assign(loadedValues, parseDotenv(readFileSync(filePath, "utf-8")));
     }
+  };
 
-    Object.assign(loadedValues, parseDotenv(readFileSync(filePath, "utf-8")));
-  }
+  load(".env");
+  load(".env.local");
+  const profile = resolveProfileName({ ...loadedValues, ...env });
+  load(`.env.${profile}`);
+  load(`.env.${profile}.local`);
 
   for (const [key, value] of Object.entries(loadedValues)) {
     if (env[key] === undefined) {

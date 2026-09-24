@@ -62,6 +62,6 @@ Node 为 Python 保持专用 stdin 管道，并传入 `--watch-stdin`。热重�
 
 ## 迁移与恢复
 
-`python -m scholaraio.hub.migration`（`pnpm migrate`）显式执行 plan / apply / rollback。清单包含每个文件的源、目标、大小及哈希，并保留 UUID 集合。apply 检查目标冲突、磁盘空间与源快照，先独立备份，再使用持久化移动日志记录操作。同文件系统移动避免再复制一份大库。配置原子发布，最后重建关键词索引；任何失败保留清单供 rollback。
+`python -m scholaraio.hub.migration`（`pnpm hub migrate`）显式执行 plan / apply / rollback。清单包含每个文件的源、目标、大小及哈希，并保留 UUID 集合。apply 检查目标冲突、磁盘空间与源快照，先独立备份，再使用持久化移动日志记录操作。同文件系统移动避免再复制一份大库。配置原子发布，最后重建关键词索引；任何失败保留清单供 rollback。
 
 回滚先验证所有备份、现有文件和配置，再恢复。新修改发生冲突时拒绝覆盖。配置与清单以 0600 写入，含本地密钥的原配置不进入版本库。开发环境从不自动使用生产文献。

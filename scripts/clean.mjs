@@ -12,6 +12,7 @@ const targets = [
   "packages/shared/dist",
   "playwright-report",
   "test-results",
+  "packages/client/tsconfig.tsbuildinfo",
   "packages/server/tsconfig.build.tsbuildinfo",
   "packages/server/tsconfig.tsbuildinfo",
   "packages/shared/tsconfig.build.tsbuildinfo",

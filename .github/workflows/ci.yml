@@ -57,11 +57,8 @@ jobs:
             playwright-${{ runner.os }}-
       - run: python -m pip install uv==0.12.17
       - run: pnpm exec playwright install --with-deps chromium
-      # The client's `vite build` resolves @scholaraio-hub/shared via its
-      # published `dist/` entry, so shared must be built first. The browser
+      # `pnpm test:e2e` builds shared and the client itself. The browser
       # fixture runs the Node API and an isolated, managed Python service.
-      - run: pnpm --filter @scholaraio-hub/shared build
-      # `pnpm test:e2e` builds the client itself, so no separate client build.
       - run: pnpm test:e2e
 
   audit:

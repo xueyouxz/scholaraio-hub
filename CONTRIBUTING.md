@@ -4,6 +4,7 @@
 
 - Node.js `>= 20`
 - pnpm `>= 10.27.0`
+- [uv](https://docs.astral.sh/uv/getting-started/installation/), which installs the Python library runtime
 
 Enable pnpm if not already available:
 
@@ -17,8 +18,11 @@ corepack enable
 git clone https://github.com/xueyouxz/scholaraio-hub.git
 cd scholaraio-hub
 pnpm install
-cp .env.example .env.local
+pnpm hub setup
 ```
+
+`pnpm hub setup` installs the Python runtime into the development data directory
+(`~/.scholaraio-hub-dev`). Optional overrides go in `.env.local`; see `.env.example`.
 
 Install Playwright for E2E tests (one-time):
 
@@ -34,7 +38,8 @@ Start the dev server:
 pnpm dev
 ```
 
-The API runs on `http://localhost:3400` and the Vite dev server on `http://localhost:3401`.
+The API runs on `http://127.0.0.1:3500` and the Vite dev server on `http://127.0.0.1:3501`.
+`pnpm hub doctor` shows which data directory and port the current profile resolves to.
 
 ## Code style
 

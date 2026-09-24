@@ -1,4 +1,5 @@
 import type { HttpBindings } from "@hono/node-server";
+import { resolveProfileName } from "@scholaraio-hub/shared";
 import { Hono } from "hono";
 import { getDataDir } from "./data-dir.js";
 import { openInFileManager } from "./files/reveal.js";
@@ -88,7 +89,7 @@ export function createApp(options: AppOptions) {
   app.get("/api/status", (c) =>
     c.json({
       dataDir,
-      profile: process.env.SCHOLARAIO_HUB_PROFILE ?? process.env.NODE_ENV,
+      profile: resolveProfileName(process.env),
       library: library.available,
     }),
   );

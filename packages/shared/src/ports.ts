@@ -20,13 +20,27 @@ function parsePort(value: string | undefined, fallback: number): number {
   return parsed;
 }
 
+/**
+ * Which Hub instance this is. The profile picks the data directory and the
+ * default port; `production` is the one users run, anything else is isolated
+ * from it. Tests always get the test profile, whatever else is set, so a test
+ * run can never touch real data or a running Hub's port.
+ */
+export function resolveProfileName(env: PortEnv = {}): string {
+  if (env.NODE_ENV === "test") return "test";
+  const explicit = env.SCHOLARAIO_HUB_PROFILE?.trim();
+  if (explicit) return explicit;
+  return env.NODE_ENV === "production" ? "production" : "dev";
+}
+
 export function resolveBasePort(env: PortEnv = {}): number {
+  const profile = resolveProfileName(env);
   const fallback =
-    env.NODE_ENV === "test"
-      ? DEFAULT_TEST_PORT
-      : env.NODE_ENV === "development"
-        ? DEFAULT_DEV_PORT
-        : DEFAULT_PORT;
+    profile === "production"
+      ? DEFAULT_PORT
+      : profile === "test"
+        ? DEFAULT_TEST_PORT
+        : DEFAULT_DEV_PORT;
   return parsePort(env.PORT, fallback);
 }
 

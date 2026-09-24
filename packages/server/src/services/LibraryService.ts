@@ -20,7 +20,7 @@ export class LibraryService {
   async start(): Promise<void> {
     const runtime = pythonRuntime(this.dataDir);
     if (!existsSync(runtime.executable))
-      throw new Error("文献运行环境尚未安装，请先运行 pnpm run setup。");
+      throw new Error("文献运行环境尚未安装，请先运行 pnpm hub setup（正式环境加 --production）。");
     // The open stdin pipe owns the Python lifetime, including watch restarts and
     // uncatchable Node exits. Python shuts down when this pipe reaches EOF.
     const child = spawn(

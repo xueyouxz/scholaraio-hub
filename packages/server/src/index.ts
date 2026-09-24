@@ -1,4 +1,6 @@
+import { existsSync } from "node:fs";
 import { createServer as createHttpsServer } from "node:https";
+import path from "node:path";
 import { serve } from "@hono/node-server";
 import { createApp } from "./app.js";
 import {
@@ -27,7 +29,12 @@ interceptConsole();
 // Opt-in raw protocol logs for debugging providers (LOG_SDK_MESSAGES / CODEX_CORRELATION_DEBUG).
 initMessageLogger();
 initCodexCorrelationDebugLogger();
-console.log(`[Config] Data directory: ${config.dataDir}`);
+console.log(`[Config] Profile ${config.profile}, data directory ${config.dataDir}`);
+// Production serves the built client; without it every page would 404.
+if (config.nodeEnv === "production" && !existsSync(path.join(config.clientDistDir, "index.html"))) {
+  console.error(`[Startup] 未找到前端构建产物 ${config.clientDistDir}，请先运行 pnpm build。`);
+  process.exit(1);
+}
 const library = new LibraryService(config.dataDir);
 const settings = new ServerSettingsService({ dataDir: config.dataDir });
 const install = new InstallService({ dataDir: config.dataDir });
@@ -86,8 +93,12 @@ try {
       })
     : serve(options);
   setHubApiBaseUrl(`${tls ? "https" : "http"}://${config.host}:${config.port}`);
-  server.on("error", (error) => {
-    console.error("[Server]", error);
+  server.on("error", (error: NodeJS.ErrnoException) => {
+    if (error.code === "EADDRINUSE")
+      console.error(
+        `[Server] 端口 ${config.port} 已被占用：可能已有一个 Hub 在运行（pnpm hub doctor 可查看），或用 PORT=xxxx 换端口。`,
+      );
+    else console.error("[Server]", error);
     void shutdown().then(() => {
       process.exitCode = 1;
     });

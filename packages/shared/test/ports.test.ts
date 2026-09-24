@@ -1,17 +1,49 @@
 import { describe, expect, it } from "vitest";
-import { DEFAULT_PORT, resolveBasePort, resolveDerivedPorts } from "../src/ports.js";
+import {
+  DEFAULT_DEV_PORT,
+  resolveBasePort,
+  resolveDerivedPorts,
+  resolveProfileName,
+} from "../src/ports.js";
+
+describe("profiles", () => {
+  it("names the instance from NODE_ENV when no profile is given", () => {
+    expect(resolveProfileName({})).toBe("dev");
+    expect(resolveProfileName({ NODE_ENV: "development" })).toBe("dev");
+    expect(resolveProfileName({ NODE_ENV: "production" })).toBe("production");
+  });
+
+  it("lets an explicit profile choose the instance", () => {
+    expect(resolveProfileName({ SCHOLARAIO_HUB_PROFILE: "production" })).toBe("production");
+    expect(resolveProfileName({ NODE_ENV: "production", SCHOLARAIO_HUB_PROFILE: "demo" })).toBe(
+      "demo",
+    );
+  });
+
+  it("keeps tests on the test profile whatever else is set", () => {
+    expect(resolveProfileName({ NODE_ENV: "test", SCHOLARAIO_HUB_PROFILE: "production" })).toBe(
+      "test",
+    );
+  });
+});
 
 describe("ports", () => {
-  it("separates development from production ports", () => {
-    expect(resolveDerivedPorts({ NODE_ENV: "development" }).app).toBe(3500);
-    expect(resolveDerivedPorts({ NODE_ENV: "production" }).app).toBe(3400);
-    expect(resolveDerivedPorts({ NODE_ENV: "test" }).app).toBe(3600);
+  it("gives each profile its own default port", () => {
+    expect(resolveBasePort({ SCHOLARAIO_HUB_PROFILE: "production" })).toBe(3400);
+    expect(resolveBasePort({ SCHOLARAIO_HUB_PROFILE: "dev" })).toBe(3500);
+    expect(resolveBasePort({ NODE_ENV: "test" })).toBe(3600);
+    expect(resolveBasePort({ SCHOLARAIO_HUB_PROFILE: "demo" })).toBe(DEFAULT_DEV_PORT);
   });
-  it("honors an explicit test port without adding an offset", () => {
+
+  it("follows the profile rather than NODE_ENV", () => {
+    expect(resolveBasePort({ NODE_ENV: "production", SCHOLARAIO_HUB_PROFILE: "dev" })).toBe(3500);
+    expect(resolveBasePort({ NODE_ENV: "development", SCHOLARAIO_HUB_PROFILE: "production" })).toBe(
+      3400,
+    );
+  });
+
+  it("honors an explicit port without adding an offset", () => {
     expect(resolveBasePort({ NODE_ENV: "test", PORT: "65535" })).toBe(65535);
-  });
-  it("uses 3400 as the default base port", () => {
-    expect(resolveBasePort({})).toBe(DEFAULT_PORT);
   });
 
   it("derives client and preview ports from PORT", () => {

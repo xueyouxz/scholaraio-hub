@@ -155,5 +155,5 @@ pythonRuntime(dataDir) → {
 
 - [x] 阶段 1：`runtime/python.ts` 定义运行环境位置与激活环境；LibraryService、agent CLI 注入、setup/doctor/migrate、向量安装、浏览器测试服务器改用它。`scripts/dev.mjs` 的副本随阶段 3 删除。
 - [x] 阶段 2：`runtime/install.ts` 的 `planRuntimeSync` 是唯一的运行环境安装入口，清单记在 `<dataDir>/runtime/manifest.json`；旧环境首次同步时探测 `sentence_transformers`。实测开发与生产数据目录均识别为 semantic，`uv sync --dry-run` 为「无变化」，而旧 setup 参数会卸载 49 个包（含 torch、sentence-transformers）。浏览器测试服务器用 `uvSyncCommand`；`scripts/test-python.mjs` 仍自带参数（测试环境，另装 hub-test）。
-- [ ] 阶段 3
+- [x] 阶段 3：`scripts/hub.mjs` 是唯一入口（`pnpm dev` / `pnpm start` / `pnpm hub <命令>`），命令实现在 `packages/server/src/cli/`；`runtime/profile.ts` + `shared` 的 `resolveProfileName` 决定数据目录、端口与默认 NODE_ENV，端口默认值改按 profile（无 profile 且无 NODE_ENV 时由 3400 改为 dev 的 3500，与数据目录一致）。env 文件改为 `.env`、`.env.local`、`.env.<profile>`、`.env.<profile>.local`。删除 yepanywhere CLI、`dev.mjs`、`release-web.mjs`、技能同步脚本；server 包改 private。生产缺前端产物、端口占用时启动直接失败并提示。已实测 doctor 三种 profile、`pnpm dev` 启停、构建产物的两种失败提示与正常启动。
 - [ ] 阶段 4

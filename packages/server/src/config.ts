@@ -1,9 +1,8 @@
 import * as path from "node:path";
 import { fileURLToPath } from "node:url";
-import { resolveDerivedPorts } from "@scholaraio-hub/shared";
 import type { Level as LogLevel } from "pino";
-import { getDataDir } from "./data-dir.js";
 import { loadRuntimeEnv } from "./env.js";
+import { resolveProfile } from "./runtime/profile.js";
 import type { PermissionMode } from "./sdk/types.js";
 
 export { getDataDir } from "./data-dir.js";
@@ -12,6 +11,9 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 export interface Config {
+  /** Which instance this is; see `resolveProfile`. */
+  profile: string;
+  nodeEnv: string;
   dataDir: string;
   clientDistDir: string;
   idleTimeoutMs: number;
@@ -31,20 +33,17 @@ export interface Config {
 
 export function loadConfig(): Config {
   const env = loadRuntimeEnv();
-  const dataDir = getDataDir();
-  const ports = resolveDerivedPorts({
-    NODE_ENV: env.NODE_ENV,
-    PORT: env.PORT?.toString(),
-    CLIENT_PORT: env.CLIENT_PORT?.toString(),
-    CLIENT_PREVIEW_PORT: env.CLIENT_PREVIEW_PORT?.toString(),
-  });
+  const profile = resolveProfile(process.env);
+  const dataDir = profile.dataDir;
 
   return {
+    profile: profile.name,
+    nodeEnv: profile.nodeEnv,
     dataDir,
     clientDistDir: env.CLIENT_DIST_DIR ?? path.resolve(__dirname, "..", "..", "client", "dist"),
     idleTimeoutMs: (env.IDLE_TIMEOUT ?? 5 * 60) * 1000,
     defaultPermissionMode: parsePermissionMode(env.PERMISSION_MODE),
-    port: ports.app,
+    port: profile.port,
     host: env.HOST ?? "127.0.0.1",
     logDir: env.LOG_DIR ?? path.join(dataDir, "logs"),
     logFile: env.LOG_FILE ?? "server.log",

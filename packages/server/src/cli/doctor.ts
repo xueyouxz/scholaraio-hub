@@ -1,26 +1,20 @@
 import { spawnSync } from "node:child_process";
-import { constants, existsSync, mkdirSync } from "node:fs";
+import { constants, existsSync } from "node:fs";
 import { access } from "node:fs/promises";
 import { createServer } from "node:net";
 import path from "node:path";
-import { loadConfig } from "./config.js";
-import { UV_MISSING_HINT, planRuntimeSync, runtimeCapabilities } from "./runtime/install.js";
-import { pythonRuntime, scholarSourceDir } from "./runtime/python.js";
-import { detectCodexCli } from "./sdk/cli-detection.js";
-import { resolveLocalClaudeCodeExecutable } from "./sdk/providers/claude.js";
+import { loadConfig } from "../config.js";
+import { runtimeCapabilities } from "../runtime/install.js";
+import { pythonRuntime } from "../runtime/python.js";
+import { detectCodexCli } from "../sdk/cli-detection.js";
+import { resolveLocalClaudeCodeExecutable } from "../sdk/providers/claude.js";
 
-const config = loadConfig();
-const command = process.argv[2];
-if (command === "setup") {
-  mkdirSync(config.dataDir, { recursive: true });
-  const sync = planRuntimeSync(config.dataDir);
-  console.log(`Python runtime: core${sync.capabilities.map((item) => ` + ${item}`).join("")}`);
-  const result = spawnSync(sync.command, sync.args, { stdio: "inherit", env: sync.env });
-  if (result.error) console.error(UV_MISSING_HINT, result.error.message);
-  if (result.status === 0) sync.commit();
-  process.exitCode = result.status ?? 1;
-} else if (command === "doctor") {
-  console.log(`Data directory: ${config.dataDir}\nHTTP port: ${config.port}`);
+/** Check the data directory, port, Python runtime and the AI CLIs' local logins. */
+export async function doctor(): Promise<number> {
+  const config = loadConfig();
+  console.log(
+    `Profile: ${config.profile}\nData directory: ${config.dataDir}\nHTTP port: ${config.port}`,
+  );
   let writable = false;
   try {
     let parent = config.dataDir;
@@ -71,6 +65,10 @@ if (command === "setup") {
         .map((item) => ` + ${item}`)
         .join("")}`,
     );
+  // Production serves the built client; development gets it from Vite.
+  const clientBuilt = existsSync(path.join(config.clientDistDir, "index.html"));
+  if (config.nodeEnv === "production")
+    console.log(`Client build: ${clientBuilt ? "present" : "missing; run pnpm build"}`);
   const codex = await detectCodexCli();
   console.log(`Codex: ${codex.found ? `${codex.path} (${codex.version})` : codex.error}`);
   const claudePath = resolveLocalClaudeCodeExecutable();
@@ -100,24 +98,11 @@ if (command === "setup") {
     `Codex local login: ${codexAuth?.status === 0 ? "present" : "unavailable; run codex login"}`,
   );
   console.log("Local login does not prove that a remote token has not expired or been revoked.");
-  process.exitCode =
-    writable &&
+  return writable &&
     (portAvailable || ownServer) &&
+    (clientBuilt || config.nodeEnv !== "production") &&
     python.status === 0 &&
     (claudeLoggedIn || codexAuth?.status === 0)
-      ? 0
-      : 1;
-} else if (command === "migrate") {
-  const args = process.argv.slice(3).filter((arg) => arg !== "--production");
-  const runtime = pythonRuntime(config.dataDir);
-  const result = spawnSync(runtime.executable, ["-m", "scholaraio.hub.migration", ...args], {
-    stdio: "inherit",
-    cwd: scholarSourceDir,
-    env: runtime.env(),
-  });
-  if (result.error) console.error(result.error.message);
-  process.exitCode = result.status ?? 1;
-} else {
-  console.error(`Unknown command: ${command}`);
-  process.exitCode = 1;
+    ? 0
+    : 1;
 }

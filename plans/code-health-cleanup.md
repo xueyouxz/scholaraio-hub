@@ -89,8 +89,8 @@ WIP 覆盖 `sdk/providers/{claude,codex}.ts`、`SessionService.ts`、`app.ts`、
 
 ### 阶段 5：CSRF 头与前端请求入口
 
-- [ ] CSRF 头名放到 shared，server 中间件、前端、e2e 引用同一常量。
-- [ ] 前端上传/流式请求经 `core/http.ts` 统一加头，不再自己拼。
+- [x] CSRF 头名放到 shared，server 中间件与前端引用同一常量（e2e 保留字面量：测试独立陈述线上协议）。
+- [x] 前端上传/流式请求经 `core/http.ts` 统一加头，不再自己拼。
 
 ### 阶段 6（延后，需 WIP 提交）：前端模型与命名
 
@@ -149,3 +149,6 @@ WIP 覆盖 `sdk/providers/{claude,codex}.ts`、`SessionService.ts`、`app.ts`、
   `currentProfile()`。`createApp` 的 `dataDir` 必填，不再改全局；代理库绑定只在 `index.ts` 做一次
   （证书生成移回启动的 try 内）。library 代理白名单删掉被 projects 路由覆盖的两条和前端从不请求的
   五条，去掉类型补丁。删除 vitest 配置里指向不存在目录的 `ALLOW_SOCKET_TESTS`。
+- 阶段 5：shared 新增 `csrf.ts` 的 `CSRF_HEADER`，server 中间件据它校验；前端 `core/http.ts` 提供
+  `hubHeaders()`，`requestJson`、XHR 上传、首条消息提交、聊天流式传输都经它加头，不再各自拼字面量。
+  验证：全仓 typecheck、client 182 / server 248 个单测、biome 通过；暂存区快照单独 tsc + 测试通过。

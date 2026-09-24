@@ -23,7 +23,7 @@ import type {
   StoredSession,
   VectorRuntimeStatus,
 } from "@scholaraio-hub/shared";
-import { pathSegment, requestJson } from "./http";
+import { hubHeaders, pathSegment, requestJson } from "./http";
 
 /** Execution options a session can change, in the provider's own terms. */
 export type SessionOptions = Partial<
@@ -178,7 +178,7 @@ export const sessionApi = {
     return new Promise((resolve, reject) => {
       const request = new XMLHttpRequest();
       request.open("POST", attachmentsPath(target));
-      request.setRequestHeader("ScholarAIO-Hub", "true");
+      hubHeaders().forEach((value, name) => request.setRequestHeader(name, value));
       request.responseType = "json";
       request.upload.onprogress = (event) => {
         if (event.lengthComputable) onProgress?.(event.loaded / event.total);
@@ -213,7 +213,7 @@ export const sessionApi = {
     try {
       const response = await fetch(`/api/sessions/${pathSegment(id)}/messages`, {
         method: "POST",
-        headers: { "Content-Type": "application/json", "ScholarAIO-Hub": "true" },
+        headers: hubHeaders({ "Content-Type": "application/json" }),
         body: JSON.stringify({ id: messageId, text, attachmentIds }),
       });
       if (!response.ok)

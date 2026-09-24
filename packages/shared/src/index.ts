@@ -1,3 +1,4 @@
+export { CSRF_HEADER } from "./csrf.js";
 export {
   DEFAULT_PORT,
   resolvePort,

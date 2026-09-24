@@ -1,3 +1,5 @@
+import { CSRF_HEADER } from "@scholaraio-hub/shared";
+
 /** JSON transport shared by every client API module (`core/library.ts`). */
 
 export class HttpError extends Error {
@@ -12,6 +14,16 @@ export class HttpError extends Error {
     this.statusText = response.statusText;
     this.payload = payload;
   }
+}
+
+/**
+ * Headers for any request to the Hub API, with the CSRF header the server
+ * requires on mutations. Every request goes through here, whatever sends it.
+ */
+export function hubHeaders(init?: HeadersInit): Headers {
+  const headers = new Headers(init);
+  headers.set(CSRF_HEADER.name, CSRF_HEADER.value);
+  return headers;
 }
 
 export function pathSegment(value: string): string {
@@ -61,13 +73,10 @@ async function parseResponsePayload(response: Response): Promise<unknown> {
 }
 
 export async function requestJson<T>(path: string, init?: RequestInit): Promise<T> {
-  const headers = new Headers(init?.headers);
+  const headers = hubHeaders(init?.headers);
   if (init?.body && !(init.body instanceof FormData) && !headers.has("Content-Type")) {
     headers.set("Content-Type", "application/json");
   }
-  // CSRF protection: the server's requireCustomHeader middleware rejects mutating
-  // requests without this header. Sent on every request (harmless on GET/SSE-less reads).
-  headers.set("ScholarAIO-Hub", "true");
 
   const response = await fetch(path, {
     ...init,

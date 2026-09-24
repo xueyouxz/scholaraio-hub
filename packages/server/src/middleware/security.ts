@@ -1,8 +1,6 @@
+import { CSRF_HEADER } from "@scholaraio-hub/shared";
 import type { MiddlewareHandler } from "hono";
 import { allowAllHosts, isAllowedHost } from "./allowed-hosts.js";
-
-/** Custom header required on mutating requests (CSRF protection). */
-export const CUSTOM_HEADER = "ScholarAIO-Hub";
 
 /**
  * Host header validation middleware.
@@ -44,7 +42,7 @@ export const hostCheckMiddleware: MiddlewareHandler = async (c, next) => {
 export const requireCustomHeader: MiddlewareHandler = async (c, next) => {
   const method = c.req.method;
   if (method !== "GET" && method !== "HEAD" && method !== "OPTIONS") {
-    if (c.req.header(CUSTOM_HEADER) !== "true") {
+    if (c.req.header(CSRF_HEADER.name) !== CSRF_HEADER.value) {
       return c.json({ error: "Missing required header" }, 403);
     }
   }

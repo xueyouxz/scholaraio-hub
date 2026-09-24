@@ -3,6 +3,7 @@ import type { SessionAttachment, SessionMessage, StoredSession } from "@scholara
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { DefaultChatTransport } from "ai";
 import { useCallback, useEffect, useMemo, useRef } from "react";
+import { hubHeaders } from "../../../core/http";
 import { sessionApi } from "../../../core/library";
 
 const ACTIVE_STATES: ReadonlySet<StoredSession["state"]> = new Set(["running", "waiting-input"]);
@@ -45,7 +46,7 @@ export function useSessionChat(initial: StoredSession) {
     () =>
       new DefaultChatTransport<SessionMessage>({
         api: `/api/sessions/${id}/messages`,
-        headers: { "ScholarAIO-Hub": "true" },
+        headers: Object.fromEntries(hubHeaders()),
         // The server keeps history; send only the newest user turn (stable id for idempotency).
         prepareSendMessagesRequest: ({ messages }) => {
           const message = messages.at(-1);

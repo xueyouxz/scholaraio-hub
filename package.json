@@ -10,8 +10,6 @@
   },
   "scripts": {
     "dev": "node scripts/hub.mjs dev",
-    "dev:server": "node scripts/hub.mjs dev --server",
-    "dev:client": "node scripts/hub.mjs dev --client",
     "start": "node scripts/hub.mjs start",
     "hub": "node scripts/hub.mjs",
     "build": "pnpm --filter @scholaraio-hub/shared build && pnpm --filter @scholaraio-hub/server build && pnpm --filter @scholaraio-hub/client build",

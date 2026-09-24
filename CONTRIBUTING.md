@@ -38,7 +38,8 @@ Start the dev server:
 pnpm dev
 ```
 
-The API runs on `http://127.0.0.1:3500` and the Vite dev server on `http://127.0.0.1:3501`.
+Open `http://127.0.0.1:3500`: the server serves the API and, through Vite in middleware
+mode, the client with hot module replacement, on the same port as production uses one.
 `pnpm hub doctor` shows which data directory and port the current profile resolves to.
 
 ## Code style

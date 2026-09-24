@@ -1,6 +1,6 @@
 // The one entry point behind the root scripts:
 //
-//   pnpm dev [--server | --client]          development, profile dev
+//   pnpm dev                                development, profile dev
 //   pnpm start                              the built server, profile production
 //   pnpm hub <command> [args]               setup | doctor | migrate | skills-sync
 //

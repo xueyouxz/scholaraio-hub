@@ -6,8 +6,7 @@ export {
 } from "./ideMetadata.js";
 export {
   DEFAULT_PORT,
-  resolveBasePort,
-  resolveDerivedPorts,
+  resolvePort,
   resolveProfileName,
 } from "./ports.js";
 

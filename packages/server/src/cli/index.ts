@@ -1,7 +1,7 @@
 /**
  * The Hub's command line. `scripts/hub.mjs` runs it and chooses the profile:
  *
- *   pnpm dev [--server | --client]
+ *   pnpm dev
  *   pnpm hub setup | doctor | migrate <plan|apply|rollback> ... | skills-sync
  *     [--production | --profile <name>]
  *

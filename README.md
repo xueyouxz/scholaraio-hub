@@ -24,13 +24,11 @@ pnpm hub setup
 pnpm dev
 ```
 
-`pnpm dev` 同时启动 Node 服务（3500，tsx 热重载）和 Vite 前端（3501，`/api` 代理到服务端）：先检查端口占用和文献运行环境，服务端 `/health` 就绪后再启动前端；日志按 `[server]` / `[client]` 前缀输出，任一进程退出或 Ctrl+C 会同时停止两者。前端开发时直接读取 `packages/shared` 源码，修改共享类型无需重新构建。
+`pnpm dev` 启动 Node 服务（3500，tsx 热重载），并在同一端口上以中间件模式运行 Vite：页面、API 与前端热更新同源，与生产一致，浏览器打开 http://127.0.0.1:3500 。启动前检查端口占用和文献运行环境。前端开发时直接读取 `packages/shared` 源码，修改共享类型无需重新构建；修改服务端代码时服务重启，页面自动重连。
 
 ```sh
-pnpm dev             # 前后端联调，浏览器打开 http://127.0.0.1:3501
-pnpm dev:server      # 只启动服务端
-pnpm dev:client      # 只启动前端，代理到已运行的服务端
-PORT=3800 pnpm dev   # 换端口（前端自动使用 3801）
+pnpm dev             # 开发，浏览器打开 http://127.0.0.1:3500
+PORT=3800 pnpm dev   # 换端口
 ```
 
 ### 入口与 profile

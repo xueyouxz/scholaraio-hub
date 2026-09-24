@@ -4,9 +4,9 @@ import { access } from "node:fs/promises";
 import { createServer } from "node:net";
 import path from "node:path";
 import { loadConfig } from "./config.js";
+import { pythonRuntime, scholarSourceDir } from "./runtime/python.js";
 import { detectCodexCli } from "./sdk/cli-detection.js";
 import { resolveLocalClaudeCodeExecutable } from "./sdk/providers/claude.js";
-import { libraryPythonPath, scholarSourceDir } from "./services/LibraryService.js";
 
 const config = loadConfig();
 const command = process.argv[2];
@@ -31,8 +31,8 @@ if (command === "setup") {
       stdio: "inherit",
       env: {
         ...process.env,
-        UV_PROJECT_ENVIRONMENT: path.join(config.dataDir, "runtime/python"),
-        UV_CACHE_DIR: path.join(config.dataDir, "data/cache/uv"),
+        UV_PROJECT_ENVIRONMENT: pythonRuntime(config.dataDir).root,
+        UV_CACHE_DIR: pythonRuntime(config.dataDir).uvCacheDir,
       },
     },
   );
@@ -81,10 +81,11 @@ if (command === "setup") {
   console.log(
     `HTTP port ready: ${portAvailable || ownServer}${ownServer ? " (application is running)" : ""}`,
   );
+  const runtime = pythonRuntime(config.dataDir);
   const python = spawnSync(
-    libraryPythonPath(config.dataDir),
+    runtime.executable,
     ["-c", "import scholaraio, fastapi, pymupdf; print('Python library: ready')"],
-    { encoding: "utf8", timeout: 10000 },
+    { encoding: "utf8", timeout: 10000, env: runtime.env() },
   );
   console.log(python.stdout || python.error?.message || python.stderr);
   const codex = await detectCodexCli();
@@ -125,11 +126,12 @@ if (command === "setup") {
       : 1;
 } else if (command === "migrate") {
   const args = process.argv.slice(3).filter((arg) => arg !== "--production");
-  const result = spawnSync(
-    libraryPythonPath(config.dataDir),
-    ["-m", "scholaraio.hub.migration", ...args],
-    { stdio: "inherit", cwd: scholarSourceDir },
-  );
+  const runtime = pythonRuntime(config.dataDir);
+  const result = spawnSync(runtime.executable, ["-m", "scholaraio.hub.migration", ...args], {
+    stdio: "inherit",
+    cwd: scholarSourceDir,
+    env: runtime.env(),
+  });
   if (result.error) console.error(result.error.message);
   process.exitCode = result.status ?? 1;
 } else {

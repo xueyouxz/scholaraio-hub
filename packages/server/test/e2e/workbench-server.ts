@@ -4,8 +4,9 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { serve } from "@hono/node-server";
 import { createApp } from "../../src/app.js";
+import { pythonRuntime, scholarSourceDir } from "../../src/runtime/python.js";
 import { claudeProvider, codexProvider } from "../../src/sdk/providers/index.js";
-import { LibraryService, scholarSourceDir } from "../../src/services/LibraryService.js";
+import { LibraryService } from "../../src/services/LibraryService.js";
 import { ServerSettingsService } from "../../src/services/ServerSettingsService.js";
 import { WorkbenchProvider } from "../helpers/WorkbenchProvider.js";
 
@@ -45,7 +46,7 @@ try {
       stdio: "inherit",
       env: {
         ...process.env,
-        UV_PROJECT_ENVIRONMENT: path.join(dataDir, "runtime/python"),
+        UV_PROJECT_ENVIRONMENT: pythonRuntime(dataDir).root,
         UV_CACHE_DIR: process.env.UV_CACHE_DIR ?? path.join(tmpdir(), "hub-test-uv-cache"),
       },
     },

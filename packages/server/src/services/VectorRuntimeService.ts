@@ -1,7 +1,7 @@
 import { type ChildProcess, spawn } from "node:child_process";
-import path from "node:path";
 import type { VectorRuntimeStatus } from "@scholaraio-hub/shared";
-import { type LibraryService, scholarSourceDir } from "./LibraryService.js";
+import { pythonRuntime, scholarSourceDir } from "../runtime/python.js";
+import type { LibraryService } from "./LibraryService.js";
 
 /** Output lines kept for the browser: enough to see progress, not the whole build. */
 const LOG_LINES = 40;
@@ -55,8 +55,8 @@ export class VectorRuntimeService {
       {
         env: {
           ...process.env,
-          UV_PROJECT_ENVIRONMENT: path.join(this.dataDir, "runtime/python"),
-          UV_CACHE_DIR: path.join(this.dataDir, "data/cache/uv"),
+          UV_PROJECT_ENVIRONMENT: pythonRuntime(this.dataDir).root,
+          UV_CACHE_DIR: pythonRuntime(this.dataDir).uvCacheDir,
         },
         stdio: ["ignore", "pipe", "pipe"],
       },

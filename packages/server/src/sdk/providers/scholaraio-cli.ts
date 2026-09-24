@@ -1,6 +1,7 @@
 import { existsSync } from "node:fs";
 import path from "node:path";
 import { getDataDir } from "../../data-dir.js";
+import { pythonRuntime } from "../../runtime/python.js";
 
 let apiBaseUrl: string | undefined;
 let libraryDataDir: string | undefined;
@@ -42,21 +43,14 @@ export function withScholaraioCli(
   }
   const result: Record<string, string | undefined> = { ...env, SCHOLARAIO_CONFIG: config };
   if (apiBaseUrl) result.SCHOLARAIO_HUB_API = apiBaseUrl;
-  const binDir = path.join(
-    dataDir,
-    "runtime",
-    "python",
-    process.platform === "win32" ? "Scripts" : "bin",
-  );
-  const executable = path.join(
-    binDir,
-    process.platform === "win32" ? "scholaraio.exe" : "scholaraio",
-  );
+  const runtime = pythonRuntime(dataDir);
+  const executable = runtime.command("scholaraio");
   if (!existsSync(executable)) {
     warnOnce(`未找到 ${executable}，agent 将使用 PATH 上已有的 scholaraio。`);
     return result;
   }
-  result.PATH = [binDir, env.PATH].filter(Boolean).join(path.delimiter);
+  // Only the PATH entry: an agent's own Python work must not run inside the Hub's venv.
+  result.PATH = [runtime.binDir, env.PATH].filter(Boolean).join(path.delimiter);
   return result;
 }
 

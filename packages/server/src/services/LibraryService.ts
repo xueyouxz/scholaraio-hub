@@ -1,20 +1,8 @@
 import { type ChildProcess, spawn } from "node:child_process";
 import { randomBytes } from "node:crypto";
 import { existsSync } from "node:fs";
-import path from "node:path";
 import { createInterface } from "node:readline";
-import { fileURLToPath } from "node:url";
-
-export const scholarSourceDir = fileURLToPath(new URL("../../../scholaraio/", import.meta.url));
-
-export function libraryPythonPath(dataDir: string): string {
-  return path.join(
-    dataDir,
-    "runtime",
-    "python",
-    process.platform === "win32" ? "Scripts/python.exe" : "bin/python",
-  );
-}
+import { pythonRuntime, scholarSourceDir } from "../runtime/python.js";
 
 /** Owns the Python child. All callers share this instance and its shutdown path. */
 export class LibraryService {
@@ -30,16 +18,21 @@ export class LibraryService {
   }
 
   async start(): Promise<void> {
-    const python = libraryPythonPath(this.dataDir);
-    if (!existsSync(python)) throw new Error("文献运行环境尚未安装，请先运行 pnpm run setup。");
+    const runtime = pythonRuntime(this.dataDir);
+    if (!existsSync(runtime.executable))
+      throw new Error("文献运行环境尚未安装，请先运行 pnpm run setup。");
     // The open stdin pipe owns the Python lifetime, including watch restarts and
     // uncatchable Node exits. Python shuts down when this pipe reaches EOF.
     const child = spawn(
-      python,
+      runtime.executable,
       ["-m", "scholaraio.interfaces.api", "--data-dir", this.dataDir, "--watch-stdin"],
       {
         cwd: scholarSourceDir,
-        env: { ...process.env, SCHOLARAIO_HUB_INTERNAL_TOKEN: this.token, PYTHONUNBUFFERED: "1" },
+        env: {
+          ...runtime.env(),
+          SCHOLARAIO_HUB_INTERNAL_TOKEN: this.token,
+          PYTHONUNBUFFERED: "1",
+        },
         stdio: ["pipe", "pipe", "pipe"],
       },
     );

@@ -1,11 +1,11 @@
 import { spawnSync } from "node:child_process";
 import { mkdirSync } from "node:fs";
-import { getDataDir } from "../data-dir.js";
 import { UV_MISSING_HINT, planRuntimeSync } from "../runtime/install.js";
+import { currentProfile } from "../runtime/profile.js";
 
 /** Install or update the data directory's Python runtime, keeping its capabilities. */
 export async function setup(): Promise<number> {
-  const dataDir = getDataDir();
+  const { dataDir } = currentProfile();
   mkdirSync(dataDir, { recursive: true });
   const sync = planRuntimeSync(dataDir);
   console.log(`Data directory: ${dataDir}`);

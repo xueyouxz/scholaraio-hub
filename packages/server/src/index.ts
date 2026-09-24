@@ -13,7 +13,7 @@ import { DevFrontend } from "./frontend/dev.js";
 import { ensureSelfSignedCertificate } from "./https/self-signed.js";
 import { initLogger, interceptConsole } from "./logging/index.js";
 import { closeMessageLogger, initMessageLogger } from "./sdk/messageLogger.js";
-import { setHubApiBaseUrl } from "./sdk/providers/scholaraio-cli.js";
+import { bindAgentLibrary } from "./sdk/providers/scholaraio-cli.js";
 import { LibraryService } from "./services/LibraryService.js";
 import { ModelInfoService, ServerSettingsService } from "./services/index.js";
 import { ensureSkillsDirectory } from "./skills/skillsDirectory.js";
@@ -29,8 +29,8 @@ initLogger({
 });
 interceptConsole();
 // Opt-in raw protocol logs for debugging providers (LOG_SDK_MESSAGES / CODEX_CORRELATION_DEBUG).
-initMessageLogger();
-initCodexCorrelationDebugLogger();
+initMessageLogger({ enabled: config.logSdkMessages, logDir: config.logDir });
+initCodexCorrelationDebugLogger({ enabled: config.codexCorrelationDebug, logDir: config.logDir });
 console.log(`[Config] Profile ${config.profile}, data directory ${config.dataDir}`);
 // Production serves the built client; without it every page would 404.
 if (config.nodeEnv === "production" && !existsSync(path.join(config.clientDistDir, "index.html"))) {
@@ -47,7 +47,7 @@ let closing = false;
 async function shutdown() {
   if (closing) return;
   closing = true;
-  setHubApiBaseUrl(undefined);
+  bindAgentLibrary(undefined);
   server?.close();
   await devFrontend?.close();
   await application?.close();
@@ -66,6 +66,12 @@ for (const signal of ["SIGINT", "SIGTERM"])
     );
   });
 try {
+  const tls = config.httpsSelfSigned
+    ? ensureSelfSignedCertificate({ dataDir: config.dataDir, host: config.host })
+    : undefined;
+  const origin = `${tls ? "https" : "http"}://${config.host}:${config.port}`;
+  // Every agent this server starts works on its library, through its API.
+  bindAgentLibrary({ dataDir: config.dataDir, apiBaseUrl: origin });
   await Promise.all([
     library.start(),
     settings.initialize(),
@@ -83,9 +89,6 @@ try {
     scholaraioSkillsDir: config.scholaraioSkillsDir,
   });
   await application.ready;
-  const tls = config.httpsSelfSigned
-    ? ensureSelfSignedCertificate({ dataDir: config.dataDir, host: config.host })
-    : undefined;
   const createServer = (tls ? createHttpsServer : createHttpServer) as typeof createHttpServer;
   server = serve({
     fetch: application.app.fetch,
@@ -97,7 +100,6 @@ try {
     // https.createServer reads key/cert; typed as http so both factories fit one call.
     serverOptions: (tls ? { key: tls.key, cert: tls.cert } : {}) as ServerOptions,
   });
-  setHubApiBaseUrl(`${tls ? "https" : "http"}://${config.host}:${config.port}`);
   server.on("error", (error: NodeJS.ErrnoException) => {
     if (error.code === "EADDRINUSE")
       console.error(
@@ -109,7 +111,7 @@ try {
     });
   });
   if (devFrontend) await devFrontend.attach(server as Server);
-  console.log(`ScholarAIO Hub: ${tls ? "https" : "http"}://${config.host}:${config.port}`);
+  console.log(`ScholarAIO Hub: ${origin}`);
 } catch (error) {
   console.error("[Startup]", error);
   await shutdown();

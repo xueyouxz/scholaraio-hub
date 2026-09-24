@@ -6,9 +6,9 @@ describe("application data configuration", () => {
   it("isolates tests from profile and home data", async () => {
     vi.stubEnv("NODE_ENV", "test");
     vi.stubEnv("SCHOLARAIO_HUB_PROFILE", "production");
-    const { getDataDir } = await import("../src/config.js");
-    expect(getDataDir()).toContain("scholaraio-hub-test-");
-    expect(getDataDir()).not.toContain(os.homedir());
+    const { currentProfile } = await import("../src/runtime/profile.js");
+    expect(currentProfile().dataDir).toContain("scholaraio-hub-test-");
+    expect(currentProfile().dataDir).not.toContain(os.homedir());
   });
   afterEach(() => {
     vi.unstubAllEnvs();
@@ -24,25 +24,25 @@ describe("application data configuration", () => {
   it("uses ~/.scholaraio-hub-dev outside production by default", async () => {
     vi.stubEnv("NODE_ENV", "development");
 
-    const { getDataDir } = await import("../src/config.js");
+    const { currentProfile } = await import("../src/runtime/profile.js");
 
-    expect(getDataDir()).toBe(path.join(os.homedir(), ".scholaraio-hub-dev"));
+    expect(currentProfile().dataDir).toBe(path.join(os.homedir(), ".scholaraio-hub-dev"));
   });
 
   it("uses ~/.scholaraio-hub in production", async () => {
     vi.stubEnv("NODE_ENV", "production");
 
-    const { getDataDir } = await import("../src/config.js");
+    const { currentProfile } = await import("../src/runtime/profile.js");
 
-    expect(getDataDir()).toBe(path.join(os.homedir(), ".scholaraio-hub"));
+    expect(currentProfile().dataDir).toBe(path.join(os.homedir(), ".scholaraio-hub"));
   });
 
   it("uses profile-specific data directories when SCHOLARAIO_HUB_PROFILE is set", async () => {
     vi.stubEnv("NODE_ENV", "development");
     vi.stubEnv("SCHOLARAIO_HUB_PROFILE", "staging");
 
-    const { getDataDir } = await import("../src/config.js");
+    const { currentProfile } = await import("../src/runtime/profile.js");
 
-    expect(getDataDir()).toBe(path.join(os.homedir(), ".scholaraio-hub-staging"));
+    expect(currentProfile().dataDir).toBe(path.join(os.homedir(), ".scholaraio-hub-staging"));
   });
 });

@@ -3,8 +3,7 @@ import { existsSync } from "node:fs";
 import { createRequire } from "node:module";
 import { createServer } from "node:net";
 import { fileURLToPath } from "node:url";
-import { loadRuntimeEnv } from "../env.js";
-import { resolveProfile } from "../runtime/profile.js";
+import { currentProfile } from "../runtime/profile.js";
 import { pythonRuntime } from "../runtime/python.js";
 
 const serverDir = fileURLToPath(new URL("../../", import.meta.url));
@@ -26,8 +25,7 @@ function portIsFree(port: number, host: string): Promise<boolean> {
 export async function dev(): Promise<number> {
   process.env.NODE_ENV = "development";
   // Env files fill process.env once, here; the server inherits the result.
-  loadRuntimeEnv();
-  const profile = resolveProfile(process.env);
+  const profile = currentProfile();
   const host = process.env.HOST || "127.0.0.1";
 
   if (!(await portIsFree(profile.port, host))) {

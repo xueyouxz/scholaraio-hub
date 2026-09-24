@@ -1,10 +1,10 @@
 import { spawnSync } from "node:child_process";
-import { getDataDir } from "../data-dir.js";
+import { currentProfile } from "../runtime/profile.js";
 import { pythonRuntime, scholarSourceDir } from "../runtime/python.js";
 
 /** Move an old ScholarAIO library into this data directory: plan, apply or rollback. */
 export async function migrate(args: string[]): Promise<number> {
-  const runtime = pythonRuntime(getDataDir());
+  const runtime = pythonRuntime(currentProfile().dataDir);
   const result = spawnSync(runtime.executable, ["-m", "scholaraio.hub.migration", ...args], {
     stdio: "inherit",
     cwd: scholarSourceDir,

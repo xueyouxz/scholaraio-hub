@@ -53,8 +53,9 @@ metadata, payloads, or UI copy. See
 
 ## Provider Environment Isolation
 
-Env vars internal to the server must not leak into provider child processes. When adding a
-new internal env var, also add it to the filter in `src/sdk/providers/env-filter.ts`.
+Env vars internal to the server must not leak into provider child processes. Declare every
+variable the server reads in `RuntimeEnvSchema` (`src/env.ts`); the child-process filter in
+`src/sdk/providers/env-filter.ts` excludes exactly those keys.
 
 ## Codex Protocol / Version Audit Gate
 

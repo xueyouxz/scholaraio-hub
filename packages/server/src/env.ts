@@ -71,8 +71,15 @@ const RuntimeEnvSchema = z
     LOG_PRETTY: optionalBoolean,
     ENABLED_PROVIDERS: optionalStringArray,
     HTTPS_SELF_SIGNED: optionalBoolean,
+    ALLOWED_HOSTS: z.string().optional(),
+    LOG_SDK_MESSAGES: optionalBoolean,
+    CODEX_CORRELATION_DEBUG: optionalBoolean,
+    SCHOLARAIO_HUB_UV: z.string().optional(),
   })
   .passthrough();
+
+/** Every variable the Hub itself reads; none of them is meant for an agent's process. */
+export const HUB_ENV_KEYS: readonly string[] = Object.keys(RuntimeEnvSchema.shape);
 
 let hasLoadedEnvFiles = false;
 

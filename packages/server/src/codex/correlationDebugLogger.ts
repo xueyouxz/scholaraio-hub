@@ -1,6 +1,5 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
-import { loadConfig } from "../config.js";
 
 type CodexDebugChannel = "sdk" | "jsonl";
 type CodexDebugAuthority = "transient" | "durable";
@@ -31,14 +30,16 @@ export interface CodexCorrelationDebugRecord {
 let writeStream: fs.WriteStream | null = null;
 let enabled = false;
 
-export function initCodexCorrelationDebugLogger(): void {
-  enabled = process.env.CODEX_CORRELATION_DEBUG === "true";
+export function initCodexCorrelationDebugLogger(options: {
+  enabled: boolean;
+  logDir: string;
+}): void {
+  enabled = options.enabled;
   if (!enabled) return;
 
-  const config = loadConfig();
-  const logPath = path.join(config.logDir, "codex-correlation-debug.jsonl");
+  const logPath = path.join(options.logDir, "codex-correlation-debug.jsonl");
 
-  fs.mkdirSync(config.logDir, { recursive: true });
+  fs.mkdirSync(options.logDir, { recursive: true });
   writeStream = fs.createWriteStream(logPath, { flags: "a" });
 
   logRaw({

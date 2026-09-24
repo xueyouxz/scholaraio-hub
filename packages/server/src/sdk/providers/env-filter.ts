@@ -1,48 +1,33 @@
 /**
- * Filter environment variables for child processes.
+ * Filter environment variables for agent child processes.
  *
- * When spawning Claude as a subprocess, we don't want to leak:
- * - npm_* variables (from pnpm/npm lifecycle)
- * - scholaraio-hub internal variables
- * - Other irrelevant development/build-time variables
- *
- * We keep essential system variables that Claude might need.
+ * An agent runs in the user's project, so it gets the user's environment
+ * minus what belongs to the Hub (every variable in the env schema, including
+ * NODE_ENV, which would break project tooling such as Vitest), to the package
+ * manager that launched it, or to the Python runtime the Hub activates.
  */
+import { HUB_ENV_KEYS } from "../../env.js";
 
 /** Prefixes to exclude from child process environment */
 const EXCLUDED_PREFIXES = [
   "npm_", // npm/pnpm lifecycle variables
-  "SCHOLARAIO_HUB_", // Our internal variables
+  "SCHOLARAIO_HUB_", // The Hub's namespace, including variables it sets for itself
   "VITE_", // Vite dev server variables
   "VITEST", // Vitest test runner
-  "LOG_", // Our logging configuration
 ];
 
 /** Exact variable names to exclude */
 const EXCLUDED_VARS = new Set([
-  // npm/pnpm specific
-  "npm_execpath",
-  "npm_node_execpath",
+  ...HUB_ENV_KEYS,
   // Development tools
   "INIT_CWD",
   "COLOR",
   "FORCE_COLOR",
-  // Auth/maintenance ports (internal to scholaraio-hub)
-  "MAINTENANCE_PORT",
-  "AUTH_DISABLED",
-  // Proxy debug (internal)
-  "PROXY_DEBUG",
   // Prevent nested session detection when server runs inside Claude Code
   "CLAUDECODE",
-  // NODE_ENV is set to "production" by scholaraio-hub's CLI but should not
-  // leak into Claude Code child processes where it breaks project tooling
-  // (e.g. React 19 + Vitest). See GitHub issue #41.
-  "NODE_ENV",
   // Let the CLI settings or the explicit SDK model option select the model.
   "ANTHROPIC_MODEL",
-  "PORT",
-  "HOST",
-  "SCHOLARAIO_SKILLS_DIR",
+  // The Hub's own Python runtime, not the project's
   "UV_PROJECT_ENVIRONMENT",
   "UV_CACHE_DIR",
 ]);

@@ -1,7 +1,6 @@
 import type { HttpBindings } from "@hono/node-server";
 import { resolveProfileName } from "@scholaraio-hub/shared";
 import { Hono } from "hono";
-import { getDataDir } from "./data-dir.js";
 import { openInFileManager } from "./files/reveal.js";
 import { createStaticRoutes } from "./frontend/static.js";
 import { hostCheckMiddleware, requireCustomHeader } from "./middleware/security.js";
@@ -14,7 +13,6 @@ import { createProvidersRoutes } from "./routes/providers.js";
 import { createSettingsRoutes } from "./routes/settings.js";
 import { createSkillsRoutes } from "./routes/skills.js";
 import { claudeProvider } from "./sdk/providers/claude.js";
-import { setLibraryDataDir } from "./sdk/providers/scholaraio-cli.js";
 import type { AgentProvider } from "./sdk/providers/types.js";
 import type { PermissionMode } from "./sdk/types.js";
 import { LibraryService } from "./services/LibraryService.js";
@@ -28,9 +26,10 @@ import { skillsDirectory } from "./skills/skillsDirectory.js";
 import { Supervisor } from "./supervisor/Supervisor.js";
 
 export interface AppOptions {
-  dataDir?: string;
+  dataDir: string;
   /** Agent provider used when a session does not name one (defaults to Claude) */
   provider?: AgentProvider;
+  /** The caller's library service, which the caller also closes; otherwise the app runs its own. */
   libraryService?: LibraryService;
   idleTimeoutMs?: number;
   defaultPermissionMode?: PermissionMode;
@@ -43,9 +42,7 @@ export interface AppOptions {
 
 export function createApp(options: AppOptions) {
   const app = new Hono<{ Bindings: HttpBindings }>();
-  const dataDir = options.dataDir ?? getDataDir();
-  // The agent's CLI must read the same library this application serves.
-  setLibraryDataDir(dataDir);
+  const { dataDir } = options;
   const store = new SessionStore(dataDir);
   const library = options.libraryService ?? new LibraryService(dataDir);
   const usage = new ProviderUsageLimitService();
@@ -113,7 +110,7 @@ export function createApp(options: AppOptions) {
     await vectorRuntime.close();
     await supervisor.close();
     await sessions.close();
-    await library.close();
+    if (!options.libraryService) await library.close();
   };
   return { app, supervisor, sessions, ready, close };
 }

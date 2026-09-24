@@ -1,9 +1,1 @@
-export {
-  initLogger,
-  getLogger,
-  interceptConsole,
-  restoreConsole,
-  getLogFilePath,
-  getLogDir,
-  type LogConfig,
-} from "./logger.js";
+export { initLogger, getLogger, interceptConsole, type LogConfig } from "./logger.js";

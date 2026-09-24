@@ -2,6 +2,7 @@ import { mkdtempSync } from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 import { resolvePort, resolveProfileName } from "@scholaraio-hub/shared";
+import { loadRuntimeEnv } from "../env.js";
 
 type Env = Record<string, string | undefined>;
 
@@ -42,4 +43,10 @@ export function resolveProfile(env: Env): Profile {
     dataDir: env.SCHOLARAIO_HUB_DATA_DIR || defaultDataDir(name),
     port: resolvePort(env),
   };
+}
+
+/** The profile of this process, once the env files have filled `process.env`. */
+export function currentProfile(): Profile {
+  loadRuntimeEnv();
+  return resolveProfile(process.env);
 }

@@ -77,13 +77,15 @@ WIP 覆盖 `sdk/providers/{claude,codex}.ts`、`SessionService.ts`、`app.ts`、
 
 ### 阶段 4：配置与组装根
 
-- [ ] env 过滤名单由 `RuntimeEnvSchema` 的键生成；删掉 `MAINTENANCE_PORT`/`AUTH_DISABLED`/
+- [x] env 过滤名单由 `RuntimeEnvSchema` 的键生成；删掉 `MAINTENANCE_PORT`/`AUTH_DISABLED`/
       `PROXY_DEBUG`，补上漏掉的 Hub 内部变量。
-- [ ] 配置只解析一次：去掉 `config.ts` 中与 schema 重复的 `parse*`；logger 默认配置不再自读 env。
-- [ ] 去掉 `?? getDataDir()` 隐式默认；`data-dir.ts` 并入 `runtime/profile.ts`。
-- [ ] `setLibraryDataDir`/`setHubApiBaseUrl` 模块全局改为显式注入。
-- [ ] `routes/library.ts` 白名单：删被 `routes/projects.ts` 覆盖的两条，去掉类型补丁。
-- [ ] `app.ts`：`/api/status` 移到 `routes/status.ts`；谁创建谁关闭（`LibraryService` 不再被关两次）。
+- [x] 配置只解析一次：去掉 `config.ts` 中与 schema 重复的 `parse*`；logger 默认配置不再自读 env。
+- [x] 去掉 `?? getDataDir()` 隐式默认；`data-dir.ts` 并入 `runtime/profile.ts`。
+- [x] `setLibraryDataDir`/`setHubApiBaseUrl` 合并为入口一次绑定的 `bindAgentLibrary`；
+      彻底去掉模块全局（provider 按 app 构建）移到阶段 7。
+- [x] `routes/library.ts` 白名单：删被 `routes/projects.ts` 覆盖的两条，去掉类型补丁。
+- [x] `app.ts`：谁创建谁关闭（`LibraryService` 不再被关两次）。`/api/status` 拆到
+      `routes/status.ts` 移到阶段 7（该处理函数正是 WIP 在改的代码）。
 
 ### 阶段 5：CSRF 头与前端请求入口
 
@@ -98,6 +100,9 @@ WIP 覆盖 `sdk/providers/{claude,codex}.ts`、`SessionService.ts`、`app.ts`、
 - [ ] 相对时间/字节格式化合并为 `shared/format.ts`，界面文案统一中文。
 
 ### 阶段 7（延后，需 WIP 提交）：server 目录与文件命名
+
+- [ ] provider 按 app 构建（不再是模块单例），代理环境由组装根注入，删掉 `bindAgentLibrary`。
+- [ ] `/api/status` 两个处理函数移到 `routes/status.ts`。
 
 - [ ] `sdk/` + `codex/` → `providers/{claude,codex}/`；`routes/app-sessions.ts` → `routes/sessions.ts`。
 - [ ] shared `types.ts`/`app-types.ts` 按领域拆分。
@@ -135,3 +140,12 @@ WIP 覆盖 `sdk/providers/{claude,codex}.ts`、`SessionService.ts`、`app.ts`、
   `FileContentResponse`/`PatchHunk`/`EditAugment`，`upload.ts` 只留 `UploadedFile`，`library.ts`
   删 `SharedReference`/`LibraryAudit`。shared 包改为 private（去掉 npm 发布配置）。规则、glossary、
   生成代码 hook 的提示同步。验证：全仓 typecheck、shared 19 个单测、biome 通过。
+- 阶段 4：env schema 收齐 Hub 读取的全部变量（补 `ALLOWED_HOSTS`、`LOG_SDK_MESSAGES`、
+  `CODEX_CORRELATION_DEBUG`、`SCHOLARAIO_HUB_UV`），子进程过滤名单由 schema 的键生成：去掉
+  `MAINTENANCE_PORT`/`AUTH_DISABLED`/`PROXY_DEBUG`，不再按 `LOG_` 前缀误伤用户变量，原先漏掉的
+  `IDLE_TIMEOUT`、`PERMISSION_MODE`、`ENABLED_PROVIDERS`、`HTTPS_SELF_SIGNED`、`CLIENT_DIST_DIR`、
+  `ALLOWED_HOSTS` 不再泄漏给 agent。`config.ts` 去掉与 schema 重复的解析；两个调试日志器与 logger
+  不再自己读 env 或调 `loadConfig`/`getDataDir`；`data-dir.ts` 并入 `runtime/profile.ts` 的
+  `currentProfile()`。`createApp` 的 `dataDir` 必填，不再改全局；代理库绑定只在 `index.ts` 做一次
+  （证书生成移回启动的 try 内）。library 代理白名单删掉被 projects 路由覆盖的两条和前端从不请求的
+  五条，去掉类型补丁。删除 vitest 配置里指向不存在目录的 `ALLOW_SOCKET_TESTS`。

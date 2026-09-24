@@ -1,13 +1,11 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
-import { loadConfig } from "../config.js";
 
 /**
  * Simple JSONL logger for raw SDK messages.
  * Captures exact message shapes for analysis.
  *
- * Disabled by default. Enable via LOG_SDK_MESSAGES=true
- * Output: {logDir}/sdk-raw.jsonl
+ * Disabled by default (LOG_SDK_MESSAGES). Output: {logDir}/sdk-raw.jsonl
  */
 
 let writeStream: fs.WriteStream | null = null;
@@ -17,15 +15,14 @@ let enabled = false;
  * Initialize the SDK message logger.
  * Call once at server startup.
  */
-export function initMessageLogger(): void {
-  enabled = process.env.LOG_SDK_MESSAGES === "true";
+export function initMessageLogger(options: { enabled: boolean; logDir: string }): void {
+  enabled = options.enabled;
   if (!enabled) return;
 
-  const config = loadConfig();
-  const logPath = path.join(config.logDir, "sdk-raw.jsonl");
+  const logPath = path.join(options.logDir, "sdk-raw.jsonl");
 
   // Ensure log directory exists
-  fs.mkdirSync(config.logDir, { recursive: true });
+  fs.mkdirSync(options.logDir, { recursive: true });
 
   // Open append stream
   writeStream = fs.createWriteStream(logPath, { flags: "a" });

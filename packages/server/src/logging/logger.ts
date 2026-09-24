@@ -1,7 +1,6 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
 import pino from "pino";
-import { getDataDir } from "../data-dir.js";
 
 /**
  * Valid log levels.
@@ -10,39 +9,32 @@ export const LOG_LEVELS = ["trace", "debug", "info", "warn", "error", "fatal", "
 export type LogLevel = (typeof LOG_LEVELS)[number];
 
 export interface LogConfig {
-  /** Directory for log files. Default: ~/.scholaraio-hub/logs */
+  /** Directory for log files; required when `logToFile` is set. */
   logDir: string;
-  /** Log filename. Default: server.log */
   logFile: string;
-  /** Minimum log level for console. Default: info */
+  /** Minimum log level for console. */
   consoleLevel: LogLevel;
-  /** Minimum log level for file. Default: info (or LOG_FILE_LEVEL env var) */
+  /** Minimum log level for the file. */
   fileLevel: LogLevel;
-  /** Log to file. Default: true */
   logToFile: boolean;
-  /** Use pretty printing for console. Default: true in dev */
+  /** Use pretty printing for console. */
   prettyPrint: boolean;
 }
 
-function getDefaultConfig(): LogConfig {
-  return {
-    logDir: process.env.LOG_DIR ?? path.join(getDataDir(), "logs"),
-    logFile: process.env.LOG_FILE ?? "server.log",
-    consoleLevel: (process.env.LOG_LEVEL as LogLevel) || "info",
-    fileLevel:
-      (process.env.LOG_FILE_LEVEL as LogLevel) || (process.env.LOG_LEVEL as LogLevel) || "info",
-    // Auto-init logger stays console-only. The real server startup path calls
-    // initLogger(loadConfig()), so configured file logging still works there.
-    logToFile: false,
-    prettyPrint: !["false", "0", "no", "off"].includes(
-      (process.env.LOG_PRETTY ?? "").toLowerCase(),
-    ),
-  };
-}
+/**
+ * For code that logs before, or without, the server's `initLogger(config)`:
+ * tests and `pnpm hub` commands. The server passes its own configuration.
+ */
+const CONSOLE_ONLY: LogConfig = {
+  logDir: "",
+  logFile: "server.log",
+  consoleLevel: "info",
+  fileLevel: "info",
+  logToFile: false,
+  prettyPrint: true,
+};
 
 let logger: pino.Logger | null = null;
-/** Multistream instance (needed for dynamic level changes) */
-let multistream: pino.MultiStreamRes | null = null;
 let originalConsole: {
   log: typeof console.log;
   error: typeof console.error;
@@ -56,7 +48,7 @@ let originalConsole: {
  * This should be called once at server startup.
  */
 export function initLogger(config: Partial<LogConfig> = {}): pino.Logger {
-  const finalConfig = { ...getDefaultConfig(), ...config };
+  const finalConfig = { ...CONSOLE_ONLY, ...config };
   let fileLoggingInitError: Error | null = null;
 
   const streams: pino.StreamEntry[] = [];
@@ -107,13 +99,10 @@ export function initLogger(config: Partial<LogConfig> = {}): pino.Logger {
   if (streams.length === 0) {
     // No streams configured, use a silent logger
     logger = pino({ level: "silent" });
-    multistream = null;
   } else if (streams.length === 1 && streams[0]) {
     logger = pino({ level: streams[0].level }, streams[0].stream);
-    multistream = null;
   } else {
-    multistream = pino.multistream(streams);
-    logger = pino({ level: minLevel }, multistream);
+    logger = pino({ level: minLevel }, pino.multistream(streams));
   }
 
   if (fileLoggingInitError) {
@@ -197,20 +186,6 @@ export function interceptConsole(): void {
 }
 
 /**
- * Restore original console methods.
- */
-export function restoreConsole(): void {
-  if (originalConsole) {
-    console.log = originalConsole.log;
-    console.error = originalConsole.error;
-    console.warn = originalConsole.warn;
-    console.info = originalConsole.info;
-    console.debug = originalConsole.debug;
-    originalConsole = null;
-  }
-}
-
-/**
  * Format console arguments into a string for pino.
  */
 function formatConsoleArgs(args: unknown[]): string {
@@ -225,20 +200,4 @@ function formatConsoleArgs(args: unknown[]): string {
       }
     })
     .join(" ");
-}
-
-/**
- * Get the path to the current log file.
- */
-export function getLogFilePath(config: Partial<LogConfig> = {}): string {
-  const finalConfig = { ...getDefaultConfig(), ...config };
-  return path.join(finalConfig.logDir, finalConfig.logFile);
-}
-
-/**
- * Get the log directory path.
- */
-export function getLogDir(config: Partial<LogConfig> = {}): string {
-  const finalConfig = { ...getDefaultConfig(), ...config };
-  return finalConfig.logDir;
 }

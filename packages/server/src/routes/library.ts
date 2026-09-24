@@ -1,16 +1,18 @@
 import { Hono } from "hono";
 import type { LibraryService } from "../services/LibraryService.js";
 
-/** Explicit application routes; no arbitrary upstream URL or filesystem proxy. */
+/**
+ * Explicit application routes; no arbitrary upstream URL or filesystem proxy.
+ * Only what the client requests is listed. Renaming and archiving a project go
+ * through routes/projects.ts, which also moves the project's sessions.
+ */
 export function createLibraryRoutes(service: LibraryService) {
   const routes = new Hono();
-  const resources = [
+  const resources: ReadonlyArray<readonly ["GET" | "POST" | "PATCH" | "PUT" | "DELETE", string]> = [
     ["GET", "/analytics"],
     ["GET", "/projects"],
     ["POST", "/projects"],
     ["GET", "/projects/:id"],
-    ["POST", "/projects/:id/rename"],
-    ["DELETE", "/projects/:id"],
     ["POST", "/projects/:id/papers"],
     ["GET", "/papers"],
     ["GET", "/search"],
@@ -21,28 +23,22 @@ export function createLibraryRoutes(service: LibraryService) {
     ["POST", "/papers/:id/refetch"],
     ["GET", "/papers/:id/references"],
     ["GET", "/papers/:id/citing"],
-    ["GET", "/citations/shared"],
-    ["GET", "/citations/top"],
     ["POST", "/citations/export"],
-    ["POST", "/citations/check"],
     ["GET", "/papers/:id/attachments/*"],
     ["GET", "/papers/:id/position"],
     ["PUT", "/papers/:id/position"],
     ["GET", "/events"],
     ["GET", "/settings"],
     ["PATCH", "/settings"],
-    ["GET", "/audit"],
     ["GET", "/tasks"],
     ["POST", "/tasks/:kind"],
     ["DELETE", "/tasks/:kind"],
     ["GET", "/imports"],
     ["POST", "/imports"],
     ["POST", "/imports/fetch"],
-    ["POST", "/imports/references"],
     ["POST", "/imports/:id/retry"],
   ];
   for (const [method, resource] of resources) {
-    if (!method || !resource) continue;
     routes.on(method, resource, async (c) => {
       const headers = new Headers();
       for (const name of [
@@ -58,7 +54,7 @@ export function createLibraryRoutes(service: LibraryService) {
       const url = new URL(c.req.url);
       const upstreamPath = url.pathname.slice("/api/library".length);
       const init: RequestInit & { duplex?: "half" } = { method, headers, signal: c.req.raw.signal };
-      if (method !== "GET" && method !== "HEAD") {
+      if (method !== "GET") {
         init.body = c.req.raw.body;
         init.duplex = "half";
       }

@@ -1,25 +1,22 @@
 import { existsSync } from "node:fs";
 import path from "node:path";
-import { getDataDir } from "../../data-dir.js";
 import { pythonRuntime } from "../../runtime/python.js";
 
-let apiBaseUrl: string | undefined;
-let libraryDataDir: string | undefined;
-
-/**
- * Which data directory the running application owns. Providers are shared
- * singletons, so they cannot read it from the app they belong to.
- */
-export function setLibraryDataDir(dataDir: string): void {
-  libraryDataDir = dataDir;
+/** The library agents work on, and the Hub API their write commands go through. */
+export interface AgentLibrary {
+  dataDir: string;
+  /** Where this server listens, so the CLI does not edit the library behind its back. */
+  apiBaseUrl?: string;
 }
 
+let bound: AgentLibrary | undefined;
+
 /**
- * Tell agent CLI runs where this server listens, so their write commands go
- * through the Hub instead of editing the data directory behind its back.
+ * Name the library for every agent this process starts. The server's entry
+ * point binds it once; providers are shared singletons and cannot ask their app.
  */
-export function setHubApiBaseUrl(url: string | undefined): void {
-  apiBaseUrl = url;
+export function bindAgentLibrary(library: AgentLibrary | undefined): void {
+  bound = library;
 }
 
 /**
@@ -31,8 +28,11 @@ export function setHubApiBaseUrl(url: string | undefined): void {
  */
 export function withScholaraioCli(
   env: Record<string, string | undefined>,
-  dataDir: string = libraryDataDir ?? getDataDir(),
+  library: AgentLibrary | undefined = bound,
 ): Record<string, string | undefined> {
+  // Nothing bound: no Hub library to point at (a test, or a `pnpm hub` command).
+  if (!library) return env;
+  const { dataDir, apiBaseUrl } = library;
   const config = path.join(dataDir, "config.yaml");
   // A missing config would make the CLI treat the agent's project directory as
   // a library root and write a stray one there. The library service creates the

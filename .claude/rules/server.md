@@ -5,8 +5,9 @@ paths:
 
 # Server Rules (`packages/server`)
 
-Scope: Hono API, session supervision (`src/supervisor/`), file watchers (`src/watcher/`),
-subscriptions (`src/subscriptions.ts`), and provider integrations (`src/sdk/providers/`).
+Scope: Hono API (`src/routes/`), session supervision (`src/supervisor/`), session runs and
+their stream subscribers (`src/services/SessionService.ts`), and provider integrations
+(`src/sdk/providers/`).
 Terms used here are defined in [`../glossary.md`](../glossary.md).
 
 ## Error Handling
@@ -65,5 +66,5 @@ the same change.
 ## Configuration
 
 Before adding a new environment variable, review `src/config.ts` and `src/env.ts`, and
-surface user-facing vars in `.env.example`. Ports derive from `PORT` via
-`packages/shared/src/ports.ts` — do not hardcode port numbers.
+surface user-facing vars in `.env.example`. The profile decides the port
+(`packages/shared/src/ports.ts`, `PORT` overrides) — do not hardcode port numbers.

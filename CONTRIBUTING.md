@@ -93,8 +93,9 @@ Avoid vague subjects like `Fix bug` or `Update code`.
 ```
 packages/
   client/   # Vite + React frontend
-  server/   # Hono API, session supervision, watchers
-  shared/   # Shared types, schemas, port logic
-scripts/    # Build and dev utilities
+  server/   # Hono API, session supervision, providers, `pnpm hub` commands
+  shared/   # Shared types, schemas, profile and port rules
+  scholaraio/  # Python library service (sidecar)
+scripts/    # hub.mjs entry and CI helpers
 e2e/        # Playwright smoke tests
 ```

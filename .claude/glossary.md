@@ -12,10 +12,10 @@ commits, and instructions so humans and agents mean the same thing.
   [`topics/provider-state-machine.md`](topics/provider-state-machine.md).
 - **Supervisor** — The server component (`packages/server/src/supervisor/`) that owns a
   provider process's lifecycle: start, turn tracking, liveness, teardown.
-- **Watcher** — A file-system watcher (`packages/server/src/watcher/`) that observes
-  on-disk changes (sessions, projects, files) and emits updates.
-- **Subscription** — A registered interest in a stream of updates
-  (`packages/server/src/subscriptions.ts`). Subscriptions are reference-counted and must
+- **Watcher** — A file-system watcher that observes on-disk changes and emits updates; the
+  library service's project watcher lives in `packages/scholaraio/scholaraio/hub/watcher.py`.
+- **Subscription** — A registered interest in a stream of updates (a session run's listeners
+  in `packages/server/src/services/SessionService.ts`). Subscriptions must
   be released when the client disconnects (see
   [`topics/resource-lifecycle.md`](topics/resource-lifecycle.md)).
 - **Activity bus** — The client-side dispatch layer

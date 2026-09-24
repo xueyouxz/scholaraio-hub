@@ -1,0 +1,116 @@
+# 重构计划：代码健康清理（死代码、重复、命名、遗留架构）
+
+## 背景
+
+项目从 yepanywhere 裁剪而来，又经历了多轮按功能推进的重构。每轮只改到当前关心的路径，
+于是留下三类债：
+
+1. **休眠架构**：为多客户端/远程场景设计的机制（worker 池、事件总线、relay 安装 ID、
+   JSONL schema）在本地单用户 Hub 里从不执行，但有测试，看起来是活的。
+2. **同一事实多处定义**：配置解析三遍、`SessionOwnership` 三份、CSRF 头字面量五处、
+   env 过滤名单与 env schema 各自维护。
+3. **命名与位置失真**：`core/library.ts` 装着全部 API、`watcher/` 里没有 watcher、
+   `hasPdf` 表示「有全文 Markdown」。
+
+2026-09-24 的静态扫描（TS 编译器 API 建模块图 + 逐个追调用方）给出了下文的清单。
+
+## 原则
+
+1. 删除以「生产路径能否到达」为准，不以「有没有测试」为准；只测死功能的测试一起删。
+2. 每条事实一个定义点，其余地方引用它。
+3. 依赖在组装根（`packages/server/src/index.ts`）显式传递，不用模块级可变全局，也不用
+   `?? getDataDir()` 这类隐式默认值。
+4. 不做一次性全仓改名；目录/文件改名只在该文件没有未提交改动时做。
+
+## 不做
+
+- `packages/scholaraio` 中来自上游的 Python 代码（`UPSTREAM.md`）：只动 Hub 自有部分。
+- 生成代码 `codex-protocol/generated/`。
+- 前端视觉/交互改动。
+
+## 约束：工作区有大量未提交改动（WIP）
+
+WIP 覆盖 `sdk/providers/{claude,codex}.ts`、`SessionService.ts`、`app.ts`、
+`routes/library.ts`、shared `types.ts`/`library.ts`/`StoredSession.ts`、`core/library.ts`、
+`Sidebar.tsx` 及大部分 `features/library`、`features/session` 文件。
+
+- 改到 WIP 文件时只暂存本计划的改动块，WIP 原样留在工作区。
+- 需要整文件移动/改名、或与 WIP 大面积重叠的项标为 **延后**，等 WIP 提交后再做。
+
+## 阶段
+
+每阶段独立提交，跑通 typecheck + 单元测试 + lint（WIP 的既有问题除外）后再进入下一阶段。
+不 push、不开 PR。验证不重建 `packages/{server,client}/dist`（生产 Hub 3400 在用）。
+
+### 阶段 1：仓库卫生与 AI 协作文档
+
+- [x] 恢复被 `05fe8de` 意外清空的 `CLAUDE.md`，并按现状更新（入口、端口、目录）。
+- [x] `.claude/rules/server.md`：去掉不存在的 `src/subscriptions.ts`、`watcher`，端口说明对齐 profile。
+- [x] 删除误提交的测试产物 `packages/scholaraio/workspace/figures/`（20 个），加入 `.gitignore`。
+- [x] 删除孤立的 `packages/server/pnpm-lock.yaml`、过时的 `packages/server/README.md`
+      （绝对路径、不存在的 provider）。
+- [x] 删除从未被 import 的前端文件：`PaperCollection.tsx`、`hooks/useChartSize.ts`、
+      `ThinkingIndicator.tsx`、`shared/ui/ChipGroup.tsx`。
+
+### 阶段 2：shared 死 schema 与重复类型
+
+- [ ] 删除无消费方的 `claude-sdk-schema/`、`codex-schema/`、`ideMetadata.ts`、
+      `session/SessionView.ts`（`SESSION_TITLE_MAX_LENGTH` 迁到使用处的定义点）及其测试。
+- [ ] `app-types.ts` 删除 `App*Message`、`AppContentBlock`、`AppSessionSummary`、
+      `AppSession`、`AgentSession`、`AgentStatus`。
+- [ ] `SessionOwnership` 只保留一份（shared），server `supervisor/types.ts` 引用它。
+- [ ] 删除其余零使用导出（`SharedReference`、`LibraryAudit`、`FileMetadata`、`PatchHunk`、
+      `EditAugment`、`FileContentResponse`、`Upload*Message` 等）。
+
+### 阶段 3：server 休眠架构
+
+- [ ] 删除 relay 遗留链：`InstallService`（+ `install.json`）、`installId` 透传、
+      `/api/version`（前端无消费方）。
+- [ ] 删除 `watcher/EventBus.ts`、`supervisor/SupervisorEvents.ts`、`supervisor/WorkerQueue.ts`。
+- [ ] Supervisor 收缩为会话进程注册表：保留 start/resume/providerFor/空闲回收/close；
+      删除池上限、排队、抢占、hold、延迟消息、`onSessionSummary`/`onSessionExecutor`，
+      `SessionLaunch` 只剩 started。Process 删除外部从不调用的成员。
+- [ ] 删除零使用导出（`summarizeCodexNormalizedMessage`、`extractTextFromMessage`、
+      `TimestampedSDKMessage`、`AgentEventType`）与 env schema 中无人读取的 `CLAUDE_CONFIG_DIR`。
+
+### 阶段 4：配置与组装根
+
+- [ ] env 过滤名单由 `RuntimeEnvSchema` 的键生成；删掉 `MAINTENANCE_PORT`/`AUTH_DISABLED`/
+      `PROXY_DEBUG`，补上漏掉的 Hub 内部变量。
+- [ ] 配置只解析一次：去掉 `config.ts` 中与 schema 重复的 `parse*`；logger 默认配置不再自读 env。
+- [ ] 去掉 `?? getDataDir()` 隐式默认；`data-dir.ts` 并入 `runtime/profile.ts`。
+- [ ] `setLibraryDataDir`/`setHubApiBaseUrl` 模块全局改为显式注入。
+- [ ] `routes/library.ts` 白名单：删被 `routes/projects.ts` 覆盖的两条，去掉类型补丁。
+- [ ] `app.ts`：`/api/status` 移到 `routes/status.ts`；谁创建谁关闭（`LibraryService` 不再被关两次）。
+
+### 阶段 5：CSRF 头与前端请求入口
+
+- [ ] CSRF 头名放到 shared，server 中间件、前端、e2e 引用同一常量。
+- [ ] 前端上传/流式请求经 `core/http.ts` 统一加头，不再自己拼。
+
+### 阶段 6（延后，需 WIP 提交）：前端模型与命名
+
+- [ ] 拆 `core/library.ts` 为 `core/api/{library,sessions,settings,skills}.ts`。
+- [ ] 统一论文模型：删 `core/scholarTypes.ts` 的 `ScholarPaper` 与 `libraryAdapter.ts`，
+      直接用 shared `LibraryPaper`；`hasPdf`→`hasFullText`、`citations` 改为 number。
+- [ ] 相对时间/字节格式化合并为 `shared/format.ts`，界面文案统一中文。
+
+### 阶段 7（延后，需 WIP 提交）：server 目录与文件命名
+
+- [ ] `sdk/` + `codex/` → `providers/{claude,codex}/`；`routes/app-sessions.ts` → `routes/sessions.ts`。
+- [ ] shared `types.ts`/`app-types.ts` 按领域拆分。
+- [ ] 文件命名约定：类文件 Pascal，其余 kebab；随改随统一。
+
+## 风险
+
+- Supervisor 收缩改动面最大：依赖 `test/api/*` 的会话端到端单测兜底；
+  改前先确认 `SessionService` 只使用保留下来的接口。
+- 删除 shared 导出是契约变更：以 `pnpm typecheck` 覆盖 client + server。
+
+## 进度
+
+- 阶段 1：`CLAUDE.md` 按现状重写（入口、端口、Python 服务、「可达才算活」规则）；
+  glossary / resource-lifecycle / server 规则 / CONTRIBUTING 去掉不存在的 `subscriptions.ts`、
+  `watcher/`。删除 20 个误提交的 figures、server 孤立锁文件与 README、4 个未引用组件及
+  `session.css` 中只属于 `ThinkingIndicator` 的样式与 `dot-breathe` 动画。
+  验证：client typecheck、182 个单测通过。

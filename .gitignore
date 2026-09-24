@@ -26,3 +26,6 @@ __pycache__/
 *.egg-info/
 .pytest_cache/
 .venv/
+
+# Output the Python tests write into the package directory
+packages/scholaraio/workspace/

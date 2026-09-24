@@ -1,11 +1,10 @@
 {
   "name": "@scholaraio-hub/shared",
   "version": "0.1.0",
-  "private": false,
+  "private": true,
   "type": "module",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
-  "files": ["dist"],
   "exports": {
     ".": {
       "scholaraio-source": "./src/index.ts",
@@ -17,9 +16,6 @@
     "build": "tsc -p tsconfig.build.json",
     "typecheck": "tsc -p tsconfig.json --pretty false",
     "test": "vitest run --config vitest.config.ts"
-  },
-  "publishConfig": {
-    "access": "public"
   },
   "devDependencies": {
     "@types/node": "^22.19.17",

@@ -59,9 +59,9 @@ new internal env var, also add it to the filter in `src/sdk/providers/env-filter
 ## Codex Protocol / Version Audit Gate
 
 Code under `src/sdk/providers/codex-protocol/generated/` is generated output — do not
-hand-edit. When the generated protocol or `packages/shared/src/codex-schema/` changes (or
-the expected Codex CLI version bumps), audit the dependent provider code and its tests in
-the same change.
+hand-edit. When the generated protocol changes (or the expected Codex CLI version bumps),
+audit the dependent provider code (`codex.ts`, `codex-events.ts`, `codex-rpc.ts`) and its
+tests in the same change.
 
 ## Configuration
 

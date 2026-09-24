@@ -4,7 +4,7 @@ import {
   CODEX_DEFAULT_CONTEXT_WINDOW,
   DEFAULT_CONTEXT_WINDOW,
   getModelContextWindow,
-} from "../src/app-types.js";
+} from "../src/context-window.js";
 
 describe("getModelContextWindow", () => {
   it("returns default window for unknown model", () => {

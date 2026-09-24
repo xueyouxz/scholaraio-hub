@@ -15,8 +15,10 @@ Terms used here are defined in [`../glossary.md`](../glossary.md).
 - **Profile and port**: `src/ports.ts` (`resolveProfileName`, `resolvePort`). There is one
   application port per profile; development serves Vite on it too. Nothing else may
   redefine port defaults.
-- **Schemas / types**: `src/claude-sdk-schema/`, `src/codex-schema/`, `src/session/`,
-  `src/types.ts`, etc. Consumers import these rather than re-declaring shapes.
+- **Schemas / types**: `src/session/StoredSession.ts` (the session contract),
+  `src/library.ts` (library API shapes), `src/types.ts` (providers, permissions),
+  `src/context-window.ts`. Consumers import these rather than re-declaring shapes; a type
+  no consumer imports is removed, not kept "for later".
 
 A change here is a contract change — update both consumers and their tests in the same
 change.

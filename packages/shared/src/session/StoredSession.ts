@@ -1,8 +1,26 @@
 import type { UIMessage } from "ai";
 import { z } from "zod";
-import type { InputRequest } from "../app-types.js";
 import type { LibraryCitation } from "../library.js";
 import { ATTACHMENT_LIMITS, type PermissionMode, type ThinkingMode } from "../types.js";
+
+/**
+ * A question the agent is waiting on: a tool approval, or a question for the user.
+ */
+export interface InputRequest {
+  id: string;
+  sessionId: string;
+  type: "tool-approval" | "question" | "choice";
+  prompt: string;
+  options?: string[];
+  toolName?: string;
+  toolInput?: unknown;
+  /**
+   * The tool call this request is about, when the provider says so, so the UI
+   * can ask inline on that call's row instead of in a detached panel.
+   */
+  toolCallId?: string;
+  timestamp: string;
+}
 
 /**
  * Something the user should see that is not part of the answer.

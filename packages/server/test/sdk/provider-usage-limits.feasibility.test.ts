@@ -1,7 +1,6 @@
 import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { parseCodexSessionEntry } from "@scholaraio-hub/shared";
 import { describe, expect, it } from "vitest";
 import { ClaudeEventAdapter } from "../../src/sdk/providers/claude-events.js";
 import type { SDKMessage } from "../../src/sdk/types.js";
@@ -54,55 +53,6 @@ describe("provider usage limit feasibility", () => {
           source: "claude-sdk-rate-limit-event",
         },
       ],
-    });
-  });
-
-  it("Codex persisted token_count schema already accepts rate_limits windows", () => {
-    const entry = parseCodexSessionEntry(
-      JSON.stringify({
-        type: "event_msg",
-        timestamp: "2026-05-20T00:00:00.000Z",
-        payload: {
-          type: "token_count",
-          info: {
-            last_token_usage: {
-              input_tokens: 12_000,
-              cached_input_tokens: 2_000,
-              output_tokens: 100,
-              total_tokens: 14_100,
-            },
-            model_context_window: 258_000,
-          },
-          rate_limits: {
-            primary: {
-              used_percent: 37,
-              window_minutes: 300,
-              resets_at: 1_777_531_200,
-            },
-            secondary: {
-              used_percent: 12,
-              window_minutes: 10_080,
-              resets_at: 1_777_966_400,
-            },
-            plan_type: "plus",
-          },
-        },
-      }),
-    );
-
-    expect(entry?.type).toBe("event_msg");
-    expect(entry && entry.type === "event_msg" ? entry.payload.rate_limits : undefined).toEqual({
-      primary: {
-        used_percent: 37,
-        window_minutes: 300,
-        resets_at: 1_777_531_200,
-      },
-      secondary: {
-        used_percent: 12,
-        window_minutes: 10_080,
-        resets_at: 1_777_966_400,
-      },
-      plan_type: "plus",
     });
   });
 

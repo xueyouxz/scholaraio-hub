@@ -86,12 +86,6 @@ export interface LibraryReference {
   year?: string;
   paper: LibraryPaper | null;
 }
-export interface SharedReference {
-  doi: string;
-  title: string;
-  sharedCount: number;
-  paper: LibraryPaper | null;
-}
 export interface ReadingPosition {
   page: number;
   line: number;
@@ -160,12 +154,3 @@ export interface LibrarySettings {
 }
 
 /** What the library's own audit finds wrong with what it holds. */
-export interface LibraryAudit {
-  total: number;
-  groups: {
-    rule: string;
-    severity: "error" | "warning" | "info";
-    count: number;
-    papers: { paperId: string; title: string; message: string }[];
-  }[];
-}

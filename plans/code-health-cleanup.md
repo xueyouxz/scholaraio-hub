@@ -50,17 +50,18 @@ WIP 覆盖 `sdk/providers/{claude,codex}.ts`、`SessionService.ts`、`app.ts`、
 - [x] 删除误提交的测试产物 `packages/scholaraio/workspace/figures/`（20 个），加入 `.gitignore`。
 - [x] 删除孤立的 `packages/server/pnpm-lock.yaml`、过时的 `packages/server/README.md`
       （绝对路径、不存在的 provider）。
-- [x] 删除从未被 import 的前端文件：`PaperCollection.tsx`、`hooks/useChartSize.ts`、
-      `ThinkingIndicator.tsx`、`shared/ui/ChipGroup.tsx`。
+- [x] 删除从未被 import 的前端文件：`PaperCollection.tsx`、`hooks/useChartSize.ts`。
+      （`ThinkingIndicator.tsx`、`shared/ui/ChipGroup.tsx` 只在 WIP 版本里无人引用，已提交的代码仍在用，
+      保留；随 WIP 一起删。）
 
 ### 阶段 2：shared 死 schema 与重复类型
 
-- [ ] 删除无消费方的 `claude-sdk-schema/`、`codex-schema/`、`ideMetadata.ts`、
+- [x] 删除无消费方的 `claude-sdk-schema/`、`codex-schema/`、`ideMetadata.ts`、
       `session/SessionView.ts`（`SESSION_TITLE_MAX_LENGTH` 迁到使用处的定义点）及其测试。
-- [ ] `app-types.ts` 删除 `App*Message`、`AppContentBlock`、`AppSessionSummary`、
+- [x] `app-types.ts` 删除 `App*Message`、`AppContentBlock`、`AppSessionSummary`、
       `AppSession`、`AgentSession`、`AgentStatus`。
-- [ ] `SessionOwnership` 只保留一份（shared），server `supervisor/types.ts` 引用它。
-- [ ] 删除其余零使用导出（`SharedReference`、`LibraryAudit`、`FileMetadata`、`PatchHunk`、
+- [x] `SessionOwnership` 只保留一份（shared），server `supervisor/types.ts` 引用它。
+- [x] 删除其余零使用导出（`SharedReference`、`LibraryAudit`、`FileMetadata`、`PatchHunk`、
       `EditAugment`、`FileContentResponse`、`Upload*Message` 等）。
 
 ### 阶段 3：server 休眠架构
@@ -112,9 +113,12 @@ WIP 覆盖 `sdk/providers/{claude,codex}.ts`、`SessionService.ts`、`app.ts`、
 
 - 阶段 1：`CLAUDE.md` 按现状重写（入口、端口、Python 服务、「可达才算活」规则）；
   glossary / resource-lifecycle / server 规则 / CONTRIBUTING 去掉不存在的 `subscriptions.ts`、
-  `watcher/`。删除 20 个误提交的 figures、server 孤立锁文件与 README、4 个未引用组件及
-  `session.css` 中只属于 `ThinkingIndicator` 的样式与 `dot-breathe` 动画。
+  `watcher/`。删除 20 个误提交的 figures、server 孤立锁文件与 README、2 个未引用组件。
   验证：client typecheck、182 个单测通过。
+  **更正**：最初扫描跑在含 WIP 的工作区上，把 `ChipGroup`/`ThinkingIndicator` 也当成死代码删了，
+  而已提交的 `sources.tsx`、`WorkspaceCreateDialog.tsx`、`ProcessingIndicator.tsx` 仍引用它们。
+  已用 `commit-tree` 改写这两个未 push 的提交，把两个组件和样式放回；它们在工作区显示为
+  WIP 删除。此后每阶段提交前都把暂存区导出到临时目录单独 typecheck + 测试。
 - 阶段 3：删除 `EventBus`、`SupervisorEvents`、`WorkerQueue`、`InstallService`、`/api/version`、
   `projects/paths.ts`（只剩 Supervisor 引用）。Supervisor 从 1267 行收缩为约 300 行的会话进程
   注册表：`startSession`/`resumeSession` 直接返回 `Process`，`SessionService` 不再处理排队/拒绝分支。
@@ -124,3 +128,10 @@ WIP 覆盖 `sdk/providers/{claude,codex}.ts`、`SessionService.ts`、`app.ts`、
   `executor`、`remoteEnv`。另删 `summarizeCodexNormalizedMessage` 及其 190 行辅助函数、
   `extractTextFromMessage`、`TimestampedSDKMessage`、`AgentEventType`、env 的 `CLAUDE_CONFIG_DIR`。
   验证：server typecheck、biome、246 个单测通过（减少的约 110 个是只测已删功能的用例）。
+- 阶段 2：删除 shared 中无消费方的 `claude-sdk-schema/`、`codex-schema/`、`ideMetadata.ts`、
+  `session/SessionView.ts`、`projectId.ts`、`app-types.ts`（约 2400 行）。仍在用的两样搬到含义
+  对应的位置：`InputRequest` 进 `session/StoredSession.ts`（会话契约），`getModelContextWindow`
+  进新文件 `context-window.ts`。删掉 `types.ts` 里重复的 `SessionOwnership` 与 `FileMetadata`/
+  `FileContentResponse`/`PatchHunk`/`EditAugment`，`upload.ts` 只留 `UploadedFile`，`library.ts`
+  删 `SharedReference`/`LibraryAudit`。shared 包改为 private（去掉 npm 发布配置）。规则、glossary、
+  生成代码 hook 的提示同步。验证：全仓 typecheck、shared 19 个单测、biome 通过。

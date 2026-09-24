@@ -28,9 +28,9 @@ commits, and instructions so humans and agents mean the same thing.
 - **Liveness** — Whether a session is actually making user-visible progress, distinct from
   mere transport/process aliveness. See
   [`topics/session-liveness.md`](topics/session-liveness.md).
-- **Project / Workspace** — A directory grouping of sessions. The sidebar groups sessions
-  by workspace/project; project identity helpers live in
-  `packages/shared/src/projectId.ts`.
+- **Project / Workspace** — A literature workspace (`LiteratureProject` in
+  `packages/shared/src/library.ts`): a set of papers and a directory its sessions run in.
+  The sidebar groups sessions by workspace.
 - **Generated protocol code** — Output under
   `packages/server/src/sdk/providers/codex-protocol/generated/`. Do not hand-edit; see the
   audit gate in [server rules](rules/server.md).

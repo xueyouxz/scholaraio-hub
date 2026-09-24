@@ -252,36 +252,6 @@ export function readLegacyThinking(value: string): ExecutionOptions {
 }
 
 /**
- * Session ownership - who controls the session.
- * - "none": No active process
- * - "self": Process is running and owned by this server
- * - "external": Session is being controlled by an external program
- */
-export type SessionOwnership =
-  | { owner: "none" }
-  | {
-      owner: "self";
-      processId: string;
-      permissionMode?: PermissionMode;
-      modeVersion?: number;
-    }
-  | { owner: "external" };
-
-/**
- * Metadata about a file in a project.
- */
-export interface FileMetadata {
-  /** File path relative to project root */
-  path: string;
-  /** File size in bytes */
-  size: number;
-  /** MIME type (e.g., "text/typescript", "image/png") */
-  mimeType: string;
-  /** Whether the file is a text file (can be displayed inline) */
-  isText: boolean;
-}
-
-/**
  * An entry in a project filesystem browse response.
  */
 export interface ProjectFsEntry {
@@ -292,67 +262,12 @@ export interface ProjectFsEntry {
 }
 
 /**
- * Response from GET /api/projects/:projectId/fs/browse
+ * Response from GET /api/sessions/:id/fs/browse
  */
 export interface ProjectFsBrowseResponse {
   /** Relative path from project root that was listed */
   path: string;
   entries: ProjectFsEntry[];
-}
-
-/**
- * Response from the file content API.
- */
-export interface FileContentResponse {
-  /** File metadata */
-  metadata: FileMetadata;
-  /** File content (only for text files under size limit) */
-  content?: string;
-  /** URL to fetch raw file content */
-  rawUrl: string;
-  /** Syntax-highlighted HTML (when highlight=true and language is supported) */
-  highlightedHtml?: string;
-  /** Language used for highlighting */
-  highlightedLanguage?: string;
-  /** Whether the file was truncated for highlighting */
-  highlightedTruncated?: boolean;
-  /** Rendered markdown HTML (for .md files when highlight=true) */
-  renderedMarkdownHtml?: string;
-}
-
-/**
- * A hunk from a unified diff patch.
- * Contains line numbers and the actual diff lines with prefixes.
- */
-export interface PatchHunk {
-  /** Starting line number in the old file */
-  oldStart: number;
-  /** Number of lines from old file in this hunk */
-  oldLines: number;
-  /** Starting line number in the new file */
-  newStart: number;
-  /** Number of lines in new file in this hunk */
-  newLines: number;
-  /** Diff lines prefixed with ' ' (context), '-' (removed), or '+' (added) */
-  lines: string[];
-}
-
-/**
- * Server-computed augment for Edit tool_use blocks.
- * Provides pre-computed structuredPatch and highlighted diff HTML
- * so the client can render consistent unified diffs.
- */
-export interface EditAugment {
-  /** The tool_use ID this augment is for */
-  toolUseId: string;
-  /** Augment type discriminator */
-  type: "edit";
-  /** Computed unified diff with context lines */
-  structuredPatch: PatchHunk[];
-  /** Syntax-highlighted diff HTML (shiki, CSS variables theme) */
-  diffHtml: string;
-  /** The file path being edited */
-  filePath: string;
 }
 
 /**

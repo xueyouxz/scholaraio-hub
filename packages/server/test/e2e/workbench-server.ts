@@ -4,7 +4,8 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { serve } from "@hono/node-server";
 import { createApp } from "../../src/app.js";
-import { pythonRuntime, scholarSourceDir } from "../../src/runtime/python.js";
+import { uvSyncCommand } from "../../src/runtime/install.js";
+import { pythonRuntime } from "../../src/runtime/python.js";
 import { claudeProvider, codexProvider } from "../../src/sdk/providers/index.js";
 import { LibraryService } from "../../src/services/LibraryService.js";
 import { ServerSettingsService } from "../../src/services/ServerSettingsService.js";
@@ -39,18 +40,13 @@ for (const signal of ["SIGINT", "SIGTERM"] as const)
     void close().then(() => process.exit());
   });
 try {
-  const setup = spawnSync(
-    process.env.SCHOLARAIO_HUB_UV ?? "uv",
-    ["sync", "--project", scholarSourceDir, "--locked", "--extra", "hub", "--no-default-groups"],
-    {
-      stdio: "inherit",
-      env: {
-        ...process.env,
-        UV_PROJECT_ENVIRONMENT: pythonRuntime(dataDir).root,
-        UV_CACHE_DIR: process.env.UV_CACHE_DIR ?? path.join(tmpdir(), "hub-test-uv-cache"),
-      },
-    },
+  // Only the library service: browser tests never parse PDFs through MinerU.
+  const sync = uvSyncCommand(
+    pythonRuntime(dataDir).root,
+    process.env.UV_CACHE_DIR ?? path.join(tmpdir(), "hub-test-uv-cache"),
+    ["hub"],
   );
+  const setup = spawnSync(sync.command, sync.args, { stdio: "inherit", env: sync.env });
   if (setup.status !== 0)
     throw setup.error ?? new Error("Cannot prepare isolated Python test environment; install uv");
   await library.start();

@@ -154,6 +154,6 @@ pythonRuntime(dataDir) → {
 ## 进度
 
 - [x] 阶段 1：`runtime/python.ts` 定义运行环境位置与激活环境；LibraryService、agent CLI 注入、setup/doctor/migrate、向量安装、浏览器测试服务器改用它。`scripts/dev.mjs` 的副本随阶段 3 删除。
-- [ ] 阶段 2
+- [x] 阶段 2：`runtime/install.ts` 的 `planRuntimeSync` 是唯一的运行环境安装入口，清单记在 `<dataDir>/runtime/manifest.json`；旧环境首次同步时探测 `sentence_transformers`。实测开发与生产数据目录均识别为 semantic，`uv sync --dry-run` 为「无变化」，而旧 setup 参数会卸载 49 个包（含 torch、sentence-transformers）。浏览器测试服务器用 `uvSyncCommand`；`scripts/test-python.mjs` 仍自带参数（测试环境，另装 hub-test）。
 - [ ] 阶段 3
 - [ ] 阶段 4

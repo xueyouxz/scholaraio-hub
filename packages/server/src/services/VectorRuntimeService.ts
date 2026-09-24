@@ -1,6 +1,6 @@
 import { type ChildProcess, spawn } from "node:child_process";
 import type { VectorRuntimeStatus } from "@scholaraio-hub/shared";
-import { pythonRuntime, scholarSourceDir } from "../runtime/python.js";
+import { type RuntimeSync, UV_MISSING_HINT, planRuntimeSync } from "../runtime/install.js";
 import type { LibraryService } from "./LibraryService.js";
 
 /** Output lines kept for the browser: enough to see progress, not the whole build. */
@@ -9,10 +9,10 @@ const LOG_LINES = 40;
 /**
  * Installs the optional embedding packages the library needs for semantic work.
  *
- * Setup deliberately leaves them out — they pull a multi-gigabyte tensor stack
- * that most installs never use. They are fetched here, when the user asks for
- * semantic search, and the Python child is restarted afterwards so the freshly
- * installed modules are importable.
+ * Setup leaves them out until asked for — they pull a multi-gigabyte tensor
+ * stack that most installs never use. They are fetched here, when the user asks
+ * for semantic search, recorded in the runtime manifest so later setups keep
+ * them, and the Python child is restarted so the new modules are importable.
  */
 export class VectorRuntimeService {
   private status: VectorRuntimeStatus = { state: "idle", log: [] };
@@ -21,7 +21,6 @@ export class VectorRuntimeService {
   constructor(
     private readonly dataDir: string,
     private readonly library: LibraryService,
-    private readonly uv = process.env.SCHOLARAIO_HUB_UV ?? "uv",
   ) {}
 
   get installing(): boolean {
@@ -36,31 +35,17 @@ export class VectorRuntimeService {
   install(): VectorRuntimeStatus {
     if (this.installing) throw new Error("向量依赖正在安装中");
     this.status = { state: "installing", log: [], startedAt: new Date().toISOString() };
-    const child = spawn(
-      this.uv,
-      [
-        "sync",
-        "--project",
-        scholarSourceDir,
-        "--locked",
-        "--extra",
-        "hub",
-        "--extra",
-        "mineru-cloud",
-        // topics pulls embed with it: one environment serves both.
-        "--extra",
-        "topics",
-        "--no-default-groups",
-      ],
-      {
-        env: {
-          ...process.env,
-          UV_PROJECT_ENVIRONMENT: pythonRuntime(this.dataDir).root,
-          UV_CACHE_DIR: pythonRuntime(this.dataDir).uvCacheDir,
-        },
-        stdio: ["ignore", "pipe", "pipe"],
-      },
-    );
+    let sync: RuntimeSync;
+    try {
+      sync = planRuntimeSync(this.dataDir, ["semantic"]);
+    } catch (error) {
+      this.finish(error instanceof Error ? error.message : String(error));
+      return this.read();
+    }
+    const child = spawn(sync.command, sync.args, {
+      env: sync.env,
+      stdio: ["ignore", "pipe", "pipe"],
+    });
     this.child = child;
     const record = (data: Buffer) => {
       for (const line of data.toString().split("\n")) {
@@ -73,14 +58,18 @@ export class VectorRuntimeService {
     child.stderr?.on("data", record);
     child.once("error", (error) => {
       this.child = undefined;
-      this.finish(
-        `需要 uv，请安装 https://docs.astral.sh/uv/getting-started/installation/（${error.message}）`,
-      );
+      this.finish(`${UV_MISSING_HINT}（${error.message}）`);
     });
     child.once("exit", (code, signal) => {
       this.child = undefined;
       if (code !== 0) {
         this.finish(`安装失败 (${signal ?? code})，详见下方输出。`);
+        return;
+      }
+      try {
+        sync.commit();
+      } catch (error) {
+        this.finish(`依赖已安装，但无法记录运行环境清单：${(error as Error).message}`);
         return;
       }
       void this.restartLibrary();

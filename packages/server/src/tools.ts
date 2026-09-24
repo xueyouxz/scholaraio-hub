@@ -4,43 +4,20 @@ import { access } from "node:fs/promises";
 import { createServer } from "node:net";
 import path from "node:path";
 import { loadConfig } from "./config.js";
+import { UV_MISSING_HINT, planRuntimeSync, runtimeCapabilities } from "./runtime/install.js";
 import { pythonRuntime, scholarSourceDir } from "./runtime/python.js";
 import { detectCodexCli } from "./sdk/cli-detection.js";
 import { resolveLocalClaudeCodeExecutable } from "./sdk/providers/claude.js";
 
 const config = loadConfig();
 const command = process.argv[2];
-const uv = process.env.SCHOLARAIO_HUB_UV ?? "uv";
 if (command === "setup") {
   mkdirSync(config.dataDir, { recursive: true });
-  const result = spawnSync(
-    uv,
-    [
-      "sync",
-      "--project",
-      scholarSourceDir,
-      "--locked",
-      "--extra",
-      "hub",
-      // PDF parsing runs on MinerU's cloud service, which needs its CLI.
-      "--extra",
-      "mineru-cloud",
-      "--no-default-groups",
-    ],
-    {
-      stdio: "inherit",
-      env: {
-        ...process.env,
-        UV_PROJECT_ENVIRONMENT: pythonRuntime(config.dataDir).root,
-        UV_CACHE_DIR: pythonRuntime(config.dataDir).uvCacheDir,
-      },
-    },
-  );
-  if (result.error)
-    console.error(
-      "需要 uv，请安装 https://docs.astral.sh/uv/getting-started/installation/",
-      result.error.message,
-    );
+  const sync = planRuntimeSync(config.dataDir);
+  console.log(`Python runtime: core${sync.capabilities.map((item) => ` + ${item}`).join("")}`);
+  const result = spawnSync(sync.command, sync.args, { stdio: "inherit", env: sync.env });
+  if (result.error) console.error(UV_MISSING_HINT, result.error.message);
+  if (result.status === 0) sync.commit();
   process.exitCode = result.status ?? 1;
 } else if (command === "doctor") {
   console.log(`Data directory: ${config.dataDir}\nHTTP port: ${config.port}`);
@@ -88,6 +65,12 @@ if (command === "setup") {
     { encoding: "utf8", timeout: 10000, env: runtime.env() },
   );
   console.log(python.stdout || python.error?.message || python.stderr);
+  if (python.status === 0)
+    console.log(
+      `Python capabilities: core${runtimeCapabilities(config.dataDir)
+        .map((item) => ` + ${item}`)
+        .join("")}`,
+    );
   const codex = await detectCodexCli();
   console.log(`Codex: ${codex.found ? `${codex.path} (${codex.version})` : codex.error}`);
   const claudePath = resolveLocalClaudeCodeExecutable();

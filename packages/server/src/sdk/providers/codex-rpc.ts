@@ -154,11 +154,6 @@ export class CodexAppServerClient {
   private process: ChildProcess | null = null;
   private stdoutBuffer = "";
 
-  /** OS PID of the spawned app-server child process */
-  get pid(): number | undefined {
-    return this.process?.pid;
-  }
-
   isAlive(): boolean {
     const child = this.process;
     return Boolean(child?.pid && child.exitCode === null && !child.killed);

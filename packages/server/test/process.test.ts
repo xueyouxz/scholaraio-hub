@@ -21,12 +21,17 @@ function createMockIterator(messages: AgentEvent[]): AsyncIterator<AgentEvent> {
   };
 }
 
+/** The approval the process is waiting on, as its subscribers see it. */
+function pendingInput(process: Process) {
+  return process.state.type === "waiting-input" ? process.state.request : null;
+}
+
 describe("Process", () => {
   it("releases a live idle worker while retaining its native session ID", async () => {
     const abort = vi.fn();
     const process = new Process(createMockIterator([{ type: "turn.completed" }]), {
+      queue: new MessageQueue(),
       projectPath: "/test",
-      projectId: "project",
       sessionId: "native-idle",
       idleTimeoutMs: 20,
       abortFn: abort,
@@ -47,8 +52,8 @@ describe("Process", () => {
 
       const iterator = createMockIterator(messages);
       const process = new Process(iterator, {
+        queue: new MessageQueue(),
         projectPath: "/test",
-        projectId: "proj-1",
         sessionId: "sess-1",
         idleTimeoutMs: 100,
       });
@@ -79,8 +84,8 @@ describe("Process", () => {
 
       const iterator = createMockIterator(messages);
       const process = new Process(iterator, {
+        queue: new MessageQueue(),
         projectPath: "/test",
-        projectId: "proj-1",
         sessionId: "sess-1",
         idleTimeoutMs: 100,
       });
@@ -98,8 +103,8 @@ describe("Process", () => {
 
       const iterator = createMockIterator(messages);
       const process = new Process(iterator, {
+        queue: new MessageQueue(),
         projectPath: "/test",
-        projectId: "proj-1",
         sessionId: "sess-1",
         idleTimeoutMs: 100,
       });
@@ -128,8 +133,8 @@ describe("Process", () => {
       const iterator = createMockIterator([{ type: "session.started", sessionId: "sess-1" }]);
 
       const process = new Process(iterator, {
+        queue: new MessageQueue(),
         projectPath: "/test",
-        projectId: "proj-1",
         sessionId: "sess-1",
         idleTimeoutMs: 100,
       });
@@ -141,22 +146,6 @@ describe("Process", () => {
       expect(result1.position).toBe(1);
       expect(result2.success).toBe(true);
       expect(result2.position).toBe(2);
-    });
-
-    it("reports queue depth", async () => {
-      const iterator = createMockIterator([{ type: "session.started", sessionId: "sess-1" }]);
-
-      const process = new Process(iterator, {
-        projectPath: "/test",
-        projectId: "proj-1",
-        sessionId: "sess-1",
-        idleTimeoutMs: 100,
-      });
-
-      process.queueMessage({ text: "first" });
-      process.queueMessage({ text: "second" });
-
-      expect(process.queueDepth).toBe(2);
     });
 
     it("prefers steerFn for in-turn messages when available", async () => {
@@ -172,7 +161,6 @@ describe("Process", () => {
 
       const process = new Process(iterator, {
         projectPath: "/test",
-        projectId: "proj-1",
         sessionId: "sess-1",
         idleTimeoutMs: 100,
         queue,
@@ -184,7 +172,7 @@ describe("Process", () => {
       expect(result.success).toBe(true);
       expect(result.position).toBe(0);
       expect(steerFn).toHaveBeenCalledTimes(1);
-      expect(process.queueDepth).toBe(0);
+      expect(queue.depth).toBe(0);
 
       // Let the iterator complete so abort() doesn't hang
       resolveIterator?.();
@@ -204,7 +192,6 @@ describe("Process", () => {
 
       const process = new Process(iterator, {
         projectPath: "/test",
-        projectId: "proj-1",
         sessionId: "sess-1",
         idleTimeoutMs: 100,
         queue,
@@ -219,7 +206,7 @@ describe("Process", () => {
       // need 2 microtask ticks for both to settle
       await Promise.resolve();
       await Promise.resolve();
-      expect(process.queueDepth).toBe(1);
+      expect(queue.depth).toBe(1);
 
       // Let the iterator complete so abort() doesn't hang
       resolveIterator?.();
@@ -227,32 +214,12 @@ describe("Process", () => {
     });
   });
 
-  describe("getInfo", () => {
-    it("returns process info", async () => {
-      const iterator = createMockIterator([]);
-      const process = new Process(iterator, {
-        projectPath: "/test/path",
-        projectId: "proj-123",
-        sessionId: "sess-456",
-        idleTimeoutMs: 100,
-      });
-
-      const info = process.getInfo();
-
-      expect(info.id).toBe(process.id);
-      expect(info.sessionId).toBe("sess-456");
-      expect(info.projectId).toBe("proj-123");
-      expect(info.projectPath).toBe("/test/path");
-      expect(info.startedAt).toBeDefined();
-    });
-  });
-
   describe("abort", () => {
     it("emits complete event on abort", async () => {
       const iterator = createMockIterator([]);
       const process = new Process(iterator, {
+        queue: new MessageQueue(),
         projectPath: "/test",
-        projectId: "proj-1",
         sessionId: "sess-1",
         idleTimeoutMs: 100,
       });
@@ -272,8 +239,8 @@ describe("Process", () => {
     it("clears listeners after abort", async () => {
       const iterator = createMockIterator([]);
       const process = new Process(iterator, {
+        queue: new MessageQueue(),
         projectPath: "/test",
-        projectId: "proj-1",
         sessionId: "sess-1",
         idleTimeoutMs: 100,
       });
@@ -296,8 +263,8 @@ describe("Process", () => {
     it("defaults to 'default' mode", async () => {
       const iterator = createMockIterator([]);
       const process = new Process(iterator, {
+        queue: new MessageQueue(),
         projectPath: "/test",
-        projectId: "proj-1",
         sessionId: "sess-1",
         idleTimeoutMs: 100,
       });
@@ -308,8 +275,8 @@ describe("Process", () => {
     it("accepts initial permission mode", async () => {
       const iterator = createMockIterator([]);
       const process = new Process(iterator, {
+        queue: new MessageQueue(),
         projectPath: "/test",
-        projectId: "proj-1",
         sessionId: "sess-1",
         idleTimeoutMs: 100,
         permissionMode: "acceptEdits",
@@ -321,8 +288,8 @@ describe("Process", () => {
     it("allows changing permission mode", async () => {
       const iterator = createMockIterator([]);
       const process = new Process(iterator, {
+        queue: new MessageQueue(),
         projectPath: "/test",
-        projectId: "proj-1",
         sessionId: "sess-1",
         idleTimeoutMs: 100,
       });
@@ -334,76 +301,11 @@ describe("Process", () => {
       expect(process.permissionMode).toBe("plan");
     });
 
-    it("initializes modeVersion to 0", async () => {
-      const iterator = createMockIterator([]);
-      const process = new Process(iterator, {
-        projectPath: "/test",
-        projectId: "proj-1",
-        sessionId: "sess-1",
-        idleTimeoutMs: 100,
-      });
-
-      expect(process.modeVersion).toBe(0);
-    });
-
-    it("increments modeVersion when mode changes", async () => {
-      const iterator = createMockIterator([]);
-      const process = new Process(iterator, {
-        projectPath: "/test",
-        projectId: "proj-1",
-        sessionId: "sess-1",
-        idleTimeoutMs: 100,
-      });
-
-      expect(process.modeVersion).toBe(0);
-
-      process.setPermissionMode("acceptEdits");
-      expect(process.modeVersion).toBe(1);
-
-      process.setPermissionMode("bypassPermissions");
-      expect(process.modeVersion).toBe(2);
-
-      process.setPermissionMode("plan");
-      expect(process.modeVersion).toBe(3);
-    });
-
-    it("emits mode-change event when mode changes", async () => {
-      const iterator = createMockIterator([]);
-      const process = new Process(iterator, {
-        projectPath: "/test",
-        projectId: "proj-1",
-        sessionId: "sess-1",
-        idleTimeoutMs: 100,
-      });
-
-      const events: ProcessEvent[] = [];
-      process.subscribe((event) => {
-        if (event.type === "mode-change") {
-          events.push(event);
-        }
-      });
-
-      process.setPermissionMode("acceptEdits");
-      process.setPermissionMode("bypassPermissions");
-
-      expect(events).toHaveLength(2);
-      expect(events[0]).toEqual({
-        type: "mode-change",
-        mode: "acceptEdits",
-        version: 1,
-      });
-      expect(events[1]).toEqual({
-        type: "mode-change",
-        mode: "bypassPermissions",
-        version: 2,
-      });
-    });
-
     it("handleToolApproval auto-approves in bypassPermissions mode", async () => {
       const iterator = createMockIterator([]);
       const process = new Process(iterator, {
+        queue: new MessageQueue(),
         projectPath: "/test",
-        projectId: "proj-1",
         sessionId: "sess-1",
         idleTimeoutMs: 100,
         permissionMode: "bypassPermissions",
@@ -422,8 +324,8 @@ describe("Process", () => {
     it("handleToolApproval auto-allows read-only tools in plan mode", async () => {
       const iterator = createMockIterator([]);
       const process = new Process(iterator, {
+        queue: new MessageQueue(),
         projectPath: "/test",
-        projectId: "proj-1",
         sessionId: "sess-1",
         idleTimeoutMs: 100,
         permissionMode: "plan",
@@ -445,8 +347,8 @@ describe("Process", () => {
     it("handleToolApproval prompts user for mutating tools in plan mode", async () => {
       const iterator = createMockIterator([]);
       const process = new Process(iterator, {
+        queue: new MessageQueue(),
         projectPath: "/test",
-        projectId: "proj-1",
         sessionId: "sess-1",
         idleTimeoutMs: 100,
         permissionMode: "plan",
@@ -465,7 +367,7 @@ describe("Process", () => {
       expect(process.state.type).toBe("waiting-input");
 
       // Simulate user denying
-      const pendingRequest = process.getPendingInputRequest();
+      const pendingRequest = pendingInput(process);
       expect(pendingRequest).not.toBeNull();
       expect(pendingRequest?.toolName).toBe("Edit");
       process.respondToInput(pendingRequest?.id ?? "", "deny");
@@ -475,14 +377,14 @@ describe("Process", () => {
     });
 
     it("queues deny feedback as follow-up message for Codex approvals", async () => {
+      const queue = new MessageQueue();
       const iterator = createMockIterator([]);
       const process = new Process(iterator, {
         projectPath: "/test",
-        projectId: "proj-1",
         sessionId: "sess-1",
         idleTimeoutMs: 100,
         provider: "codex",
-        queue: new MessageQueue(),
+        queue,
       });
 
       const abortController = new AbortController();
@@ -492,7 +394,7 @@ describe("Process", () => {
         { signal: abortController.signal },
       );
 
-      const pendingRequest = process.getPendingInputRequest();
+      const pendingRequest = pendingInput(process);
       expect(pendingRequest).not.toBeNull();
 
       const accepted = process.respondToInput(
@@ -507,18 +409,18 @@ describe("Process", () => {
       expect(result.behavior).toBe("deny");
       expect(result.message).toBe("edit src/foo.ts instead");
       expect(result.interrupt).toBe(false);
-      expect(process.queueDepth).toBe(1);
+      expect(queue.depth).toBe(1);
     });
 
     it("does not queue deny feedback follow-up for non-Codex providers", async () => {
+      const queue = new MessageQueue();
       const iterator = createMockIterator([]);
       const process = new Process(iterator, {
         projectPath: "/test",
-        projectId: "proj-1",
         sessionId: "sess-1",
         idleTimeoutMs: 100,
         provider: "claude",
-        queue: new MessageQueue(),
+        queue,
       });
 
       const abortController = new AbortController();
@@ -528,7 +430,7 @@ describe("Process", () => {
         { signal: abortController.signal },
       );
 
-      const pendingRequest = process.getPendingInputRequest();
+      const pendingRequest = pendingInput(process);
       expect(pendingRequest).not.toBeNull();
 
       const accepted = process.respondToInput(
@@ -543,14 +445,14 @@ describe("Process", () => {
       expect(result.behavior).toBe("deny");
       expect(result.message).toBe("edit src/foo.ts instead");
       expect(result.interrupt).toBe(false);
-      expect(process.queueDepth).toBe(0);
+      expect(queue.depth).toBe(0);
     });
 
     it("handleToolApproval prompts user for ExitPlanMode in plan mode (not auto-approve)", async () => {
       const iterator = createMockIterator([]);
       const process = new Process(iterator, {
+        queue: new MessageQueue(),
         projectPath: "/test",
-        projectId: "proj-1",
         sessionId: "sess-1",
         idleTimeoutMs: 100,
         permissionMode: "plan",
@@ -569,7 +471,7 @@ describe("Process", () => {
       expect(process.state.type).toBe("waiting-input");
 
       // Simulate user approving
-      const pendingRequest = process.getPendingInputRequest();
+      const pendingRequest = pendingInput(process);
       expect(pendingRequest).not.toBeNull();
       expect(pendingRequest?.toolName).toBe("ExitPlanMode");
       process.respondToInput(pendingRequest?.id, "approve");
@@ -583,8 +485,8 @@ describe("Process", () => {
     it("handleToolApproval prompts user for AskUserQuestion in plan mode (not auto-deny)", async () => {
       const iterator = createMockIterator([]);
       const process = new Process(iterator, {
+        queue: new MessageQueue(),
         projectPath: "/test",
-        projectId: "proj-1",
         sessionId: "sess-1",
         idleTimeoutMs: 100,
         permissionMode: "plan",
@@ -603,7 +505,7 @@ describe("Process", () => {
       expect(process.state.type).toBe("waiting-input");
 
       // Simulate user approving with answers
-      const pendingRequest = process.getPendingInputRequest();
+      const pendingRequest = pendingInput(process);
       expect(pendingRequest).not.toBeNull();
       expect(pendingRequest?.toolName).toBe("AskUserQuestion");
       process.respondToInput(pendingRequest?.id, "approve", { "test?": "Yes" });
@@ -622,8 +524,8 @@ describe("Process", () => {
     it("handleToolApproval auto-approves Edit tools in acceptEdits mode", async () => {
       const iterator = createMockIterator([]);
       const process = new Process(iterator, {
+        queue: new MessageQueue(),
         projectPath: "/test",
-        projectId: "proj-1",
         sessionId: "sess-1",
         idleTimeoutMs: 100,
         permissionMode: "acceptEdits",
@@ -651,8 +553,8 @@ describe("Process", () => {
     it("handleToolApproval auto-allows read-only tools in default mode", async () => {
       const iterator = createMockIterator([]);
       const process = new Process(iterator, {
+        queue: new MessageQueue(),
         projectPath: "/test",
-        projectId: "proj-1",
         sessionId: "sess-1",
         idleTimeoutMs: 100,
         permissionMode: "default",
@@ -683,8 +585,8 @@ describe("Process", () => {
     it("handleToolApproval auto-allows read-only tools in acceptEdits mode", async () => {
       const iterator = createMockIterator([]);
       const process = new Process(iterator, {
+        queue: new MessageQueue(),
         projectPath: "/test",
-        projectId: "proj-1",
         sessionId: "sess-1",
         idleTimeoutMs: 100,
         permissionMode: "acceptEdits",
@@ -739,16 +641,16 @@ describe("Process", () => {
       for (const tool of testTools) {
         // Create fresh processes for each tool to avoid state pollution
         const defaultProcess = new Process(createMockIterator([]), {
+          queue: new MessageQueue(),
           projectPath: "/test",
-          projectId: "proj-1",
           sessionId: "sess-1",
           idleTimeoutMs: 100,
           permissionMode: "default",
         });
 
         const acceptEditsProcess = new Process(createMockIterator([]), {
+          queue: new MessageQueue(),
           projectPath: "/test",
-          projectId: "proj-1",
           sessionId: "sess-2",
           idleTimeoutMs: 100,
           permissionMode: "acceptEdits",
@@ -783,14 +685,14 @@ describe("Process", () => {
         } else {
           // If default needs approval, acceptEdits might auto-approve (e.g., Edit)
           // but we need to resolve the pending promise for default
-          const pendingRequest = defaultProcess.getPendingInputRequest();
+          const pendingRequest = pendingInput(defaultProcess);
           if (pendingRequest) {
             defaultProcess.respondToInput(pendingRequest.id, "approve");
           }
 
           // Also resolve acceptEdits if it's waiting
           if (acceptEditsNeedsApproval) {
-            const acceptEditsPendingRequest = acceptEditsProcess.getPendingInputRequest();
+            const acceptEditsPendingRequest = pendingInput(acceptEditsProcess);
             if (acceptEditsPendingRequest) {
               acceptEditsProcess.respondToInput(acceptEditsPendingRequest.id, "approve");
             }
@@ -804,8 +706,8 @@ describe("Process", () => {
     it("handleToolApproval prompts user for mutating tools in default mode", async () => {
       const iterator = createMockIterator([]);
       const process = new Process(iterator, {
+        queue: new MessageQueue(),
         projectPath: "/test",
-        projectId: "proj-1",
         sessionId: "sess-1",
         idleTimeoutMs: 100,
         permissionMode: "default",
@@ -824,7 +726,7 @@ describe("Process", () => {
       expect(process.state.type).toBe("waiting-input");
 
       // Simulate user approving
-      const pendingRequest = process.getPendingInputRequest();
+      const pendingRequest = pendingInput(process);
       expect(pendingRequest).not.toBeNull();
       expect(pendingRequest?.toolName).toBe("Edit");
       if (pendingRequest) {
@@ -838,8 +740,8 @@ describe("Process", () => {
     it("handles concurrent tool approvals (queues them)", async () => {
       const iterator = createMockIterator([]);
       const process = new Process(iterator, {
+        queue: new MessageQueue(),
         projectPath: "/test",
-        projectId: "proj-1",
         sessionId: "sess-1",
         idleTimeoutMs: 100,
         permissionMode: "default",
@@ -860,7 +762,7 @@ describe("Process", () => {
       );
 
       // Both should be pending - first one should be shown
-      const firstRequest = process.getPendingInputRequest();
+      const firstRequest = pendingInput(process);
       expect(firstRequest).not.toBeNull();
       expect(firstRequest?.toolName).toBe("Bash");
 
@@ -878,7 +780,7 @@ describe("Process", () => {
       expect(result1.behavior).toBe("allow");
 
       // Second request should now be pending
-      const secondRequest = process.getPendingInputRequest();
+      const secondRequest = pendingInput(process);
       expect(secondRequest).not.toBeNull();
       expect(secondRequest?.id).not.toBe(firstId);
 
@@ -892,7 +794,7 @@ describe("Process", () => {
       expect(result2.behavior).toBe("allow");
 
       // No more pending requests
-      expect(process.getPendingInputRequest()).toBeNull();
+      expect(pendingInput(process)).toBeNull();
       expect(process.state.type).toBe("in-turn");
     });
   });
@@ -901,7 +803,12 @@ describe("Process", () => {
     it("say which tool call they are about, so the UI can ask on its row", async () => {
       const process = new Process(
         createMockIterator([{ type: "session.started", sessionId: "sess-1" }]),
-        { projectPath: "/test", projectId: "proj-1", sessionId: "sess-1", idleTimeoutMs: 100 },
+        {
+          queue: new MessageQueue(),
+          projectPath: "/test",
+          sessionId: "sess-1",
+          idleTimeoutMs: 100,
+        },
       );
       const controller = new AbortController();
       void process.handleToolApproval(
@@ -912,7 +819,7 @@ describe("Process", () => {
           toolUseID: "call-9",
         },
       );
-      expect(process.getPendingInputRequest()).toMatchObject({
+      expect(pendingInput(process)).toMatchObject({
         toolName: "Bash",
         toolCallId: "call-9",
       });
@@ -920,22 +827,14 @@ describe("Process", () => {
     });
   });
 
-  describe("first user message", () => {
-    const newProcess = (queue?: MessageQueue) =>
+  describe("queued user messages", () => {
+    const newProcess = (queue: MessageQueue) =>
       new Process(createMockIterator([{ type: "session.started", sessionId: "sess-1" }]), {
         projectPath: "/test",
-        projectId: "proj-1",
         sessionId: "sess-1",
         idleTimeoutMs: 100,
         queue,
       });
-
-    it("remembers only the first message, for the optimistic session title", () => {
-      const process = newProcess(new MessageQueue());
-      process.queueMessage({ text: "first question" });
-      process.queueMessage({ text: "follow-up" });
-      expect(process.firstUserText).toBe("first question");
-    });
 
     it("records exactly what the provider receives, attachments included", async () => {
       const queue = new MessageQueue();
@@ -970,9 +869,8 @@ describe("Process", () => {
         source?: { media_type: string; data: string };
       }>;
       // The text lists every file by path; the image also goes inline.
-      expect(process.firstUserText).toBe(content[0]?.text);
-      expect(process.firstUserText).toContain("User uploaded files:");
-      expect(process.firstUserText).toContain("1.0 KB");
+      expect(content[0]?.text).toContain("User uploaded files:");
+      expect(content[0]?.text).toContain("1.0 KB");
       expect(content.slice(1)).toEqual([
         {
           type: "image",
@@ -1002,8 +900,8 @@ describe("Process", () => {
       const iterator = createMockIterator([{ type: "session.started", sessionId: "sess-1" }]);
 
       const process = new Process(iterator, {
+        queue: new MessageQueue(),
         projectPath: "/test",
-        projectId: "proj-1",
         sessionId: "sess-1",
         idleTimeoutMs: 100,
       });
@@ -1021,8 +919,8 @@ describe("Process", () => {
       }
 
       const process = new Process(failingIterator(), {
+        queue: new MessageQueue(),
         projectPath: "/test",
-        projectId: "proj-1",
         sessionId: "sess-1",
         idleTimeoutMs: 100,
       });
@@ -1047,8 +945,8 @@ describe("Process", () => {
       }
 
       const process = new Process(failingIterator(), {
+        queue: new MessageQueue(),
         projectPath: "/test",
-        projectId: "proj-1",
         sessionId: "sess-1",
         idleTimeoutMs: 100,
       });
@@ -1067,252 +965,6 @@ describe("Process", () => {
 
       expect(terminatedEvent?.reason).toContain("terminated");
       expect(terminatedEvent?.error).toBe(error);
-    });
-
-    it("getInfo returns terminated state", async () => {
-      const error = new Error("process exited");
-      async function* failingIterator(): AsyncIterator<AgentEvent> {
-        yield { type: "session.started", sessionId: "sess-1" };
-        throw error;
-      }
-
-      const process = new Process(failingIterator(), {
-        projectPath: "/test",
-        projectId: "proj-1",
-        sessionId: "sess-1",
-        idleTimeoutMs: 100,
-      });
-
-      // Wait for termination
-      await vi.waitFor(() => {
-        expect(process.isTerminated).toBe(true);
-      });
-
-      const info = process.getInfo();
-      expect(info.state).toBe("terminated");
-    });
-  });
-
-  describe("hold mode", () => {
-    it("setHold(true) transitions to hold state", async () => {
-      const iterator = createMockIterator([{ type: "session.started", sessionId: "sess-1" }]);
-
-      const process = new Process(iterator, {
-        projectPath: "/test",
-        projectId: "proj-1",
-        sessionId: "sess-1",
-        idleTimeoutMs: 100,
-      });
-
-      expect(process.isHeld).toBe(false);
-      expect(process.holdSince).toBe(null);
-
-      process.setHold(true);
-
-      expect(process.isHeld).toBe(true);
-      expect(process.holdSince).not.toBe(null);
-      expect(process.state.type).toBe("hold");
-    });
-
-    it("setHold(false) transitions back to running", async () => {
-      const iterator = createMockIterator([{ type: "session.started", sessionId: "sess-1" }]);
-
-      const process = new Process(iterator, {
-        projectPath: "/test",
-        projectId: "proj-1",
-        sessionId: "sess-1",
-        idleTimeoutMs: 100,
-      });
-
-      process.setHold(true);
-      expect(process.state.type).toBe("hold");
-
-      process.setHold(false);
-      expect(process.isHeld).toBe(false);
-      expect(process.holdSince).toBe(null);
-      expect(process.state.type).toBe("in-turn");
-    });
-
-    it("emits state-change events for hold/resume", async () => {
-      const iterator = createMockIterator([]);
-      const process = new Process(iterator, {
-        projectPath: "/test",
-        projectId: "proj-1",
-        sessionId: "sess-1",
-        idleTimeoutMs: 100,
-      });
-
-      const stateChanges: string[] = [];
-      process.subscribe((event) => {
-        if (event.type === "state-change") {
-          stateChanges.push(event.state.type);
-        }
-      });
-
-      process.setHold(true);
-      process.setHold(false);
-
-      expect(stateChanges).toContain("hold");
-      expect(stateChanges).toContain("in-turn");
-    });
-
-    it("setHold is idempotent", async () => {
-      const iterator = createMockIterator([]);
-      const process = new Process(iterator, {
-        projectPath: "/test",
-        projectId: "proj-1",
-        sessionId: "sess-1",
-        idleTimeoutMs: 100,
-      });
-
-      const stateChanges: string[] = [];
-      process.subscribe((event) => {
-        if (event.type === "state-change") {
-          stateChanges.push(event.state.type);
-        }
-      });
-
-      // Calling setHold(true) multiple times should only emit once
-      process.setHold(true);
-      process.setHold(true);
-      process.setHold(true);
-
-      const holdChanges = stateChanges.filter((s) => s === "hold");
-      expect(holdChanges).toHaveLength(1);
-    });
-
-    it("getInfo returns hold state and holdSince", async () => {
-      const iterator = createMockIterator([]);
-      const process = new Process(iterator, {
-        projectPath: "/test",
-        projectId: "proj-1",
-        sessionId: "sess-1",
-        idleTimeoutMs: 100,
-      });
-
-      process.setHold(true);
-
-      const info = process.getInfo();
-      expect(info.state).toBe("hold");
-      expect(info.holdSince).toBeDefined();
-    });
-
-    it("pauses iterator consumption when held", async () => {
-      // Create an iterator that we can control
-      let resolveNext: ((value: IteratorResult<AgentEvent>) => void) | null = null;
-      const controllableIterator: AsyncIterator<AgentEvent> = {
-        next() {
-          return new Promise((resolve) => {
-            resolveNext = resolve;
-          });
-        },
-      };
-
-      const process = new Process(controllableIterator, {
-        projectPath: "/test",
-        projectId: "proj-1",
-        sessionId: "sess-1",
-        idleTimeoutMs: 100,
-      });
-
-      const receivedMessages: AgentEvent[] = [];
-      process.subscribe((event) => {
-        if (event.type === "agent") {
-          receivedMessages.push(event.event);
-        }
-      });
-
-      // Let the first message through
-      await new Promise((resolve) => setTimeout(resolve, 10));
-      if (resolveNext) {
-        resolveNext({
-          done: false,
-          value: { type: "session.started", sessionId: "sess-1" },
-        });
-      }
-
-      await new Promise((resolve) => setTimeout(resolve, 10));
-      expect(receivedMessages).toHaveLength(1);
-
-      // Now hold the process - the next iterator.next() should not be called
-      // until we resume
-      process.setHold(true);
-
-      // The loop should be blocked waiting to resume
-      // If we resolve another message, it shouldn't be received yet
-      // (This is hard to test without more control, but we can at least
-      // verify the state)
-      expect(process.state.type).toBe("hold");
-    });
-
-    it("resumes iterator consumption after hold is released", async () => {
-      const messages: AgentEvent[] = [
-        { type: "session.started", sessionId: "sess-1" },
-        { type: "text.delta", blockId: "b1", delta: "Hello" },
-        { type: "turn.completed" },
-      ];
-
-      const iterator = createMockIterator(messages);
-      const process = new Process(iterator, {
-        projectPath: "/test",
-        projectId: "proj-1",
-        sessionId: "sess-1",
-        idleTimeoutMs: 100,
-      });
-
-      const receivedMessages: AgentEvent[] = [];
-      process.subscribe((event) => {
-        if (event.type === "agent") {
-          receivedMessages.push(event.event);
-        }
-      });
-
-      // Wait for processing to complete (mock iterator is fast)
-      await new Promise((resolve) => setTimeout(resolve, 50));
-
-      // All messages should be received
-      expect(receivedMessages).toHaveLength(3);
-    });
-
-    it("can queue messages while held", async () => {
-      const iterator = createMockIterator([{ type: "session.started", sessionId: "sess-1" }]);
-
-      const process = new Process(iterator, {
-        projectPath: "/test",
-        projectId: "proj-1",
-        sessionId: "sess-1",
-        idleTimeoutMs: 100,
-      });
-
-      process.setHold(true);
-
-      // Should still be able to queue messages
-      const result = process.queueMessage({ text: "Hello while held" });
-      expect(result.success).toBe(true);
-      expect(result.position).toBe(1);
-    });
-
-    it("termination while held resolves the wait", async () => {
-      // Create an iterator that throws after first message
-      async function* failingIterator(): AsyncIterator<AgentEvent> {
-        yield { type: "session.started", sessionId: "sess-1" };
-        throw new Error("ProcessTransport is not ready for writing");
-      }
-
-      const process = new Process(failingIterator(), {
-        projectPath: "/test",
-        projectId: "proj-1",
-        sessionId: "sess-1",
-        idleTimeoutMs: 100,
-      });
-
-      // Wait for error to occur and process to terminate
-      await vi.waitFor(() => {
-        expect(process.isTerminated).toBe(true);
-      });
-
-      // Hold should be cleared
-      expect(process.isHeld).toBe(false);
     });
   });
 });

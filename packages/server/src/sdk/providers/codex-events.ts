@@ -23,7 +23,6 @@ import {
   normalizeCodexCommandExecutionOutput,
   normalizeCodexToolInvocation,
 } from "../../codex/normalization.js";
-import type { UserMessage } from "../types.js";
 import type {
   ErrorNotification as CodexErrorNotification,
   ItemCompletedNotification as CodexItemCompletedNotification,
@@ -480,50 +479,6 @@ export function asItemCompletedNotification(
     return null;
   }
   return params as CodexItemCompletedNotification;
-}
-
-/** Plain text of a queued user message, as sent to `turn/start`. */
-export function extractTextFromMessage(message: unknown): string {
-  if (!message || typeof message !== "object") {
-    return "";
-  }
-
-  // Handle UserMessage format
-  const userMsg = message as UserMessage;
-  if (typeof userMsg.text === "string") {
-    return userMsg.text;
-  }
-
-  // Handle SDK message format
-  const sdkMsg = message as {
-    message?: { content?: string | unknown[] };
-  };
-  const content = sdkMsg.message?.content;
-
-  if (typeof content === "string") {
-    return content;
-  }
-
-  if (Array.isArray(content)) {
-    return content
-      .map((block: unknown) => {
-        if (typeof block === "string") return block;
-        if (
-          typeof block === "object" &&
-          block !== null &&
-          "type" in block &&
-          (block as { type: string }).type === "text" &&
-          "text" in block
-        ) {
-          return (block as { text: string }).text;
-        }
-        return "";
-      })
-      .filter(Boolean)
-      .join("\n");
-  }
-
-  return "";
 }
 
 export function getOptionalString(value: unknown): string | null {

@@ -520,10 +520,7 @@ export class CodexProvider implements AgentProvider {
         activeClient?.close();
       },
       isProcessAlive: () => activeClient?.isAlive() ?? false,
-      get pid() {
-        return activeClient?.pid;
-      },
-      // Same native cancellation route as YepAnywhere. If a turn has not started
+      // Codex's native cancellation route (turn/interrupt). If a turn has not started
       // yet, terminate this worker so queued input cannot begin after Stop.
       interrupt: async () => {
         if (!activeClient || !runtimeState.threadId || !runtimeState.activeTurnId) {

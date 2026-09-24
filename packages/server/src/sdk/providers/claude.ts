@@ -1,4 +1,4 @@
-import { type ChildProcess, execFile, spawn } from "node:child_process";
+import { execFile, spawn } from "node:child_process";
 import { constants, accessSync, existsSync, readFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import { homedir } from "node:os";
@@ -686,9 +686,6 @@ export class ClaudeProvider implements AgentProvider {
         ? () =>
             capturedProcess !== null && capturedProcess.exitCode === null && !capturedProcess.killed
         : undefined,
-      get pid() {
-        return (capturedProcess as ChildProcess | null)?.pid;
-      },
       setMaxThinkingTokens: (tokens: number | null) => sdkQuery.setMaxThinkingTokens(tokens),
       interrupt: () => sdkQuery.interrupt(),
       supportedModels: async (): Promise<ModelInfo[]> => {

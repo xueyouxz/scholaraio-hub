@@ -15,7 +15,7 @@ import { initLogger, interceptConsole } from "./logging/index.js";
 import { closeMessageLogger, initMessageLogger } from "./sdk/messageLogger.js";
 import { setHubApiBaseUrl } from "./sdk/providers/scholaraio-cli.js";
 import { LibraryService } from "./services/LibraryService.js";
-import { InstallService, ModelInfoService, ServerSettingsService } from "./services/index.js";
+import { ModelInfoService, ServerSettingsService } from "./services/index.js";
 import { ensureSkillsDirectory } from "./skills/skillsDirectory.js";
 
 const config = loadConfig();
@@ -41,7 +41,6 @@ if (config.nodeEnv === "production" && !existsSync(path.join(config.clientDistDi
 const devFrontend = config.nodeEnv === "development" ? new DevFrontend() : undefined;
 const library = new LibraryService(config.dataDir);
 const settings = new ServerSettingsService({ dataDir: config.dataDir });
-const install = new InstallService({ dataDir: config.dataDir });
 let application: ReturnType<typeof createApp> | undefined;
 let server: ReturnType<typeof serve> | undefined;
 let closing = false;
@@ -70,7 +69,6 @@ try {
   await Promise.all([
     library.start(),
     settings.initialize(),
-    install.initialize(),
     ensureSkillsDirectory(config.dataDir),
   ]);
   application = createApp({
@@ -81,7 +79,6 @@ try {
     serverSettingsService: settings,
     modelInfoService: new ModelInfoService(),
     enabledProviders: config.enabledProviders,
-    installId: install.getInstallId(),
     frontendDistPath: devFrontend ? undefined : config.clientDistDir,
     scholaraioSkillsDir: config.scholaraioSkillsDir,
   });

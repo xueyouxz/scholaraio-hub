@@ -39,7 +39,8 @@ WIP 覆盖 `sdk/providers/{claude,codex}.ts`、`SessionService.ts`、`app.ts`、
 
 ## 阶段
 
-每阶段独立提交，跑通 typecheck + 单元测试 + lint（WIP 的既有问题除外）后再进入下一阶段。
+实际顺序：阶段 3 先于阶段 2（shared 的 `SESSION_TITLE_MAX_LENGTH` 只被阶段 3 删除的
+`SupervisorEvents` 使用）。每阶段独立提交，跑通 typecheck + 单元测试 + lint（WIP 的既有问题除外）后再进入下一阶段。
 不 push、不开 PR。验证不重建 `packages/{server,client}/dist`（生产 Hub 3400 在用）。
 
 ### 阶段 1：仓库卫生与 AI 协作文档
@@ -64,13 +65,13 @@ WIP 覆盖 `sdk/providers/{claude,codex}.ts`、`SessionService.ts`、`app.ts`、
 
 ### 阶段 3：server 休眠架构
 
-- [ ] 删除 relay 遗留链：`InstallService`（+ `install.json`）、`installId` 透传、
+- [x] 删除 relay 遗留链：`InstallService`（+ `install.json`）、`installId` 透传、
       `/api/version`（前端无消费方）。
-- [ ] 删除 `watcher/EventBus.ts`、`supervisor/SupervisorEvents.ts`、`supervisor/WorkerQueue.ts`。
-- [ ] Supervisor 收缩为会话进程注册表：保留 start/resume/providerFor/空闲回收/close；
+- [x] 删除 `watcher/EventBus.ts`、`supervisor/SupervisorEvents.ts`、`supervisor/WorkerQueue.ts`。
+- [x] Supervisor 收缩为会话进程注册表：保留 start/resume/providerFor/空闲回收/close；
       删除池上限、排队、抢占、hold、延迟消息、`onSessionSummary`/`onSessionExecutor`，
       `SessionLaunch` 只剩 started。Process 删除外部从不调用的成员。
-- [ ] 删除零使用导出（`summarizeCodexNormalizedMessage`、`extractTextFromMessage`、
+- [x] 删除零使用导出（`summarizeCodexNormalizedMessage`、`extractTextFromMessage`、
       `TimestampedSDKMessage`、`AgentEventType`）与 env schema 中无人读取的 `CLAUDE_CONFIG_DIR`。
 
 ### 阶段 4：配置与组装根
@@ -114,3 +115,12 @@ WIP 覆盖 `sdk/providers/{claude,codex}.ts`、`SessionService.ts`、`app.ts`、
   `watcher/`。删除 20 个误提交的 figures、server 孤立锁文件与 README、4 个未引用组件及
   `session.css` 中只属于 `ThinkingIndicator` 的样式与 `dot-breathe` 动画。
   验证：client typecheck、182 个单测通过。
+- 阶段 3：删除 `EventBus`、`SupervisorEvents`、`WorkerQueue`、`InstallService`、`/api/version`、
+  `projects/paths.ts`（只剩 Supervisor 引用）。Supervisor 从 1267 行收缩为约 300 行的会话进程
+  注册表：`startSession`/`resumeSession` 直接返回 `Process`，`SessionService` 不再处理排队/拒绝分支。
+  Process 去掉 hold、延迟消息、`getInfo`、`projectId`、`pid`、`modeVersion`、动态模型/命令查询、
+  首条消息标题、测试专用的 legacy 队列（`queue` 改为必填）；监听器异常改为记录日志而非静默吞掉，
+  删掉 `handleToolApproval` 的调试 `console.log`。provider 契约去掉无人读取的 `pid`、
+  `executor`、`remoteEnv`。另删 `summarizeCodexNormalizedMessage` 及其 190 行辅助函数、
+  `extractTextFromMessage`、`TimestampedSDKMessage`、`AgentEventType`、env 的 `CLAUDE_CONFIG_DIR`。
+  验证：server typecheck、biome、246 个单测通过（减少的约 110 个是只测已删功能的用例）。

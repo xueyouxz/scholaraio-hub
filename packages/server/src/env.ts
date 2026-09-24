@@ -59,7 +59,6 @@ const RuntimeEnvSchema = z
     PORT: optionalInteger,
     SCHOLARAIO_HUB_DATA_DIR: z.string().optional(),
     SCHOLARAIO_HUB_PROFILE: z.string().optional(),
-    CLAUDE_CONFIG_DIR: z.string().optional(),
     CLIENT_DIST_DIR: z.string().optional(),
     SCHOLARAIO_SKILLS_DIR: z.string().optional(),
     IDLE_TIMEOUT: optionalInteger,

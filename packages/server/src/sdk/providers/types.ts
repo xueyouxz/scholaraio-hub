@@ -50,10 +50,6 @@ export interface StartSessionOptions {
   onToolApproval?: CanUseTool;
   /** Global instructions to append to system prompt (from server settings) */
   globalInstructions?: string;
-  /** Optional remote executor identifier */
-  executor?: string;
-  /** Optional environment overrides for remote execution */
-  remoteEnv?: Record<string, string>;
 }
 
 /**
@@ -72,8 +68,6 @@ export interface AgentSession {
   abort: () => void;
   /** Check if the underlying CLI process is still alive (undefined = not available) */
   isProcessAlive?: () => boolean;
-  /** OS PID of the spawned agent child process (undefined if not available) */
-  pid?: number | (() => number | undefined);
   /** Session ID if available immediately (some providers provide later via messages) */
   sessionId?: string;
   /**

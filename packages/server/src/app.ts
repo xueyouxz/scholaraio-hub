@@ -13,7 +13,6 @@ import { createProjectRoutes } from "./routes/projects.js";
 import { createProvidersRoutes } from "./routes/providers.js";
 import { createSettingsRoutes } from "./routes/settings.js";
 import { createSkillsRoutes } from "./routes/skills.js";
-import { createVersionRoutes } from "./routes/version.js";
 import { claudeProvider } from "./sdk/providers/claude.js";
 import { setLibraryDataDir } from "./sdk/providers/scholaraio-cli.js";
 import type { AgentProvider } from "./sdk/providers/types.js";
@@ -38,7 +37,6 @@ export interface AppOptions {
   serverSettingsService?: ServerSettingsService;
   modelInfoService?: ModelInfoService;
   enabledProviders?: string[];
-  installId?: string;
   frontendDistPath?: string;
   scholaraioSkillsDir?: string;
 }
@@ -71,7 +69,6 @@ export function createApp(options: AppOptions) {
     await next();
   });
   app.route("/health", health);
-  app.route("/api/version", createVersionRoutes({ installId: options.installId }));
   // Registered first: these two also decide where a project's sessions run.
   app.route("/api/library/projects", createProjectRoutes(library, store));
   app.route("/api/library/runtime", createLibraryRuntimeRoutes(vectorRuntime));

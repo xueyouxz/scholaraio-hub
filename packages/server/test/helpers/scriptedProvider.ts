@@ -7,15 +7,13 @@ import type {
   AuthStatus,
   StartSessionOptions,
 } from "../../src/sdk/providers/types.js";
-import type { Process } from "../../src/supervisor/Process.js";
-import type { SessionLaunch } from "../../src/supervisor/Supervisor.js";
 
 export interface ScriptedProviderOptions {
   /** Recorded start options, in call order. */
   startCalls?: StartSessionOptions[];
   /**
    * Keep the session iterator open after the scripted messages, so the process
-   * stays registered until it is aborted. Used by worker-pool tests.
+   * stays registered until it is aborted.
    */
   holdOpen?: boolean;
   /** Assistant reply emitted after the init message (omit for silence). */
@@ -110,12 +108,4 @@ export function providerFromSessionFactory(
     getAvailableModels: async () => [],
     startSession,
   };
-}
-
-/** Unwrap a launch the test expects to have started immediately. */
-export function expectStarted(launch: SessionLaunch): Process {
-  if (launch.kind !== "started") {
-    throw new Error(`expected a started session, got ${launch.kind}`);
-  }
-  return launch.process;
 }

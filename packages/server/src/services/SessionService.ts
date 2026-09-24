@@ -487,25 +487,18 @@ export class SessionService {
         permissionMode: record.permissionMode ?? "default",
         modelSettings: settings,
       };
-      const launch = record.nativeSessionId
+      const process = record.nativeSessionId
         ? await this.supervisor.resumeSession({
             ...launchRequest,
             sessionId: record.nativeSessionId,
           })
         : await this.supervisor.startSession(launchRequest);
       run.launching = false;
-      if (launch.kind !== "started") {
-        throw new Error(
-          launch.kind === "queued"
-            ? "CLI 工作容量已满，请稍后重试。"
-            : `CLI 队列已满（上限 ${launch.maxQueueSize}），请稍后重试。`,
-        );
-      }
       if (run.finished) {
-        launch.process.terminate("Application run already stopped");
+        process.terminate("Application run already stopped");
         return;
       }
-      record.nativeSessionId = launch.process.sessionId;
+      record.nativeSessionId = process.sessionId;
       await this.store.save(record);
     } catch (error) {
       run.launching = false;

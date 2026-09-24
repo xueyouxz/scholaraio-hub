@@ -91,8 +91,6 @@ type AgentEventBody =
  */
 export type AgentEvent = AgentEventBody & { parentCallId?: string };
 
-export type AgentEventType = AgentEvent["type"];
-
 /** Tag events as coming from inside the subagent started by `parentCallId`. */
 export function inSubagent(events: AgentEvent[], parentCallId: string | undefined): AgentEvent[] {
   return parentCallId ? events.map((event) => ({ ...event, parentCallId })) : events;

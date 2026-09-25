@@ -22,7 +22,7 @@ export interface ToolView {
   /** Present once the tool has produced output, including partial output. */
   result?: ToolOutput;
   /** `result` is partial output of a still-running tool. */
-  running: boolean;
+  partial: boolean;
   /** The call's arguments are still being written by the agent. */
   inputStreaming: boolean;
 }
@@ -43,6 +43,8 @@ export interface ToolRenderer {
   summary(view: ToolView): string;
   /** One-line outcome shown after completion, e.g. "3 files". */
   resultSummary?(view: ToolView): string | undefined;
+  /** Lines added and removed, for calls that change files; shown instead of `resultSummary`. */
+  diffStats?(view: ToolView): DiffStats | undefined;
   /** Shown under the header while collapsed (e.g. the tail of a command's output). */
   preview?(view: ToolView): ReactNode;
   /** Expanded content. */
@@ -54,6 +56,11 @@ export interface ToolRenderer {
   askedInline?: boolean;
   /** Start expanded (e.g. edits and plans, which are the point of the call). */
   defaultExpanded?(view: ToolView): boolean;
+}
+
+export interface DiffStats {
+  added: number;
+  removed: number;
 }
 
 /** Read a string field from loosely typed tool input or detail. */
@@ -68,11 +75,35 @@ export function numberField(value: unknown, key: string): number | undefined {
   return typeof data[key] === "number" ? (data[key] as number) : undefined;
 }
 
+/**
+ * The text of a result. Content blocks (Claude's `[{ type: "text" }, { type:
+ * "image" }]`) give their text; images arrive as file parts of their own.
+ */
 export function contentText(result: ToolOutput | undefined): string {
   if (!result) return "";
-  return typeof result.content === "string"
-    ? result.content
-    : JSON.stringify(result.content, null, 2);
+  const { content } = result;
+  if (typeof content === "string") return content;
+  if (Array.isArray(content) && content.every(isContentBlock)) {
+    return content
+      .flatMap((block) => (typeof block.text === "string" ? [block.text] : []))
+      .join("\n");
+  }
+  return JSON.stringify(content, null, 2);
+}
+
+/** The result holds an image block (Claude's Read of a picture). */
+export function hasImageContent(result: ToolOutput | undefined): boolean {
+  const content = result?.content;
+  return (
+    Array.isArray(content) &&
+    content.some((block) => isContentBlock(block) && block.type === "image")
+  );
+}
+
+function isContentBlock(value: unknown): value is { type: string; text?: unknown } {
+  return (
+    !!value && typeof value === "object" && typeof (value as { type?: unknown }).type === "string"
+  );
 }
 
 export function fileName(path: string): string {

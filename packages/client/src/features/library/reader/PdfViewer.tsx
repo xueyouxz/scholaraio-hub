@@ -48,6 +48,7 @@ export function PdfViewer({ url, initialPage = 1, onPageChange }: Props) {
   const [zoomIndex, setZoomIndex] = useState(DEFAULT_ZOOM_INDEX);
   // 用 ref 保存 setTimeout 句柄，在下次缩放触发时先清除上次的定时器。
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const frameRef = useRef<number | null>(null);
 
   // 由索引取出实际缩放比例，?? 1.0 防止索引越界时降级到 100%。
   const scale = ZOOM_STEPS[zoomIndex] ?? 1.0;
@@ -171,7 +172,9 @@ export function PdfViewer({ url, initialPage = 1, onPageChange }: Props) {
       debounceRef.current = setTimeout(() => {
         setZoomIndex(nextIndex);
         // 等两帧：React commit 新 DOM + pdf.js 完成页面布局后再重新 observe。
-        requestAnimationFrame(() => requestAnimationFrame(reobservePages));
+        frameRef.current = requestAnimationFrame(() => {
+          frameRef.current = requestAnimationFrame(reobservePages);
+        });
       }, DEBOUNCE_MS);
     },
     [reobservePages],
@@ -180,21 +183,17 @@ export function PdfViewer({ url, initialPage = 1, onPageChange }: Props) {
   // 缩小：将 pendingZoomIndex 减 1，下限为 0（最小档位）。
   // 同步更新 pending（即时 UI 反馈），异步 commitZoom（防抖后真正渲染）。
   const zoomOut = useCallback(() => {
-    setPendingZoomIndex((i) => {
-      const next = Math.max(0, i - 1);
-      commitZoom(next);
-      return next;
-    });
-  }, [commitZoom]);
+    const next = Math.max(0, pendingZoomIndex - 1);
+    setPendingZoomIndex(next);
+    commitZoom(next);
+  }, [pendingZoomIndex, commitZoom]);
 
   // 放大：将 pendingZoomIndex 加 1，上限为最大档位索引。
   const zoomIn = useCallback(() => {
-    setPendingZoomIndex((i) => {
-      const next = Math.min(ZOOM_STEPS.length - 1, i + 1);
-      commitZoom(next);
-      return next;
-    });
-  }, [commitZoom]);
+    const next = Math.min(ZOOM_STEPS.length - 1, pendingZoomIndex + 1);
+    setPendingZoomIndex(next);
+    commitZoom(next);
+  }, [pendingZoomIndex, commitZoom]);
 
   // 重置缩放：直接同步更新两个 state，无需防抖，
   // 同时清除可能存在的 pending timer，避免重置后被覆盖。
@@ -204,10 +203,11 @@ export function PdfViewer({ url, initialPage = 1, onPageChange }: Props) {
     setZoomIndex(DEFAULT_ZOOM_INDEX);
   }, []);
 
-  // 组件卸载时清理防抖 timer，防止在已卸载的组件上调用 setState。
+  // 组件卸载时清理防抖 timer 和待执行的帧回调，防止在已卸载的组件上继续工作。
   useEffect(() => {
     return () => {
       if (debounceRef.current) clearTimeout(debounceRef.current);
+      if (frameRef.current !== null) cancelAnimationFrame(frameRef.current);
     };
   }, []);
 

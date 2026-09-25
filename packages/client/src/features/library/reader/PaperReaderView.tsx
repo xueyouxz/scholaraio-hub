@@ -4,7 +4,7 @@ import { MessageSquare, X } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import { libraryApi, newSessionUrl } from "../../../core/library";
-import { toLibraryPaperRef } from "../paperUtils";
+import { toPaperSummary } from "../paperSummary";
 import { LayerReader } from "./LayerReader";
 import { PaperMarkdown } from "./PaperMarkdown";
 import { PdfViewer } from "./PdfViewer";
@@ -168,13 +168,7 @@ function Reader({
         </p>
       ) : null}
       {mode === "overview" ? (
-        <LayerReader
-          paper={toLibraryPaperRef(paper)}
-          paperId={paper.id}
-          activeLayer="overview"
-          detail={{ l3Conclusion: paper.l3Conclusion }}
-          loadingDetail={false}
-        />
+        <LayerReader paper={toPaperSummary(paper)} conclusion={paper.l3Conclusion} />
       ) : mode === "pdf" ? (
         <>
           <PdfViewer
@@ -184,7 +178,7 @@ function Reader({
           />
         </>
       ) : (
-        <div ref={viewport} className="flex-1 min-h-0 overflow-y-auto no-scrollbar px-8 py-6">
+        <div ref={viewport} className="flex-1 min-h-0 overflow-y-auto px-8 py-6">
           {paper.hasMarkdown ? (
             <div className="max-w-3xl">
               <PaperMarkdown

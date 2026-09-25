@@ -2,7 +2,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Archive, FolderOpen, MessageSquare, Pencil, Plus, RefreshCw, Zap } from "lucide-react";
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
-import { libraryApi, newSessionUrl, sessionApi } from "../../core/library";
+import { libraryApi, newSessionUrl, sessionApi, workspaceUrl } from "../../core/library";
 import { WorkspaceCreateDialog } from "../../features/library/components/WorkspaceCreateDialog";
 
 import { usePageTitle } from "../components/NavigationLayout";
@@ -117,7 +117,7 @@ export function ProjectsPage() {
             <FolderOpen className="w-4 h-4 shrink-0 text-on-surface-variant" aria-hidden="true" />
             <div className="min-w-0 flex-1">
               <Link
-                to={`/library?project=${encodeURIComponent(project.id)}`}
+                to={workspaceUrl(project.id)}
                 className="block truncate text-sm text-on-surface hover:text-primary"
               >
                 {project.name}
@@ -133,7 +133,7 @@ export function ProjectsPage() {
               新会话
             </Link>
             <Link
-              to={`/agents?project=${encodeURIComponent(project.id)}`}
+              to={workspaceUrl(project.id)}
               className="flex shrink-0 items-center gap-1.5 text-on-surface-variant/60"
               title="项目会话"
             >

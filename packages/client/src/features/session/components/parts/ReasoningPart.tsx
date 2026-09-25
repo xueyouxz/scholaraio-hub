@@ -1,5 +1,6 @@
 import { memo, useState } from "react";
 import { Markdown } from "../../../../shared/components/Markdown";
+import { Chevron } from "../renderers/ToolCallRow";
 
 /** The agent's reasoning, collapsed by default; it pulses while it streams. */
 export const ReasoningPart = memo(function ReasoningPart({
@@ -18,7 +19,7 @@ export const ReasoningPart = memo(function ReasoningPart({
     >
       <summary className="collapsible__summary">
         <span>{streaming ? "Thinking..." : "Thinking"}</span>
-        <span className="collapsible__icon">▸</span>
+        <Chevron open={open} />
       </summary>
       {/* Parsed only while open: closed reasoning costs nothing per delta. */}
       {open ? (

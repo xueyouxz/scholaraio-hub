@@ -1,5 +1,5 @@
-import { useQueryClient } from "@tanstack/react-query";
 import { useEffect, useState } from "react";
+import { queryClient } from "./queryClient";
 
 /** What changed in the library, as published by the library service. */
 export interface LibraryEvent {
@@ -14,14 +14,14 @@ const AFFECTED: Record<LibraryEvent["type"], string[][]> = {
   papers: [
     ["library", "search"],
     ["library", "papers"],
-    ["library", "browse"],
     ["library", "analytics"],
     ["library", "capabilities"],
   ],
   projects: [
     ["library", "projects"],
+    // One workspace's detail, which also says which papers are in it.
+    ["library", "project"],
     ["library", "search"],
-    ["library", "browse"],
   ],
 };
 
@@ -48,11 +48,18 @@ export function subscribeLibraryEvents(listener: Listener): () => void {
     source = new EventSource("/api/library/events");
     source.onopen = () => announce({ connected: true });
     source.onmessage = (message) => {
+      let event: LibraryEvent;
       try {
-        announce({ connected: true, event: JSON.parse(message.data) });
+        event = JSON.parse(message.data);
       } catch (error) {
         console.error("[library] unreadable event", error, message.data);
+        return;
       }
+      // Once per change, however many components hold the stream open.
+      for (const queryKey of AFFECTED[event.type] ?? [["library"]]) {
+        void queryClient.invalidateQueries({ queryKey });
+      }
+      announce({ connected: true, event });
     };
     // EventSource reconnects on its own; until it does, callers must ask.
     source.onerror = () => announce({ connected: false });
@@ -67,24 +74,12 @@ export function subscribeLibraryEvents(listener: Listener): () => void {
 }
 
 /**
- * Keep the library's queries current from the change stream.
- *
- * Returns whether the stream is carrying changes; while it is not, callers
+ * Hold the change stream open while mounted, which keeps the library's queries
+ * current. Returns whether it is carrying changes; while it is not, callers
  * that need fresh data have to poll for it.
  */
-export function useLibraryEvents(): boolean {
-  const client = useQueryClient();
+export function useLibraryStream(): boolean {
   const [connected, setConnected] = useState(false);
-  useEffect(
-    () =>
-      subscribeLibraryEvents(({ connected: live, event }) => {
-        setConnected(live);
-        if (!event) return;
-        for (const queryKey of AFFECTED[event.type] ?? [["library"]]) {
-          void client.invalidateQueries({ queryKey });
-        }
-      }),
-    [client],
-  );
+  useEffect(() => subscribeLibraryEvents(({ connected: live }) => setConnected(live)), []);
   return connected;
 }

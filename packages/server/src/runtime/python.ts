@@ -2,7 +2,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 /** The ScholarAIO Python project in this checkout; `uv sync` installs it into the runtime. */
-export const scholarSourceDir = fileURLToPath(new URL("../../../scholaraio/", import.meta.url));
+export const scholaraioSourceDir = fileURLToPath(new URL("../../../scholaraio/", import.meta.url));
 
 type Env = Record<string, string | undefined>;
 

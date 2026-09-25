@@ -1,19 +1,5 @@
 import type { SlashCommand } from "@scholaraio-hub/shared";
 
-/** Provider commands first; extra (e.g. research) commands only fill names not already taken. */
-export function mergeCommands(base: SlashCommand[], extra: SlashCommand[] = []): SlashCommand[] {
-  if (extra.length === 0) return base;
-  const known = new Set(base.map((command) => command.name));
-  return [...base, ...extra.filter((command) => !known.has(command.name))];
-}
-
-/** The `/query` the user is typing at the very start of the message, or null. */
-export function leadingSlashQuery(message: string): string | null {
-  if (!message.startsWith("/")) return null;
-  const query = message.slice(1);
-  return /\s/.test(query) ? null : query;
-}
-
 /** Commands whose name starts with the query, case-insensitively, in their given order. */
 export function filterCommands(commands: SlashCommand[], query: string): SlashCommand[] {
   const normalized = query.toLowerCase();
@@ -60,11 +46,6 @@ export function splitLeadingCommand(
 export function joinLeadingCommand(token: string, body: string): string {
   if (!token) return body;
   return `${token}${body ? ` ${body}` : " "}`;
-}
-
-/** Text that selecting a command puts in the composer. */
-export function commandInsertion(command: SlashCommand): string {
-  return `/${command.name} `;
 }
 
 /** A `/query` being typed: its span in the text and whether it opens the message. */

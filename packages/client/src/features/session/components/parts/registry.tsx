@@ -1,8 +1,9 @@
 import { type LibraryCitation, readNotice } from "@scholaraio-hub/shared";
 import type { ReactNode } from "react";
 import { Link } from "react-router-dom";
+import { citationUrl, linkCitations } from "../../lib/citations";
 import type { Part, PartOf, TimelinePartType, ToolPart } from "../../lib/parts";
-import { citationUrl, linkCitations } from "../../lib/turnTree";
+import { ImageStrip } from "./ImagePart";
 import { ReasoningPart } from "./ReasoningPart";
 import { TextPart } from "./TextPart";
 
@@ -41,13 +42,18 @@ const PART_RENDERERS: { [T in TimelinePartType]: PartRenderer<T> } = {
       </div>
     );
   },
-  file: (part) => (
-    <div className="text-block timeline-item">
-      <a className="uploaded-file" href={part.url} target="_blank" rel="noreferrer">
-        📎 {part.filename || "查看附件"}
-      </a>
-    </div>
-  ),
+  file: (part) =>
+    part.mediaType.startsWith("image/") ? (
+      <div className="timeline-item">
+        <ImageStrip images={[{ part, index: 0 }]} />
+      </div>
+    ) : (
+      <div className="text-block timeline-item">
+        <a className="uploaded-file" href={part.url} target="_blank" rel="noreferrer">
+          📎 {part.filename || "查看附件"}
+        </a>
+      </div>
+    ),
 };
 
 export function renderPart(part: Part, context: PartContext): ReactNode {

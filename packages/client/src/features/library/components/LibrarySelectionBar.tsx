@@ -1,13 +1,13 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { ChevronDown, Download, MessageSquare, X } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
-import { Link, useSearchParams } from "react-router-dom";
-import { libraryApi, newSessionUrl } from "../../../core/library";
+import { Link } from "react-router-dom";
+import { type ReferenceFormat, libraryApi, newSessionUrl } from "../../../core/library";
 import { useLibrarySelection } from "../selection";
 import { useExportReferences } from "../useExportReferences";
-import { BatchAddDropdown } from "./BatchAddDropdown";
+import { AddToWorkspaceMenu } from "./AddToWorkspaceMenu";
 
-const FORMATS = [
+const FORMATS: { value: ReferenceFormat; label: string }[] = [
   { value: "bibtex", label: "BibTeX" },
   { value: "ris", label: "RIS" },
   { value: "markdown", label: "Markdown" },
@@ -21,8 +21,6 @@ const FORMATS = [
  */
 export function LibrarySelectionBar() {
   const selection = useLibrarySelection();
-  const [params] = useSearchParams();
-  const projectId = params.get("project") ?? undefined;
   const client = useQueryClient();
   const ids = [...selection.selected];
 
@@ -44,7 +42,6 @@ export function LibrarySelectionBar() {
       return {
         added: ids.filter((id) => !existing.has(id)),
         skipped: ids.filter((id) => existing.has(id)).map((id) => ({ id })),
-        failed: [] as { id: string; reason: string }[],
       };
     },
     onSuccess: (outcome, { project }) => {
@@ -74,16 +71,16 @@ export function LibrarySelectionBar() {
       <div className="flex-1" />
       <ExportMenu
         pending={save.isPending}
-        onExport={(format) => save.mutate({ paperIds: ids, projectId, format })}
+        onExport={(format) => save.mutate({ paperIds: ids, format })}
       />
       <Link
-        to={newSessionUrl(projectId, ids)}
+        to={newSessionUrl(undefined, ids)}
         className="inline-flex items-center gap-1.5 rounded-full bg-surface-container-high px-3 py-1.5 text-sm font-medium text-on-surface active:scale-95"
       >
         <MessageSquare className="w-3.5 h-3.5" aria-hidden="true" />
         询问选中的
       </Link>
-      <BatchAddDropdown
+      <AddToWorkspaceMenu
         workspaces={projects.data?.projects.map((p) => ({ id: p.id, name: p.name })) ?? []}
         pending={add.isPending}
         selectedCount={ids.length}
@@ -108,7 +105,7 @@ function ExportMenu({
   onExport,
 }: {
   pending: boolean;
-  onExport: (format: string) => void;
+  onExport: (format: ReferenceFormat) => void;
 }) {
   const [open, setOpen] = useState(false);
   const menu = useRef<HTMLDivElement>(null);

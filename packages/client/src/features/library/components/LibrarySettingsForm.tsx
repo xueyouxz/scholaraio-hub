@@ -1,232 +1,511 @@
-import type { LibrarySettings } from "@scholaraio-hub/shared";
+import type { LibrarySettings, SettingsCheck } from "@scholaraio-hub/shared";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useState } from "react";
+import {
+  AlertTriangle,
+  Brain,
+  Check,
+  CheckCircle2,
+  ExternalLink,
+  FileText,
+  Loader2,
+  RefreshCw,
+  Sparkles,
+  XCircle,
+} from "lucide-react";
+import { useEffect, useRef, useState } from "react";
 import { libraryApi } from "../../../core/library";
 import { CapabilityPrompt } from "./CapabilityPrompt";
 
-type Field =
-  | { kind: "text"; field: keyof LibrarySettings; label: string; placeholder: string }
-  | { kind: "secret"; field: string; label: string; configured: keyof LibrarySettings };
+type Target = SettingsCheck["target"];
 
-/** The settings that make up one job, and what that job can do right now. */
-interface Group {
-  title: string;
-  purpose: string;
-  status: (settings: LibrarySettings) => string;
-  fields: Field[];
-}
+/** How long typing may pause before the field saves itself. */
+const SAVE_DELAY_MS = 800;
 
-const GROUPS: Group[] = [
-  {
-    title: "解析",
-    purpose: "把 PDF 变成可检索的正文，由 MinerU 完成。",
-    status: (settings) =>
-      settings.mineruConfigured
-        ? "MinerU 已配置 · 云端解析"
-        : "MinerU 未配置 · 导入时降级为本地解析器",
-    fields: [
-      {
-        kind: "secret",
-        field: "mineruApiKey",
-        label: "MinerU Token",
-        configured: "mineruConfigured",
-      },
-    ],
-  },
-  {
-    title: "元数据与深度解析",
-    purpose: "提取标题、作者、摘要，以及每篇论文的目录与结论。",
-    status: (settings) =>
-      settings.llmConfigured ? "LLM 已配置" : "LLM 未配置 · 导入按 regex 提取，深度解析不可用",
-    fields: [
-      { kind: "text", field: "llmModel", label: "模型", placeholder: "deepseek-chat" },
-      {
-        kind: "text",
-        field: "llmBaseUrl",
-        label: "API 地址",
-        placeholder: "https://api.deepseek.com",
-      },
-      { kind: "secret", field: "llmApiKey", label: "API Key", configured: "llmConfigured" },
-    ],
-  },
-  {
-    title: "语义检索",
-    purpose: "按意思检索，以及主题地图所依赖的向量。模型在本机运行，首次使用自动下载。",
-    status: (settings) => `本地模型 ${settings.embedModel}`,
-    fields: [
-      {
-        kind: "text",
-        field: "embedModel",
-        label: "嵌入模型",
-        placeholder: "Qwen/Qwen3-Embedding-0.6B",
-      },
-    ],
-  },
+/** Where each LLM provider hands out API keys, by the host of its API address. */
+const KEY_PAGES: [RegExp, string][] = [
+  [/deepseek\.com$/, "https://platform.deepseek.com/api_keys"],
+  [/openai\.com$/, "https://platform.openai.com/api-keys"],
+  [/anthropic\.com$/, "https://console.anthropic.com/settings/keys"],
+  [/bigmodel\.cn$/, "https://open.bigmodel.cn/usercenter/apikeys"],
+  [/moonshot\.(cn|ai)$/, "https://platform.moonshot.cn/console/api-keys"],
+  [/siliconflow\.(cn|com)$/, "https://cloud.siliconflow.cn/account/ak"],
+  [/(dashscope|aliyuncs)\.com$/, "https://bailian.console.aliyun.com/?apiKey=1"],
+  [/googleapis\.com$/, "https://aistudio.google.com/app/apikey"],
 ];
 
-/** The library settings a user would otherwise have to edit config.yaml for. */
+export function keyPage(baseUrl: string): string | null {
+  try {
+    const url = new URL(baseUrl);
+    return KEY_PAGES.find(([host]) => host.test(url.hostname))?.[1] ?? url.origin;
+  } catch {
+    return null;
+  }
+}
+
+function modelPage(settings: LibrarySettings): string | null {
+  const model = settings.embedModel.trim();
+  if (!model.includes("/")) return null;
+  return settings.embedSource === "huggingface"
+    ? `https://huggingface.co/${model}`
+    : `https://modelscope.cn/models/${model}`;
+}
+
+/**
+ * The services the library leans on, in one place: parsing, the language
+ * model, and the embedding model.
+ *
+ * Every field saves itself — after a pause in typing, or on leaving it — and
+ * each service can be tried once with what is saved, so the user learns that
+ * a key works here instead of at the next import.
+ */
 export function LibrarySettingsForm() {
-  const client = useQueryClient();
   const settings = useQuery({
     queryKey: ["library", "settings"],
     queryFn: ({ signal }) => libraryApi.settings(signal),
   });
-  const [draft, setDraft] = useState<Record<string, string>>({});
+  const current = settings.data;
+  // A save that changes a service asks that service to be tried again.
+  const [recheck, setRecheck] = useState<Record<Target, number>>({ mineru: 0, llm: 0, embed: 0 });
+  const saved = (target: Target) =>
+    setRecheck((previous) => ({ ...previous, [target]: previous[target] + 1 }));
+
+  if (settings.error)
+    return (
+      <p role="alert" className="text-sm text-error break-words">
+        文献服务设置不可用：{settings.error.message}
+      </p>
+    );
+  if (!current)
+    return <div className="h-72 rounded-xl skeleton-shimmer opacity-50" aria-label="加载中" />;
+  const llmKeys = keyPage(current.llmBaseUrl || "https://api.deepseek.com");
+  const embedPage = modelPage(current);
+  return (
+    <section aria-labelledby="library-services" className="space-y-2">
+      <h2
+        id="library-services"
+        className="text-[10px] font-mono font-bold uppercase tracking-widest text-on-surface-variant"
+      >
+        文献服务
+      </h2>
+      <div className="divide-y divide-outline-variant/10 overflow-hidden rounded-xl border border-outline-variant/15 bg-surface-container-low">
+        <Service
+          target="mineru"
+          icon={FileText}
+          title="PDF 解析"
+          summary={current.mineruConfigured ? undefined : "MinerU · 未配置时降级为本地解析"}
+          configured={current.mineruConfigured}
+          recheck={recheck.mineru}
+          autoCheck
+          link={{ href: "https://mineru.net/apiManage/token", label: "获取 Token" }}
+        >
+          {(checkButton) => (
+            <SecretSetting
+              field="mineruApiKey"
+              label="MinerU Token"
+              storedLength={current.mineruKeyLength}
+              onSaved={() => saved("mineru")}
+              addon={checkButton}
+            />
+          )}
+        </Service>
+        <Service
+          target="llm"
+          icon={Brain}
+          title="元数据与深度解析"
+          summary={current.llmConfigured ? undefined : "LLM · 未配置时按规则提取"}
+          configured={current.llmConfigured}
+          recheck={recheck.llm}
+          link={llmKeys ? { href: llmKeys, label: "获取 API Key" } : undefined}
+        >
+          {(checkButton) => (
+            <>
+              <div className="grid gap-3 sm:grid-cols-2">
+                <TextSetting
+                  field="llmModel"
+                  label="模型"
+                  placeholder="deepseek-chat"
+                  value={current.llmModel}
+                  onSaved={() => saved("llm")}
+                />
+                <TextSetting
+                  field="llmBaseUrl"
+                  label="API 地址"
+                  placeholder="https://api.deepseek.com"
+                  value={current.llmBaseUrl}
+                  onSaved={() => saved("llm")}
+                />
+              </div>
+              <SecretSetting
+                field="llmApiKey"
+                label="API Key"
+                storedLength={current.llmKeyLength}
+                onSaved={() => saved("llm")}
+                addon={checkButton}
+              />
+            </>
+          )}
+        </Service>
+        <Service
+          target="embed"
+          icon={Sparkles}
+          title="语义检索"
+          configured
+          recheck={recheck.embed}
+          autoCheck
+          link={embedPage ? { href: embedPage, label: "模型主页" } : undefined}
+        >
+          {(checkButton) => (
+            <>
+              <TextSetting
+                field="embedModel"
+                label="嵌入模型"
+                placeholder="Qwen/Qwen3-Embedding-0.6B"
+                value={current.embedModel}
+                onSaved={() => saved("embed")}
+                addon={checkButton}
+              />
+              <CapabilityPrompt kind="semantic" hideWhenReady />
+            </>
+          )}
+        </Service>
+      </div>
+    </section>
+  );
+}
+
+function Service({
+  target,
+  icon: Icon,
+  title,
+  summary,
+  configured,
+  recheck,
+  autoCheck = false,
+  link,
+  children,
+}: {
+  target: Target;
+  icon: typeof FileText;
+  title: string;
+  summary?: string;
+  configured: boolean;
+  /** Bumped by a save, so the service is tried again with what was saved. */
+  recheck: number;
+  /** Try it as soon as the page opens: only for checks that cost nothing. */
+  autoCheck?: boolean;
+  link?: { href: string; label: string };
+  /** The fields, given the self-check button to set beside the field it proves. */
+  children: (checkButton: React.ReactNode) => React.ReactNode;
+}) {
+  const check = useMutation({ mutationFn: () => libraryApi.checkSettings(target) });
+  const run = useRef(check.mutate);
+  run.current = check.mutate;
+  // Tried on opening (when free) and again after each save of this service.
+  const onOpen = autoCheck && configured;
+  useEffect(() => {
+    if (recheck === 0 && !onOpen) return;
+    const timer = setTimeout(() => run.current(), recheck ? 400 : 0);
+    return () => clearTimeout(timer);
+  }, [recheck, onOpen]);
+  return (
+    <div className="grid gap-3 px-4 py-4 sm:grid-cols-[12rem_minmax(0,1fr)]">
+      <div className="flex items-start gap-2.5">
+        <span className="mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-surface-container text-primary">
+          <Icon className="w-3.5 h-3.5" aria-hidden="true" />
+        </span>
+        <div className="min-w-0">
+          <h3 className="font-sans text-[13px] font-semibold leading-tight text-on-surface">
+            {title}
+          </h3>
+          {summary ? (
+            <p className="mt-0.5 truncate text-[11px] text-on-surface-variant" title={summary}>
+              {summary}
+            </p>
+          ) : null}
+          {link ? (
+            <a
+              href={link.href}
+              target="_blank"
+              rel="noreferrer"
+              className="mt-1 inline-flex items-center gap-1 text-[11px] font-medium text-primary hover:underline"
+            >
+              {link.label}
+              <ExternalLink className="w-3 h-3" aria-hidden="true" />
+            </a>
+          ) : null}
+        </div>
+      </div>
+      <div className="min-w-0 space-y-3">
+        {children(
+          <button
+            type="button"
+            onClick={() => check.mutate()}
+            disabled={check.isPending}
+            className="inline-flex h-[38px] shrink-0 items-center gap-1.5 rounded-xl bg-surface-container-high px-3 text-xs font-medium text-on-surface hover:bg-surface-container-highest active:scale-95 disabled:opacity-60"
+          >
+            <RefreshCw
+              className={`w-3 h-3 ${check.isPending ? "animate-spin" : ""}`}
+              aria-hidden="true"
+            />
+            自检
+          </button>,
+        )}
+        <div className="flex min-h-5 items-center">
+          <CheckResult pending={check.isPending} result={check.data} error={check.error} />
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function CheckResult({
+  pending,
+  result,
+  error,
+}: {
+  pending: boolean;
+  result?: SettingsCheck;
+  error: Error | null;
+}) {
+  if (pending)
+    return (
+      <output className="flex items-center gap-1.5 text-xs text-on-surface-variant">
+        <Loader2 className="w-3.5 h-3.5 animate-spin" aria-hidden="true" />
+        正在检测…
+      </output>
+    );
+  if (error)
+    return (
+      <output className="flex min-w-0 items-center gap-1.5 text-xs text-error">
+        <XCircle className="w-3.5 h-3.5 shrink-0" aria-hidden="true" />
+        <span className="truncate">{error.message}</span>
+      </output>
+    );
+  if (!result) return <span className="text-xs text-on-surface-variant/60">尚未检测</span>;
+  const look = {
+    ok: { icon: CheckCircle2, tone: "text-primary" },
+    warning: { icon: AlertTriangle, tone: "text-secondary" },
+    error: { icon: XCircle, tone: "text-error" },
+  }[result.level];
+  return (
+    <output
+      className={`flex min-w-0 items-center gap-1.5 text-xs ${look.tone}`}
+      title={result.message}
+    >
+      <look.icon className="w-3.5 h-3.5 shrink-0" aria-hidden="true" />
+      <span className="truncate">{result.message}</span>
+    </output>
+  );
+}
+
+const inputClass =
+  "w-full rounded-xl border border-outline-variant/20 bg-surface-container-lowest px-3 py-2 text-[13px] text-on-surface outline-none transition-shadow placeholder:text-on-surface-variant/40 focus:border-primary/30 focus:ring-2 focus:ring-primary/15";
+
+/** One setting's save: the request, and what the field says about it. */
+function useFieldSave(field: string, onSaved: () => void) {
+  const client = useQueryClient();
   const save = useMutation({
-    mutationFn: libraryApi.saveSettings,
+    mutationFn: (value: string) => libraryApi.saveSettings({ [field]: value }),
     onSuccess: (data) => {
       client.setQueryData(["library", "settings"], data);
       void client.invalidateQueries({ queryKey: ["library", "capabilities"] });
-      setDraft({});
+      onSaved();
     },
   });
-  const current = settings.data;
-  const edit = (field: string, value: string) => setDraft((d) => ({ ...d, [field]: value }));
-  const forget = (field: string) =>
-    setDraft((d) => {
-      const { [field]: _dropped, ...rest } = d;
-      return rest;
-    });
-  const value = (field: keyof LibrarySettings) =>
-    draft[field] ?? (current ? String(current[field] ?? "") : "");
-  const disabled = !current || save.isPending;
+  return save;
+}
+
+function SaveState({
+  dirty,
+  save,
+}: {
+  dirty: boolean;
+  save: { isPending: boolean; isSuccess: boolean; error: Error | null };
+}) {
+  if (save.isPending)
+    return (
+      <span className="inline-flex items-center gap-1 text-[10px] font-mono text-on-surface-variant">
+        <Loader2 className="w-3 h-3 animate-spin" aria-hidden="true" />
+        保存中
+      </span>
+    );
+  if (save.error)
+    return (
+      <span className="truncate text-[10px] text-error" title={save.error.message}>
+        {save.error.message}
+      </span>
+    );
+  if (dirty)
+    return <span className="text-[10px] font-mono text-on-surface-variant/60">未保存</span>;
+  if (save.isSuccess)
+    return (
+      <span className="inline-flex items-center gap-1 text-[10px] font-mono text-primary">
+        <Check className="w-3 h-3" aria-hidden="true" />
+        已保存
+      </span>
+    );
+  return null;
+}
+
+function FieldLabel({
+  htmlFor,
+  label,
+  state,
+}: { htmlFor: string; label: string; state: React.ReactNode }) {
   return (
-    <section className="space-y-3">
-      <p className="text-sm text-on-surface-variant">
-        文献解析与检索使用的服务。密钥只写入本机配置，不会回显。
-      </p>
-      {settings.error ? (
-        <p role="alert" className="text-error break-words">
-          {settings.error.message}
-        </p>
-      ) : null}
-      <form
-        className="space-y-4"
-        onSubmit={(event) => {
-          event.preventDefault();
-          if (Object.keys(draft).length) save.mutate(draft);
-        }}
+    <div className="flex items-center justify-between gap-2">
+      <label
+        htmlFor={htmlFor}
+        className="text-[10px] font-mono font-bold uppercase tracking-widest text-on-surface-variant"
       >
-        {GROUPS.map((group) => (
-          <fieldset
-            key={group.title}
-            className="space-y-2.5 rounded-lg bg-surface-container-low border border-outline-variant/15 px-4 py-3"
-          >
-            <legend className="font-serif text-base font-semibold text-on-surface px-1">
-              {group.title}
-            </legend>
-            <p className="text-xs text-on-surface-variant">{group.purpose}</p>
-            {current ? (
-              <p className="text-[10px] font-mono uppercase tracking-wider text-primary">
-                {group.status(current)}
-              </p>
-            ) : null}
-            <div className="grid gap-3 md:grid-cols-2">
-              {group.fields.map((item) =>
-                item.kind === "text" ? (
-                  <label key={item.field} className="flex flex-col gap-1.5">
-                    <span className="text-[10px] font-mono font-bold uppercase tracking-widest text-on-surface-variant">
-                      {item.label}
-                    </span>
-                    <input
-                      className="rounded-xl border border-outline-variant/20 bg-surface-container px-3 py-2 text-[13px] text-on-surface outline-none focus:ring-2 focus:ring-primary/20 disabled:opacity-40"
-                      disabled={disabled}
-                      value={value(item.field)}
-                      placeholder={item.placeholder}
-                      onChange={(event) => edit(item.field, event.target.value)}
-                    />
-                  </label>
-                ) : (
-                  <SecretField
-                    key={item.field}
-                    item={item}
-                    settings={current}
-                    disabled={disabled}
-                    draft={draft[item.field]}
-                    onChange={(next) => edit(item.field, next)}
-                    onKeep={() => forget(item.field)}
-                  />
-                ),
-              )}
-            </div>
-            {group.title === "语义检索" ? <CapabilityPrompt kind="semantic" /> : null}
-          </fieldset>
-        ))}
-        <div className="flex flex-wrap items-center gap-3">
-          <button
-            type="submit"
-            disabled={disabled || Object.keys(draft).length === 0}
-            className="signature-gradient rounded-full px-4 py-2 text-sm font-semibold text-on-primary active:scale-95 disabled:opacity-40 border-0 cursor-pointer"
-          >
-            保存
-          </button>
-          {save.isSuccess && Object.keys(draft).length === 0 ? (
-            <output className="text-sm text-primary">已保存</output>
-          ) : null}
-          {save.error ? (
-            <p role="alert" className="text-sm text-error break-words">
-              {save.error.message}
-            </p>
-          ) : null}
-        </div>
-        {current ? (
-          <p className="text-xs text-on-surface-variant break-all">
-            其余配置项可直接编辑 {current.configPath}
-          </p>
-        ) : null}
-      </form>
-    </section>
+        {label}
+      </label>
+      {state}
+    </div>
+  );
+}
+
+/** A plain setting that saves after a pause in typing, and on leaving the field. */
+function TextSetting({
+  field,
+  label,
+  placeholder,
+  value,
+  onSaved,
+  addon,
+}: {
+  field: string;
+  label: string;
+  placeholder: string;
+  value: string;
+  onSaved: () => void;
+  /** Set to the right of the box, on its line. */
+  addon?: React.ReactNode;
+}) {
+  const [draft, setDraft] = useState(value);
+  const [dirty, setDirty] = useState(false);
+  const save = useFieldSave(field, onSaved);
+  const sent = useRef(value);
+  const latest = useRef(value);
+  latest.current = draft;
+  // The server's value shows through whenever the user has nothing unsaved.
+  useEffect(() => {
+    if (dirty) return;
+    sent.current = value;
+    setDraft(value);
+  }, [value, dirty]);
+  const commit = (next: string) => {
+    if (next.trim() === sent.current.trim()) {
+      setDirty(false);
+      return;
+    }
+    sent.current = next;
+    save.mutate(next, {
+      // Typing that went on while this was saving is still unsaved.
+      onSettled: () => {
+        if (latest.current === next) setDirty(false);
+      },
+    });
+  };
+  const commitLater = useRef(commit);
+  commitLater.current = commit;
+  useEffect(() => {
+    if (!dirty) return;
+    const timer = setTimeout(() => commitLater.current(draft), SAVE_DELAY_MS);
+    return () => clearTimeout(timer);
+  }, [draft, dirty]);
+  const id = `setting-${field}`;
+  return (
+    <div className="flex flex-col gap-1.5">
+      <FieldLabel htmlFor={id} label={label} state={<SaveState dirty={dirty} save={save} />} />
+      <div className="flex items-center gap-2">
+        <input
+          id={id}
+          name={field}
+          autoComplete="off"
+          spellCheck={false}
+          className={inputClass}
+          value={draft}
+          placeholder={placeholder}
+          onChange={(event) => {
+            setDraft(event.target.value);
+            setDirty(true);
+          }}
+          onBlur={() => {
+            if (dirty) commit(draft);
+          }}
+        />
+        {addon}
+      </div>
+    </div>
   );
 }
 
 /**
  * A key the browser may set but never read back.
  *
- * An empty box means "leave it alone", so clearing a stored key needs to be
- * something the user can say: the button says it, and saving removes the key
- * from the overlay.
+ * A stored key shows as a mask of its real length, so the box never looks
+ * empty when it is not; focusing it clears the mask for a replacement. It
+ * saves when the user leaves the field or presses Enter — never mid-way
+ * through pasting — and leaving it empty keeps the stored key.
  */
-function SecretField({
-  item,
-  settings,
-  disabled,
-  draft,
-  onChange,
-  onKeep,
+function SecretSetting({
+  field,
+  label,
+  storedLength,
+  onSaved,
+  addon,
 }: {
-  item: { field: string; label: string; configured: keyof LibrarySettings };
-  settings?: LibrarySettings;
-  disabled: boolean;
-  draft?: string;
-  onChange: (value: string) => void;
-  onKeep: () => void;
+  field: string;
+  label: string;
+  /** Length of the stored key; 0 when there is none. */
+  storedLength: number;
+  onSaved: () => void;
+  addon?: React.ReactNode;
 }) {
-  const configured = Boolean(settings?.[item.configured]);
-  const clearing = draft === "";
+  const [draft, setDraft] = useState("");
+  const [editing, setEditing] = useState(false);
+  const save = useFieldSave(field, onSaved);
+  const commit = () => {
+    const value = draft.trim();
+    if (!value) return;
+    save.mutate(value, { onSuccess: () => setDraft("") });
+  };
+  const masked = storedLength > 0 && !editing && !draft;
+  const id = `setting-${field}`;
   return (
-    <label className="flex flex-col gap-1.5">
-      <span className="text-[10px] font-mono font-bold uppercase tracking-widest text-on-surface-variant">
-        {item.label}
-      </span>
-      <input
-        type="password"
-        autoComplete="off"
-        className="rounded-xl border border-outline-variant/20 bg-surface-container px-3 py-2 text-[13px] text-on-surface outline-none focus:ring-2 focus:ring-primary/20 disabled:opacity-40"
-        disabled={disabled}
-        value={draft ?? ""}
-        placeholder={configured ? "已配置，输入可替换" : "尚未配置"}
-        onChange={(event) => onChange(event.target.value)}
+    <div className="flex flex-col gap-1.5">
+      <FieldLabel
+        htmlFor={id}
+        label={label}
+        state={<SaveState dirty={Boolean(draft)} save={save} />}
       />
-      {configured ? (
-        <button
-          type="button"
-          className="self-start text-[10px] font-mono font-bold text-on-surface-variant hover:text-error disabled:opacity-40 border-0 bg-transparent cursor-pointer p-0"
-          disabled={disabled}
-          onClick={() => (clearing ? onKeep() : onChange(""))}
-        >
-          {clearing ? "保存后清除 · 点此取消" : "清除已存的密钥"}
-        </button>
-      ) : null}
-    </label>
+      <div className="flex items-center gap-2">
+        <input
+          id={id}
+          name={field}
+          type="password"
+          autoComplete="off"
+          spellCheck={false}
+          className={inputClass}
+          // Only ever a run of bullets: the stored key itself never reaches the browser.
+          value={masked ? "•".repeat(storedLength) : draft}
+          placeholder={storedLength > 0 ? "输入新值即可替换" : "粘贴后按回车或移开焦点即保存"}
+          onFocus={() => setEditing(true)}
+          onChange={(event) => setDraft(event.target.value)}
+          onBlur={() => {
+            setEditing(false);
+            commit();
+          }}
+          onKeyDown={(event) => {
+            if (event.key === "Enter" && !event.nativeEvent.isComposing) {
+              event.preventDefault();
+              commit();
+            }
+          }}
+        />
+        {addon}
+      </div>
+    </div>
   );
 }

@@ -1,10 +1,15 @@
 import { randomUUID } from "node:crypto";
 import type { ModelInfo, SlashCommand } from "@scholaraio-hub/shared";
-import type { AgentEvent } from "../../src/agent/events.js";
-import { MessageQueue } from "../../src/sdk/messageQueue.js";
-import { ClaudeEventAdapter } from "../../src/sdk/providers/claude-events.js";
-import type { AgentProvider, StartSessionOptions } from "../../src/sdk/providers/types.js";
-import type { SDKMessage } from "../../src/sdk/types.js";
+import { MessageQueue } from "../../src/providers/MessageQueue.js";
+import { ClaudeEventAdapter } from "../../src/providers/claude/ClaudeEventAdapter.js";
+import { claudePrompt } from "../../src/providers/claude/ClaudeProvider.js";
+import type { SDKMessage } from "../../src/providers/claude/sdk-message.js";
+import type { AgentEvent } from "../../src/providers/events.js";
+import type {
+  AgentProvider,
+  ForkSessionOptions,
+  StartSessionOptions,
+} from "../../src/providers/types.js";
 import { TEST_CAPABILITIES } from "./scriptedProvider.js";
 
 /** The fake speaks Agent SDK wire format; translate it as the real provider does. */
@@ -26,12 +31,6 @@ export class WorkbenchProvider implements AgentProvider {
   /** What `getAvailableModels` reports; empty means the CLI listed nothing. */
   models: ModelInfo[] = [];
   constructor(readonly name: "claude" | "codex" = "claude") {}
-  async isInstalled() {
-    return true;
-  }
-  async isAuthenticated() {
-    return true;
-  }
   async getAuthStatus() {
     return { installed: true, authenticated: true, enabled: true };
   }
@@ -45,6 +44,13 @@ export class WorkbenchProvider implements AgentProvider {
     this.commandCwds.push(cwd);
     return this.commands;
   }
+  /** Native forks asked for; each returns a new native id. */
+  readonly forks: Array<ForkSessionOptions & { forkedId: string }> = [];
+  async forkSession(options: ForkSessionOptions) {
+    const forkedId = `fork-${randomUUID()}`;
+    this.forks.push({ ...options, forkedId });
+    return forkedId;
+  }
   async startSession(options: StartSessionOptions) {
     this.calls.push(options);
     const sessionId = options.resumeSessionId ?? randomUUID();
@@ -55,7 +61,7 @@ export class WorkbenchProvider implements AgentProvider {
     let release: (() => void) | undefined;
     async function* events(): AsyncGenerator<SDKMessage> {
       yield { type: "system", subtype: "init", session_id: sessionId };
-      for await (const item of queue.generator()) {
+      for await (const item of claudePrompt(queue)) {
         if (abort.signal.aborted) return;
         const text =
           typeof item.message.content === "string"
@@ -103,11 +109,10 @@ export class WorkbenchProvider implements AgentProvider {
     return {
       events: replayThroughAdapter(events()),
       queue,
-      sessionId,
       abort: () => {
         abort.abort();
         release?.();
-        queue.push({ text: "" });
+        queue.close();
       },
       interrupt: async () => {
         owner.interruptions++;

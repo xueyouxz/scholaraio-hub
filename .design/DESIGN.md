@@ -87,8 +87,9 @@ Borders are deliberately whisper-weight: `border-outline-variant/10` to `/20` (r
 | Role | Family | Size | Weight | Usage |
 |------|--------|------|--------|-------|
 | Brand Logotype | Noto Serif SC | 1.7rem (27px) | Bold (700) | Sidebar brand header — "ScholarAIO" |
-| View Title | Noto Serif SC | 1.65rem (26px) | Bold (700) | TopNav page title |
+| View Title | Noto Serif SC | 1.25rem (20px) | Bold (700) | TopNav page title |
 | Section Heading | Noto Serif SC | 1.5rem (24px) | Bold (700) | Bottom sheet headings, drawer headings |
+| Dialog Title | Noto Serif SC | lg (18px) | Bold (700) | Modal dialog titles |
 | Card / Sub-section Title | Noto Serif SC | base (16px) | Semibold (600) | Paper card titles, year group labels |
 | Body / UI | Inter | sm (14px) | Medium (500) | Nav labels, button text, list items |
 | Caption | Inter / Noto Sans SC | xs (12px) | Normal (400) | Author lines, source info, metadata prose |
@@ -108,15 +109,17 @@ Borders are deliberately whisper-weight: `border-outline-variant/10` to `/20` (r
 ## 4. Component Stylings
 
 ### Sidebar
-- **Width**: 248px expanded / 84px collapsed (`w-[15.5rem]` / `w-[5.25rem]`), animates via `transition-[width] duration-300 ease-out`
+- **Width**: 248px expanded (user-resizable 220–420px) / 60px collapsed rail. The grid column animates (`grid-template-columns 220ms`), but not while the user drags the edge: a drag follows the pointer frame by frame with no easing, and only the final width is saved.
+- **No reflow while animating**: the sidebar's content is laid out at its target width and clipped by the column, so expanding reveals it instead of reflowing it. Every row keeps its 16px icon in the rail's column (`px-[11px]`), and labels only fade (`opacity`), so nothing moves sideways between states.
+- **Scrolling**: the history area scrolls without a visible scrollbar, like every scroll area (see Layout Principles).
 - **Background**: `bg-surface-container-low` (dark: `bg-surface-dim`)
 - **Border**: `border-r border-outline-variant/15`
-- **Padding**: `px-3 py-3`
+- **Padding**: `px-2.5 py-3`
 - **Brand Header Button**: `rounded-[20px]`, hover `bg-surface-container`, focus ring `ring-2 ring-primary/20`. Brand name in Noto Serif SC 1.7rem bold primary; tagline in JetBrains Mono 9px uppercase tracking-[0.28em] opacity-60.
-- **New Chat Button**: `rounded-[18px]`, `bg-surface-container`, hover `bg-surface-container-high`, icon + label.
-- **Nav Items** (non-active): `rounded-xl`, `text-on-surface-variant`, hover `bg-surface-container`. Icon hover color shifts to `text-primary`.
-- **Nav Items** (active): `bg-surface-container-high text-primary border-l-4 border-primary`. The left 4px border in primary is the active indicator.
-- **History Section**: `border-t border-outline-variant/10`, section label in mono-label pattern. Chat items `rounded-xl`, active item `bg-surface-container text-primary`.
+- **New Chat Button**: `rounded-xl`, `bg-surface-container`, hover `bg-surface-container-high`, 16px icon + 12.5px label.
+- **Nav Items** (non-active): `rounded-lg px-[11px] py-2 text-[12.5px] font-medium`, 16px icons, `text-on-surface-variant`, hover `bg-surface-container text-on-surface`.
+- **Nav Items** (active): `bg-surface-container-high text-primary`. The tonal step and the primary text are the whole indicator — no side border or stripe.
+- **History Section**: `border-t border-outline-variant/10`, section label in mono-label pattern (9.5px). Chat items `rounded-lg text-[12px]`, active item `bg-surface-container-high text-primary`.
 - **Session Context Menu**: `rounded-xl border border-outline-variant/20 bg-surface-container-lowest shadow-xl` — appears on hover, 2 actions: Rename (neutral) + Delete (text-error).
 - **User Profile Button**: `rounded-[20px] bg-surface-container`, avatar is `rounded-full bg-primary-container`. Contains user name (bold 12px sans) + role (10px mono `text-on-surface-variant`).
 - **User Menu Popup**: `rounded-[28px] border border-outline-variant/20 bg-surface-container-lowest shadow-[0_24px_50px_rgba(23,29,26,0.16)] backdrop-blur-xl`. Menu items have icon in `rounded-2xl bg-surface-container` container + two-line label (sm medium + xs variant).
@@ -126,7 +129,7 @@ Borders are deliberately whisper-weight: `border-outline-variant/10` to `/20` (r
 - **Position**: `fixed top-0 right-0`, left edge tracks sidebar width via `style={{ left: sidebarWidth }}` — animates with `transition-[left] duration-300`
 - **Background**: `bg-surface` (dark: `bg-surface-dim`), `border-b border-outline-variant/10`
 - **Padding**: `px-6`
-- **Title**: Noto Serif SC `text-[1.65rem]` bold `text-primary`
+- **Title**: Noto Serif SC `text-[1.25rem]` bold `text-primary`
 - **Right Actions**: Icon-only button `p-2 rounded-full hover:bg-surface-container text-on-surface-variant active:opacity-80`
 - **Quick Settings Drawer**: `w-80`, `border-l border-outline-variant/20 bg-surface-container-low`, `shadow-2xl`. Stat rows use `rounded-xl bg-surface-container-high p-3` with mono 10px label above a semibold sm value. Primary CTA button at bottom uses `signature-gradient rounded-xl`.
 
@@ -234,7 +237,7 @@ Stat card badge pills (LIVE, ALERT, SYNC, WARN): same mono base but `rounded-ful
 ### App Shell Structure
 ```
 ┌─────────────────────────────────────────────────────┐
-│  Sidebar (fixed, 248/84px)  │  TopNav (fixed, 52px) │
+│  Sidebar (fixed, 248/60px)  │  TopNav (fixed, 52px) │
 │                             ├───────────────────────┤
 │  - Brand Logo               │                       │
 │  - New Chat Button          │  View Content         │
@@ -247,6 +250,7 @@ Stat card badge pills (LIVE, ALERT, SYNC, WARN): same mono base but `rounded-ful
 - TopNav: `position: fixed`, `z-50`, `left` tracks sidebar width via inline style + transition
 - Main content: `marginLeft` matches sidebar width with `transition-[margin] duration-300 ease-out`
 - Content area: `mt-[3.25rem]` to clear TopNav, `overflow-hidden` on outer, scroll per-view
+- Scrollbars: none anywhere. `styles.css` hides them globally in the base layer; scroll areas need no per-element class
 
 ### Spacing System
 - Base unit: 8px (0.5rem in Tailwind)
@@ -322,9 +326,9 @@ transition: { duration: 0.3, ease: [0.22, 1, 0.36, 1] }
 | Large Desktop | > 1440px | Content fills available space; sidebar stays fixed |
 
 ### Sidebar Collapse Behavior
-- Collapsed (84px): icon-only nav, brand hidden, history hidden, profile shows avatar only
+- Collapsed (60px): icon-only nav, brand label faded out, history hidden
 - Expanded (248px): full labels, New Chat button, history section, full profile row
-- Transition: `transition-[width] duration-300 ease-out` on sidebar; `transition-[margin] duration-300 ease-out` on main content; `transition-[left] duration-300 ease-out` on TopNav
+- Transition: the shell grid's `grid-template-columns 220ms ease-in-out`; disabled while the user drags the resize edge
 
 ### Touch & Interaction Targets
 - Nav link items: `py-2.5` vertical padding (min ~44px touch height)
@@ -347,7 +351,7 @@ transition: { duration: 0.3, ease: [0.22, 1, 0.36, 1] }
 | Hover | `bg-surface-container` or `bg-surface-container-high` background shift; icon color `text-primary` |
 | Active/Pressed | `active:scale-95` transform + `active:opacity-80` for icon buttons |
 | Focus | `ring-2 ring-primary/20` |
-| Active Nav | `bg-surface-container-high text-primary border-l-4 border-primary` |
+| Active Nav | `bg-surface-container-high text-primary` (no side border) |
 | Selected Item | `bg-primary/10 text-primary font-semibold` (dropdowns) or `bg-primary text-on-primary` (chips) |
 | Disabled | `text-on-surface-variant/40 bg-surface-variant/50` (see Pending badge as semantic example) |
 | Error | `text-error` text, `bg-error-container/40` background |
@@ -398,7 +402,7 @@ Use for: primary modal confirm, top-level CTAs only.
 > Fixed `h-[72px]`, `flex items-center px-6 rounded-xl bg-surface-container-low hover:bg-surface-container-high`. Left: 8px status dot (`rounded-full`, color by status; ingested gets glow `shadow-[0_0_8px_rgba(26,107,74,0.4)]`). Title: `font-serif text-base font-semibold text-on-surface truncate`. Meta: `text-xs font-sans text-on-surface-variant`. Badges: `text-[10px] font-mono font-bold px-2 py-0.5 rounded uppercase leading-none`. Hover actions: ExternalLink + MoreVertical, `opacity-0 group-hover:opacity-100`.
 
 **"Create a sidebar nav item (active)"**
-> `flex items-center gap-3 px-3 py-2.5 rounded-xl bg-surface-container-high text-primary border-l-4 border-primary`. Icon: `w-5 h-5 text-primary`. Label: `font-sans text-[13px] font-medium`.
+> `flex items-center gap-2.5 px-[11px] py-2 rounded-lg bg-surface-container-high text-primary`. Icon: 16px, `shrink-0`. Label: `font-sans text-[12.5px] font-medium truncate whitespace-nowrap`.
 
 **"Create a filter chip (active)"**
 > `px-3 py-1.5 text-xs font-medium rounded-full border bg-primary text-on-primary border-primary`.
@@ -420,6 +424,6 @@ Use for: primary modal confirm, top-level CTAs only.
 5. **Primary color is earned** — use `text-primary` / `bg-primary` only for active states, interactive CTAs, and focus indicators. Do not scatter it.
 6. **Signature gradient is exclusive** — only on primary CTA buttons. No backgrounds, no cards.
 7. **Badge radius = `rounded` (4px)**, not pill — badges in this system use `rounded` micro-radius for a data-terminal aesthetic. Only stat-card indicator pills use `rounded-full`.
-8. **Active nav indicator** = left border — `border-l-4 border-primary` is the nav active pattern, not background change alone.
+8. **Active nav indicator** = tonal step + primary text — `bg-surface-container-high text-primary`. No side borders or stripes on active items.
 9. **Glow is singular** — only the ingested status dot gets a glow. No other element uses `box-shadow` glow effects.
 10. **Stagger card entrances** — any grid of cards uses `motion.div` with `delay: i * 0.1` stagger. Single cards or rows do not need entrance animation.

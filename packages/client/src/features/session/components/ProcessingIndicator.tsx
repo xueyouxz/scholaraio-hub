@@ -1,5 +1,7 @@
+import type { ProviderName } from "@scholaraio-hub/shared";
 import { memo, useEffect, useMemo, useState } from "react";
-import { ThinkingIndicator } from "./ThinkingIndicator";
+import { ProviderLogo } from "../composer/ui/controls/ProviderLogo";
+import { formatDuration } from "./AssistantTurn";
 
 const PROCESSING_PHRASES = [
   "Thinking...",
@@ -41,18 +43,32 @@ function shuffle<T>(array: T[]): T[] {
 
 interface Props {
   isProcessing: boolean;
+  /** Whose mark closes the transcript. */
+  provider: ProviderName;
+  /** When the last turn ended (ISO 8601), shown as "5 minutes ago" while idle. */
+  lastFinishedAt?: string;
 }
 
-export const ProcessingIndicator = memo(function ProcessingIndicator({ isProcessing }: Props) {
+/**
+ * The end of the transcript: the agent's mark, breathing with a rotating
+ * phrase while it works and resting once it is done.
+ */
+export const ProcessingIndicator = memo(function ProcessingIndicator({
+  isProcessing,
+  provider,
+  lastFinishedAt,
+}: Props) {
+  const elapsed = useElapsedSeconds(isProcessing);
+  const now = useNow(!isProcessing && !!lastFinishedAt);
   const [phraseIndex, setPhraseIndex] = useState(0);
   const [displayedText, setDisplayedText] = useState("");
   const [isTyping, setIsTyping] = useState(true);
 
-  // Check setting and shuffle phrases when processing starts
-  const phrases = useMemo(() => {
-    if (!isProcessing) return ["Thinking..."];
-    return shuffle(PROCESSING_PHRASES);
-  }, [isProcessing]);
+  // A fresh order each time processing starts; idle shows no phrase.
+  const phrases = useMemo(
+    () => (isProcessing ? shuffle(PROCESSING_PHRASES) : PROCESSING_PHRASES),
+    [isProcessing],
+  );
 
   // Rotate phrases
   useEffect(() => {
@@ -89,19 +105,68 @@ export const ProcessingIndicator = memo(function ProcessingIndicator({ isProcess
     return () => clearTimeout(timeout);
   }, [isProcessing, isTyping, phraseIndex, displayedText, phrases]);
 
-  if (!isProcessing) {
-    return null;
-  }
-
   return (
-    <div className="processing-indicator">
-      <div className="processing-dot-container">
-        <ThinkingIndicator />
-      </div>
-      <span className="processing-text">
-        {displayedText}
-        <span className="processing-cursor">|</span>
+    <div className={`processing-indicator${isProcessing ? " active" : ""}`}>
+      <span className="processing-mark">
+        <ProviderLogo provider={provider} size={18} />
       </span>
+      {isProcessing ? (
+        <>
+          <span className="processing-text">
+            {displayedText}
+            <span className="processing-cursor">|</span>
+          </span>
+          <span className="processing-meta">{formatDuration(elapsed * 1000)}</span>
+        </>
+      ) : lastFinishedAt ? (
+        <time
+          className="processing-meta"
+          dateTime={lastFinishedAt}
+          title={`上次运行：${new Date(lastFinishedAt).toLocaleString()}`}
+        >
+          {timeAgo(lastFinishedAt, now)}
+        </time>
+      ) : null}
     </div>
   );
 });
+
+/** Whole seconds since `running` turned true; 0 while not running. */
+function useElapsedSeconds(running: boolean): number {
+  const [elapsed, setElapsed] = useState(0);
+  useEffect(() => {
+    setElapsed(0);
+    if (!running) return;
+    const started = Date.now();
+    const timer = window.setInterval(
+      () => setElapsed(Math.floor((Date.now() - started) / 1000)),
+      1000,
+    );
+    return () => window.clearInterval(timer);
+  }, [running]);
+  return elapsed;
+}
+
+/** The current time, refreshed every half minute while `active`. */
+function useNow(active: boolean): number {
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    if (!active) return;
+    setNow(Date.now());
+    const timer = window.setInterval(() => setNow(Date.now()), 30_000);
+    return () => window.clearInterval(timer);
+  }, [active]);
+  return now;
+}
+
+/** "just now", "5 minutes ago", "2 hours ago", "3 days ago". */
+export function timeAgo(iso: string, now = Date.now()): string {
+  const seconds = Math.max(0, Math.round((now - new Date(iso).getTime()) / 1000));
+  const unit = (count: number, name: string) => `${count} ${name}${count === 1 ? "" : "s"} ago`;
+  if (seconds < 60) return "just now";
+  const minutes = Math.floor(seconds / 60);
+  if (minutes < 60) return unit(minutes, "minute");
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return unit(hours, "hour");
+  return unit(Math.floor(hours / 24), "day");
+}

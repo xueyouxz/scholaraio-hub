@@ -20,6 +20,7 @@ export const TASK_PHASES: Record<string, string> = {
   cluster: "聚类建模",
   artifacts: "写入分析结果",
   deep: "提取目录与结论",
+  abstracts: "补全摘要",
   stopping: "正在停止",
 };
 
@@ -44,6 +45,8 @@ export interface Capability {
   describe: (state: LibraryCapabilities) => string;
   ready: (state: LibraryCapabilities) => boolean;
   blocked: (state: LibraryCapabilities) => Blocked | null;
+  /** What the start button says when the work is neither done nor new. */
+  action?: (state: LibraryCapabilities) => string | null;
 }
 
 export const CAPABILITIES: Capability[] = [
@@ -81,9 +84,15 @@ export const CAPABILITIES: Capability[] = [
     title: "主题地图",
     purpose: "把文献库聚成主题，并画出它们的分布与趋势",
     describe: (state) =>
-      state.topicsBuilt ? "已建立主题与二维投影" : "尚未建立主题，分析页会是空的",
-    ready: (state) => state.topicsBuilt,
+      !state.topicsBuilt
+        ? "尚未建立主题，分析页会是空的"
+        : state.mappedPapers < state.vectors
+          ? `投影含 ${state.mappedPapers} 篇，另有 ${state.vectors - state.mappedPapers} 篇待加入`
+          : `投影含 ${state.mappedPapers} 篇，已是最新`,
+    // The map is only as current as the vectors it was drawn from.
+    ready: (state) => state.topicsBuilt && state.mappedPapers >= state.vectors,
     blocked: (state) => (state.semanticReady ? null : { message: "请先准备语义检索" }),
+    action: (state) => (state.topicsBuilt ? "更新投影" : null),
   },
   {
     kind: "deep",

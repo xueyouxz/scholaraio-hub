@@ -13,7 +13,7 @@ from scholaraio.hub.artifacts import AnalysisArtifacts
 from scholaraio.hub.errors import InvalidRequest
 from scholaraio.hub.runtime import LibraryRuntime
 from scholaraio.hub.tasks import Job, Progress
-from scholaraio.stores.papers import read_meta
+from scholaraio.stores.papers import read_meta, write_meta
 
 
 def needs_deep(directory: Path) -> bool:
@@ -33,6 +33,10 @@ class MaintenanceJobs:
         self.runtime = runtime
         self.artifacts = artifacts
         self.model_dir = model_dir
+
+    def lanes(self) -> dict[str, str]:
+        """Which kinds must not run together: vectors feed topics; both others write meta.json."""
+        return {"semantic": "vectors", "topics": "vectors", "deep": "metadata", "quality": "metadata"}
 
     def registry(self) -> dict[str, Job]:
         """Task kinds in the order the browser lists them."""
@@ -103,18 +107,45 @@ class MaintenanceJobs:
         return f"处理 {done} 篇" + (f"，其中 {failed} 篇未能完成" if failed else "")
 
     def quality(self, progress: Progress) -> str:
-        """Fill in the abstracts the library is missing, from the papers and the DOI."""
-        from scholaraio.services.ingest_metadata import backfill_abstracts
+        """Fill in the abstracts the library is missing: from the DOI, else from the full text.
+
+        Only papers without an abstract are touched, one at a time, so the
+        count moves and the stop button takes effect between papers.
+        """
+        from scholaraio.services.ingest_metadata import extract_abstract_from_md, fetch_abstract_by_doi
 
         cfg = self.runtime.cfg
-        progress.phase("abstracts")
-        # backfill_abstracts walks the library itself; stopping applies to the
-        # reindex that follows, which is the part this task owns.
-        stats = backfill_abstracts(cfg.papers_dir, dry_run=False, doi_fetch=True, cfg=cfg)
-        if not progress.stopped:
+        # The full-text fallback asks the LLM only when one is configured.
+        llm = cfg if cfg.resolved_api_key() else None
+        pending = [directory for directory in self.runtime.papers.directories() if not has_abstract(directory)]
+        progress.phase("abstracts", done=0, total=len(pending))
+        filled = failed = 0
+        for done, directory in enumerate(pending, start=1):
+            if progress.stopped:
+                break
+            meta = read_meta(directory)
+            doi = str(meta.get("doi") or "").strip()
+            abstract = None
+            try:
+                if doi and doi != "null":
+                    abstract = fetch_abstract_by_doi(doi)
+                if not abstract and (directory / "paper.md").exists():
+                    abstract = extract_abstract_from_md(directory / "paper.md", cfg=llm)
+            except Exception:  # one paper's source being down must not stop the rest
+                abstract = None
+            if abstract:
+                with self.runtime.lock:
+                    current = read_meta(directory)
+                    current["abstract"] = abstract
+                    write_meta(directory, current)
+                filled += 1
+            else:
+                failed += 1
+            progress.advance(done)
+        if filled:
             self.runtime.reindex()
             self.runtime.events.publish("papers")
-        return f"补全 {stats['filled']} 篇摘要，{stats['failed']} 篇未能补全"
+        return f"补全 {filled} 篇摘要" + (f"，{failed} 篇未能补全" if failed else "")
 
 
 __all__ = ["MaintenanceJobs", "has_abstract", "needs_deep"]

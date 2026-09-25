@@ -1,9 +1,5 @@
 export { CSRF_HEADER } from "./csrf.js";
-export {
-  DEFAULT_PORT,
-  resolvePort,
-  resolveProfileName,
-} from "./ports.js";
+export { resolvePort, resolveProfileName } from "./ports.js";
 
 export type {
   ProviderName,
@@ -13,9 +9,6 @@ export type {
   ProviderUsageLimitWindow,
   ProviderUsageLimitWindowName,
   ModelInfo,
-  EffortOption,
-  PermissionModeOption,
-  ThinkingModeOption,
   ProviderCapabilities,
   SlashCommand,
   ScholaraioSkill,
@@ -24,12 +17,9 @@ export type {
   ScholaraioSkillsResponse,
   PermissionMode,
   NewSessionDefaults,
-  ThinkingMode,
   ThinkingConfig,
-  ExecutionOptions,
-  ProjectFsEntry,
-  ProjectFsBrowseResponse,
-  PermissionRules,
+  SessionFsEntry,
+  SessionDirectoryListing,
 } from "./types.js";
 export {
   ALL_PERMISSION_MODES,
@@ -39,8 +29,6 @@ export {
 } from "./types.js";
 
 export type { UploadedFile } from "./upload.js";
-
-export { getModelContextWindow } from "./context-window.js";
 
 export * from "./library.js";
 export * from "./session/StoredSession.js";

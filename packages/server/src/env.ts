@@ -12,8 +12,6 @@ const __dirname = path.dirname(__filename);
 // files exist, so repo-root .env/.env.local were silently never loaded.
 const repoRoot = path.resolve(__dirname, "../../..");
 
-const PermissionModeSchema = z.enum(["default", "acceptEdits", "plan", "bypassPermissions"]);
-
 const LogLevelSchema = z.enum(["fatal", "error", "warn", "info", "debug", "trace"]);
 
 const optionalInteger = z.preprocess((value) => {
@@ -62,7 +60,6 @@ const RuntimeEnvSchema = z
     CLIENT_DIST_DIR: z.string().optional(),
     SCHOLARAIO_SKILLS_DIR: z.string().optional(),
     IDLE_TIMEOUT: optionalInteger,
-    PERMISSION_MODE: PermissionModeSchema.optional(),
     LOG_DIR: z.string().optional(),
     LOG_FILE: z.string().optional(),
     LOG_LEVEL: LogLevelSchema.optional(),
@@ -70,10 +67,8 @@ const RuntimeEnvSchema = z
     LOG_TO_FILE: optionalBoolean,
     LOG_PRETTY: optionalBoolean,
     ENABLED_PROVIDERS: optionalStringArray,
-    HTTPS_SELF_SIGNED: optionalBoolean,
     ALLOWED_HOSTS: z.string().optional(),
     LOG_SDK_MESSAGES: optionalBoolean,
-    CODEX_CORRELATION_DEBUG: optionalBoolean,
     SCHOLARAIO_HUB_UV: z.string().optional(),
   })
   .passthrough();

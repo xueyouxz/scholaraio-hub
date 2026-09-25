@@ -16,7 +16,7 @@ const viteConfigFile = new URL("../../../../vite.config.ts", import.meta.url);
 /** Paths the Hono app owns; everything else is the client, served by Vite. */
 function isServerPath(url: string | undefined): boolean {
   const pathname = (url ?? "/").split("?")[0] ?? "/";
-  return pathname === "/api" || pathname.startsWith("/api/") || pathname === "/health";
+  return pathname === "/api" || pathname.startsWith("/api/");
 }
 
 export class DevFrontend {

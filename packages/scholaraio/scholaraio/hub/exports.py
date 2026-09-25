@@ -1,7 +1,7 @@
-"""Take references out of the library, and check a draft's citations against it.
+"""Take references out of the library.
 
-Both work on the same selection the rest of the browser uses: the papers the
-user ticked, or the open project, or the whole library.
+An export works on the same selection the rest of the browser uses: the papers
+the user ticked, or the open project, or the whole library.
 """
 from __future__ import annotations
 
@@ -63,40 +63,6 @@ class ExportService:
             "filename": f"{project_id or 'library'}-{stamp}{suffix}",
             "contentType": content_type,
             "content": content,
-        }
-
-    def check(self, text: str, project_id: str | None = None) -> dict:
-        """Report which of a draft's citations the library can actually back."""
-        from scholaraio.services.citation_check import check_citations, extract_citations
-
-        if not text.strip():
-            raise InvalidRequest("请粘贴要核查的正文")
-        citations = extract_citations(text)
-        if not citations:
-            return {"citations": [], "verified": 0, "missing": 0, "ambiguous": 0}
-        with self.runtime.lock:
-            results = check_citations(
-                citations,
-                self.runtime.cfg.index_db,
-                paper_ids=self.projects.scope_set(project_id),
-            )
-        return {
-            "citations": [
-                {
-                    "raw": entry.get("raw", ""),
-                    "author": entry.get("author", ""),
-                    "year": entry.get("year", ""),
-                    "status": entry["status"],
-                    "matches": [
-                        {"paperId": str(match.get("paper_id") or ""), "title": match.get("title", "")}
-                        for match in entry.get("matches", [])
-                    ],
-                }
-                for entry in results
-            ],
-            "verified": sum(1 for entry in results if entry["status"] == "VERIFIED"),
-            "missing": sum(1 for entry in results if entry["status"] == "NOT_IN_LIBRARY"),
-            "ambiguous": sum(1 for entry in results if entry["status"] == "AMBIGUOUS"),
         }
 
 

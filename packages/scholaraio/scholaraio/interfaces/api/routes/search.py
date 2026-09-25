@@ -3,15 +3,21 @@ from __future__ import annotations
 
 from fastapi import APIRouter
 
-from scholaraio.interfaces.api.dependencies import Projects, Retrieval, Search
-from scholaraio.interfaces.api.schemas import ContextInput, ProjectQuery
+from scholaraio.interfaces.api.dependencies import Discover, Projects, Retrieval, Search
+from scholaraio.interfaces.api.schemas import ContextInput, ProjectQuery, ScopeInput
 
 router = APIRouter(tags=["search"])
 
 
 @router.get("/search")
-def search(search: Search, q: str = "", limit: int = 50, project_id: ProjectQuery = None, mode: str | None = None):
-    return search.query(q, limit=limit, project_id=project_id, mode=mode)
+def search(search: Search, mode: str, q: str = "", limit: int = 50, project_id: ProjectQuery = None):
+    return search.query(q, mode, limit=limit, project_id=project_id)
+
+
+@router.get("/discover")
+def discover(discover: Discover, q: str = "", limit: int = 20):
+    """Papers on the open web the library could fetch."""
+    return discover.search(q, limit=limit)
 
 
 @router.post("/context")
@@ -20,5 +26,5 @@ def context(body: ContextInput, retrieval: Retrieval):
 
 
 @router.post("/scope")
-def scope(body: ContextInput, projects: Projects):
+def scope(body: ScopeInput, projects: Projects):
     return {"paperIds": projects.scope(body.project_id, body.paper_ids)}

@@ -4,15 +4,11 @@ import { CSRF_HEADER } from "@scholaraio-hub/shared";
 
 export class HttpError extends Error {
   readonly status: number;
-  readonly statusText: string;
-  readonly payload: unknown;
 
-  constructor(message: string, response: Response, payload: unknown) {
+  constructor(message: string, status: number) {
     super(message);
     this.name = "HttpError";
-    this.status = response.status;
-    this.statusText = response.statusText;
-    this.payload = payload;
+    this.status = status;
   }
 }
 
@@ -87,7 +83,7 @@ export async function requestJson<T>(path: string, init?: RequestInit): Promise<
   const payload = await parseResponsePayload(response);
 
   if (!response.ok) {
-    throw new HttpError(getErrorMessage(payload, response.statusText), response, payload);
+    throw new HttpError(getErrorMessage(payload, response.statusText), response.status);
   }
 
   return payload as T;

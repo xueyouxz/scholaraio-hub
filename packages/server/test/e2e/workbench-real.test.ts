@@ -4,8 +4,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { createApp } from "../../src/app.js";
-import { ClaudeProvider } from "../../src/sdk/providers/claude.js";
-import { CodexProvider } from "../../src/sdk/providers/codex.js";
+import { ClaudeProvider } from "../../src/providers/claude/ClaudeProvider.js";
+import { CodexProvider } from "../../src/providers/codex/CodexProvider.js";
 import { LibraryService } from "../../src/services/LibraryService.js";
 
 class EmptyLibrary extends LibraryService {

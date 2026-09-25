@@ -1,7 +1,6 @@
 import { readFile, readdir, writeFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 import { loadConfig } from "../config.js";
-import { skillsDirectory } from "../skills/skillsDirectory.js";
 
 // The source file, edited by hand: this command only runs from the checkout.
 const manifestPath = fileURLToPath(new URL("../skills/scholaraioCategories.ts", import.meta.url));
@@ -14,7 +13,7 @@ const marker = "// === UNCATEGORIZED (added by skills-sync) ===";
  */
 export async function skillsSync(): Promise<number> {
   const config = loadConfig();
-  const skillsDir = config.scholaraioSkillsDir ?? skillsDirectory(config.dataDir);
+  const skillsDir = config.skillsDir;
   let entries: import("node:fs").Dirent[];
   try {
     entries = await readdir(skillsDir, { withFileTypes: true });

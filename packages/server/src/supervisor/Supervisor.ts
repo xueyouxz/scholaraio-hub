@@ -1,13 +1,11 @@
 import { randomUUID } from "node:crypto";
-import type { ProviderName } from "@scholaraio-hub/shared";
-import type { AgentEvent } from "../agent/events.js";
+import type { ProviderName, ThinkingConfig } from "@scholaraio-hub/shared";
 import { getLogger } from "../logging/logger.js";
-import { getProvider } from "../sdk/providers/index.js";
-import { resolveSessionControls } from "../sdk/providers/session-capabilities.js";
-import type { AgentProvider } from "../sdk/providers/types.js";
-import type { PermissionMode, UserMessage } from "../sdk/types.js";
-import { Process } from "./Process.js";
-import type { ModelSettings } from "./types.js";
+import { getProvider } from "../providers/index.js";
+import type { AgentProvider } from "../providers/types.js";
+import type { PermissionMode, UserMessage } from "../providers/types.js";
+import { AgentProcess } from "./AgentProcess.js";
+import type { ProcessEvent } from "./types.js";
 
 /** How often to check for stale processes (60 seconds) */
 const STALE_CHECK_INTERVAL_MS = 60 * 1000;
@@ -23,57 +21,58 @@ function getStaleInTurnThresholdMs(provider: ProviderName): number {
     : DEFAULT_STALE_IN_TURN_THRESHOLD_MS;
 }
 
-/** Ask for a new session, sending the first message with it. */
-export interface StartSessionRequest {
+/** How a session's worker must run; a live one that differs is replaced. */
+export interface LaunchSettings {
+  /** Provider to use; undefined is the supervisor's default. */
+  providerName?: ProviderName;
+  /** Model to use; undefined is the provider's default. */
+  model?: string;
+  /** Thinking configuration. undefined = provider default */
+  thinking?: ThinkingConfig;
+  /** Effort level; undefined = provider default */
+  effort?: string;
+}
+
+/** A message for one of our sessions, with everything its worker must match. */
+export interface SessionMessageRequest {
+  /** Our session id. */
+  sessionId: string;
+  /** The provider conversation to continue; none starts a new one. */
+  nativeSessionId?: string;
   projectPath: string;
-  /** Our own session id, so its owner can find this process again. */
-  ownerId?: string;
   message: UserMessage;
   permissionMode?: PermissionMode;
-  modelSettings?: ModelSettings;
+  settings?: LaunchSettings;
 }
-
-/** Ask to continue a session the provider already knows about. */
-export interface ResumeSessionRequest extends StartSessionRequest {
-  sessionId: string;
-}
-
-/** Every event a provider reports, for cross-session telemetry (e.g. rate limits). */
-export type OnProviderEventCallback = (provider: ProviderName, event: AgentEvent) => void;
 
 export interface SupervisorOptions {
-  onProcessCreated?: (process: Process) => void;
   /** Agent provider used when a request does not name one */
   provider: AgentProvider;
   idleTimeoutMs?: number;
-  /** Default permission mode for new sessions */
-  defaultPermissionMode?: PermissionMode;
-  /** Callback for provider-level telemetry carried in SDK message streams */
-  onProviderEvent?: OnProviderEventCallback;
+  /**
+   * Every event of every live process, with the session it serves. A process
+   * that was released (replaced or deleted) reports nothing more.
+   */
+  onEvent: (sessionId: string, event: ProcessEvent) => void;
 }
 
 /**
- * Owns the provider processes this server runs: starts or resumes one per
- * session, finds a live one again by its native session id, and reaps processes
- * that died without saying so.
+ * Owns the provider processes this server runs, one per session and keyed by
+ * our own session id. It keeps each live process matching what the session
+ * asks for — provider, native conversation, model, thinking, effort — and
+ * reaps processes that died without saying so.
  */
 export class Supervisor {
-  private readonly onProcessCreated?: (process: Process) => void;
-  private readonly processes = new Map<string, Process>();
-  /** Native session id (the temporary one too, until the provider names it) → process id */
-  private readonly sessionToProcess = new Map<string, string>();
+  private readonly processes = new Map<string, AgentProcess>();
   private readonly provider: AgentProvider;
   private readonly idleTimeoutMs?: number;
-  private readonly defaultPermissionMode: PermissionMode;
-  private readonly onProviderEvent?: OnProviderEventCallback;
+  private readonly onEvent: SupervisorOptions["onEvent"];
   private readonly staleCheckTimer: ReturnType<typeof setInterval>;
 
   constructor(options: SupervisorOptions) {
-    this.onProcessCreated = options.onProcessCreated;
     this.provider = options.provider;
     this.idleTimeoutMs = options.idleTimeoutMs;
-    this.defaultPermissionMode = options.defaultPermissionMode ?? "default";
-    this.onProviderEvent = options.onProviderEvent;
+    this.onEvent = options.onEvent;
     this.staleCheckTimer = setInterval(
       () => this.terminateStaleProcesses(),
       STALE_CHECK_INTERVAL_MS,
@@ -92,208 +91,150 @@ export class Supervisor {
     return provider;
   }
 
-  async close(): Promise<void> {
-    clearInterval(this.staleCheckTimer);
-    await Promise.all([...this.processes.values()].map((process) => process.abort()));
+  /** The session's live process, if it has one. */
+  get(sessionId: string): AgentProcess | undefined {
+    return this.processes.get(sessionId);
   }
 
-  startSession(request: StartSessionRequest): Promise<Process> {
+  /**
+   * Send a message to a session: to its live process when that one still
+   * matches the request, otherwise to a new process (resuming the native
+   * conversation when there is one).
+   */
+  async send(request: SessionMessageRequest): Promise<AgentProcess> {
+    const live = this.processes.get(request.sessionId);
+    if (live && (await this.adopt(live, request))) {
+      if (request.permissionMode) live.setPermissionMode(request.permissionMode);
+      if (live.queueMessage(request.message).success) return live;
+      this.release(request.sessionId, "Process could not take the message");
+    }
     return this.launch(request);
   }
 
   /**
-   * Send a message to a session: to its live process when there is one,
-   * otherwise to a new process that resumes it.
+   * Stop the session's process without reporting its ending: whoever releases
+   * it is replacing it or removing the session. No-op when there is none.
    */
-  async resumeSession(request: ResumeSessionRequest): Promise<Process> {
-    const { sessionId, message, permissionMode, modelSettings } = request;
-    const existing = this.liveProcessFor(sessionId);
-    if (existing && (await this.adoptSettings(existing, modelSettings))) {
-      if (permissionMode) existing.setPermissionMode(permissionMode);
-      if (existing.queueMessage(message).success) return existing;
-      // Queueing failed: the process is gone underneath us, so start fresh.
-      this.unregisterProcess(existing);
-    }
-    return this.launch(request, sessionId);
+  release(sessionId: string, reason: string): void {
+    const process = this.processes.get(sessionId);
+    if (!process) return;
+    this.processes.delete(sessionId);
+    process.stop(reason);
   }
 
-  private liveProcessFor(sessionId: string): Process | undefined {
-    const processId = this.sessionToProcess.get(sessionId);
-    const process = processId ? this.processes.get(processId) : undefined;
-    if (!process) return undefined;
-    if (!process.isTerminated) return process;
-    this.unregisterProcess(process);
-    return undefined;
+  close(): void {
+    clearInterval(this.staleCheckTimer);
+    for (const id of [...this.processes.keys()]) this.release(id, "Server closing");
   }
 
   /**
-   * Bring a live process to the requested thinking/effort settings. Returns false
-   * when that took a restart, after which the caller must start a new process.
+   * Bring a live process to what the request needs. Thinking alone can switch
+   * in place; any other difference releases the process and returns false.
    */
-  private async adoptSettings(process: Process, settings?: ModelSettings): Promise<boolean> {
-    const thinkingChanged = process.thinking?.type !== (settings?.thinking?.type ?? undefined);
-    const effortChanged = process.effort !== settings?.effort;
-    if (!thinkingChanged && !effortChanged) return true;
-    const log = getLogger();
-    if (thinkingChanged && !effortChanged && process.supportsThinkingModeChange) {
-      // Toggle adaptive/disabled dynamically via deprecated API
-      const tokens = settings?.thinking?.type === "disabled" ? undefined : 1;
-      if (await process.setMaxThinkingTokens(tokens)) {
-        process.updateThinkingConfig(settings?.thinking, settings?.effort);
-      } else {
-        log.warn(
-          { event: "thinking_mode_change_failed", sessionId: process.sessionId },
-          "Failed to change thinking mode dynamically",
-        );
-      }
-      return true;
-    }
-    log.info(
-      {
-        event: "thinking_mode_changed_restart",
-        sessionId: process.sessionId,
-        processId: process.id,
-        oldThinking: process.thinking?.type,
-        oldEffort: process.effort,
-        newThinking: settings?.thinking?.type,
-        newEffort: settings?.effort,
-      },
-      "Thinking/effort changed, restarting process",
+  private async adopt(process: AgentProcess, request: SessionMessageRequest): Promise<boolean> {
+    const settings = request.settings ?? {};
+    const reason = process.isTerminated
+      ? "Process already ended"
+      : this.providerFor(settings.providerName).name !== process.provider
+        ? "Provider changed"
+        : request.nativeSessionId !== process.nativeSessionId
+          ? "Session continues a different conversation"
+          : settings.model !== process.model
+            ? "Model changed"
+            : settings.effort !== process.effort
+              ? "Effort changed"
+              : process.thinking?.type !== settings.thinking?.type &&
+                  !(await process.changeThinking(settings.thinking))
+                ? "Thinking changed"
+                : undefined;
+    if (!reason) return true;
+    getLogger().info(
+      { event: "process_replaced", sessionId: request.sessionId, processId: process.id, reason },
+      `Replacing process for ${request.sessionId}: ${reason}`,
     );
-    await process.abort();
-    this.unregisterProcess(process);
+    this.release(request.sessionId, reason);
     return false;
   }
 
-  /** Start a provider session and register the process that runs it. */
-  private async launch(request: StartSessionRequest, resumeSessionId?: string): Promise<Process> {
-    const { projectPath, ownerId, message, permissionMode, modelSettings } = request;
-    const provider = this.providerFor(modelSettings?.providerName);
+  private async launch(request: SessionMessageRequest): Promise<AgentProcess> {
+    const { sessionId, nativeSessionId, projectPath, message } = request;
+    const settings = request.settings ?? {};
+    const provider = this.providerFor(settings.providerName);
+    const permissionMode = request.permissionMode ?? "default";
     // The approval callback is handed over before the process exists.
-    const holder: { process?: Process } = {};
-    const effectiveMode = permissionMode ?? this.defaultPermissionMode;
-    // Generate UUID for the initial message so SDK and SSE use the same ID.
-    const initialMessage: UserMessage = { ...message, uuid: randomUUID() };
-
+    const holder: { process?: AgentProcess } = {};
     const session = await provider.startSession({
       cwd: projectPath,
-      initialMessage,
-      resumeSessionId,
-      permissionMode: effectiveMode,
-      model: modelSettings?.model,
-      thinking: modelSettings?.thinking,
-      effort: modelSettings?.effort,
-      globalInstructions: modelSettings?.globalInstructions,
+      // The same UUID reaches the provider and our own record of the message.
+      initialMessage: { ...message, uuid: randomUUID() },
+      resumeSessionId: nativeSessionId,
+      permissionMode,
+      model: settings.model,
+      thinking: settings.thinking,
+      effort: settings.effort,
       onToolApproval: async (toolName, input, opts) => {
         if (!holder.process) return { behavior: "deny", message: "Process not ready" };
         return holder.process.handleToolApproval(toolName, input, opts);
       },
     });
-
-    const process = new Process(session.events, {
+    const process = new AgentProcess(session, {
+      sessionId,
+      nativeSessionId,
       projectPath,
-      ownerId,
-      sessionId: resumeSessionId ?? randomUUID(),
-      idleTimeoutMs: this.idleTimeoutMs,
-      queue: session.queue,
-      abortFn: session.abort,
-      isProcessAlive: session.isProcessAlive,
-      controls: resolveSessionControls(session),
-      permissionMode: effectiveMode,
       provider: provider.name,
-      thinking: modelSettings?.thinking,
-      effort: modelSettings?.effort,
-      permissions: modelSettings?.permissions,
+      permissionMode,
+      model: settings.model,
+      thinking: settings.thinking,
+      effort: settings.effort,
+      idleTimeoutMs: this.idleTimeoutMs,
     });
     holder.process = process;
-    this.onProcessCreated?.(process);
-
-    // A new session is known by the provider's id; wait for it before registering.
-    if (!resumeSessionId) await process.waitForSessionId();
-    this.registerProcess(process);
+    this.register(process);
     return process;
   }
 
-  private registerProcess(process: Process): void {
+  private register(process: AgentProcess): void {
+    const { sessionId } = process;
     getLogger().info(
-      {
-        event: "session_registered",
-        sessionId: process.sessionId,
-        processId: process.id,
-        projectPath: process.projectPath,
-        permissionMode: process.permissionMode,
-      },
-      `Session registered: ${process.sessionId} (process: ${process.id})`,
+      { event: "process_registered", sessionId, processId: process.id },
+      `Process registered for session ${sessionId}`,
     );
-
-    this.processes.set(process.id, process);
-    this.sessionToProcess.set(process.sessionId, process.id);
-
+    this.processes.set(sessionId, process);
     process.subscribe((event) => {
-      if (event.type === "complete") {
-        this.unregisterProcess(process);
-      } else if (event.type === "agent") {
-        this.onProviderEvent?.(process.provider, event.event);
-      } else if (event.type === "session-id-changed") {
-        // Keep the temporary id too: a caller may still hold it.
+      // A released process's ending belongs to nobody.
+      if (this.processes.get(sessionId) !== process) return;
+      if (event.type === "terminated") {
+        this.processes.delete(sessionId);
         getLogger().info(
           {
-            event: "session_id_mapping_updated",
-            oldSessionId: event.oldSessionId,
-            newSessionId: event.newSessionId,
+            event: "process_unregistered",
+            sessionId,
             processId: process.id,
+            durationMs: Date.now() - process.startedAt.getTime(),
+            reason: event.reason,
           },
-          `Session ID mapping updated: ${event.oldSessionId} → ${event.newSessionId}`,
+          `Process for session ${sessionId} ended: ${event.reason}`,
         );
-        this.sessionToProcess.set(event.newSessionId, process.id);
       }
+      this.onEvent(sessionId, event);
     });
   }
 
-  private unregisterProcess(process: Process): void {
-    const durationMs = Date.now() - process.startedAt.getTime();
-    getLogger().info(
-      {
-        event: "session_unregistered",
-        sessionId: process.sessionId,
-        processId: process.id,
-        durationMs,
-        finalState: process.state.type,
-        terminationReason: process.terminationReason,
-      },
-      `Session unregistered: ${process.sessionId} after ${durationMs}ms (reason: ${process.terminationReason ?? process.state.type})`,
-    );
-
-    this.processes.delete(process.id);
-    // Both the temporary and the native session id point here.
-    for (const [sessionId, processId] of this.sessionToProcess) {
-      if (processId === process.id) this.sessionToProcess.delete(sessionId);
-    }
-  }
-
   /**
-   * Terminate processes stuck in "in-turn" with no SDK messages for too long.
-   * This catches phantom processes where the underlying CLI died without the
-   * SDK iterator returning done or throwing.
-   *
-   * When process liveness checking is available (via spawn wrapper), it tells
-   * "process died silently" from "process is busy with a long tool call"; only
-   * dead processes are terminated.
+   * Terminate processes stuck in "in-turn" with no provider events for too
+   * long: the CLI died without its event stream ending or throwing. When the
+   * provider can report liveness, only a dead process is stopped — a live but
+   * silent one is most likely in a long tool call.
    */
   private terminateStaleProcesses(): void {
     const now = Date.now();
-
     for (const process of this.processes.values()) {
       if (process.state.type !== "in-turn") continue;
-
       const staleThresholdMs = getStaleInTurnThresholdMs(process.provider);
       const silentMs = now - process.lastMessageTime.getTime();
       if (silentMs < staleThresholdMs) continue;
-
-      // Alive but silent: most likely a long tool call (e.g. waiting on CI).
       const alive = process.isProcessAlive;
       if (alive === true) continue;
-
       getLogger().warn(
         {
           event: alive === undefined ? "stale_process_detected" : "stale_process_dead",
@@ -302,11 +243,10 @@ export class Supervisor {
           provider: process.provider,
           silentMs,
           staleThresholdMs,
-          livenessAvailable: alive !== undefined,
         },
-        `Terminating ${alive === undefined ? "stale" : "dead"} process: ${process.sessionId} (no messages for ${Math.round(silentMs / 1000)}s)`,
+        `Terminating ${alive === undefined ? "stale" : "dead"} process for ${process.sessionId} (no events for ${Math.round(silentMs / 1000)}s)`,
       );
-      process.terminate(`stale: no SDK messages for ${Math.round(silentMs / 1000)}s`);
+      process.stop(`stale: no provider events for ${Math.round(silentMs / 1000)}s`);
     }
   }
 }

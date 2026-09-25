@@ -25,20 +25,20 @@
 
   --tab-size: 2;
 
+  /* Code a tool read, wrote or printed: a step below the transcript's own code. */
+  --font-size-code: 11.5px;
+  --line-height-code: 1.6;
+  /* The frame around a file or an output: present, but quieter than the text. */
+  --border-code: color-mix(in srgb, var(--color-outline) 13%, transparent);
+  /* Frames of code, files, diffs and tables: barely rounded. */
+  --radius-frame: 5px;
+
   --border-subtle: color-mix(in srgb, var(--color-outline) 12%, transparent);
   --border-strong: color-mix(in srgb, var(--color-outline) 30%, transparent);
   --surface-error: color-mix(in srgb, var(--color-error) 8%, transparent);
 
-  /* The assistant timeline: one dot per item, joined by a thin line. */
-  --timeline-dot: color-mix(in srgb, var(--color-primary) 38%, transparent);
-  --timeline-dot-tool: color-mix(in srgb, var(--color-primary) 56%, transparent);
-  --timeline-dot-error: color-mix(in srgb, var(--color-error) 70%, transparent);
-  --timeline-dot-aborted: color-mix(in srgb, var(--color-warning) 55%, transparent);
-  --timeline-line: color-mix(in srgb, var(--color-outline) 18%, transparent);
-  /* Distance from an item's top edge to its dot's center, and the gutter. */
-  --timeline-dot-size: 6px;
-  --timeline-dot-top: 8px;
-  --timeline-gutter: 24px;
+  /* How far a folded row's contents sit in from its header. */
+  --tool-indent: 14px;
 }
 
 /* ==========================================================================
@@ -113,7 +113,7 @@
   background-color: var(--border-subtle);
 }
 
-.load-older-button {
+.queue-resume-button {
   padding: 0.375rem 0.875rem;
   border: 1px solid var(--color-border);
   border-radius: 999px;
@@ -123,12 +123,12 @@
   cursor: pointer;
 }
 
-.load-older-button:hover:not(:disabled) {
+.queue-resume-button:hover:not(:disabled) {
   background: var(--color-surface-container-high);
   color: var(--color-on-surface);
 }
 
-.load-older-button:disabled {
+.queue-resume-button:disabled {
   opacity: 0.55;
   cursor: not-allowed;
 }
@@ -169,8 +169,112 @@
 
 .user-prompt-container {
   display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  margin-bottom: var(--space-1);
+}
+
+/* Copy, edit, fork under a message; they appear with the pointer. */
+.message-actions {
+  display: flex;
+  gap: 2px;
+  margin-top: 2px;
+  opacity: 0;
+  transition: opacity 0.15s;
+}
+
+.user-prompt-container:hover .message-actions,
+.message-actions:focus-within {
+  opacity: 1;
+}
+
+@media (hover: none) {
+  .message-actions {
+    opacity: 1;
+  }
+}
+
+.message-action {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  border-radius: var(--radius-md);
+  color: var(--color-on-surface-muted);
+}
+
+.message-action:hover:not(:disabled) {
+  background: var(--color-surface-container-high);
+  color: var(--color-on-surface);
+}
+
+.message-action:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.message-action:focus-visible {
+  outline: 2px solid var(--color-primary);
+  outline-offset: 1px;
+}
+
+.message-action.done {
+  color: var(--color-success);
+}
+
+.prompt-editor {
+  width: min(100%, 720px);
+  padding: 8px 10px;
+  border: 1px solid var(--color-outline-variant);
+  border-radius: 14px;
+  background: var(--color-surface-container-lowest);
+}
+
+.prompt-editor textarea {
+  width: 100%;
+  resize: vertical;
+  border: 0;
+  outline: none;
+  background: transparent;
+  font-size: var(--font-size-base);
+  line-height: 1.5;
+  color: var(--color-on-surface);
+}
+
+.prompt-editor-error {
+  margin: 4px 0 0;
+  font-size: var(--font-size-sm);
+  color: var(--color-error);
+}
+
+.prompt-editor-actions {
+  display: flex;
   justify-content: flex-end;
-  margin-bottom: var(--space-3);
+  gap: 6px;
+  margin-top: 6px;
+}
+
+.prompt-editor-cancel,
+.prompt-editor-send {
+  border-radius: 9999px;
+  padding: 4px 12px;
+  font-size: var(--font-size-sm);
+  font-weight: 500;
+}
+
+.prompt-editor-cancel {
+  color: var(--color-on-surface);
+  background: var(--color-surface-container-high);
+}
+
+.prompt-editor-send {
+  color: var(--color-on-primary);
+  background: var(--color-primary);
+}
+
+.prompt-editor-send:disabled {
+  opacity: 0.5;
 }
 
 .message-user-prompt {
@@ -257,30 +361,30 @@
   border-color: var(--color-on-surface-faint);
 }
 
-.deferred-message {
+.queued-message {
   margin-bottom: var(--space-3);
 }
 
-.deferred-message-bubble {
+.queued-message-bubble {
   opacity: 0.7;
   border-left: 3px solid var(--color-attention);
   padding-left: var(--space-2);
 }
 
-.deferred-message-footer {
+.queued-message-footer {
   display: flex;
   align-items: center;
   gap: var(--space-2);
   margin-top: var(--space-1);
 }
 
-.deferred-message-status {
+.queued-message-status {
   font-size: var(--font-size-xs);
   color: var(--color-attention);
   font-style: italic;
 }
 
-.deferred-message-cancel {
+.queued-message-cancel {
   color: var(--color-on-surface-faint);
   font-size: 14px;
   line-height: 1;
@@ -288,85 +392,33 @@
   border-radius: var(--radius-sm);
 }
 
-.deferred-message-cancel:hover {
+.queued-message-cancel:hover {
   color: var(--color-error);
 }
 
 /* ==========================================================================
-   Assistant timeline
+   Assistant turns
 
-   Every direct child of a turn (or of a subagent's nested timeline) is a
-   `.timeline-item`; its dot sits in the gutter and a line joins it to the
-   next item. Keep `--timeline-dot-top` in step with the first line of text.
+   A turn is a plain column: text, folded tool work and notices one after the
+   other, no timeline. Every direct child is a `.timeline-item` for spacing.
    ========================================================================== */
 
 .assistant-turn {
   position: relative;
-  padding-left: var(--timeline-gutter);
 }
 
 .timeline-item {
   position: relative;
-  margin: 4px 0;
-}
-
-/* Text sits 2px low so its first line meets the dot, like a tool row's header. */
-.timeline-item:not(.tool-row) {
-  padding-top: 2px;
-}
-
-.timeline-item::before {
-  content: "";
-  position: absolute;
-  left: -11px;
-  top: var(--timeline-dot-top);
-  width: var(--timeline-dot-size);
-  height: var(--timeline-dot-size);
-  border-radius: 50%;
-  background: var(--timeline-dot);
-}
-
-.timeline-item::after {
-  content: "";
-  position: absolute;
-  left: -8px;
-  top: calc(var(--timeline-dot-top) + var(--timeline-dot-size));
-  bottom: -10px;
-  width: 1px;
-  background: var(--timeline-line);
-}
-
-/* The last item of a timeline has nothing below it to join. */
-.timeline-item:not(:has(~ .timeline-item))::after {
-  display: none;
-}
-
-.tool-row.status-pending::before {
-  background: var(--timeline-dot-tool);
-  animation: timeline-dot-pulse 1.5s ease-in-out infinite;
-}
-
-.tool-row.status-complete::before {
-  background: var(--timeline-dot-tool);
-}
-
-.tool-row.status-error::before {
-  background: var(--timeline-dot-error);
-}
-
-.tool-row.status-aborted::before {
-  background: var(--timeline-dot-aborted);
+  margin: 6px 0;
 }
 
 /* Subagent work inside its Task row. */
 .nested-timeline {
   margin: 2px 0 6px;
-  padding-left: 12px;
-  border-left: 1px solid var(--color-border);
 }
 
 .task-nested-content {
-  padding: 0.75rem;
+  padding: 0 0 4px;
 }
 
 /* An item that failed to render; the rest of the turn still shows. */
@@ -375,9 +427,41 @@
   color: var(--color-error);
 }
 
-/* Per-turn footer: model and tokens. Mono = data (DESIGN.md). */
+/* Per-turn footer: copy the answer, then model and tokens. */
+.turn-footer {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 4px;
+  opacity: 0;
+  transition: opacity 0.15s;
+}
+
+.assistant-turn:hover .turn-footer,
+.turn-footer:focus-within {
+  opacity: 1;
+}
+
+/* No pointer to hover with: always show it. */
+@media (hover: none) {
+  .turn-footer {
+    opacity: 1;
+  }
+}
+
+/* The answer's copy button: a notch smaller than a prompt's. */
+.turn-footer .message-action {
+  width: 20px;
+  height: 20px;
+}
+
+.turn-footer .message-action svg {
+  width: 12px;
+  height: 12px;
+}
+
+/* Mono = data (DESIGN.md). */
 .turn-meta {
-  margin: 2px 0 0;
   font-family: var(--font-mono);
   font-size: 10px;
   letter-spacing: 0.05em;
@@ -395,39 +479,6 @@
   color: var(--color-on-surface);
 }
 
-.text-block-copy {
-  position: absolute;
-  top: 0;
-  right: 0;
-  z-index: 10;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 28px;
-  height: 28px;
-  background: var(--color-surface-container-low);
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-sm);
-  color: var(--color-on-surface-muted);
-  opacity: 0;
-  transition: opacity 0.15s, background 0.15s, color 0.15s;
-}
-
-.text-block:hover .text-block-copy,
-.text-block-copy:focus-visible {
-  opacity: 1;
-}
-
-.text-block-copy:hover {
-  background: var(--color-surface-container-high);
-  color: var(--color-on-surface);
-}
-
-.text-block-copy.copied {
-  color: var(--color-success);
-  opacity: 1;
-}
-
 .thinking-block {
   margin: var(--space-1) 0;
 }
@@ -436,7 +487,7 @@
   display: flex;
   align-items: center;
   gap: var(--space-1);
-  color: var(--color-on-surface-muted);
+  color: var(--color-on-surface-faint);
   font-size: var(--font-size-base);
   cursor: pointer;
   list-style: none;
@@ -446,18 +497,22 @@
   display: none;
 }
 
-.collapsible__icon {
-  font-size: var(--font-size-xs);
+.collapsible__content {
+  padding: var(--space-1) 0 var(--space-1) var(--tool-indent);
+  font-size: var(--font-size-sm);
+  color: var(--color-on-surface-muted);
+}
+
+/* The disclosure mark: a V pointing right, turned down when its row is open. */
+.disclosure-chevron {
+  flex-shrink: 0;
+  color: var(--color-on-surface-faint);
   transition: transform 0.15s ease;
 }
 
-details[open] > .collapsible__summary .collapsible__icon {
+.disclosure-chevron.open,
+details[open] > summary .disclosure-chevron {
   transform: rotate(90deg);
-}
-
-.collapsible__content {
-  padding: var(--space-2) 0 var(--space-2) var(--space-4);
-  color: var(--color-on-surface-muted);
 }
 
 .thinking-streaming-collapsed .collapsible__summary {
@@ -469,20 +524,28 @@ details[open] > .collapsible__summary .collapsible__icon {
    ========================================================================== */
 
 /* Fixed-height header so a row does not jump while it streams. */
+/*
+ * Tool work reads as secondary to the answer: the whole line is a quiet gray,
+ * and only what the call worked on (a file, a command) is a step stronger.
+ */
 .tool-row-header {
   display: flex;
   align-items: center;
-  gap: 8px;
-  width: 100%;
-  min-height: 20px;
-  padding: 2px 4px;
-  border-radius: 2px;
+  gap: 6px;
+  max-width: 100%;
+  min-height: 22px;
+  padding: 1px 0;
   text-align: left;
-  transition: background-color 0.1s;
+  color: var(--color-on-surface-faint);
+  transition: color 0.1s;
 }
 
 .tool-row-header:hover {
-  background: var(--color-surface-container-high);
+  color: var(--color-on-surface-muted);
+}
+
+.tool-row-header:hover .disclosure-chevron {
+  color: var(--color-on-surface-variant);
 }
 
 .tool-row-header:focus-visible {
@@ -504,16 +567,19 @@ details[open] > .collapsible__summary .collapsible__icon {
 
 .tool-name {
   flex-shrink: 0;
-  font-weight: 600;
+  font-weight: 400;
   font-size: var(--font-size-base);
-  color: var(--color-on-surface);
+  color: inherit;
 }
 
 .tool-summary {
-  flex: 1;
+  color: var(--color-on-surface-variant);
+}
+
+.tool-summary,
+.activity-summary {
   min-width: 0;
   font-size: var(--font-size-base);
-  color: var(--color-on-surface-muted);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -530,33 +596,108 @@ details[open] > .collapsible__summary .collapsible__icon {
   text-overflow: ellipsis;
 }
 
-.expand-chevron {
-  flex-shrink: 0;
-  width: 16px;
-  text-align: center;
-  font-size: var(--font-size-xs);
-  color: var(--color-on-surface-faint);
+.activity-latest {
+  font-style: italic;
 }
 
+/* Lines added and removed, Git colors. */
+.diff-stats {
+  display: inline-flex;
+  flex-shrink: 0;
+  gap: 4px;
+  font-family: var(--font-mono);
+  font-size: var(--font-size-sm);
+}
+
+.diff-added {
+  color: var(--color-success);
+}
+
+.diff-removed {
+  color: var(--color-error);
+}
+
+/* A row's detail: indented under its header, no frame of its own. */
 .tool-row-content {
-  margin-left: var(--timeline-gutter);
-  padding: 8px;
-  border-left: 1px solid var(--color-border);
+  padding: 2px 0 4px var(--tool-indent);
+  font-size: var(--font-size-sm);
   animation: slide-down 0.15s ease-out;
 }
 
+/* Where the file lives, above what the call shows of it. */
+.tool-file-path {
+  margin: 2px 0 4px;
+  overflow-wrap: anywhere;
+  font-size: var(--font-size-sm);
+  color: var(--color-on-surface-faint);
+}
+
+/* A Markdown file a call read or wrote: rendered, with a switch to its source. */
+.file-markdown {
+  position: relative;
+}
+
+.file-markdown-toggle {
+  display: inline-flex;
+  min-width: 0;
+  margin: 0 0 4px;
+  padding: 1px;
+  border: 1px solid var(--border-code);
+  border-radius: 4px;
+}
+
+.file-markdown-toggle button {
+  padding: 0 8px;
+  border-radius: 3px;
+  font-size: var(--font-size-xs);
+  line-height: 18px;
+  color: var(--color-on-surface-faint);
+}
+
+.file-markdown-toggle button[aria-pressed="true"] {
+  background: var(--color-surface-container-high);
+  color: var(--color-on-surface);
+}
+
+.file-markdown-preview {
+  max-height: 28rem;
+  overflow: auto;
+  padding: 8px 12px;
+  border: 1px solid var(--border-code);
+  border-radius: var(--radius-frame);
+  background: var(--color-surface-container-lowest);
+}
+
+.file-markdown-preview .session-markdown {
+  font-size: var(--font-size-sm);
+}
+
+/* An edit's diff, framed like a file (the library draws inside a shadow root). */
+.tool-diff {
+  margin: 4px 0;
+  overflow: hidden;
+  border: 1px solid var(--border-code);
+  border-radius: var(--radius-frame);
+  --diffs-font-size: var(--font-size-code);
+  --diffs-line-height: 18px;
+}
+
+.tool-diff + .tool-diff {
+  margin-top: 6px;
+}
+
 .tool-row-preview {
-  padding: 2px 4px 4px var(--timeline-gutter);
+  padding: 2px 0 4px var(--tool-indent);
 }
 
 .tool-row-interaction {
-  padding: 4px 4px 8px var(--timeline-gutter);
+  padding: 4px 0 8px var(--tool-indent);
 }
 
 .tool-pending-message {
   color: var(--color-on-surface-muted);
   font-style: italic;
-  font-size: var(--font-size-base);
+  font-size: var(--font-size-sm);
 }
 
 .tool-row.status-aborted {
@@ -588,11 +729,124 @@ details[open] > .collapsible__summary .collapsible__icon {
   text-overflow: ellipsis;
 }
 
-/* Exploration group (renderers/ExploredGroup.tsx): nested rows, no list styling. */
-.explored-group-body {
-  list-style: none;
+/* A folded run (renderers/ActivityGroup.tsx): its calls, one row each. */
+.activity-group-body {
+  padding: 2px 0 2px var(--tool-indent);
+  animation: slide-down 0.15s ease-out;
+}
+
+.activity-group-body > .timeline-item {
+  margin: 2px 0;
+}
+
+/* Pictures a tool returned, or a prompt carried. */
+.image-strip {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 4px;
+}
+
+.image-thumb {
+  display: block;
+  overflow: hidden;
+  border-radius: var(--radius-frame);
+  background: var(--color-surface-container-low);
+  cursor: zoom-in;
+}
+
+.image-thumb img {
+  display: block;
+  max-width: 240px;
+  max-height: 160px;
+  object-fit: contain;
+}
+
+.image-thumb.large {
+  cursor: zoom-out;
+}
+
+.image-thumb.large img {
+  max-width: 100%;
+  max-height: none;
+}
+
+/* What a finished turn changed (FileChangesCard.tsx). */
+.file-changes {
+  border: 1px solid var(--border-code);
+  border-radius: 6px;
+  font-size: var(--font-size-sm);
+}
+
+.file-changes-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  color: var(--color-on-surface);
+  font-weight: 500;
+}
+
+.file-changes ul {
   margin: 0;
-  padding: 0 0 0 16px;
+  padding: 0;
+  list-style: none;
+}
+
+.file-changes li {
+  border-top: 1px solid var(--border-subtle);
+}
+
+.file-changes-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 6px 10px;
+  text-align: left;
+  color: var(--color-on-surface-variant);
+}
+
+.file-changes-row:hover:not(:disabled) {
+  background: var(--color-surface-container-low);
+}
+
+.file-changes-row:disabled {
+  cursor: default;
+}
+
+.file-changes-name {
+  font-family: var(--font-mono);
+  color: var(--color-on-surface);
+}
+
+.file-changes-dir {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--color-on-surface-faint);
+}
+
+.file-changes-diff {
+  padding: 0 10px 8px;
+}
+
+.file-changes-diff .tool-diff {
+  margin: 0;
+}
+
+.file-changes-more {
+  width: 100%;
+  padding: 6px 10px;
+  border-top: 1px solid var(--border-subtle);
+  text-align: left;
+  color: var(--color-on-surface-muted);
+}
+
+.file-changes-more:hover {
+  color: var(--color-on-surface);
 }
 
 /* ==========================================================================
@@ -604,111 +858,70 @@ details[open] > .collapsible__summary .collapsible__icon {
 }
 
 .code-block {
-  margin: 0.5rem 0;
-  padding: 0.75rem;
+  margin: 4px 0;
+  padding: 8px 12px;
   overflow-x: auto;
   background: var(--color-surface-code);
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-md);
+  border: 1px solid var(--border-code);
+  border-radius: var(--radius-frame);
   font-family: var(--font-mono);
-  font-size: var(--font-size-base);
-  line-height: 1.5;
+  font-size: var(--font-size-code);
+  line-height: var(--line-height-code);
   white-space: pre-wrap;
   word-break: break-word;
   tab-size: var(--tab-size);
 }
 
 .code-block-error {
-  border-color: var(--color-error);
+  color: var(--color-error);
   background: var(--surface-error);
+  border-color: color-mix(in srgb, var(--color-error) 25%, transparent);
 }
 
-.file-content-with-lines {
-  display: grid;
-  grid-template-columns: auto minmax(0, 1fr);
-  font-family: var(--font-mono);
-  font-size: var(--font-size-base);
-  background: var(--color-surface-code);
-  tab-size: var(--tab-size);
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-md);
-}
-
-.tool-code .code-block,
-.tool-code .file-content-with-lines {
+.tool-code .code-block {
   max-height: 24rem;
   overflow: auto;
-}
-
-.line-numbers {
-  text-align: right;
-  padding: 0.75rem 0.5rem;
-  color: var(--color-on-surface-muted);
-  user-select: none;
-  border-right: 1px solid var(--color-border);
-  background: var(--color-surface-container-low);
-}
-
-.line-numbers > div {
-  line-height: 1.5;
-}
-
-.line-content {
-  margin: 0;
-  padding: 0.75rem;
-  overflow-x: auto;
-  line-height: 1.5;
-}
-
-.line-content code {
-  display: block;
 }
 
 /* The tail of a command's output under its collapsed row. */
 .bash-collapsed-preview {
   display: flex;
   flex-direction: column;
-  gap: 0.25rem;
   width: 100%;
   overflow: hidden;
-  font-size: var(--font-size-base);
+  padding: 6px 0;
+  font-size: var(--font-size-code);
   background: var(--color-surface-code);
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-md);
+  border: 1px solid var(--border-code);
+  border-radius: var(--radius-frame);
 }
 
 .bash-preview-truncated {
-  padding: 2px 8px 0;
+  padding: 0 12px 2px;
   font-size: var(--font-size-sm);
   color: var(--color-on-surface-faint);
 }
 
 .bash-preview-output {
-  position: relative;
-  flex: 1;
-  min-width: 0;
   max-height: 5rem;
   overflow: hidden;
-  padding: 0 8px 4px;
-}
-
-.bash-preview-output pre {
   margin: 0;
+  padding: 0 12px;
   font-family: var(--font-mono);
-  font-size: var(--font-size-base);
-  line-height: 1.4;
+  font-size: var(--font-size-code);
+  line-height: var(--line-height-code);
   white-space: pre-wrap;
   word-break: break-word;
   color: var(--color-on-surface-variant);
 }
 
-.bash-preview-output.bash-preview-error pre {
+.bash-preview-output.bash-preview-error {
   color: var(--color-error);
 }
 
 .edit-error-message {
   margin-top: 0.5rem;
-  font-size: var(--font-size-lg);
+  font-size: var(--font-size-sm);
 }
 
 .todo-list {
@@ -766,20 +979,7 @@ details[open] > .collapsible__summary .collapsible__icon {
 
 @media (max-width: 600px) {
   .code-block {
-    font-size: var(--font-size-sm);
-    padding: 0.5rem;
-  }
-
-  .file-content-with-lines {
-    font-size: var(--font-size-sm);
-  }
-
-  .line-numbers {
-    padding: 0.5rem 0.25rem;
-  }
-
-  .line-content {
-    padding: 0.5rem;
+    padding: 6px 8px;
   }
 }
 
@@ -792,12 +992,29 @@ details[open] > .collapsible__summary .collapsible__icon {
 .inline-input {
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: 8px;
   margin: 0;
-  padding: 10px 12px;
-  border: 1px solid var(--color-outline-variant);
-  border-radius: 12px;
+  padding: 8px 10px;
+  border: 1px solid var(--border-strong);
+  border-radius: 6px;
   background: var(--color-surface-container-low);
+}
+
+.inline-question-text {
+  width: 100%;
+  min-width: 0;
+  padding: 4px 8px;
+  border: 1px solid var(--border-strong);
+  border-radius: 4px;
+  background: var(--color-surface-container-lowest);
+  font-size: var(--font-size-base);
+  line-height: 1.5;
+  color: var(--color-on-surface);
+}
+
+.inline-question-text:focus-visible {
+  outline: 1px solid var(--color-primary);
+  outline-offset: 0;
 }
 
 .inline-input-prompt {
@@ -809,7 +1026,7 @@ details[open] > .collapsible__summary .collapsible__icon {
 .inline-question {
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: 5px;
   margin: 0;
   padding: 0;
   border: 0;
@@ -840,8 +1057,8 @@ details[open] > .collapsible__summary .collapsible__icon {
 
 .inline-option,
 .inline-decision {
-  border-radius: 9999px;
-  padding: 4px 12px;
+  border-radius: 4px;
+  padding: 2px 10px;
   font-size: var(--font-size-sm);
   font-weight: 500;
   color: var(--color-on-surface);
@@ -999,54 +1216,31 @@ details[open] > .collapsible__summary .collapsible__icon {
 }
 
 /* ==========================================================================
-   Run indicators (ThinkingIndicator.tsx, ProcessingIndicator.tsx)
+   Run indicator (ProcessingIndicator.tsx)
    ========================================================================== */
 
-.thinking-indicator {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-}
-
-.thinking-indicator-dot {
-  flex-shrink: 0;
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-  background: var(--color-thinking);
-  animation: dot-breathe 1.5s ease-in-out infinite;
-}
-
-.thinking-indicator-pill {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.375rem;
-  padding: 0.125rem 0.5rem;
-  border-radius: var(--radius-sm);
-  background: color-mix(in srgb, var(--color-thinking) 15%, transparent);
-  color: var(--color-thinking);
-  font-size: var(--font-size-xs);
-  font-weight: 500;
-  white-space: nowrap;
-}
-
-.thinking-indicator-label {
-  line-height: 1;
-}
-
+/* The end of the transcript: the agent's mark, breathing while it works. */
 .processing-indicator {
-  position: relative;
-  margin: 4px 0;
-  padding-top: 2px;
-  padding-left: var(--timeline-gutter);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 2px 0;
 }
 
-.processing-dot-container {
-  position: absolute;
-  left: 12px;
-  top: 0;
-  width: 8px;
-  height: 8px;
+.processing-mark {
+  display: inline-flex;
+}
+
+/* Elapsed time while running; the last turn's time and tokens once idle. */
+.processing-meta {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.05em;
+  color: var(--color-on-surface-faint);
+}
+
+.processing-indicator.active .processing-mark {
+  animation: mark-breathe 1.6s ease-in-out infinite;
 }
 
 .processing-text {
@@ -1081,15 +1275,15 @@ details[open] > .collapsible__summary .collapsible__icon {
   }
 }
 
-@keyframes timeline-dot-pulse {
+@keyframes mark-breathe {
   0%,
   100% {
     opacity: 1;
-    transform: scale(1);
+    transform: scale(1) rotate(0deg);
   }
   50% {
-    opacity: 0.6;
-    transform: scale(0.9);
+    opacity: 0.55;
+    transform: scale(0.88) rotate(45deg);
   }
 }
 
@@ -1100,18 +1294,6 @@ details[open] > .collapsible__summary .collapsible__icon {
   }
   50% {
     opacity: 0.5;
-  }
-}
-
-@keyframes dot-breathe {
-  0%,
-  100% {
-    opacity: 0.4;
-    transform: scale(0.85);
-  }
-  50% {
-    opacity: 1;
-    transform: scale(1);
   }
 }
 
@@ -1154,7 +1336,8 @@ details[open] > .collapsible__summary .collapsible__icon {
 
 @media (prefers-reduced-motion: reduce) {
   .tool-approval-panel,
-  .tool-approval-panel::before {
+  .tool-approval-panel::before,
+  .processing-indicator.active .processing-mark {
     animation: none;
   }
 

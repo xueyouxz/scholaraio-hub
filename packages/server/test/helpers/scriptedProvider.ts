@@ -1,12 +1,12 @@
 import { ATTACHMENT_LIMITS, type ProviderCapabilities } from "@scholaraio-hub/shared";
-import type { AgentEvent } from "../../src/agent/events.js";
-import { MessageQueue } from "../../src/sdk/messageQueue.js";
+import { MessageQueue } from "../../src/providers/MessageQueue.js";
+import type { AgentEvent } from "../../src/providers/events.js";
 import type {
   AgentProvider,
   AgentSession,
   AuthStatus,
   StartSessionOptions,
-} from "../../src/sdk/providers/types.js";
+} from "../../src/providers/types.js";
 
 export interface ScriptedProviderOptions {
   /** Recorded start options, in call order. */
@@ -47,8 +47,6 @@ export function createScriptedProvider(options: ScriptedProviderOptions = {}): A
     name: "claude",
     displayName: "Scripted",
     capabilities: TEST_CAPABILITIES,
-    isInstalled: async () => true,
-    isAuthenticated: async () => true,
     getAuthStatus: async (): Promise<AuthStatus> => ({
       installed: true,
       authenticated: true,
@@ -77,7 +75,6 @@ export function createScriptedProvider(options: ScriptedProviderOptions = {}): A
       return {
         events: events(),
         queue,
-        sessionId,
         abort: () => {
           aborted = true;
         },
@@ -98,8 +95,6 @@ export function providerFromSessionFactory(
     name,
     displayName: "Scripted",
     capabilities: TEST_CAPABILITIES,
-    isInstalled: async () => true,
-    isAuthenticated: async () => true,
     getAuthStatus: async (): Promise<AuthStatus> => ({
       installed: true,
       authenticated: true,

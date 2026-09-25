@@ -16,7 +16,6 @@ from scholaraio.hub.storage import atomic_json
 
 TOPICS = "topics/overview.json"
 PROJECTION = "projection/projection.json"
-SIMILARITY = "topics/similarity.json"
 
 
 class AnalysisArtifacts:
@@ -32,6 +31,10 @@ class AnalysisArtifacts:
 
     def topics_built(self) -> bool:
         return self.path(TOPICS).exists()
+
+    def mapped_count(self) -> int:
+        """How many papers the stored projection places on the map."""
+        return len(self.read(PROJECTION, {"points": []}).get("points", []))
 
     def read(self, relative: str, fallback: dict[str, Any]) -> dict[str, Any]:
         """The stored artifact, or ``fallback`` when it was never built."""
@@ -66,16 +69,6 @@ class AnalysisArtifacts:
         atomic_json(
             self.path(PROJECTION),
             {"built": True, "vectorCount": len(points), "points": points, "computedAt": stamp},
-        )
-        atomic_json(
-            self.path(SIMILARITY),
-            {
-                "built": True,
-                "topicCount": len(topics),
-                "topics": topics,
-                "matrix": topic_similarity(model, [topic["id"] for topic in topics]),
-                "computedAt": stamp,
-            },
         )
         return len(topics)
 
@@ -118,26 +111,4 @@ def projection_points(model) -> list[dict]:
     return points
 
 
-def topic_similarity(model, topic_ids: list[int]) -> list[list[float]]:
-    """Cosine similarity between topic centres, averaged from member vectors.
-
-    Averaging the papers themselves keeps this independent of how BERTopic
-    happens to order its own topic embeddings.
-    """
-    import numpy as np
-
-    embeddings = getattr(model, "_embeddings", None)
-    assigned = list(getattr(model, "_topics", []))
-    if embeddings is None or not topic_ids:
-        return []
-    centres = []
-    for topic_id in topic_ids:
-        members = [embeddings[i] for i, topic in enumerate(assigned) if int(topic) == topic_id]
-        centres.append(np.mean(members, axis=0) if members else np.zeros(embeddings.shape[1]))
-    matrix = np.array(centres, dtype="float32")
-    norms = np.linalg.norm(matrix, axis=1, keepdims=True)
-    matrix = matrix / np.where(norms == 0, 1, norms)
-    return [[round(float(value), 4) for value in row] for row in matrix @ matrix.T]
-
-
-__all__ = ["PROJECTION", "SIMILARITY", "TOPICS", "AnalysisArtifacts"]
+__all__ = ["PROJECTION", "TOPICS", "AnalysisArtifacts"]

@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { type LibraryUpdate, subscribeLibraryEvents } from "../libraryEvents";
+import { queryClient } from "../queryClient";
 
 class FakeEventSource {
   static instances: FakeEventSource[] = [];
@@ -43,6 +44,17 @@ describe("library change stream", () => {
     instances()[0]?.onmessage?.({ data: JSON.stringify({ type: "imports" }) });
     stop();
     expect(seen).toEqual([{ connected: true, event: { type: "imports" } }]);
+  });
+
+  it("invalidates a change once, however many listeners hold the stream", () => {
+    const instances = useFakeStream();
+    const invalidate = vi.spyOn(queryClient, "invalidateQueries").mockResolvedValue();
+    const stops = [subscribeLibraryEvents(() => {}), subscribeLibraryEvents(() => {})];
+    instances()[0]?.onmessage?.({ data: JSON.stringify({ type: "imports" }) });
+    for (const stop of stops) stop();
+    expect(invalidate).toHaveBeenCalledTimes(1);
+    expect(invalidate).toHaveBeenCalledWith({ queryKey: ["library", "imports"] });
+    invalidate.mockRestore();
   });
 
   it("reports a dropped stream so callers can ask instead", () => {

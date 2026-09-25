@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { type ToolPart, sameToolCall, toolView } from "../ToolCallRow";
+import type { ToolPart } from "../../../lib/parts";
+import { sameToolCall, toolView } from "../ToolCallRow";
 import { editPatch, patchStats } from "../patch";
 import { rendererFor, toolLabel, toolSummary } from "../registry";
 import type { ToolView } from "../types";
@@ -12,7 +13,7 @@ const done = (name: string, input: unknown, content: unknown, detail?: unknown):
   input,
   status: "complete",
   result: { content, isError: false, ...(detail === undefined ? {} : { detail }) },
-  running: false,
+  partial: false,
   inputStreaming: false,
 });
 
@@ -27,7 +28,7 @@ describe("toolView", () => {
       }),
       true,
     );
-    expect(view).toMatchObject({ status: "pending", running: true, result: { content: "a" } });
+    expect(view).toMatchObject({ status: "pending", partial: true, result: { content: "a" } });
   });
 
   it("marks a failed result as an error but keeps its output", () => {

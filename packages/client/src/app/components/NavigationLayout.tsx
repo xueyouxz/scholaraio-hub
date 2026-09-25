@@ -1,20 +1,17 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
 import { Outlet, useLocation, useOutletContext } from "react-router-dom";
-import { Sidebar } from "./Sidebar";
+import { SIDEBAR_WIDTH_COLLAPSED, Sidebar } from "./Sidebar";
 
 const DESKTOP_BREAKPOINT = 1100;
-export const SIDEBAR_WIDTH_COLLAPSED = 60;
-export const SIDEBAR_WIDTH_EXPANDED_DEFAULT = 248;
+const SIDEBAR_WIDTH_EXPANDED_DEFAULT = 248;
 
 // ─── PageTitle context ────────────────────────────────────────────────────────
 
 interface PageTitleContextValue {
-  title: string;
   setTitle: (title: string) => void;
 }
 
 const PageTitleContext = createContext<PageTitleContextValue>({
-  title: "",
   setTitle: () => {},
 });
 
@@ -22,13 +19,10 @@ export function usePageTitle() {
   return useContext(PageTitleContext);
 }
 
-// ─── NavigationLayout context (sidebar toggle) ───────────────────────────────
+// ─── NavigationLayout context ─────────────────────────────────────────────────
 
-export interface NavigationLayoutContext {
+interface NavigationLayoutContext {
   isDesktop: boolean;
-  isSidebarCollapsed: boolean;
-  toggleSidebar: () => void;
-  closeMobileSidebar: () => void;
 }
 
 function getIsDesktop() {
@@ -50,15 +44,18 @@ export function NavigationLayout() {
       return SIDEBAR_WIDTH_EXPANDED_DEFAULT;
     }
   });
-  const resizeSidebar = (width: number) => {
-    const next = Math.max(220, Math.min(420, width));
+  // While the user drags the edge, the column follows the pointer with no easing.
+  const [resizing, setResizing] = useState(false);
+  const resizeSidebar = useCallback((width: number, persist = true) => {
+    const next = Math.max(220, Math.min(420, Math.round(width)));
     setExpandedWidth(next);
+    if (!persist) return;
     try {
       localStorage.setItem("sidebarExpandedWidth", String(next));
     } catch (error) {
       console.warn("无法保存侧栏宽度", error);
     }
-  };
+  }, []);
 
   useEffect(() => {
     const handleResize = () => {
@@ -82,20 +79,9 @@ export function NavigationLayout() {
 
   const sidebarWidth = isSidebarCollapsed ? SIDEBAR_WIDTH_COLLAPSED : expandedWidth;
 
-  const layoutContext = useMemo<NavigationLayoutContext>(
-    () => ({
-      isDesktop,
-      isSidebarCollapsed,
-      toggleSidebar,
-      closeMobileSidebar,
-    }),
-    [isDesktop, isSidebarCollapsed, toggleSidebar, closeMobileSidebar],
-  );
+  const layoutContext = useMemo<NavigationLayoutContext>(() => ({ isDesktop }), [isDesktop]);
 
-  const pageTitleContext = useMemo<PageTitleContextValue>(
-    () => ({ title: pageTitle, setTitle: setPageTitle }),
-    [pageTitle],
-  );
+  const pageTitleContext = useMemo<PageTitleContextValue>(() => ({ setTitle: setPageTitle }), []);
 
   // New chats keep the layout title bar; an open session renders its own header.
   const isSessionRoute = /^\/sessions\/[^/]+/.test(location.pathname);
@@ -117,8 +103,8 @@ export function NavigationLayout() {
           isDesktop
             ? {
                 display: "grid",
-                gridTemplateColumns: `${sidebarWidth}px 1fr`,
-                transition: "grid-template-columns 220ms ease-in-out",
+                gridTemplateColumns: `${sidebarWidth}px minmax(0, 1fr)`,
+                transition: resizing ? "none" : "grid-template-columns 220ms ease-in-out",
               }
             : undefined
         }
@@ -141,6 +127,7 @@ export function NavigationLayout() {
           onClose={closeMobileSidebar}
           width={expandedWidth}
           onWidthChange={resizeSidebar}
+          onResizingChange={setResizing}
         />
 
         {/* Main content — no margin/padding needed; grid track handles spacing */}
@@ -152,7 +139,8 @@ export function NavigationLayout() {
               className={`sticky top-0 z-30 flex items-center h-[3.25rem] shrink-0 px-6 ${!isDesktop ? "pl-16" : ""} bg-surface border-b border-outline-variant/10`}
             >
               {pageTitle ? (
-                <h3 className="font-serif text-[1.65rem] font-bold text-primary leading-none">
+                // truncate clips to the line box: a full line height keeps descenders (g, y) whole.
+                <h3 className="font-serif text-[1.25rem] font-bold text-primary leading-normal truncate">
                   {pageTitle}
                 </h3>
               ) : null}

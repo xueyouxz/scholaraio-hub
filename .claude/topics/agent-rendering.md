@@ -13,7 +13,9 @@
   are dropped.
 - **Paper reader and skills**: `react-markdown` with `remark-gfm`, `remark-math`,
   `rehype-katex`, `rehype-raw`. See `packages/client/src/features/library/reader/PaperMarkdown.tsx` and
-  `packages/client/src/features/skills/SkillDetailView.tsx`.
+  `packages/client/src/features/skills/SkillDetailView.tsx`. The paper reader is typeset by
+  Tailwind Typography (`prose`, palette mapped in `.paper-prose` in `styles.css`); a small
+  rehype step tags each top-level block with its `data-line` for reading position and citations.
 - **Server sanitization**: `packages/server/src/augments/safe-markdown.ts`
   (`sanitize-html`), plus `marked` and `shiki` for server-side highlighting.
 
@@ -50,8 +52,16 @@
 `SessionMessages` → `AssistantTurn`:
 
 - `lib/turnTree.ts` lays a message out (pure, unit-tested): subagent parts move under
-  their parent call, Read/Grep/Glob runs collapse (`lib/exploration.ts`), citations are
-  collected once.
+  their parent call, the tool calls, reasoning and returned images between two texts fold
+  into one row (`lib/activity.ts`, summarized as "Ran 2 commands, edited app.ts +3 −1" by
+  `renderers/activitySummary.ts`), citations are collected once. Calls that ask the user
+  something (AskUserQuestion, ExitPlanMode) never fold; a fold holding a pending decision
+  opens itself.
+- Diff stats and the turn-end "Edited N files" card come from `renderers/fileChanges.ts`
+  (Claude `structuredPatch`, Codex per-file diffs, Write content).
+- Tool code and output are highlighted by Streamdown itself: `renderers/blocks.tsx` wraps
+  them in a fence (`startLine=N` / `noLineNumbers` in the info string) and renders it with
+  the shared `Markdown` component.
 - `components/parts/registry.tsx` draws each part type; tool calls are dispatched further
   by tool name in `components/renderers/registry.tsx`. A new part type goes into
   `TIMELINE_PART_TYPES` (`lib/parts.ts`) and the part registry together; the types keep
@@ -75,5 +85,8 @@
   after `utilities`, because it must override Streamdown's own utility classes. Target
   Streamdown output by `[data-streamdown="…"]` attributes under `.session-markdown`, not
   by its class names, and re-check them when upgrading Streamdown.
-- Every timeline child carries `timeline-item` and sits directly in its timeline
-  (`.assistant-turn` / `.nested-timeline`); the dot and connecting line depend on that.
+- A turn is a plain column: no timeline line or status dots. Every child carries
+  `timeline-item` for spacing only. Tool rows have no frame of their own; code sits on
+  one flat surface (no border inside a border), a step smaller than prose.
+- The app has one light palette: `styles.css` makes Tailwind's `dark:` class-based, so
+  Streamdown's Shiki tokens and `@pierre/diffs` stay light whatever the OS theme.

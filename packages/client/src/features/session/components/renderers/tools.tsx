@@ -1,11 +1,13 @@
 import { Markdown } from "../../../../shared/components/Markdown";
-import { CodeBlock, OutputTail } from "./blocks";
+import { CodeBlock, FileContent, FilePath, OutputTail } from "./blocks";
+import { fileChanges, totalStats } from "./fileChanges";
 import {
   type ToolRenderer,
   type ToolView,
   contentText,
   field,
   fileName,
+  hasImageContent,
   numberField,
   plural,
   truncate,
@@ -32,7 +34,7 @@ export const bashRenderer: ToolRenderer = {
   summary: (view) =>
     field(view.input, "description") || truncate(field(view.input, "command"), 80) || "…",
   resultSummary: (view) => {
-    if (view.running || !view.result) return undefined;
+    if (view.partial || !view.result) return undefined;
     const { stdout, stderr } = commandOutput(view);
     if (view.result.isError) return stderr.split("\n")[0]?.slice(0, 80) || "failed";
     const lines = lineCount(stdout);
@@ -46,7 +48,7 @@ export const bashRenderer: ToolRenderer = {
     const { stdout, stderr } = commandOutput(view);
     return (
       <>
-        <CodeBlock text={field(view.input, "command")} maxLines={12} />
+        <CodeBlock text={field(view.input, "command")} language="bash" maxLines={12} />
         {stdout ? <CodeBlock text={stdout} /> : null}
         {stderr ? <CodeBlock text={stderr} error={view.result?.isError} /> : null}
       </>
@@ -82,13 +84,21 @@ export const readRenderer: ToolRenderer = {
   resultSummary: (view) => {
     if (!view.result) return undefined;
     if (view.result.isError) return truncate(contentText(view.result), 80);
+    // The picture itself shows beside the call, as the file part the result carried.
+    if (hasImageContent(view.result)) return "image";
     return plural(readFile(view).lines, "line");
   },
   body: (view) => {
-    if (!view.result) return null;
+    if (!view.result || hasImageContent(view.result)) return null;
     if (view.result.isError) return <CodeBlock text={contentText(view.result)} error />;
     const file = readFile(view);
-    return <CodeBlock text={file.text} startLine={file.startLine} />;
+    const path = field(view.input, "file_path");
+    return (
+      <>
+        <FilePath path={path} />
+        <FileContent path={path} text={file.text} startLine={file.startLine} />
+      </>
+    );
   },
 };
 
@@ -97,13 +107,14 @@ export const writeRenderer: ToolRenderer = {
   verb: { pending: "Writing", done: "Wrote" },
   summary: (view) => fileName(field(view.input, "file_path")) || "…",
   resultSummary: (view) =>
-    view.result && !view.result.isError
-      ? plural(lineCount(field(view.input, "content")), "line")
-      : view.result
-        ? truncate(contentText(view.result), 80)
-        : undefined,
-  preview: (view) => <OutputTail text={field(view.input, "content")} lines={4} />,
-  body: (view) => <CodeBlock text={field(view.input, "content")} startLine={1} />,
+    view.result?.isError ? truncate(contentText(view.result), 80) : undefined,
+  diffStats: (view) => totalStats(fileChanges(view)),
+  body: (view) => (
+    <>
+      <FilePath path={field(view.input, "file_path")} />
+      <FileContent path={field(view.input, "file_path")} text={field(view.input, "content")} />
+    </>
+  ),
 };
 
 /** Match counts from Claude Code's Grep/Glob result, falling back to raw output. */

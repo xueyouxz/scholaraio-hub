@@ -8,14 +8,14 @@ from scholaraio.hub import HubLibrary
 from scholaraio.interfaces.api.app import create_app
 
 
-def test_existing_analysis_artifacts_are_scoped_without_rebuilding(tmp_path):
+def test_existing_analysis_artifacts_are_read_without_rebuilding(tmp_path):
     root = tmp_path / "app"
     source = tmp_path / "paper.pdf"
     pdf_file(source)
     library = HubLibrary(root)
     try:
         pid = ingest(library, source, "Analysis.pdf")["paperId"]
-        directory, meta = library.repository.find(pid)
+        directory, meta = library.runtime.papers.find(pid)
         meta["citation_count"] = {"crossref": 3, "semantic_scholar": 6}
         meta["l3_conclusion"] = "Saved original conclusion"
         (directory / "meta.json").write_text(json.dumps(meta))
@@ -23,7 +23,7 @@ def test_existing_analysis_artifacts_are_scoped_without_rebuilding(tmp_path):
         assert row["citationCount"] is None
         assert row["citationCounts"] == meta["citation_count"]
         assert row["l3Conclusion"] == "Saved original conclusion"
-        state = library.cfg.state_root
+        state = library.runtime.cfg.state_root
         (state / "topics").mkdir(parents=True, exist_ok=True)
         (state / "projection").mkdir(parents=True, exist_ok=True)
         overview = {"built": True, "topicCount": 1, "topics": [{"id": 1, "paperCount": 2, "keywords": ["visualization"], "name": "Visualization"}]}
@@ -31,13 +31,9 @@ def test_existing_analysis_artifacts_are_scoped_without_rebuilding(tmp_path):
         (state / "topics/overview.json").write_text(json.dumps(overview))
         (state / "projection/projection.json").write_text(json.dumps(projection))
         result = library.analytics.overview()
-        assert len(result["projection"]["points"]) == 1
-        assert not result["similarity"]["built"]
-        library.projects.create("empty")
-        assert library.analytics.overview("empty")["projection"]["points"] == []
-        assert library.analytics.overview("empty")["topics"]["topics"] == []
-        library.projects.update_papers("empty", [pid], "add")
-        assert library.analytics.overview("empty")["topics"]["topics"][0]["paperCount"] == 1
+        assert [point["id"] for point in result["projection"]["points"]] == [pid]
+        assert result["topics"] == overview
+        assert set(result) == {"topics", "projection"}
         assert json.loads((state / "projection/projection.json").read_text()) == projection
     finally:
         library.close()
@@ -74,7 +70,7 @@ def test_import_search_duplicate_and_context(tmp_path):
         assert library.papers.detail(pid)["metadataStatus"] == "incomplete"
         again = ingest(library, source, "Another.pdf")
         assert (again["status"], again["paperId"]) == ("duplicate", pid)
-        library.reindex()
+        library.runtime.reindex()
         results = library.search.keyword("molecular")
         assert results[0]["paper"]["id"] == pid
         assert results[0]["matches"][0]["start_line"] >= 1
@@ -124,7 +120,7 @@ def test_attachment_boundaries_and_batch_results(tmp_path):
     with TestClient(create_app(tmp_path / "app", "test-secret")) as client:
         client.headers["x-hub-token"] = "test-secret"
         pid = ingest(client.app.state.library, source, "Paper.pdf")["paperId"]
-        directory, _ = client.app.state.library.repository.find(pid)
+        directory, _ = client.app.state.library.runtime.papers.find(pid)
         (directory / "images").mkdir()
         (directory / "images/a.png").write_bytes(b"image")
         assert client.get(f"/papers/{pid}/attachments/images/a.png").content == b"image"
@@ -152,7 +148,7 @@ def test_projects_membership_scope_and_restart(tmp_path):
         assert client.post("/projects", json={"name": "文献项目"}).status_code == 201
         assert client.post("/projects", json={"name": "文献项目"}).status_code == 400
         assert client.post("/context", json={"query": "molecular", "projectId": "文献项目"}).json()["citations"] == []
-        assert client.post("/scope", json={"query": "", "projectId": "文献项目", "paperIds": [pid]}).status_code == 400
+        assert client.post("/scope", json={"projectId": "文献项目", "paperIds": [pid]}).status_code == 400
         for _ in range(2):
             response = client.post("/projects/文献项目/papers", json={"paperIds": [pid], "action": "add"})
             assert response.status_code == 200
@@ -161,7 +157,7 @@ def test_projects_membership_scope_and_restart(tmp_path):
         assert refs.exists()
         context = client.post("/context", json={"query": "总结", "projectId": "文献项目"}).json()
         assert {c["paperId"] for c in context["citations"]} == {pid}
-        assert client.post("/scope", json={"query": "", "projectId": "missing"}).status_code == 404
+        assert client.post("/scope", json={"projectId": "missing"}).status_code == 404
     with TestClient(create_app(root, "test"), headers=headers) as client:
         assert client.get("/projects").json()["projects"][0]["paperIds"] == [pid]
         assert client.post("/projects/文献项目/papers", json={"paperIds": [pid], "action": "remove"}).json()["paperCount"] == 0
@@ -179,7 +175,7 @@ def test_project_boundaries_and_invalid_indexes(tmp_path):
             assert client.post("/projects", json={"name": name}).status_code == 400
         external = tmp_path / "external"
         create(external)
-        ws_root = client.app.state.library.cfg.workspace_dir
+        ws_root = client.app.state.library.runtime.cfg.workspace_dir
         ws_root.mkdir(parents=True, exist_ok=True)
         (ws_root / "escape").symlink_to(external, target_is_directory=True)
         assert client.get("/projects/escape").status_code == 400
@@ -208,7 +204,7 @@ def test_original_search_modes_and_image_gallery_are_scoped(tmp_path, monkeypatc
     library = HubLibrary(tmp_path / "app")
     try:
         pid = ingest(library, source)["paperId"]
-        directory, meta = library.repository.find(pid)
+        directory, meta = library.runtime.papers.find(pid)
         meta["authors"] = ["张三", "Alice Smith"]
         (directory / "meta.json").write_text(json.dumps(meta))
         images = directory / "images"
@@ -251,10 +247,10 @@ def test_cli_shares_the_application_library_through_the_generated_config(tmp_pat
         monkeypatch.chdir(elsewhere)
         monkeypatch.setenv("SCHOLARAIO_CONFIG", str(config_path(root)))
         cli_cfg = load_config()
-        assert cli_cfg.papers_dir == library.cfg.papers_dir
-        assert cli_cfg.index_db == library.cfg.index_db
-        assert cli_cfg.workspace_dir == library.cfg.workspace_dir
-        assert (cli_cfg.papers_dir / library.repository.find(pid)[0].name).is_dir()
+        assert cli_cfg.papers_dir == library.runtime.cfg.papers_dir
+        assert cli_cfg.index_db == library.runtime.cfg.index_db
+        assert cli_cfg.workspace_dir == library.runtime.cfg.workspace_dir
+        assert (cli_cfg.papers_dir / library.runtime.papers.find(pid)[0].name).is_dir()
     finally:
         library.close()
 
@@ -328,10 +324,10 @@ def ingest_with_meta(library, tmp_path, name: str, doi: str, references: list[st
     source = tmp_path / f"{name}.pdf"
     pdf_file(source, title=name)
     pid = ingest(library, source, f"{name}.pdf")["paperId"]
-    directory, meta = library.repository.find(pid)
+    directory, meta = library.runtime.papers.find(pid)
     meta.update(doi=doi, title=name, year=2024, references=references or [])
     (directory / "meta.json").write_text(json.dumps(meta), encoding="utf-8")
-    library.reindex()
+    library.runtime.reindex()
     return pid
 
 
@@ -353,9 +349,6 @@ def test_citation_views_follow_the_relations_ingestion_recorded(tmp_path):
         ]
         assert {p["id"] for p in library.citations.citing(cited)["citing"]} == {citing_a, citing_b}
 
-        shared = library.citations.shared([citing_a, citing_b])["shared"]
-        assert {entry["doi"] for entry in shared} == {"10.1/foundations", "10.9/outside"}
-        assert all(entry["sharedCount"] == 2 for entry in shared)
     finally:
         library.close()
 

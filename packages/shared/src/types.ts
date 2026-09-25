@@ -9,12 +9,6 @@
 export type ProviderName = "claude" | "codex";
 
 /**
- * The default provider when none is specified.
- * Used for backward compatibility with existing sessions that don't have provider set.
- */
-export const DEFAULT_PROVIDER: ProviderName = "claude";
-
-/**
  * Model information for a provider.
  */
 export interface ModelInfo {
@@ -24,24 +18,12 @@ export interface ModelInfo {
   name: string;
   /** Description of the model's capabilities (optional) */
   description?: string;
-  /** Model size in bytes (for local models) */
-  size?: number;
-  /** Context window size in tokens (for local models) */
-  contextWindow?: number;
-  /** Parameter count string, e.g. "30.5B" (for local models) */
-  parameterSize?: string;
-  /** Base model this preset was derived from, e.g. "qwen3-coder:30b" */
-  parentModel?: string;
-  /** Quantization level, e.g. "Q4_K_M" */
-  quantizationLevel?: string;
   /** The provider's own default model. */
   isDefault?: boolean;
   /** Effort levels the provider offers for this model, in its order and naming. */
   efforts?: EffortOption[];
   /** The effort the provider uses when none is chosen. */
   defaultEffort?: string;
-  /** Whether the provider can switch this model's thinking between off and adaptive. */
-  supportsAdaptiveThinking?: boolean;
 }
 
 /** One effort level as the provider names and describes it. */
@@ -111,6 +93,8 @@ export interface ProviderInfo {
   enabled: boolean;
   expiresAt?: string;
   user?: { email?: string; name?: string };
+  /** Subscription plan of the login ("pro", "plus"…); absent for API-key logins. */
+  plan?: string;
   /** Available models for this provider */
   models?: ModelInfo[];
   /** What the composer offers for this provider, in the provider's own terms. */
@@ -254,7 +238,7 @@ export function readLegacyThinking(value: string): ExecutionOptions {
 /**
  * An entry in a project filesystem browse response.
  */
-export interface ProjectFsEntry {
+export interface SessionFsEntry {
   name: string;
   isDir: boolean;
   /** True for files/dirs whose name starts with "." */
@@ -264,20 +248,8 @@ export interface ProjectFsEntry {
 /**
  * Response from GET /api/sessions/:id/fs/browse
  */
-export interface ProjectFsBrowseResponse {
+export interface SessionDirectoryListing {
   /** Relative path from project root that was listed */
   path: string;
-  entries: ProjectFsEntry[];
-}
-
-/**
- * Permission rules for session tool filtering.
- * Patterns like "Bash(curl *)" match tool name + glob against tool input.
- * Evaluation order: deny first, then allow, then fall through to permission mode.
- */
-export interface PermissionRules {
-  // Patterns to auto-approve (e.g., ["Bash(tsx */browser-cli.ts *)"])
-  allow?: string[];
-  // Patterns to auto-deny (e.g., ["Bash(curl *)", "Bash(*| bash*)"])
-  deny?: string[];
+  entries: SessionFsEntry[];
 }

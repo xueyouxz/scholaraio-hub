@@ -1,7 +1,7 @@
 # Session Liveness
 
 > On-demand deep dive. Referenced by [`../rules/server.md`](../rules/server.md).
-> Read before changing how the supervisor, activity bus, or session stream decides whether
+> Read before changing how the supervisor or the session stream decides whether
 > a session is "making progress".
 
 ## Evidence hierarchy
@@ -29,7 +29,7 @@ Not all signals prove the same thing. Ranked from weakest to strongest:
 
 ## Why it matters here
 
-The supervisor and the client activity bus translate provider stream activity into
+The supervisor and the client session stream translate provider stream activity into
 user-facing session state. Claiming "progress" from envelope traffic alone produces false
 "it's working" UI when nothing is actually being rendered. See
 [`provider-state-machine.md`](provider-state-machine.md) for how state drives the UI.

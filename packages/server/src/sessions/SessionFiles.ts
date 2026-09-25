@@ -1,29 +1,29 @@
 import { constants } from "node:fs";
 import { open, readdir, realpath } from "node:fs/promises";
 import path from "node:path";
-import type { ProjectFsBrowseResponse, SessionFileContent } from "@scholaraio-hub/shared";
-import { AttachmentError, MAX_ATTACHMENT_BYTES } from "./SessionAttachments.js";
+import type { SessionDirectoryListing, SessionFileContent } from "@scholaraio-hub/shared";
+import { MAX_ATTACHMENT_BYTES } from "./SessionAttachments.js";
 import type { SessionStore } from "./SessionStore.js";
+import { SessionInputError } from "./errors.js";
 
 export class SessionFiles {
   constructor(private store: SessionStore) {}
 
   private async resolve(id: string, relative: string) {
-    this.store.get(id);
-    const base = path.join(await realpath(this.store.directory(id)), "workspace");
+    const base = await realpath(this.store.workspace(this.store.get(id)));
     const candidate = path.resolve(base, relative);
     if (
       relative.includes("\0") ||
       (candidate !== base && !candidate.startsWith(`${base}${path.sep}`))
     )
-      throw new AttachmentError("只能读取当前会话工作目录中的文件");
+      throw new SessionInputError("只能读取当前会话工作目录中的文件");
     const target = await realpath(candidate);
     if (target !== candidate || (target !== base && !target.startsWith(`${base}${path.sep}`)))
-      throw new AttachmentError("不能读取符号链接文件");
+      throw new SessionInputError("不能读取符号链接文件");
     return target;
   }
 
-  async browse(id: string, relative: string): Promise<ProjectFsBrowseResponse> {
+  async browse(id: string, relative: string): Promise<SessionDirectoryListing> {
     const target = await this.resolve(id, relative);
     const entries = (await readdir(target, { withFileTypes: true }))
       .filter((entry) => entry.isFile() || entry.isDirectory())
@@ -41,9 +41,9 @@ export class SessionFiles {
     const handle = await open(target, constants.O_RDONLY | constants.O_NOFOLLOW);
     try {
       const info = await handle.stat();
-      if (!info.isFile()) throw new AttachmentError("请选择文件");
+      if (!info.isFile()) throw new SessionInputError("请选择文件");
       if (raw && info.size > MAX_ATTACHMENT_BYTES)
-        throw new AttachmentError("下载文件不能超过 25 MB");
+        throw new SessionInputError("下载文件不能超过 25 MB");
       const buffer = Buffer.alloc(Math.min(info.size, raw ? MAX_ATTACHMENT_BYTES : 1024 * 1024));
       const { bytesRead } = await handle.read(buffer, 0, buffer.length, 0);
       return buffer.subarray(0, bytesRead);

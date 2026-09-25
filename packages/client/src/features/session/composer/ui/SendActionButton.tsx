@@ -4,7 +4,7 @@ interface Props {
   busy: boolean;
   canSend: boolean;
   isRunning: boolean;
-  isThinking: boolean;
+  stoppable: boolean;
   hasQueueAction: boolean;
   hasStopAction: boolean;
   onSend: () => void;
@@ -21,14 +21,14 @@ export function SendActionButton({
   busy,
   canSend,
   isRunning,
-  isThinking,
+  stoppable,
   hasQueueAction,
   hasStopAction,
   onSend,
   onQueue,
   onStop,
 }: Props) {
-  const canStop = hasStopAction && isRunning && isThinking;
+  const canStop = hasStopAction && isRunning && stoppable;
   const action = busy
     ? "busy"
     : isRunning && canSend && hasQueueAction

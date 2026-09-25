@@ -3,7 +3,6 @@ import { useCallback, useEffect, useRef, useState } from "react";
 interface SpeechRecognitionLike {
   continuous: boolean;
   interimResults: boolean;
-  lang: string;
   start: () => void;
   stop: () => void;
   abort: () => void;
@@ -29,7 +28,6 @@ function getRecognitionCtor(): SpeechRecognitionConstructor | null {
 }
 
 interface Options {
-  lang?: string;
   /** Called with the newly-finalized transcript fragment (delta only). */
   onFinalTranscript?: (transcript: string) => void;
   /** Called with the in-progress interim transcript while user is speaking. */
@@ -42,11 +40,7 @@ interface Options {
  * the temp/client behavior. Callbacks are stored in refs so a long-running
  * recognition session always invokes the latest closure (avoids stale state).
  */
-export function useSpeechRecognition({
-  lang,
-  onFinalTranscript,
-  onInterimTranscript,
-}: Options = {}) {
+export function useSpeechRecognition({ onFinalTranscript, onInterimTranscript }: Options = {}) {
   const [supported] = useState(() => getRecognitionCtor() !== null);
   const [listening, setListening] = useState(false);
   const [interimTranscript, setInterimTranscript] = useState("");
@@ -74,7 +68,6 @@ export function useSpeechRecognition({
     const recognition = new Ctor();
     recognition.continuous = true;
     recognition.interimResults = true;
-    if (lang) recognition.lang = lang;
 
     stoppingRef.current = false;
     lastFinalRef.current = "";
@@ -135,7 +128,7 @@ export function useSpeechRecognition({
       setError("Failed to start speech recognition");
       setListening(false);
     }
-  }, [lang]);
+  }, []);
 
   const stop = useCallback(() => {
     stoppingRef.current = true;

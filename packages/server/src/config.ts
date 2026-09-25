@@ -3,7 +3,7 @@ import { fileURLToPath } from "node:url";
 import type { Level as LogLevel } from "pino";
 import { loadRuntimeEnv } from "./env.js";
 import { resolveProfile } from "./runtime/profile.js";
-import type { PermissionMode } from "./sdk/types.js";
+import { skillsDirectory } from "./skills/skillsDirectory.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -15,7 +15,6 @@ export interface Config {
   dataDir: string;
   clientDistDir: string;
   idleTimeoutMs: number;
-  defaultPermissionMode: PermissionMode;
   port: number;
   host: string;
   logDir: string;
@@ -25,12 +24,12 @@ export interface Config {
   logToFile: boolean;
   logPretty: boolean;
   enabledProviders: string[];
-  httpsSelfSigned: boolean;
-  scholaraioSkillsDir?: string;
-  /** Debug: append every raw provider SDK message to `sdk-raw.jsonl`. */
+  /** Research skills: `SCHOLARAIO_SKILLS_DIR`, else `<dataDir>/skills`. */
+  skillsDir: string;
+  /** Extra hostnames the API answers besides loopback, or "*"; see `hostCheck`. */
+  allowedHosts?: string;
+  /** Debug: trace every raw provider message to `sdk-raw.jsonl` (see providers/trace.ts). */
   logSdkMessages: boolean;
-  /** Debug: append Codex event correlation records to `codex-correlation-debug.jsonl`. */
-  codexCorrelationDebug: boolean;
 }
 
 export function loadConfig(): Config {
@@ -44,7 +43,6 @@ export function loadConfig(): Config {
     dataDir,
     clientDistDir: env.CLIENT_DIST_DIR ?? path.resolve(__dirname, "..", "..", "client", "dist"),
     idleTimeoutMs: (env.IDLE_TIMEOUT ?? 5 * 60) * 1000,
-    defaultPermissionMode: env.PERMISSION_MODE ?? "default",
     port: profile.port,
     host: env.HOST ?? "127.0.0.1",
     logDir: env.LOG_DIR ?? path.join(dataDir, "logs"),
@@ -54,10 +52,9 @@ export function loadConfig(): Config {
     logToFile: env.LOG_TO_FILE ?? false,
     logPretty: env.LOG_PRETTY ?? true,
     enabledProviders: parseEnabledProviders(env.ENABLED_PROVIDERS),
-    httpsSelfSigned: env.HTTPS_SELF_SIGNED ?? false,
-    scholaraioSkillsDir: env.SCHOLARAIO_SKILLS_DIR,
+    skillsDir: env.SCHOLARAIO_SKILLS_DIR ?? skillsDirectory(dataDir),
+    allowedHosts: env.ALLOWED_HOSTS,
     logSdkMessages: env.LOG_SDK_MESSAGES ?? false,
-    codexCorrelationDebug: env.CODEX_CORRELATION_DEBUG ?? false,
   };
 }
 

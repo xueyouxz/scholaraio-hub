@@ -44,6 +44,7 @@ try {
       "tests/test_hub_tasks.py",
       "tests/test_hub_settings.py",
       "tests/test_hub_acquire.py",
+      "tests/test_hub_discover.py",
       "tests/test_hub_export.py",
       "tests/test_hub_events.py",
       "tests/test_hub_api_contract.py",

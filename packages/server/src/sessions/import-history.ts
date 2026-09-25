@@ -1,11 +1,11 @@
 import { randomUUID } from "node:crypto";
 import type { SessionMessage } from "@scholaraio-hub/shared";
 import { type UIMessageChunk, readUIMessageStream } from "ai";
-import type { AgentEvent } from "../agent/events.js";
-import { TurnState } from "../agent/turnState.js";
-import { UIChunkWriter } from "../agent/uiChunks.js";
-import { ClaudeEventAdapter } from "../sdk/providers/claude-events.js";
-import type { SDKMessage } from "../sdk/types.js";
+import { TurnState } from "../providers/TurnState.js";
+import { ClaudeEventAdapter } from "../providers/claude/ClaudeEventAdapter.js";
+import type { SDKMessage } from "../providers/claude/sdk-message.js";
+import type { AgentEvent } from "../providers/events.js";
+import { UIChunkWriter } from "./UIChunkWriter.js";
 
 function object(value: unknown): Record<string, unknown> {
   return value && typeof value === "object" ? (value as Record<string, unknown>) : {};

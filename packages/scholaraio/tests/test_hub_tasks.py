@@ -36,7 +36,7 @@ def wait_for(library, kind: str, *, timeout: float = 10.0) -> dict:
 
 
 def paper(library, title: str = "Spectroscopy") -> None:
-    directory = library.cfg.papers_dir / title.lower()
+    directory = library.runtime.cfg.papers_dir / title.lower()
     directory.mkdir(parents=True, exist_ok=True)
     (directory / "meta.json").write_text(json.dumps({"id": title.lower(), "title": title}), encoding="utf-8")
     (directory / "paper.md").write_text(f"# {title}\n\nText.\n", encoding="utf-8")
@@ -54,7 +54,7 @@ def test_preparing_semantic_search_downloads_the_model_then_embeds(library, monk
     library.tasks.start("semantic")
     task = wait_for(library, "semantic")
 
-    assert downloads == [library.cfg.embed.model]
+    assert downloads == [library.runtime.cfg.embed.model]
     assert task["status"] == "completed"
     assert task["summary"] == "新增 2 篇论文的向量"
     assert (task["done"], task["total"]) == (2, 2)
@@ -115,7 +115,7 @@ def test_semantic_search_says_when_its_packages_are_missing(library, monkeypatch
 
 def test_deep_processing_needs_a_key_and_counts_what_is_pending(library, monkeypatch):
     paper(library)
-    monkeypatch.setattr(type(library.cfg), "resolved_api_key", lambda _self: "")
+    monkeypatch.setattr(type(library.runtime.cfg), "resolved_api_key", lambda _self: "")
 
     assert library.status.readiness()["deepPending"] == 1
     assert library.status.readiness()["llmConfigured"] is False
@@ -129,7 +129,7 @@ def test_deep_processing_needs_a_key_and_counts_what_is_pending(library, monkeyp
 def test_status_describes_what_the_library_can_already_do(library, monkeypatch):
     paper(library)
     monkeypatch.setattr(vectors, "model_available", lambda cfg=None: False)
-    library.reindex()
+    library.runtime.reindex()
 
     status = library.status.readiness()
 
@@ -144,8 +144,8 @@ def test_an_interrupted_task_is_restartable_after_a_restart(library, tmp_path):
     record = {"id": "x", "kind": "semantic", "status": "running", "phase": "embed",
               "done": 3, "total": 9, "summary": None, "error": None,
               "startedAt": "2026-01-01T00:00:00+00:00", "finishedAt": None}
-    (library.cfg.state_root / "tasks").mkdir(parents=True, exist_ok=True)
-    (library.cfg.state_root / "tasks/semantic.json").write_text(json.dumps(record), encoding="utf-8")
+    (library.runtime.cfg.state_root / "tasks").mkdir(parents=True, exist_ok=True)
+    (library.runtime.cfg.state_root / "tasks/semantic.json").write_text(json.dumps(record), encoding="utf-8")
 
     restarted = HubLibrary(tmp_path / "app")
     try:
@@ -157,13 +157,66 @@ def test_an_interrupted_task_is_restartable_after_a_restart(library, tmp_path):
     assert "可重新开始" in task["error"]
 
 
-def test_the_audit_groups_what_is_wrong_with_the_library(library):
-    directory = library.cfg.papers_dir / "broken"
-    directory.mkdir(parents=True, exist_ok=True)
-    (directory / "meta.json").write_text(json.dumps({"id": "broken", "title": ""}), encoding="utf-8")
+def hold_semantic(monkeypatch) -> tuple:
+    """Keep semantic preparation running until the test releases it."""
+    threading = __import__("threading")
+    started, release = threading.Event(), threading.Event()
 
-    report = library.status.audit()
+    def prepare(cfg=None):
+        started.set()
+        release.wait(5)
 
-    assert report["total"] > 0
-    assert all({"rule", "severity", "count", "papers"} <= set(group) for group in report["groups"])
-    assert any(entry["paperId"] == "broken" for group in report["groups"] for entry in group["papers"])
+    monkeypatch.setattr(vectors, "prepare_model", prepare)
+    monkeypatch.setattr(vectors, "build_vectors", lambda *a, **k: 0)
+    return started, release
+
+
+def test_work_on_other_files_does_not_wait_behind_a_long_task(library, monkeypatch):
+    started, release = hold_semantic(monkeypatch)
+    library.tasks.start("semantic")
+    assert started.wait(5)
+
+    # Quality writes abstracts, not vectors: it runs while semantic is still going.
+    library.tasks.start("quality")
+    assert wait_for(library, "quality")["status"] == "completed"
+    release.set()
+    wait_for(library, "semantic")
+
+
+def test_a_queued_task_says_what_it_waits_for_and_stops_at_once(library, monkeypatch):
+    started, release = hold_semantic(monkeypatch)
+    library.tasks.start("semantic")
+    assert started.wait(5)
+
+    library.tasks.start("topics")
+    queued = next(t for t in library.tasks.list() if t["kind"] == "topics")
+    assert (queued["status"], queued["waitingFor"]) == ("queued", "semantic")
+
+    stopped = library.tasks.cancel("topics")
+    assert stopped["status"] == "cancelled"
+    release.set()
+    wait_for(library, "semantic")
+    time.sleep(0.05)
+    # Its turn came after it was stopped: it never ran.
+    assert next(t for t in library.tasks.list() if t["kind"] == "topics")["status"] == "cancelled"
+
+
+def test_quality_fills_only_missing_abstracts_one_paper_at_a_time(library, monkeypatch):
+    from scholaraio.services import ingest_metadata
+
+    paper(library, "Missing")
+    paper(library, "Present")
+    present = library.runtime.cfg.papers_dir / "present" / "meta.json"
+    present.write_text(json.dumps({"id": "present", "title": "Present", "abstract": "Kept.", "doi": "10.1/x"}))
+    asked = []
+    monkeypatch.setattr(ingest_metadata, "fetch_abstract_by_doi", lambda doi: asked.append(doi) or None)
+    monkeypatch.setattr(ingest_metadata, "extract_abstract_from_md", lambda path, cfg=None: "From the text.")
+
+    library.tasks.start("quality")
+    task = wait_for(library, "quality")
+
+    assert asked == []  # the paper that has an abstract is not fetched again
+    assert (task["done"], task["total"]) == (1, 1)
+    assert task["summary"] == "补全 1 篇摘要"
+    assert json.loads((library.runtime.cfg.papers_dir / "missing" / "meta.json").read_text())["abstract"] == "From the text."
+    assert json.loads(present.read_text())["abstract"] == "Kept."

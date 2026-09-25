@@ -38,9 +38,8 @@ describe("workbench security middleware wiring", () => {
       ).status,
     ).toBe(201);
   });
-  it("allows reads and health without the write header and removes arbitrary filesystem access", async () => {
+  it("allows reads without the write header and removes arbitrary filesystem access", async () => {
     expect((await server.app.request("/api/sessions")).status).toBe(200);
-    expect((await server.app.request("/health")).status).toBe(200);
     expect((await server.app.request("/hub/fs/browse?path=/tmp")).status).toBe(404);
   });
 });

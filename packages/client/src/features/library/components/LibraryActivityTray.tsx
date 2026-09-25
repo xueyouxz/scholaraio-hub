@@ -3,7 +3,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Loader2 } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { libraryApi } from "../../../core/library";
-import { useLibraryEvents } from "../../../core/libraryEvents";
+import { useLibraryStream } from "../../../core/libraryEvents";
 import { ACTIVE_TASK, TASK_NAMES, TASK_PHASES, taskProgress } from "../tasks";
 
 /**
@@ -14,7 +14,7 @@ import { ACTIVE_TASK, TASK_NAMES, TASK_PHASES, taskProgress } from "../tasks";
  * The indicator appears only while something is running.
  */
 export function LibraryActivityTray({ collapsed }: { collapsed: boolean }) {
-  const streaming = useLibraryEvents();
+  const streaming = useLibraryStream();
   const client = useQueryClient();
   const [open, setOpen] = useState(false);
   const panel = useRef<HTMLDivElement>(null);
@@ -68,12 +68,14 @@ export function LibraryActivityTray({ collapsed }: { collapsed: boolean }) {
         onClick={() => setOpen((value) => !value)}
         aria-expanded={open}
         aria-label={`${busy} 项进行中`}
-        className={`w-full flex items-center rounded-xl text-[13px] font-medium text-primary hover:bg-surface-container transition-colors ${
-          collapsed ? "justify-center px-0 py-2.5" : "gap-3 px-3 py-2.5"
-        }`}
+        className="w-full flex items-center gap-2.5 rounded-lg px-[11px] py-2 text-[12.5px] font-medium text-primary hover:bg-surface-container transition-colors"
       >
-        <Loader2 size={18} className="animate-spin shrink-0" aria-hidden="true" />
-        {collapsed ? null : `${busy} 项进行中`}
+        <Loader2 size={16} className="animate-spin shrink-0" aria-hidden="true" />
+        <span
+          className={`truncate whitespace-nowrap transition-opacity duration-150 ${collapsed ? "opacity-0" : "opacity-100"}`}
+        >
+          {busy} 项进行中
+        </span>
       </button>
       {open ? (
         <div className="absolute bottom-[calc(100%+6px)] left-0 z-40 w-72 rounded-xl border border-outline-variant/20 bg-surface-container-highest p-2 shadow-xl">

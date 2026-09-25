@@ -1,90 +1,50 @@
-import type { ImportJob, LibraryTask } from "@scholaraio-hub/shared";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import type { LibraryTask } from "@scholaraio-hub/shared";
+import { useMutation, useQuery } from "@tanstack/react-query";
 import { useEffect, useRef, useState } from "react";
 import { libraryApi } from "../../../core/library";
-import { useLibraryEvents } from "../../../core/libraryEvents";
+import { useLibraryStream } from "../../../core/libraryEvents";
 import { Dialog } from "../../../shared/ui/Dialog";
 import { ACTIVE_TASK, TASK_PHASES, taskProgress } from "../tasks";
+import { ImportProgress, useImportJobs } from "./import/ImportProgress";
+import { ACTIVE_IMPORT, INGESTED_IMPORT } from "./import/pipeline";
 import { ImportStaging, type Staged } from "./import/sources";
-import { submitStaged } from "./import/submit";
-
-/** The ingest pipeline, in the order the import queue runs it. */
-const STEPS = [
-  { id: "mineru", label: "转换" },
-  { id: "extract", label: "提取" },
-  { id: "dedup", label: "查重" },
-  { id: "ingest", label: "入库" },
-];
-
-const STATUS: Record<string, { label: string; tone: string }> = {
-  queued: { label: "排队中", tone: "text-on-surface-variant/70" },
-  running: { label: "处理中", tone: "text-primary" },
-  completed: { label: "已入库", tone: "text-primary" },
-  completed_incomplete: { label: "已入库 · 元数据不完整", tone: "text-secondary" },
-  duplicate: { label: "已存在", tone: "text-on-surface-variant" },
-  needs_review: { label: "待确认", tone: "text-tertiary" },
-  failed: { label: "失败", tone: "text-error" },
-};
-
-const ACTIVE = ["queued", "running"];
-const INGESTED = ["completed", "completed_incomplete"];
+import { useImportSubmission } from "./import/submit";
 
 /**
  * Every way a paper gets into the library, and what happens to it afterwards.
  *
- * Choosing is not importing: what the user picks is staged, listed and still
- * removable until they confirm. Past that the three sources share one queue,
- * shown here step by step, with vector generation offered as its follow-on.
+ * Choosing is not importing: what the user picks — found on the web or taken
+ * from disk — is staged, listed and still removable until they confirm. Past
+ * that everything shares one queue, shown here step by step, with vector
+ * generation offered as its follow-on.
  */
 export function ImportDialog({ onClose }: { onClose: () => void }) {
   const [staged, setStaged] = useState<Staged[]>([]);
   const [embed, setEmbed] = useState(false);
-  const [mine, setMine] = useState<string[]>([]);
-  const client = useQueryClient();
-  const refresh = () => {
-    void client.invalidateQueries({ queryKey: ["library"] });
-  };
-  const add = (entry: Staged) => setStaged((previous) => [...previous, entry]);
-  const drop = (id: string) => setStaged((previous) => previous.filter((item) => item.id !== id));
-
-  const send = useMutation({
-    mutationFn: submitStaged,
-    onSuccess: ({ jobs }) => {
-      setMine((previous) => [...previous, ...jobs]);
-      setStaged([]);
-      refresh();
-    },
-  });
-  const skipped = send.data?.skipped ?? [];
+  const submission = useImportSubmission();
+  const jobs = useImportJobs(submission.jobs.length > 0);
+  const items = (jobs.data?.jobs ?? [])
+    .filter((job) => submission.jobs.includes(job.id))
+    .flatMap((job) => job.items);
+  const busy = submission.busy || items.some((item) => ACTIVE_IMPORT.includes(item.status));
+  const ingested = items.filter((item) => INGESTED_IMPORT.includes(item.status)).length;
 
   return (
-    <Dialog wide title="导入文献" onClose={onClose}>
-      <div className="flex flex-col gap-4">
-        <ImportStaging staged={staged} onAdd={add} onDrop={drop} />
+    <Dialog wide tall title="导入文献" onClose={onClose}>
+      <div className="flex min-h-0 flex-1 flex-col gap-4">
+        <ImportStaging
+          staged={staged}
+          onAdd={(entries) => setStaged((previous) => [...previous, ...entries])}
+          onDrop={(id) => setStaged((previous) => previous.filter((item) => item.id !== id))}
+          onClear={() => setStaged([])}
+        />
 
-        {skipped.length ? (
-          <p className="text-xs text-on-surface-variant">
-            {skipped.length} 条未能获取 PDF：
-            {skipped
-              .slice(0, 3)
-              .map((entry) => entry.title)
-              .join("、")}
-            {skipped.length > 3 ? " 等" : ""}
-          </p>
-        ) : null}
-
-        {send.error ? (
-          <p role="alert" className="text-xs text-error">
-            {send.error.message}
-          </p>
-        ) : null}
-
-        <div className="flex flex-wrap items-center gap-3">
+        <div className="flex shrink-0 flex-wrap items-center gap-3">
           <button
             type="button"
             aria-pressed={embed}
             onClick={() => setEmbed((value) => !value)}
-            className={`rounded-full border px-3 py-1.5 text-xs font-medium transition-colors cursor-pointer ${
+            className={`rounded-full border px-3 py-1.5 text-xs font-medium transition-colors ${
               embed
                 ? "bg-primary text-on-primary border-primary"
                 : "bg-surface-container-high text-on-surface-variant border-outline-variant/30"
@@ -95,141 +55,25 @@ export function ImportDialog({ onClose }: { onClose: () => void }) {
           <div className="flex-1" />
           <button
             type="button"
-            disabled={!staged.length || send.isPending}
-            onClick={() => send.mutate(staged)}
-            className="signature-gradient rounded-full px-4 py-2 text-sm font-semibold text-on-primary active:scale-95 disabled:opacity-40 border-0 cursor-pointer"
+            disabled={!staged.length || submission.busy}
+            onClick={() => {
+              const entries = staged;
+              setStaged([]);
+              void submission.submit(entries);
+            }}
+            className="signature-gradient rounded-full px-4 py-2 text-sm font-semibold text-on-primary active:scale-95 disabled:opacity-40"
           >
-            {send.isPending ? "提交中…" : `确定导入${staged.length ? ` (${staged.length})` : ""}`}
+            {submission.busy ? "提交中…" : `确定导入${staged.length ? ` (${staged.length})` : ""}`}
           </button>
         </div>
 
-        <ImportQueue jobs={mine} embed={embed} />
+        <div className="flex max-h-[40%] min-h-0 shrink-0 flex-col">
+          <ImportProgress submission={submission} />
+          <VectorStage run={embed && !busy && ingested > 0} />
+        </div>
       </div>
     </Dialog>
   );
-}
-
-/** What the queue is doing with what this dialog handed it. */
-function ImportQueue({ jobs: mine, embed }: { jobs: string[]; embed: boolean }) {
-  const streaming = useLibraryEvents();
-  const client = useQueryClient();
-  const jobs = useQuery({
-    queryKey: ["library", "imports"],
-    queryFn: ({ signal }) => libraryApi.jobs(signal),
-    enabled: mine.length > 0,
-    // Progress arrives on the change stream; polling covers it being down.
-    refetchInterval: (query) =>
-      !streaming &&
-      query.state.data?.jobs.some(
-        (job) => mine.includes(job.id) && job.items.some((item) => ACTIVE.includes(item.status)),
-      )
-        ? 1000
-        : false,
-  });
-  const retry = useMutation({
-    mutationFn: libraryApi.retry,
-    onSuccess: () => {
-      void client.invalidateQueries({ queryKey: ["library"] });
-    },
-  });
-  const ours = (jobs.data?.jobs ?? []).filter((job) => mine.includes(job.id));
-  const items = ours.flatMap((job) => job.items);
-  const busy = items.some((item) => ACTIVE.includes(item.status));
-  const ingested = items.filter((item) => INGESTED.includes(item.status)).length;
-  const settled = items.length - items.filter((item) => ACTIVE.includes(item.status)).length;
-
-  // Each paper the queue finishes is in the library from that moment, whether
-  // or not the change stream is up to say so.
-  const counted = useRef(settled);
-  useEffect(() => {
-    if (counted.current === settled) return;
-    counted.current = settled;
-    void client.invalidateQueries({ queryKey: ["library", "browse"] });
-    void client.invalidateQueries({ queryKey: ["library", "papers"] });
-  }, [settled, client]);
-
-  if (!ours.length) return null;
-  return (
-    <section className="border-t border-outline-variant/10 pt-3">
-      <h3 className="text-[10px] font-mono font-bold uppercase tracking-widest text-on-surface-variant">
-        进度
-      </h3>
-      <div aria-live="polite" className="mt-2 flex max-h-56 flex-col gap-2 overflow-auto">
-        {ours.map((job) => (
-          <JobRows key={job.id} job={job} pending={retry.isPending} onRetry={retry.mutate} />
-        ))}
-      </div>
-      {retry.error ? <p className="mt-1 text-xs text-error">{retry.error.message}</p> : null}
-      <VectorStage run={embed && !busy && ingested > 0} />
-    </section>
-  );
-}
-
-function JobRows({
-  job,
-  pending,
-  onRetry,
-}: {
-  job: ImportJob;
-  pending: boolean;
-  onRetry: (id: string) => void;
-}) {
-  const failed = job.items.some((item) => item.status === "failed");
-  const busy = job.items.some((item) => ACTIVE.includes(item.status));
-  return (
-    <div className="flex flex-col gap-1">
-      {job.items.map((item) => {
-        const status = STATUS[item.status] ?? { label: item.status, tone: "text-on-surface" };
-        const reached = STEPS.findIndex((step) => step.id === item.step);
-        const settled = !ACTIVE.includes(item.status);
-        return (
-          <div key={item.id} className="flex items-center gap-3">
-            <span className="min-w-0 flex-1 truncate text-xs text-on-surface">{item.name}</span>
-            <span className="flex items-center gap-1" aria-hidden="true">
-              {STEPS.map((step, index) => (
-                <span
-                  key={step.id}
-                  title={step.label}
-                  className={`h-1.5 w-1.5 rounded-full ${
-                    settled
-                      ? item.status === "failed"
-                        ? "bg-error/40"
-                        : "bg-primary"
-                      : index <= reached
-                        ? "bg-primary"
-                        : "bg-outline-variant/40"
-                  }`}
-                />
-              ))}
-            </span>
-            <span className={`text-[10px] font-mono font-bold uppercase ${status.tone}`}>
-              {item.status === "running" && reached >= 0
-                ? `${STEPS[reached]?.label ?? ""}中`
-                : status.label}
-            </span>
-          </div>
-        );
-      })}
-      <JobError job={job} />
-      {failed ? (
-        <button
-          type="button"
-          disabled={pending || busy}
-          onClick={() => onRetry(job.id)}
-          className="self-start text-[10px] font-mono font-bold text-primary disabled:text-on-surface-variant/40 border-0 bg-transparent cursor-pointer p-0"
-        >
-          重试失败项
-        </button>
-      ) : null}
-    </div>
-  );
-}
-
-/** The first thing that went wrong in this batch, said once rather than per row. */
-function JobError({ job }: { job: ImportJob }) {
-  const failed = job.items.find((item) => item.error);
-  if (!failed?.error) return null;
-  return <p className="text-[10px] text-error break-words">{failed.error}</p>;
 }
 
 /**
@@ -240,7 +84,7 @@ function JobError({ job }: { job: ImportJob }) {
  * the user asked for it here.
  */
 function VectorStage({ run }: { run: boolean }) {
-  const streaming = useLibraryEvents();
+  const streaming = useLibraryStream();
   const capabilities = useQuery({
     queryKey: ["library", "capabilities"],
     queryFn: ({ signal }) => libraryApi.capabilities(signal),

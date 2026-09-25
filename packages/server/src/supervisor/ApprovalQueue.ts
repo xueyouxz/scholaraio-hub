@@ -6,11 +6,11 @@
  * and advances when an answer, an abort, or process termination retires it.
  *
  * The queue owns the waiting promises. What an answer *means* (allow/deny,
- * feedback, mode switches) stays with the Process — this is bookkeeping only.
+ * mode switches) stays with the AgentProcess — this is bookkeeping only.
  */
 
 import type { InputRequest } from "@scholaraio-hub/shared";
-import type { ToolApprovalResult } from "../sdk/types.js";
+import type { ToolApprovalResult } from "../providers/types.js";
 
 interface PendingApproval {
   request: InputRequest;

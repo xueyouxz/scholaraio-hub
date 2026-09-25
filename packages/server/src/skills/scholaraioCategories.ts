@@ -1,8 +1,8 @@
 import type { ScholaraioSkillCategory } from "@scholaraio-hub/shared";
 
-export const UNCATEGORIZED_ID = "__uncategorized__";
+const UNCATEGORIZED_ID = "__uncategorized__";
 
-export const SCHOLARAIO_CATEGORIES: Array<ScholaraioSkillCategory & { skills: string[] }> = [
+const SCHOLARAIO_CATEGORIES: Array<ScholaraioSkillCategory & { skills: string[] }> = [
   {
     id: "ingest",
     label: "采集入库",
@@ -86,7 +86,7 @@ export const SCHOLARAIO_CATEGORIES: Array<ScholaraioSkillCategory & { skills: st
   },
 ];
 
-export const UNCATEGORIZED: ScholaraioSkillCategory = {
+const UNCATEGORIZED: ScholaraioSkillCategory = {
   id: UNCATEGORIZED_ID,
   label: "未分类",
   order: 999,

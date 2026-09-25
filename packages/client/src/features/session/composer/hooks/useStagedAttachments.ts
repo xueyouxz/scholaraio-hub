@@ -168,7 +168,6 @@ export function useStagedAttachments(target: AttachmentTarget) {
     retry,
     settle,
     clear,
-    uploading: items.some((item) => item.status === "uploading"),
     failed: items.some((item) => item.status === "failed"),
   };
 }

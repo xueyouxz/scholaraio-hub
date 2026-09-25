@@ -18,7 +18,7 @@ def library(tmp_path):
 
 
 def paper(library, paper_id: str, title: str, author: str, year: int) -> None:
-    directory = library.cfg.papers_dir / paper_id
+    directory = library.runtime.cfg.papers_dir / paper_id
     directory.mkdir(parents=True, exist_ok=True)
     (directory / "meta.json").write_text(
         json.dumps(
@@ -39,7 +39,7 @@ def paper(library, paper_id: str, title: str, author: str, year: int) -> None:
 def test_a_selection_exports_as_bibtex(library):
     paper(library, "alpha", "Spectroscopy of Molecules", "Ada Lovelace", 2024)
     paper(library, "beta", "Unrelated Work", "Grace Hopper", 2019)
-    library.reindex()
+    library.runtime.reindex()
 
     result = library.exports.export(["alpha"], None, "bibtex")
 
@@ -50,7 +50,7 @@ def test_a_selection_exports_as_bibtex(library):
 
 def test_a_project_exports_as_a_markdown_reference_list(library):
     paper(library, "alpha", "Spectroscopy of Molecules", "Ada Lovelace", 2024)
-    library.reindex()
+    library.runtime.reindex()
     library.projects.create("综述")
     library.projects.update_papers("综述", ["alpha"], "add")
 
@@ -64,18 +64,3 @@ def test_an_unknown_format_is_refused(library):
     with pytest.raises(ValueError, match="导出格式"):
         library.exports.export([], None, "docx")
 
-
-def test_a_draft_reports_which_citations_the_library_backs(library):
-    paper(library, "alpha", "Spectroscopy of Molecules", "Lovelace", 2024)
-    library.reindex()
-
-    result = library.exports.check("As shown by Lovelace (2024), and by Babbage (1850), …")
-
-    statuses = {entry["author"]: entry["status"] for entry in result["citations"]}
-    assert statuses["Lovelace"] == "VERIFIED"
-    assert statuses["Babbage"] == "NOT_IN_LIBRARY"
-    assert (result["verified"], result["missing"]) == (1, 1)
-
-
-def test_a_draft_without_citations_is_not_an_error(library):
-    assert library.exports.check("没有任何引用的正文。")["citations"] == []

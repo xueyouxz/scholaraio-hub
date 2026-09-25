@@ -8,7 +8,7 @@ path-scoped rules live in `.claude/`.
 
 - `packages/client` — Vite + React 19 frontend (`src/`).
 - `packages/server` — Hono API (`src/routes/`), session supervision (`src/supervisor/`),
-  provider integrations (`src/sdk/providers/`), runtime profile and Python environment
+  provider integrations (`src/providers/`, one directory per provider), runtime profile and Python environment
   (`src/runtime/`), commands behind `pnpm hub` (`src/cli/`).
 - `packages/shared` — types, Zod schemas, profile/port rules consumed by both apps.
 - `packages/scholaraio` — the Python library service the server runs as a sidecar

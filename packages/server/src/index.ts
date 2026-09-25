@@ -1,21 +1,15 @@
 import { existsSync } from "node:fs";
-import { type Server, type ServerOptions, createServer as createHttpServer } from "node:http";
-import { createServer as createHttpsServer } from "node:https";
+import { type Server, createServer } from "node:http";
 import path from "node:path";
 import { serve } from "@hono/node-server";
 import { createApp } from "./app.js";
-import {
-  closeCodexCorrelationDebugLogger,
-  initCodexCorrelationDebugLogger,
-} from "./codex/correlationDebugLogger.js";
 import { loadConfig } from "./config.js";
 import { DevFrontend } from "./frontend/dev.js";
-import { ensureSelfSignedCertificate } from "./https/self-signed.js";
-import { initLogger, interceptConsole } from "./logging/index.js";
-import { closeMessageLogger, initMessageLogger } from "./sdk/messageLogger.js";
-import { bindAgentLibrary } from "./sdk/providers/scholaraio-cli.js";
+import { initLogger, interceptConsole } from "./logging/logger.js";
+import { bindAgentLibrary } from "./providers/agent-env.js";
+import { closeProviderTrace, initProviderTrace } from "./providers/trace.js";
 import { LibraryService } from "./services/LibraryService.js";
-import { ModelInfoService, ServerSettingsService } from "./services/index.js";
+import { ServerSettingsService } from "./services/ServerSettingsService.js";
 import { ensureSkillsDirectory } from "./skills/skillsDirectory.js";
 
 const config = loadConfig();
@@ -28,9 +22,8 @@ initLogger({
   prettyPrint: config.logPretty,
 });
 interceptConsole();
-// Opt-in raw protocol logs for debugging providers (LOG_SDK_MESSAGES / CODEX_CORRELATION_DEBUG).
-initMessageLogger({ enabled: config.logSdkMessages, logDir: config.logDir });
-initCodexCorrelationDebugLogger({ enabled: config.codexCorrelationDebug, logDir: config.logDir });
+// Opt-in trace of raw provider messages for debugging (LOG_SDK_MESSAGES).
+initProviderTrace({ enabled: config.logSdkMessages, logDir: config.logDir });
 console.log(`[Config] Profile ${config.profile}, data directory ${config.dataDir}`);
 // Production serves the built client; without it every page would 404.
 if (config.nodeEnv === "production" && !existsSync(path.join(config.clientDistDir, "index.html"))) {
@@ -52,8 +45,7 @@ async function shutdown() {
   await devFrontend?.close();
   await application?.close();
   await library.close();
-  closeMessageLogger();
-  closeCodexCorrelationDebugLogger();
+  closeProviderTrace();
 }
 for (const signal of ["SIGINT", "SIGTERM"])
   process.once(signal, () => {
@@ -66,30 +58,25 @@ for (const signal of ["SIGINT", "SIGTERM"])
     );
   });
 try {
-  const tls = config.httpsSelfSigned
-    ? ensureSelfSignedCertificate({ dataDir: config.dataDir, host: config.host })
-    : undefined;
-  const origin = `${tls ? "https" : "http"}://${config.host}:${config.port}`;
+  const origin = `http://${config.host}:${config.port}`;
   // Every agent this server starts works on its library, through its API.
   bindAgentLibrary({ dataDir: config.dataDir, apiBaseUrl: origin });
   await Promise.all([
     library.start(),
     settings.initialize(),
-    ensureSkillsDirectory(config.dataDir),
+    ensureSkillsDirectory(config.skillsDir),
   ]);
   application = createApp({
     dataDir: config.dataDir,
     libraryService: library,
     idleTimeoutMs: config.idleTimeoutMs,
-    defaultPermissionMode: config.defaultPermissionMode,
     serverSettingsService: settings,
-    modelInfoService: new ModelInfoService(),
     enabledProviders: config.enabledProviders,
     frontendDistPath: devFrontend ? undefined : config.clientDistDir,
-    scholaraioSkillsDir: config.scholaraioSkillsDir,
+    scholaraioSkillsDir: config.skillsDir,
+    allowedHosts: config.allowedHosts,
   });
   await application.ready;
-  const createServer = (tls ? createHttpsServer : createHttpServer) as typeof createHttpServer;
   server = serve({
     fetch: application.app.fetch,
     port: config.port,
@@ -97,8 +84,6 @@ try {
     createServer: devFrontend
       ? (devFrontend.wrap(createServer) as typeof createServer)
       : createServer,
-    // https.createServer reads key/cert; typed as http so both factories fit one call.
-    serverOptions: (tls ? { key: tls.key, cert: tls.cert } : {}) as ServerOptions,
   });
   server.on("error", (error: NodeJS.ErrnoException) => {
     if (error.code === "EADDRINUSE")

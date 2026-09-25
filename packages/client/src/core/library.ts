@@ -1,24 +1,27 @@
 import type {
+  DiscoverResponse,
   ImportJob,
+  LibraryAnalytics,
   LibraryCapabilities,
   LibraryPaper,
   LibraryPaperDetail,
   LibraryReference,
-  LibrarySearchResult,
+  LibrarySearchResponse,
   LibrarySettings,
   LibraryTask,
   LibraryTaskKind,
   LiteratureProject,
   NewSessionDefaults,
-  ProjectFsBrowseResponse,
   ProviderInfo,
   ProviderUsageLimits,
   ReadingPosition,
   ScholaraioSkillDetail,
   ScholaraioSkillsResponse,
   SessionAttachment,
+  SessionDirectoryListing,
   SessionFileContent,
   SessionInput,
+  SettingsCheck,
   SlashCommand,
   StoredSession,
   VectorRuntimeStatus,
@@ -29,23 +32,15 @@ import { hubHeaders, pathSegment, requestJson } from "./http";
 export type SessionOptions = Partial<
   Pick<StoredSession, "model" | "permissionMode" | "thinking" | "effort">
 >;
-import type {
-  ScholarProjection,
-  ScholarTopicSimilarity,
-  ScholarTopicsOverview,
-} from "./scholarTypes";
+
+/** The reference-file formats the library exports. */
+export type ReferenceFormat = "bibtex" | "ris" | "markdown";
 
 export const libraryApi = {
   images: (id: string, signal?: AbortSignal) =>
     requestJson<{ images: string[] }>(`/api/library/papers/${pathSegment(id)}/images`, { signal }),
-  analytics: (projectId?: string, signal?: AbortSignal) =>
-    requestJson<{
-      topics: ScholarTopicsOverview;
-      projection: ScholarProjection;
-      similarity: ScholarTopicSimilarity;
-    }>(`/api/library/analytics${projectId ? `?projectId=${encodeURIComponent(projectId)}` : ""}`, {
-      signal,
-    }),
+  analytics: (signal?: AbortSignal) =>
+    requestJson<LibraryAnalytics>("/api/library/analytics", { signal }),
   projects: (signal?: AbortSignal) =>
     requestJson<{ projects: LiteratureProject[] }>("/api/library/projects", { signal }),
   project: (id: string, signal?: AbortSignal) =>
@@ -70,13 +65,21 @@ export const libraryApi = {
       method: "POST",
       body: JSON.stringify({ paperIds, action }),
     }),
+  /** Papers matching `query`, best first; within a workspace when `projectId` is given. */
+  search: (
+    params: { query: string; mode: string; limit: number; projectId?: string },
+    signal?: AbortSignal,
+  ) => {
+    const query = new URLSearchParams({
+      q: params.query,
+      mode: params.mode,
+      limit: String(params.limit),
+    });
+    if (params.projectId) query.set("projectId", params.projectId);
+    return requestJson<LibrarySearchResponse>(`/api/library/search?${query}`, { signal });
+  },
   papers: (signal?: AbortSignal) =>
     requestJson<{ papers: LibraryPaper[] }>("/api/library/papers", { signal }),
-  search: (query: string, signal?: AbortSignal, projectId?: string) =>
-    requestJson<{ results: LibrarySearchResult[] }>(
-      `/api/library/search?q=${encodeURIComponent(query)}&limit=200${projectId ? `&projectId=${encodeURIComponent(projectId)}` : ""}`,
-      { signal },
-    ),
   detail: (id: string, signal?: AbortSignal) =>
     requestJson<LibraryPaperDetail>(`/api/library/papers/${pathSegment(id)}`, { signal }),
   updatePaper: (id: string, fields: Record<string, unknown>) =>
@@ -101,34 +104,28 @@ export const libraryApi = {
     ),
   jobs: (signal?: AbortSignal) =>
     requestJson<{ jobs: ImportJob[] }>("/api/library/imports", { signal }),
-  upload: (files: File[]) => {
+  /** Upload PDFs for import; with a workspace, each paper joins it once it is in. */
+  upload: (files: File[], projectId?: string) => {
     const body = new FormData();
     for (const file of files) body.append("files", file);
+    if (projectId) body.append("projectId", projectId);
     return requestJson<ImportJob>("/api/library/imports", { method: "POST", body });
   },
-  exportReferences: (body: {
-    paperIds: string[];
-    projectId?: string;
-    format: string;
-    style?: string;
-  }) =>
+  /** Papers on the open web the library could fetch. */
+  discover: (query: string, signal?: AbortSignal) =>
+    requestJson<DiscoverResponse>(`/api/library/discover?q=${encodeURIComponent(query)}`, {
+      signal,
+    }),
+  exportReferences: (body: { paperIds: string[]; format: ReferenceFormat }) =>
     requestJson<{ filename: string; contentType: string; content: string }>(
       "/api/library/citations/export",
       { method: "POST", body: JSON.stringify(body) },
     ),
-  fetchPaper: (locator: string) =>
+  fetchPaper: (locator: string, projectId?: string, title?: string) =>
     requestJson<ImportJob & { source: string }>("/api/library/imports/fetch", {
       method: "POST",
-      body: JSON.stringify({ locator }),
+      body: JSON.stringify({ locator, projectId, title }),
     }),
-  importReferences: (file: File) => {
-    const body = new FormData();
-    body.append("file", file);
-    return requestJson<ImportJob & { skipped: { title: string; error: string }[] }>(
-      "/api/library/imports/references",
-      { method: "POST", body },
-    );
-  },
   retry: (id: string) =>
     requestJson<ImportJob>(`/api/library/imports/${pathSegment(id)}/retry`, { method: "POST" }),
   settings: (signal?: AbortSignal) =>
@@ -137,6 +134,12 @@ export const libraryApi = {
     requestJson<LibrarySettings>("/api/library/settings", {
       method: "PATCH",
       body: JSON.stringify(fields),
+    }),
+  /** Try one configured service with the saved settings. */
+  checkSettings: (target: SettingsCheck["target"]) =>
+    requestJson<SettingsCheck>("/api/library/settings/check", {
+      method: "POST",
+      body: JSON.stringify({ target }),
     }),
   capabilities: (signal?: AbortSignal) =>
     requestJson<LibraryCapabilities>("/api/library/tasks", { signal }),
@@ -204,7 +207,7 @@ export const sessionApi = {
     requestJson<void>(`${attachmentsPath(target)}/${pathSegment(attachmentId)}`, {
       method: "DELETE",
     }),
-  async begin(
+  async sendFirstMessage(
     id: string,
     messageId: string,
     text: string,
@@ -235,7 +238,7 @@ export const sessionApi = {
       { signal },
     ),
   browseFiles: (id: string, relative = "", signal?: AbortSignal) =>
-    requestJson<ProjectFsBrowseResponse>(
+    requestJson<SessionDirectoryListing>(
       `/api/sessions/${pathSegment(id)}/fs/browse?path=${encodeURIComponent(relative)}`,
       { signal },
     ),
@@ -276,6 +279,26 @@ export const sessionApi = {
       method: "PATCH",
       body: JSON.stringify({ action, messageId }),
     }),
+  /** A new session holding this one through the turn `messageId` starts, or all of it. */
+  fork: (id: string, messageId?: string) =>
+    requestJson<StoredSession>(`/api/sessions/${pathSegment(id)}/fork`, {
+      method: "POST",
+      body: JSON.stringify({ messageId }),
+    }),
+  rename: (id: string, title: string) =>
+    requestJson<StoredSession>(`/api/sessions/${pathSegment(id)}`, {
+      method: "PATCH",
+      body: JSON.stringify({ title }),
+    }),
+  /** Stop and remove a session; the provider's own transcript is left alone. */
+  remove: (id: string) =>
+    requestJson<void>(`/api/sessions/${pathSegment(id)}`, { method: "DELETE" }),
+  /** Drop the user turn `messageId` and everything after it, before sending an edit. */
+  rewind: (id: string, messageId: string) =>
+    requestJson<StoredSession>(`/api/sessions/${pathSegment(id)}/rewind`, {
+      method: "POST",
+      body: JSON.stringify({ messageId }),
+    }),
   stop: (id: string) => requestJson(`/api/sessions/${pathSegment(id)}/stop`, { method: "POST" }),
   input: (
     id: string,
@@ -305,6 +328,11 @@ export const settingsApi = {
     requestJson<{ usageLimits: ProviderUsageLimits[] }>("/api/providers/usage-limits", {
       signal,
     }),
+  /** Show one of the Hub's own directories in the desktop file manager. */
+  openDirectory: (target: "data" | "papers" | "workspaces") =>
+    requestJson<{ opened: boolean }>(`/api/status/data-dir/open?target=${target}`, {
+      method: "POST",
+    }),
 };
 
 /** Research skills browsed from SCHOLARAIO_SKILLS_DIR. */
@@ -323,6 +351,25 @@ export function providerLabel(provider: string | undefined): string {
   if (provider === "claude") return "Claude";
   if (provider === "codex") return "Codex";
   return provider ?? "Unknown";
+}
+
+/** A workspace's own page: its papers, and what is still on its way in. */
+export function workspaceUrl(projectId: string): string {
+  return `/workspaces/${encodeURIComponent(projectId)}`;
+}
+
+/**
+ * The reader for a paper. `returnTo` is the page the user opened it from, so
+ * "back" goes there; `projectId` scopes it to a workspace.
+ */
+export function readerUrl(
+  paperId: string,
+  options: { returnTo?: string; projectId?: string } = {},
+): string {
+  const params = new URLSearchParams({ mode: "overview" });
+  if (options.returnTo) params.set("returnTo", options.returnTo);
+  if (options.projectId) params.set("project", options.projectId);
+  return `/library/${encodeURIComponent(paperId)}?${params}`;
 }
 
 export function newSessionUrl(projectId?: string, paperIds: string[] = []) {

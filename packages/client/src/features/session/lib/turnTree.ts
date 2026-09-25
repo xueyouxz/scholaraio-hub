@@ -1,5 +1,5 @@
 import { type LibraryCitation, parentCallIdOf } from "@scholaraio-hub/shared";
-import { type Segment, groupExploration } from "./exploration";
+import { type Segment, groupActivity } from "./activity";
 import type { Part, ToolPart } from "./parts";
 
 /** A subagent's work, shown inside the call that started it. */
@@ -21,7 +21,7 @@ export interface TurnTree {
 
 /**
  * Lay out an assistant message: split subagent work from the main agent's,
- * then collapse exploration runs in each timeline.
+ * then fold the tool work between texts in each timeline.
  *
  * A part whose parent call is not in this message (it started before the
  * browser attached) stays on the main timeline rather than disappearing.
@@ -47,27 +47,14 @@ export function buildTurnTree(parts: readonly Part[]): TurnTree {
   const nested = new Map<string, NestedTimeline>();
   for (const scope of scopes) {
     nested.set(scope, {
-      segments: groupExploration(parts, (part) => scopeOf(part) !== scope),
+      segments: groupActivity(parts, (part) => scopeOf(part) !== scope),
       tools: tools.get(scope) ?? [],
     });
   }
 
   return {
-    segments: groupExploration(parts, (part) => scopeOf(part) !== undefined),
+    segments: groupActivity(parts, (part) => scopeOf(part) !== undefined),
     nested,
     citations: parts.flatMap((part) => (part.type === "data-citations" ? part.data : [])),
   };
-}
-
-export function citationUrl(citation: LibraryCitation): string {
-  return `/library/${encodeURIComponent(citation.paperId)}?mode=markdown&line=${citation.startLine}`;
-}
-
-/** Turn `[ref-3]` markers into links to the cited passage; unknown ids stay as written. */
-export function linkCitations(text: string, citations: readonly LibraryCitation[]): string {
-  if (!citations.length) return text;
-  return text.replace(/\[(ref-\d+)\]/g, (original, id: string) => {
-    const citation = citations.find((item) => item.id === id);
-    return citation ? `[${id.slice(4)}](${citationUrl(citation)})` : original;
-  });
 }

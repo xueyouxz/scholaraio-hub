@@ -4,9 +4,6 @@ import { useSpeechRecognition } from "../hooks/useSpeechRecognition";
 
 export interface VoiceInputButtonRef {
   stopAndFinalize: () => string;
-  toggle: () => void;
-  isListening: boolean;
-  isAvailable: boolean;
 }
 
 interface VoiceInputButtonProps {
@@ -44,11 +41,8 @@ export const VoiceInputButton = forwardRef(function VoiceInputButton(
         }
         return pending;
       },
-      toggle,
-      isListening: speech.listening,
-      isAvailable: speech.supported,
     }),
-    [speech, toggle],
+    [speech],
   );
 
   if (!speech.supported) return null;

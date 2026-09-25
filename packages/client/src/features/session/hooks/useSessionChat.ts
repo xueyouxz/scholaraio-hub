@@ -88,7 +88,7 @@ export function useSessionChat(initial: StoredSession) {
     },
     throttle: 50,
   });
-  const busy = chat.status === "submitted" || chat.status === "streaming";
+  const streaming = chat.status === "submitted" || chat.status === "streaming";
   // The first chunk means the turn is running; the composer is free again.
   useEffect(() => {
     if (chat.status === "streaming" || chat.status === "ready") accepted.current?.resolve();
@@ -99,7 +99,7 @@ export function useSessionChat(initial: StoredSession) {
     queryFn: ({ signal }) => sessionApi.get(id, signal),
     refetchInterval: (query) => {
       if (chat.status === "streaming") return STREAMING_POLL_MS;
-      return busy || isActive(query.state.data?.state) ? POLL_MS : false;
+      return streaming || isActive(query.state.data?.state) ? POLL_MS : false;
     },
   });
 
@@ -110,7 +110,7 @@ export function useSessionChat(initial: StoredSession) {
   const synchronizedVersion = useRef(initial.updatedAt);
   useEffect(() => {
     const current = snapshot.data;
-    if (!current || busy) return;
+    if (!current || streaming) return;
     if (isActive(current.state)) {
       const userId = current.messages.filter((message) => message.role === "user").at(-1)?.id;
       if (
@@ -133,7 +133,15 @@ export function useSessionChat(initial: StoredSession) {
     synchronizedVersion.current = current.updatedAt;
     chat.setMessages(current.messages);
     void client.invalidateQueries({ queryKey: ["sessions"] });
-  }, [snapshot.data, busy, chat.setMessages, chat.messages, chat.resumeStream, client, refresh]);
+  }, [
+    snapshot.data,
+    streaming,
+    chat.setMessages,
+    chat.messages,
+    chat.resumeStream,
+    client,
+    refresh,
+  ]);
 
   const stop = useMutation({ mutationFn: () => sessionApi.stop(id), onSuccess: refresh });
   const reconnect = useMutation({
@@ -187,6 +195,41 @@ export function useSessionChat(initial: StoredSession) {
     if (sendError.current) throw sendError.current;
   };
 
+  /**
+   * Replace a sent prompt: the server drops it and everything after, then the
+   * edit is sent as a new turn. Attachments of this session go along again.
+   */
+  const edit = async (message: SessionMessage, text: string) => {
+    const own = `/api/sessions/${id}/attachments/`;
+    const attachments: SessionAttachment[] = message.parts.flatMap((part) =>
+      part.type === "file" && part.url.startsWith(own)
+        ? [
+            {
+              id: part.url.slice(own.length),
+              filename: part.filename ?? "",
+              mediaType: part.mediaType,
+              size: 0,
+              url: part.url,
+            },
+          ]
+        : [],
+    );
+    const rewound = await sessionApi.rewind(id, message.id);
+    // The snapshot is now the rewound one; do not reconcile back to the old messages.
+    synchronizedVersion.current = rewound.updatedAt;
+    client.setQueryData<StoredSession>(["session", id], rewound);
+    chat.setMessages(rewound.messages);
+    await send(text, attachments);
+  };
+
+  /** Continue from the turn `messageId` starts, in a new session. */
+  const fork = useMutation({
+    mutationFn: (messageId: string) => sessionApi.fork(id, messageId),
+    onSuccess: () => {
+      void client.invalidateQueries({ queryKey: ["sessions"] });
+    },
+  });
+
   // Reuse the message id when a lost enqueue response is retried with the same content.
   const queueSubmission = useRef<{ signature: string; id: string } | undefined>(undefined);
   const enqueue = async (text: string, attachments: SessionAttachment[]) => {
@@ -200,7 +243,7 @@ export function useSessionChat(initial: StoredSession) {
   };
 
   const state = snapshot.data?.state ?? initial.state;
-  const running = busy || isActive(state);
+  const running = streaming || isActive(state);
   const connection: ConnectionStatus = chat.error
     ? "disconnected"
     : chat.status === "streaming"
@@ -213,14 +256,16 @@ export function useSessionChat(initial: StoredSession) {
     messages: chat.messages,
     snapshot: snapshot.data,
     /** Our own stream is open (submitted or streaming). */
-    busy,
+    streaming,
     /** A turn is running, here or elsewhere. */
     running,
     state,
     connection,
-    failure: chat.error ?? stop.error ?? reconnect.error ?? editQueue.error,
+    failure: chat.error ?? stop.error ?? reconnect.error ?? editQueue.error ?? fork.error,
     refresh,
     send,
+    edit,
+    fork,
     enqueue,
     stop,
     reconnect,

@@ -1,0 +1,802 @@
+import { execFile, spawn } from "node:child_process";
+import { constants, accessSync, existsSync, readFileSync } from "node:fs";
+import { readFile } from "node:fs/promises";
+import { createRequire } from "node:module";
+import { homedir } from "node:os";
+import { delimiter, join } from "node:path";
+import { promisify } from "node:util";
+import {
+  type Query,
+  type CanUseTool as SDKCanUseTool,
+  type SDKUserMessage,
+  type ModelInfo as SdkModelInfo,
+  type SpawnedProcess,
+  forkSession,
+  getSessionMessages,
+  query,
+} from "@anthropic-ai/claude-agent-sdk";
+import {
+  ATTACHMENT_LIMITS,
+  type ModelInfo,
+  type ProviderUsageLimits,
+  type SessionContextUsage,
+  type SlashCommand,
+} from "@scholaraio-hub/shared";
+import { outboundFetch } from "../../utils/outboundFetch.js";
+import { withTimeout } from "../../utils/timeout.js";
+import { MessageQueue, describeAttachments, isInlineImage } from "../MessageQueue.js";
+import { agentEnv } from "../agent-env.js";
+import type { AgentEvent } from "../events.js";
+import { traceProviderMessage } from "../trace.js";
+import type {
+  AgentProvider,
+  AgentSession,
+  AuthStatus,
+  ForkSessionOptions,
+  ProviderCapabilities,
+  ProviderName,
+  StartSessionOptions,
+  UserMessage,
+} from "../types.js";
+import { normalizeClaudeOAuthUsage } from "../usage-limits.js";
+import { ClaudeEventAdapter } from "./ClaudeEventAdapter.js";
+import type { SDKMessage } from "./sdk-message.js";
+
+const execFileAsync = promisify(execFile);
+
+/** A user message as Claude Code sends one: text naming every file by path, images also inline. */
+export async function toClaudeUserMessage(message: UserMessage): Promise<SDKUserMessage> {
+  const text = message.text + describeAttachments(message.attachments);
+  const images = await Promise.all(
+    (message.attachments ?? []).filter(isInlineImage).map(async (file) => ({
+      type: "image" as const,
+      source: {
+        type: "base64" as const,
+        media_type: file.mimeType,
+        data: (await readFile(file.path)).toString("base64"),
+      },
+    })),
+  );
+  return {
+    type: "user",
+    uuid: message.uuid, // The SDK keeps the id we recorded the message under.
+    message: { role: "user", content: images.length ? [{ type: "text", text }, ...images] : text },
+  } as SDKUserMessage;
+}
+
+/** A session's queued messages as the SDK reads its prompt. */
+export async function* claudePrompt(queue: MessageQueue): AsyncGenerator<SDKUserMessage> {
+  for await (const message of queue.messages()) yield await toClaudeUserMessage(message);
+}
+const requireFromHere = createRequire(import.meta.url);
+const requireFromClaudeSdk = createRequire(
+  requireFromHere.resolve("@anthropic-ai/claude-agent-sdk"),
+);
+const CLAUDE_CODE_KEYCHAIN_SERVICE = "Claude Code-credentials";
+const CLAUDE_OAUTH_USAGE_URL = "https://api.anthropic.com/api/oauth/usage";
+const CLAUDE_OAUTH_BETA_HEADER = "oauth-2025-04-20";
+const USAGE_LIMITS_TIMEOUT_MS = 8000;
+
+/**
+ * Absolute path to the local `claude` executable the SDK should spawn.
+ *
+ * The SDK defaults to a bundled `cli.js` that is absent in standalone installs
+ * (and ships no native binary package for every platform). When the SDK can't
+ * find an executable, `query()` spawns nothing, the init handshake never lands,
+ * and `supportedModels()` hangs until the probe timeout — stalling
+ * `/api/providers` for 15s. Resolving the executable ourselves and passing it as
+ * `pathToClaudeCodeExecutable` makes the spawn deterministic.
+ *
+ * Resolution order (first hit wins): explicit env override → the SDK's optional
+ * native binary package → `claude` on `PATH`. `undefined` lets the SDK fall back
+ * to its own default (preserving prior behavior when nothing is found).
+ */
+let cachedLocalClaudeCodeExecutable: string | null | undefined;
+
+function isExecutableFile(filePath: string | undefined): filePath is string {
+  if (!filePath) return false;
+  try {
+    accessSync(filePath, constants.X_OK);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function resolvePathExecutable(command: string): string | undefined {
+  if (!command.trim()) return undefined;
+
+  // An explicit path is used as-is (when executable); a bare name is searched on PATH.
+  if (command.includes("/") || command.includes("\\")) {
+    return isExecutableFile(command) ? command : undefined;
+  }
+
+  const pathEnv = process.env.PATH ?? "";
+  for (const dir of pathEnv.split(delimiter)) {
+    const candidate = join(dir, command);
+    if (isExecutableFile(candidate)) {
+      return candidate;
+    }
+  }
+  return undefined;
+}
+
+function hasGlibcRuntime(): boolean {
+  if (typeof process.report?.getReport !== "function") {
+    return false;
+  }
+  const report = process.report.getReport() as {
+    header?: { glibcVersionRuntime?: string };
+  };
+  return Boolean(report.header?.glibcVersionRuntime);
+}
+
+function getClaudeSdkNativePackageNames(): string[] {
+  const binaryArch = process.arch;
+  if (process.platform === "linux") {
+    const glibcPackage = `@anthropic-ai/claude-agent-sdk-linux-${binaryArch}`;
+    const muslPackage = `${glibcPackage}-musl`;
+    return hasGlibcRuntime() ? [glibcPackage, muslPackage] : [muslPackage, glibcPackage];
+  }
+  return [`@anthropic-ai/claude-agent-sdk-${process.platform}-${binaryArch}`];
+}
+
+function resolveClaudeSdkNativeExecutable(): string | undefined {
+  const binaryName = process.platform === "win32" ? "claude.exe" : "claude";
+  for (const packageName of getClaudeSdkNativePackageNames()) {
+    try {
+      const executable = requireFromClaudeSdk.resolve(`${packageName}/${binaryName}`);
+      if (isExecutableFile(executable)) {
+        return executable;
+      }
+    } catch {
+      // Optional native package not installed for this platform — try the next.
+    }
+  }
+  return undefined;
+}
+
+export function resolveLocalClaudeCodeExecutable(): string | undefined {
+  if (cachedLocalClaudeCodeExecutable !== undefined) {
+    return cachedLocalClaudeCodeExecutable ?? undefined;
+  }
+
+  const envExecutable = process.env.CLAUDE_CODE_EXECUTABLE ?? process.env.CLAUDE_CODE_PATH;
+  const executable = envExecutable
+    ? resolvePathExecutable(envExecutable)
+    : (resolveClaudeSdkNativeExecutable() ?? resolvePathExecutable("claude"));
+
+  cachedLocalClaudeCodeExecutable = executable ?? null;
+  return executable;
+}
+
+/** A model exactly as the Claude CLI describes it; efforts only when it supports them. */
+export function toModelInfo(model: SdkModelInfo): ModelInfo {
+  const efforts = model.supportsEffort ? (model.supportedEffortLevels ?? []) : [];
+  return {
+    id: model.value,
+    name: model.displayName,
+    description: model.description,
+    ...(efforts.length ? { efforts: efforts.map((id) => ({ id })) } : {}),
+  };
+}
+
+/** Claude Code honours a slash command only at the start of a message. */
+function toClaudeCommand(command: {
+  name: string;
+  description: string;
+  argumentHint?: string;
+}): SlashCommand {
+  return {
+    name: command.name,
+    description: command.description,
+    ...(command.argumentHint ? { argumentHint: command.argumentHint } : {}),
+    source: "provider",
+    trigger: "/",
+    position: "leading",
+  };
+}
+
+const COMMAND_CACHE_TTL_MS = 60_000;
+
+/** Markers Claude Code writes as user messages that the user did not type. */
+const NON_PROMPT_PREFIXES = [
+  "[Request interrupted",
+  "<local-command",
+  "<command-name>",
+  "<command-message>",
+  "Caveat: The messages below",
+];
+
+/** A message the user sent, as opposed to a tool result or a Claude Code marker. */
+function isUserPrompt(message: { type: string; message: unknown }): boolean {
+  if (message.type !== "user") return false;
+  const content = (message.message as { content?: unknown } | undefined)?.content;
+  const blocks: Array<{ type?: unknown; text?: unknown }> =
+    typeof content === "string"
+      ? [{ type: "text", text: content }]
+      : Array.isArray(content)
+        ? content
+        : [];
+  if (blocks.some((block) => block.type === "tool_result")) return false;
+  const text = blocks.find((block) => block.type === "text")?.text;
+  if (typeof text !== "string") return blocks.length > 0;
+  return !NON_PROMPT_PREFIXES.some((prefix) => text.trimStart().startsWith(prefix));
+}
+const commandCache = new Map<string, { commands: SlashCommand[]; expiresAt: number }>();
+
+/** Cached models from SDK probe */
+let cachedModels: ModelInfo[] | null = null;
+
+/** Promise for in-flight probe (to avoid duplicate probes) */
+let probePromise: Promise<ModelInfo[]> | null = null;
+
+/**
+ * Claude provider implementation using @anthropic-ai/claude-agent-sdk.
+ *
+ * This class wraps the SDK's query() function and provides:
+ * - MessageQueue for queuing user messages
+ * - AbortController for cancellation
+ * - Tool approval callbacks
+ */
+export class ClaudeProvider implements AgentProvider {
+  readonly name: ProviderName = "claude";
+  readonly displayName: string = "Claude";
+  readonly capabilities: ProviderCapabilities = {
+    // Claude Code's own mode titles, in its Shift+Tab order.
+    permissionModes: [
+      { id: "default", label: "Default" },
+      { id: "acceptEdits", label: "Accept edits" },
+      { id: "plan", label: "Plan Mode" },
+      { id: "bypassPermissions", label: "Bypass Permissions" },
+    ],
+    thinkingModes: [
+      { id: "adaptive", label: "Thinking on" },
+      { id: "off", label: "Thinking off" },
+    ],
+    slashCommands: "leading",
+    contextUsage: "used",
+    attachments: ATTACHMENT_LIMITS,
+  };
+
+  /**
+   * Get detailed authentication status.
+   *
+   * Authentication is detected, not assumed: an installed-but-unauthenticated CLI
+   * must report `authenticated: false` so {@link getAvailableModels} returns the
+   * static fallback list *without* probing. A probe against an unauthenticated CLI
+   * never completes its init handshake and stalls the `/api/providers` response for
+   * the full probe timeout (15s).
+   *
+   * Resolution order (first match wins):
+   *   1. `ANTHROPIC_API_KEY` env var.
+   *   2. `claude auth status` (authoritative; short 5s timeout so it can't block).
+   *   3. Stored OAuth credentials (macOS Keychain, else `~/.claude/.credentials.json`).
+   */
+  async getAuthStatus(): Promise<AuthStatus> {
+    const installed = await this.isClaudeCliInstalled();
+    if (!installed) {
+      return { installed: false, authenticated: false, enabled: false };
+    }
+
+    if (process.env.ANTHROPIC_API_KEY?.trim()) {
+      return { installed: true, authenticated: true, enabled: true };
+    }
+
+    const cliAuthStatus = await this.getCliAuthStatus();
+    if (cliAuthStatus) {
+      return cliAuthStatus;
+    }
+
+    const oauth = await this.readClaudeOAuthCredentials();
+    if (!oauth || !(oauth.accessToken || oauth.refreshToken)) {
+      return { installed: true, authenticated: false, enabled: false };
+    }
+
+    const expiresAt = typeof oauth.expiresAt === "number" ? new Date(oauth.expiresAt) : undefined;
+    // A live refresh token keeps us authenticated even past the access token expiry.
+    const authenticated = !expiresAt || expiresAt >= new Date() || Boolean(oauth.refreshToken);
+
+    return {
+      installed: true,
+      authenticated,
+      enabled: authenticated,
+      expiresAt,
+      plan: oauth.subscriptionType || undefined,
+    };
+  }
+
+  /**
+   * Ask the Claude CLI directly whether it is logged in. Returns null (so callers
+   * fall through to credential inspection) when the CLI doesn't support
+   * `auth status`, times out, or emits non-JSON output — those are expected, not
+   * failures worth surfacing.
+   */
+  private async getCliAuthStatus(): Promise<AuthStatus | null> {
+    try {
+      const claudePath = resolveLocalClaudeCodeExecutable();
+      if (!claudePath) return null;
+      const { stdout } = await execFileAsync(claudePath, ["auth", "status"], {
+        encoding: "utf-8",
+        timeout: 5000,
+      });
+
+      const parsed = JSON.parse(stdout) as {
+        loggedIn?: boolean;
+        email?: string;
+        subscriptionType?: string | null;
+      };
+      if (typeof parsed.loggedIn !== "boolean") {
+        return null;
+      }
+
+      return {
+        installed: true,
+        authenticated: parsed.loggedIn,
+        enabled: parsed.loggedIn,
+        user: parsed.email ? { email: parsed.email } : undefined,
+        plan: parsed.subscriptionType || undefined,
+      };
+    } catch (error) {
+      console.debug("[Claude] `claude auth status` unavailable, falling back:", error);
+      return null;
+    }
+  }
+
+  /**
+   * Read the stored `claudeAiOauth` credential block. On macOS this lives in the
+   * Keychain (matching {@link readClaudeCodeOAuthAccessToken}); elsewhere it's a
+   * plaintext `~/.claude/.credentials.json`. Returns null when absent/unreadable.
+   */
+  private async readClaudeOAuthCredentials(): Promise<{
+    accessToken?: string;
+    refreshToken?: string;
+    expiresAt?: number;
+    subscriptionType?: string | null;
+  } | null> {
+    try {
+      let raw: string;
+      if (process.platform === "darwin") {
+        const service = process.env.CLAUDE_CODE_KEYCHAIN_SERVICE ?? CLAUDE_CODE_KEYCHAIN_SERVICE;
+        const { stdout } = await execFileAsync(
+          "security",
+          ["find-generic-password", "-s", service, "-w"],
+          { timeout: USAGE_LIMITS_TIMEOUT_MS },
+        );
+        raw = stdout;
+      } else {
+        const credentialsPath = join(homedir(), ".claude", ".credentials.json");
+        if (!existsSync(credentialsPath)) {
+          return null;
+        }
+        raw = readFileSync(credentialsPath, "utf-8");
+      }
+
+      const parsed = JSON.parse(raw) as {
+        claudeAiOauth?: {
+          accessToken?: string;
+          refreshToken?: string;
+          expiresAt?: number;
+          subscriptionType?: string | null;
+        };
+      };
+      return parsed.claudeAiOauth ?? null;
+    } catch (error) {
+      console.debug("[Claude] No readable OAuth credentials:", error);
+      return null;
+    }
+  }
+
+  /**
+   * Check if Claude CLI is installed.
+   * Resolve with the same precedence used to start a session, then execute it.
+   */
+  private async isClaudeCliInstalled(): Promise<boolean> {
+    const executable = resolveLocalClaudeCodeExecutable();
+    if (!executable) return false;
+    try {
+      await execFileAsync(executable, ["--version"], { encoding: "utf8", timeout: 10000 });
+      return true;
+    } catch (error) {
+      console.warn(
+        "[Claude] CLI cannot run:",
+        error instanceof Error ? error.message : String(error),
+      );
+      return false;
+    }
+  }
+
+  /**
+   * Get available Claude models.
+   * Fetches dynamically from SDK via a probe session, with caching.
+   * Falls back to static list if probe fails or user is not authenticated.
+   */
+  async getAvailableModels(): Promise<ModelInfo[]> {
+    // Return cached models if available
+    if (cachedModels) {
+      return cachedModels;
+    }
+
+    // An unauthenticated CLI never finishes its handshake; it has no models to offer.
+    const authStatus = await this.getAuthStatus();
+    if (!authStatus.authenticated) {
+      return [];
+    }
+
+    // If probe is already in progress, wait for it
+    if (probePromise) {
+      return probePromise;
+    }
+
+    // Start a new probe
+    probePromise = this.probeModels();
+    try {
+      cachedModels = await probePromise;
+      return cachedModels;
+    } catch (error) {
+      console.warn("[Claude] Failed to probe models; none offered until the CLI answers:", error);
+      return [];
+    } finally {
+      probePromise = null;
+    }
+  }
+
+  async getUsageLimits(): Promise<ProviderUsageLimits> {
+    const accessToken = await this.readClaudeCodeOAuthAccessToken();
+    const payload = await this.fetchClaudeOAuthUsage(accessToken);
+    const limits = normalizeClaudeOAuthUsage(this.name, payload);
+
+    if (!limits) {
+      return {
+        provider: this.name,
+        available: false,
+        windows: [],
+        error: "Claude OAuth usage API did not return usage limit windows.",
+      };
+    }
+
+    return limits;
+  }
+
+  /**
+   * The access token the usage endpoint wants, from wherever Claude Code keeps
+   * it: the Keychain on macOS, `~/.claude/.credentials.json` elsewhere.
+   */
+  protected async readClaudeCodeOAuthAccessToken(): Promise<string> {
+    const credentials = await this.readClaudeOAuthCredentials();
+    const accessToken = credentials?.accessToken;
+    if (typeof accessToken !== "string" || accessToken.length === 0) {
+      throw new Error("未找到 Claude Code 的登录凭据，请先在终端运行 claude auth login。");
+    }
+    // An expired token is refused by the API; saying so beats an opaque 401.
+    if (credentials?.expiresAt && credentials.expiresAt <= Date.now()) {
+      throw new Error("Claude Code 的登录凭据已过期，请重新登录后再查看用量。");
+    }
+    return accessToken;
+  }
+
+  protected async fetchClaudeOAuthUsage(accessToken: string): Promise<unknown> {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), USAGE_LIMITS_TIMEOUT_MS);
+
+    try {
+      // Through the proxy the environment names: direct, this endpoint answers 403.
+      const response = await outboundFetch(
+        process.env.CLAUDE_OAUTH_USAGE_URL ?? CLAUDE_OAUTH_USAGE_URL,
+        {
+          headers: {
+            accept: "application/json",
+            "anthropic-beta": CLAUDE_OAUTH_BETA_HEADER,
+            authorization: `Bearer ${accessToken}`,
+            "user-agent": "scholaraio-hub-claude-usage",
+          },
+          signal: controller.signal,
+        },
+      );
+
+      if (!response.ok) {
+        // The endpoint rate-limits polling, and refuses tokens that lost the
+        // scope. Both read as "no data" to the caller, so name which it was.
+        if (response.status === 429) {
+          throw new Error("用量接口暂时限流，稍后会自动重试。");
+        }
+        if (response.status === 401) {
+          throw new Error("当前登录凭据无权读取用量，请重新登录 Claude Code。");
+        }
+        // Also what a direct connection from a region Anthropic does not serve gets.
+        if (response.status === 403) {
+          throw new Error(
+            "用量接口拒绝了请求（HTTP 403）；若本机需经代理访问，请设置 HTTPS_PROXY。",
+          );
+        }
+        throw new Error(`用量接口返回 HTTP ${response.status}。`);
+      }
+
+      return await response.json();
+    } finally {
+      clearTimeout(timeout);
+    }
+  }
+
+  /**
+   * Get filtered environment variables for child processes.
+   * Subclasses can override to inject custom env vars (e.g., ANTHROPIC_BASE_URL).
+   */
+  private getEnv(): Record<string, string | undefined> {
+    return agentEnv();
+  }
+
+  /**
+   * Ask a throwaway CLI session something it answers during its initialize
+   * handshake (models, commands), then abort it. No message is ever sent.
+   */
+  private async probe<T>(
+    cwd: string,
+    ask: (sdkQuery: Query) => Promise<T>,
+    what: string,
+  ): Promise<T> {
+    const abortController = new AbortController();
+
+    // Generator that waits indefinitely — keeps the SDK process alive while we
+    // ask. Resolves (rather than rejects) on abort to avoid unhandled rejections.
+    async function* waitForever(): AsyncGenerator<never> {
+      await new Promise<never>((resolve) => {
+        abortController.signal.addEventListener("abort", () => resolve(undefined as never));
+      });
+    }
+
+    try {
+      const sdkQuery = query({
+        prompt: waitForever(),
+        options: {
+          cwd,
+          abortController,
+          permissionMode: "default",
+          persistSession: false,
+          // Same sources as a real session, so project commands and skills are listed.
+          settingSources: ["user", "project", "local"],
+          pathToClaudeCodeExecutable: resolveLocalClaudeCodeExecutable(),
+          env: this.getEnv(),
+        },
+      });
+
+      // The SDK's internal readMessages loop must be running for the
+      // initialize control_response to be processed.
+      void (async () => {
+        try {
+          for await (const _ of sdkQuery) {
+            // drain
+          }
+        } catch {
+          // Expected — abort causes an error
+        }
+      })();
+
+      return await withTimeout(ask(sdkQuery), 15000, `${what} probe timed out`);
+    } finally {
+      abortController.abort();
+    }
+  }
+
+  private async probeModels(): Promise<ModelInfo[]> {
+    const models = await this.probe(homedir(), (sdkQuery) => sdkQuery.supportedModels(), "Model");
+    return models.map(toModelInfo);
+  }
+
+  /**
+   * Slash commands Claude Code offers in `cwd` (built-ins, custom commands,
+   * skills), as its `supportedCommands()` lists them. Cached briefly per cwd.
+   */
+  async listCommands(cwd: string): Promise<SlashCommand[]> {
+    const cached = commandCache.get(cwd);
+    if (cached && cached.expiresAt > Date.now()) return cached.commands;
+    const commands = (
+      await this.probe(cwd, (sdkQuery) => sdkQuery.supportedCommands(), "Command")
+    ).map(toClaudeCommand);
+    commandCache.set(cwd, { commands, expiresAt: Date.now() + COMMAND_CACHE_TTL_MS });
+    return commands;
+  }
+
+  /**
+   * Fork with the SDK's own `forkSession`, cut just before the first user
+   * prompt that is dropped. The transcript also holds tool results, interrupt
+   * markers and local-command echoes as "user" messages; only prompts count.
+   */
+  async forkSession({ sessionId, cwd, dropTurns }: ForkSessionOptions): Promise<string> {
+    let upToMessageId: string | undefined;
+    if (dropTurns > 0) {
+      const messages = await getSessionMessages(sessionId, { dir: cwd });
+      const prompts = messages.flatMap((message, index) => (isUserPrompt(message) ? [index] : []));
+      const cut = prompts[prompts.length - dropTurns];
+      upToMessageId = cut === undefined ? undefined : messages[cut - 1]?.uuid;
+      if (!upToMessageId) throw new Error("Claude 会话记录中找不到这条消息之前的内容");
+    }
+    const fork = await forkSession(sessionId, { dir: cwd, upToMessageId });
+    return fork.sessionId;
+  }
+
+  /**
+   * Start a new Claude session.
+   */
+  async startSession(options: StartSessionOptions): Promise<AgentSession> {
+    const queue = new MessageQueue();
+    const abortController = new AbortController();
+
+    // Push the initial message into the queue (if provided)
+    // If no message, the agent will wait until one is pushed
+    if (options.initialMessage) {
+      queue.push(options.initialMessage);
+    }
+
+    // Wrap our canUseTool to match SDK's expected type
+    const onToolApproval = options.onToolApproval;
+    const canUseTool: SDKCanUseTool | undefined = onToolApproval
+      ? async (toolName, input, opts) => {
+          console.log(`[canUseTool] Called for tool: ${toolName}`);
+          const result = await onToolApproval(toolName, input, opts);
+          console.log(`[canUseTool] Result for ${toolName}: ${result.behavior}`);
+          // Convert our result to SDK's PermissionResult format
+          if (result.behavior === "allow") {
+            return {
+              behavior: "allow" as const,
+              updatedInput: (result.updatedInput ?? input) as Record<string, unknown>,
+            };
+          }
+          return {
+            behavior: "deny" as const,
+            message: result.message ?? "Permission denied",
+            interrupt: result.interrupt,
+          };
+        }
+      : undefined;
+
+    // Spawn the CLI ourselves to keep its handle: stale detection can then tell
+    // "process died silently" from "process is busy with a long tool call".
+    let capturedProcess: SpawnedProcess | null = null;
+    const spawnClaudeCodeProcess = (
+      spawnOpts: import("@anthropic-ai/claude-agent-sdk").SpawnOptions,
+    ): SpawnedProcess => {
+      const proc = spawn(spawnOpts.command, spawnOpts.args, {
+        cwd: spawnOpts.cwd,
+        env: spawnOpts.env as NodeJS.ProcessEnv,
+        stdio: ["pipe", "pipe", "pipe"],
+        shell: process.platform === "win32",
+      });
+      const abortHandler = () => {
+        proc.kill("SIGTERM");
+      };
+      spawnOpts.signal.addEventListener("abort", abortHandler);
+      proc.on("exit", () => {
+        spawnOpts.signal.removeEventListener("abort", abortHandler);
+      });
+      capturedProcess = proc;
+      return proc;
+    };
+
+    // Create the SDK query with our message generator
+    let sdkQuery: Query;
+    try {
+      sdkQuery = query({
+        prompt: claudePrompt(queue),
+        options: {
+          cwd: options.cwd,
+          resume: options.resumeSessionId,
+          abortController,
+          // The mode reaches the SDK only to shape its system prompt; the
+          // decision itself always comes back to canUseTool. bypassPermissions
+          // goes in as "default" so the SDK cannot answer on its own — see
+          // supervisor/permission-policy.ts.
+          permissionMode:
+            options.permissionMode === "bypassPermissions"
+              ? "default"
+              : (options.permissionMode ?? "default"),
+          canUseTool,
+          systemPrompt: { type: "preset", preset: "claude_code" },
+          settingSources: ["user", "project", "local"],
+          includePartialMessages: true,
+          // Model, thinking, and effort options
+          model: options.model,
+          thinking: options.thinking,
+          effort: toClaudeEffort(options.effort),
+          // Filter env to exclude npm_*, scholaraio-hub specific, and other irrelevant vars
+          env: this.getEnv(),
+          pathToClaudeCodeExecutable: resolveLocalClaudeCodeExecutable(),
+          spawnClaudeCodeProcess,
+        },
+      });
+    } catch (error) {
+      // Handle common SDK initialization errors
+      if (error instanceof Error) {
+        if (error.message.includes("Claude Code executable not found")) {
+          throw new Error(
+            "Claude CLI not installed. Run: curl -fsSL https://claude.ai/install.sh | bash",
+          );
+        }
+        if (error.message.includes("SPAWN") || error.message.includes("spawn")) {
+          throw new Error(`Failed to spawn Claude CLI process: ${error.message}`);
+        }
+      }
+      throw error;
+    }
+
+    return {
+      events: this.toAgentEvents(sdkQuery),
+      queue,
+      abort: () => {
+        abortController.abort();
+        queue.close();
+      },
+      isProcessAlive: () =>
+        capturedProcess !== null && capturedProcess.exitCode === null && !capturedProcess.killed,
+      setMaxThinkingTokens: (tokens: number | null) => sdkQuery.setMaxThinkingTokens(tokens),
+      interrupt: () => sdkQuery.interrupt(),
+    };
+  }
+
+  /**
+   * Translate the SDK stream into AgentEvents. The raw SDK message is logged
+   * (when LOG_SDK_MESSAGES is on) but never forwarded.
+   */
+  private async *toAgentEvents(sdkQuery: Query): AsyncIterableIterator<AgentEvent> {
+    const adapter = new ClaudeEventAdapter();
+    let sessionId = "unknown";
+
+    try {
+      for await (const message of sdkQuery) {
+        sessionId = (message as { session_id?: string }).session_id ?? sessionId;
+        traceProviderMessage("claude", sessionId, message);
+        for (const event of adapter.accept(message as unknown as SDKMessage)) {
+          // Report the window as `/context` counts it before the turn closes.
+          if (event.type === "turn.completed" && !event.parentCallId) {
+            const usage = await readClaudeContextUsage(sdkQuery);
+            if (usage) yield { type: "context.usage", usage };
+          }
+          yield event;
+        }
+      }
+    } catch (error) {
+      // An abort is how a session ends normally.
+      if (error instanceof Error && error.name === "AbortError") {
+        return;
+      }
+      // Transport failures ("ProcessTransport is not ready for writing") are
+      // the AgentProcess to classify.
+      throw error;
+    }
+  }
+}
+
+export const claudeProvider = new ClaudeProvider();
+
+const CLAUDE_EFFORTS = ["low", "medium", "high", "max"] as const;
+
+function toClaudeEffort(effort?: string): (typeof CLAUDE_EFFORTS)[number] | undefined {
+  return CLAUDE_EFFORTS.find((known) => known === effort);
+}
+
+const CONTEXT_USAGE_TIMEOUT_MS = 5000;
+
+/** Claude Code's own `/context` numbers; undefined when the CLI cannot answer in time. */
+export async function readClaudeContextUsage(
+  sdkQuery: Pick<Query, "getContextUsage">,
+): Promise<SessionContextUsage | undefined> {
+  try {
+    const usage = await withTimeout(
+      sdkQuery.getContextUsage(),
+      CONTEXT_USAGE_TIMEOUT_MS,
+      "timed out",
+    );
+    return {
+      usedTokens: usage.totalTokens,
+      contextWindow: usage.maxTokens,
+      percent: usage.percentage,
+      display: "used",
+      ...(usage.isAutoCompactEnabled && usage.autoCompactThreshold
+        ? { autoCompactThreshold: usage.autoCompactThreshold }
+        : {}),
+    };
+  } catch (error) {
+    console.warn("[Claude] Context usage unavailable:", error);
+    return undefined;
+  }
+}

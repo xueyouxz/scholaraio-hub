@@ -1,10 +1,11 @@
 import type { StoredSession } from "@scholaraio-hub/shared";
 import { ArrowDown } from "lucide-react";
 import { useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { useNavigationLayout } from "../../app/components/NavigationLayout";
 import { PaperReaderView } from "../library/reader/PaperReaderView";
 import { InputRequestPanel } from "./components/InputRequestPanel";
-import { ResizableProjectFilesPanel } from "./components/ProjectFilesPanel";
+import { ResizableSessionFilesPanel } from "./components/SessionFilesPanel";
 import { SessionHeader, type SessionPanel } from "./components/SessionHeader";
 import { SessionMessages } from "./components/SessionMessages";
 import { ResizableWorkspacePapersPanel } from "./components/WorkspacePapersPanel";
@@ -22,6 +23,7 @@ export function SessionChatView({ initial }: { initial: StoredSession }) {
   const session = useSessionChat(initial);
   const { snapshot, running } = session;
   const scroll = useStickToBottom(running);
+  const navigate = useNavigate();
   const [panel, setPanel] = useState<SessionPanel | undefined>();
   const [selectedPaper, setSelectedPaper] = useState<string | null>(null);
 
@@ -105,14 +107,14 @@ export function SessionChatView({ initial }: { initial: StoredSession }) {
                   </button>
                 </div>
               ) : null}
-              {snapshot?.error && !session.busy ? (
+              {snapshot?.error && !session.streaming ? (
                 <div className="max-w-[830px] mx-auto mb-3 text-sm text-error break-words">
                   {snapshot.error}
                 </div>
               ) : null}
               <SessionMessages
                 messages={session.messages}
-                streaming={session.busy}
+                streaming={session.streaming}
                 processing={running && !pending}
                 queued={(snapshot?.queuedMessages ?? []).map((message) => ({
                   id: message.id,
@@ -125,12 +127,28 @@ export function SessionChatView({ initial }: { initial: StoredSession }) {
                 pendingInput={askedInline ? pending : undefined}
                 sessionId={initial.id}
                 onInputDone={session.refresh}
+                provider={initial.provider}
+                promptActions={
+                  initial.readOnly
+                    ? undefined
+                    : {
+                        busy: running || session.fork.isPending,
+                        onEdit: (message, text) => {
+                          scroll.scrollToBottom();
+                          return session.edit(message, text);
+                        },
+                        onFork: (message) =>
+                          session.fork.mutate(message.id, {
+                            onSuccess: (fork) => navigate(`/sessions/${fork.id}`),
+                          }),
+                      }
+                }
               />
               {snapshot?.queuePaused ? (
                 <div className="flex justify-center -mt-2 mb-2">
                   <button
                     type="button"
-                    className="load-older-button"
+                    className="queue-resume-button"
                     disabled={session.editQueue.isPending}
                     onClick={() => session.editQueue.mutate({ action: "resume" })}
                   >
@@ -166,7 +184,7 @@ export function SessionChatView({ initial }: { initial: StoredSession }) {
                   sessionId={initial.id}
                   draftKey={`session:${initial.id}`}
                   running={running}
-                  thinking={running && session.state !== "waiting-input"}
+                  stoppable={running && session.state !== "waiting-input"}
                   placeholder={running ? "Queue a follow-up message" : "Continue this session"}
                   onStop={() => session.stop.mutate()}
                   stopPending={session.stop.isPending}
@@ -182,16 +200,16 @@ export function SessionChatView({ initial }: { initial: StoredSession }) {
           </footer>
         )}
       </section>
-      <ResizableProjectFilesPanel
+      <ResizableSessionFilesPanel
         open={panel === "files"}
-        projectId={initial.id}
+        sessionId={initial.id}
         rootName="会话工作目录"
         onClose={() => setPanel(undefined)}
       />
       {initial.projectId ? (
         <ResizableWorkspacePapersPanel
           open={panel === "papers"}
-          workspaceName={initial.projectId}
+          projectId={initial.projectId}
           selectedPaperId={selectedPaper}
           onSelectPaper={(id) => {
             setSelectedPaper(id);

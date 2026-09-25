@@ -15,7 +15,7 @@ import {
  */
 export interface SlashPickerState {
   /** Commands matching the token being typed, or null when not typing one. */
-  filter: SlashCommand[] | null;
+  matches: SlashCommand[] | null;
   /** The `/word` being completed, in `messageBody` coordinates. */
   token: SlashToken | null;
   showList: boolean;
@@ -58,21 +58,21 @@ export function useSlashCommandPicker(
   const found = slashTokenAt(body, position);
   // After a badge the body no longer opens the message.
   const token = found && selectedToken ? { ...found, leading: false } : found;
-  const filter = token && commands?.length ? commandsForToken(commands, token) : null;
+  const matches = token && commands?.length ? commandsForToken(commands, token) : null;
 
-  const showList = Boolean(!dismissed && filter && filter.length > 0);
-  const filterSignature = filter?.map((command) => command.name).join("\n") ?? "";
+  const showList = Boolean(!dismissed && matches && matches.length > 0);
+  const matchSignature = matches?.map((command) => command.name).join("\n") ?? "";
 
   useEffect(() => {
-    if (!filterSignature) return;
+    if (!matchSignature) return;
     setActiveIndex(0);
-  }, [filterSignature]);
+  }, [matchSignature]);
 
   const dismiss = useCallback(() => setDismissed(true), []);
   const resume = useCallback(() => setDismissed(false), []);
 
   return {
-    filter,
+    matches,
     token,
     showList,
     showBadge: !!selectedToken,

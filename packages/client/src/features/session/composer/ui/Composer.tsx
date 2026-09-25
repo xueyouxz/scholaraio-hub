@@ -19,7 +19,6 @@ import { type ClientCommandName, clientCommands, isClientCommand } from "../mode
 import {
   dedupeCommands,
   joinLeadingCommand,
-  mergeCommands,
   replaceToken,
   tokenReplacement,
 } from "../model/slashCommands";
@@ -57,13 +56,12 @@ export function Composer({
   onSend,
   onQueue,
   running = false,
-  thinking = running,
+  stoppable = running,
   onStop,
   stopPending = false,
   disabled = false,
   placeholder = "What would you like to build or change?",
   controls,
-  extraCommands,
   text: controlledText,
   onTextChange,
 }: {
@@ -74,14 +72,14 @@ export function Composer({
   onQueue?: (text: string, attachments: SessionAttachment[]) => Promise<void>;
   onSend: (text: string, attachments: SessionAttachment[]) => Promise<void>;
   running?: boolean;
-  thinking?: boolean;
+  /** Whether the running turn can be interrupted now (not while it waits for input). */
+  stoppable?: boolean;
   onStop?: () => void;
   stopPending?: boolean;
   disabled?: boolean;
   placeholder?: string;
   /** Provider-described option pills; omitted, the composer shows none. */
   controls?: ComposerControls;
-  extraCommands?: SlashCommand[];
   text?: string;
   onTextChange?: Dispatch<SetStateAction<string>>;
 }) {
@@ -89,25 +87,30 @@ export function Composer({
     text: controlledText,
     onTextChange,
   });
-  const skills = useQuery({
+  const commandsQuery = useQuery({
     queryKey: ["session-commands", provider, sessionId],
     queryFn: ({ signal }) => sessionApi.commands(provider, sessionId, signal),
     staleTime: 60000,
   });
   const menus = controls ? availableMenus(controls) : new Set<MenuRequest["menu"]>();
-  const available: ClientCommandName[] = [
-    ...(menus.has("model") ? (["model"] as const) : []),
-    ...(menus.has("effort") ? (["effort"] as const) : []),
-    ...(menus.has("permissions") ? (["permissions"] as const) : []),
-    "attach",
-    ...(running && onStop ? (["stop"] as const) : []),
-  ];
-  const clientKey = available.join(",");
-  // biome-ignore lint/correctness/useExhaustiveDependencies: the key stands for `available`.
-  const localCommands = useMemo(() => clientCommands(available), [clientKey]);
+  const hasModel = menus.has("model");
+  const hasEffort = menus.has("effort");
+  const hasPermissions = menus.has("permissions");
+  const canStop = running && !!onStop;
+  const localCommands = useMemo(
+    () =>
+      clientCommands([
+        ...(hasModel ? (["model"] as const) : []),
+        ...(hasEffort ? (["effort"] as const) : []),
+        ...(hasPermissions ? (["permissions"] as const) : []),
+        "attach",
+        ...(canStop ? (["stop"] as const) : []),
+      ]),
+    [hasModel, hasEffort, hasPermissions, canStop],
+  );
   const commands = useMemo(
-    () => dedupeCommands(localCommands, mergeCommands(skills.data?.commands ?? [], extraCommands)),
-    [localCommands, skills.data, extraCommands],
+    () => dedupeCommands(localCommands, commandsQuery.data?.commands ?? []),
+    [localCommands, commandsQuery.data],
   );
   /** Caret offset in the textarea's value; null keeps it at the end. */
   const [caret, setCaret] = useState<number | null>(null);
@@ -219,9 +222,9 @@ export function Composer({
   const attachmentCount = staged.items.length;
   return (
     <div className="relative w-full" aria-label="Message composer">
-      {picker.showList && picker.filter ? (
+      {picker.showList && picker.matches ? (
         <SlashCommandSuggestions
-          commands={picker.filter}
+          commands={picker.matches}
           activeIndex={picker.activeIndex}
           onHover={picker.setActiveIndex}
           onSelect={selectCommand}
@@ -286,8 +289,8 @@ export function Composer({
           onKeyDown={(e) => {
             const isComposing = e.nativeEvent.isComposing || composing.current || e.keyCode === 229;
             if (isComposing) return;
-            if (picker.showList && picker.filter) {
-              const list = picker.filter;
+            if (picker.showList && picker.matches) {
+              const list = picker.matches;
               const count = list.length;
               if (e.key === "Escape") {
                 e.preventDefault();
@@ -386,7 +389,7 @@ export function Composer({
                 hasContent(text, interim, staged.items.length)
               }
               isRunning={running}
-              isThinking={thinking}
+              stoppable={stoppable}
               hasQueueAction={!!onQueue}
               hasStopAction={!!onStop}
               onSend={() => void submit()}
@@ -407,9 +410,9 @@ export function Composer({
           event.target.value = "";
         }}
       />
-      {skills.error && text.startsWith("/") ? (
+      {commandsQuery.error && text.startsWith("/") ? (
         <p role="alert" className="text-xs text-error mt-2">
-          Could not load commands: {skills.error.message}
+          Could not load commands: {commandsQuery.error.message}
         </p>
       ) : null}
       {error ? (

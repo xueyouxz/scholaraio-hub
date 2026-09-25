@@ -1,9 +1,12 @@
 """Long-running library work the browser starts, watches and stops.
 
 The runner knows nothing about what a task does: it keeps one record per kind,
-runs one task at a time, persists progress and honours the stop button. What
-each kind does is a job function handed in at construction (see
-:mod:`scholaraio.hub.maintenance`).
+persists progress and honours the stop button. What each kind does is a job
+function handed in at construction (see :mod:`scholaraio.hub.maintenance`).
+
+Kinds that touch the same files share a lane and run one after another; kinds
+in different lanes run side by side, so an hour of LLM summaries does not hold
+back a topic rebuild.
 """
 from __future__ import annotations
 
@@ -52,12 +55,23 @@ Job = Callable[[Progress], str]
 
 
 class TaskRunner:
-    def __init__(self, runtime: LibraryRuntime, jobs: Mapping[str, Job], root: Path):
+    def __init__(
+        self,
+        runtime: LibraryRuntime,
+        jobs: Mapping[str, Job],
+        root: Path,
+        lanes: Mapping[str, str],
+    ):
         self.runtime = runtime
         self.jobs = dict(jobs)
         self.root = root
         self.root.mkdir(parents=True, exist_ok=True)
-        self.executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix="library-task")
+        # Every kind names its lane; a missing one is a wiring mistake, not a default.
+        self.lanes = {kind: lanes[kind] for kind in self.jobs}
+        self.executors = {
+            lane: ThreadPoolExecutor(max_workers=1, thread_name_prefix=f"library-task-{lane}")
+            for lane in dict.fromkeys(self.lanes.values())
+        }
         self.stops: dict[str, threading.Event] = {}
         self.tasks: dict[str, dict] = {}
         for kind in self.jobs:
@@ -70,14 +84,11 @@ class TaskRunner:
                 record.update(status="failed", error="任务被中断，可重新开始", phase=None, finishedAt=now())
             self.tasks[kind] = record
 
-    @property
-    def kinds(self) -> tuple[str, ...]:
-        return tuple(self.jobs)
-
     def close(self) -> None:
         for stop in self.stops.values():
             stop.set()
-        self.executor.shutdown(wait=True, cancel_futures=True)
+        for executor in self.executors.values():
+            executor.shutdown(wait=True, cancel_futures=True)
 
     # ---- records -------------------------------------------------------
 
@@ -91,8 +102,24 @@ class TaskRunner:
             self.save(record)
 
     def list(self) -> list[dict]:
+        """Every task's record; a queued one says which task it is waiting for."""
         with self.runtime.lock:
-            return [dict(self.tasks[kind]) for kind in self.jobs if kind in self.tasks]
+            records = []
+            for kind in self.jobs:
+                if kind not in self.tasks:
+                    continue
+                record = dict(self.tasks[kind])
+                if record["status"] == "queued":
+                    record["waitingFor"] = next(
+                        (
+                            other
+                            for other, task in self.tasks.items()
+                            if other != kind and self.lanes[other] == self.lanes[kind] and task["status"] == "running"
+                        ),
+                        None,
+                    )
+                records.append(record)
+            return records
 
     def start(self, kind: str) -> dict:
         if kind not in self.jobs:
@@ -117,7 +144,7 @@ class TaskRunner:
             }
             self.tasks[kind] = record
             self.save(record)
-            self.executor.submit(self.run, kind, record, stop)
+            self.executors[self.lanes[kind]].submit(self.run, kind, record, stop)
             return dict(record)
 
     def cancel(self, kind: str) -> dict:
@@ -126,13 +153,19 @@ class TaskRunner:
             if not record or record["status"] not in ACTIVE:
                 raise InvalidRequest("该任务没有在运行")
             self.stops[kind].set()
-            record["phase"] = "stopping"
+            if record["status"] == "queued":
+                # Nothing has started: it ends now instead of when its turn comes.
+                record.update(status="cancelled", phase=None, summary="未开始即已停止", finishedAt=now())
+            else:
+                record["phase"] = "stopping"
             self.save(record)
             return dict(record)
 
     # ---- execution -----------------------------------------------------
 
     def run(self, kind: str, record: dict, stop: threading.Event) -> None:
+        if stop.is_set():
+            return  # cancelled while it waited its turn
         self.update(record, status="running", phase="preparing", error=None)
         try:
             summary = self.jobs[kind](Progress(self, record, stop))

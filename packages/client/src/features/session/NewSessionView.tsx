@@ -7,11 +7,13 @@ import { usePageTitle } from "../../app/components/NavigationLayout";
 import {
   type SessionOptions,
   libraryApi,
+  newSessionUrl,
   sessionApi,
   settingsApi,
   skillsApi,
 } from "../../core/library";
 import { queryKeys } from "../../core/queryKeys";
+import { WorkspaceSwitcher } from "./components/WorkspaceSwitcher";
 import { useProviders } from "./composer/hooks/useProviders";
 import { initialOptions, optionsForProvider } from "./composer/model/options";
 import { readComposerPreference, rememberComposerChoice } from "./composer/model/preferences";
@@ -94,15 +96,6 @@ function NewSessionForm({
   const readingSkills = useMemo(
     () => filterReadingContextSkills(skills.data?.skills ?? []),
     [skills.data],
-  );
-  const extraCommands = useMemo(
-    () =>
-      readingSkills.map((skill) => ({
-        name: skill.name,
-        description: skill.description,
-        source: "research" as const,
-      })),
-    [readingSkills],
   );
   const draftKey = `new:${projectId}`;
   const [text, setText] = useState(() =>
@@ -206,7 +199,7 @@ function NewSessionForm({
       }
       const { session, messageId } = created.current;
       if (composed || attachmentIds.length) {
-        await sessionApi.begin(session.id, messageId, composed, attachmentIds);
+        await sessionApi.sendFirstMessage(session.id, messageId, composed, attachmentIds);
       }
       void client.invalidateQueries({ queryKey: ["sessions"] });
       navigate(`/sessions/${session.id}`);
@@ -332,8 +325,10 @@ function NewSessionForm({
           ) : null}
         </div>
       ) : (
-        <div className="flex flex-col items-center flex-1 justify-end gap-8">
-          <div className="flex flex-col items-center gap-6 mb-4">
+        // Centred in the space above the composer, and lifted a little: the eye
+        // settles above the middle, and the composer below keeps the weight.
+        <div className="flex flex-col items-center flex-1 justify-center pb-[10vh] gap-8">
+          <div className="flex flex-col items-center gap-6">
             <div className="text-center">
               <h2 className="font-serif text-3xl font-bold text-on-surface mb-1">
                 有什么我可以帮你的？
@@ -363,6 +358,14 @@ function NewSessionForm({
         </p>
       ) : null}
       <div className="w-full max-w-[830px] mx-auto pb-[max(1rem,env(safe-area-inset-bottom))] px-2">
+        <div className="flex flex-wrap items-center gap-1.5 mb-2 px-1">
+          <WorkspaceSwitcher
+            projects={projects.data?.projects ?? []}
+            current={project}
+            disabled={submitting || projects.isLoading}
+            onChange={(id) => navigate(newSessionUrl(id || undefined), { replace: true })}
+          />
+        </div>
         {paperIds.length > 0 ? (
           <div className="flex flex-wrap gap-1.5 mb-2 px-1">
             {paperIds.map((id) => (
@@ -392,7 +395,6 @@ function NewSessionForm({
           onTextChange={setText}
           disabled={disabled}
           provider={provider}
-          extraCommands={extraCommands}
           onSend={start}
           controls={controls}
         />

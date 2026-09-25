@@ -28,14 +28,13 @@ async function entryCount(directory: string): Promise<number | null> {
 /**
  * Create the skills directory, seeding it once from the legacy location.
  *
- * An existing directory is never touched: after the first start the data
- * directory owns its skills, including any the user deleted.
+ * An existing directory is never touched: after the first start it owns its
+ * skills, including any the user deleted.
  */
 export async function ensureSkillsDirectory(
-  dataDir: string,
+  directory: string,
   legacy: string = legacySkillsDirectory(),
 ): Promise<string> {
-  const directory = skillsDirectory(dataDir);
   if ((await entryCount(directory)) !== null) return directory;
   if ((await entryCount(legacy)) === null) {
     await mkdir(directory, { recursive: true });

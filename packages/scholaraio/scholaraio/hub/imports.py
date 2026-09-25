@@ -19,6 +19,7 @@ from pathlib import Path
 from typing import Any
 
 from scholaraio.hub.errors import InvalidRequest, NotFound
+from scholaraio.hub.projects import ProjectService
 from scholaraio.hub.runtime import LibraryRuntime
 from scholaraio.hub.storage import atomic_json, content_hash
 from scholaraio.services.ingest import identifiers
@@ -34,6 +35,8 @@ STORE_STEPS = STEPS[2:]
 ACTIVE = ("queued", "running")
 # Statuses that leave a usable paper behind.
 INGESTED = ("completed", "completed_incomplete")
+# Statuses whose paper can join the workspace the import was started from.
+HELD = (*INGESTED, "duplicate")
 
 
 def lookups_disabled() -> bool:
@@ -53,8 +56,9 @@ def snapshot(value):
 class ImportQueue:
     """Serial import worker: one job at a time, each item through the pipeline."""
 
-    def __init__(self, runtime: LibraryRuntime):
+    def __init__(self, runtime: LibraryRuntime, projects: ProjectService):
         self.runtime = runtime
+        self.projects = projects
         self.root = runtime.cfg.state_root / "imports"
         self.staging = self.root / "staging"
         for directory in (self.root, self.staging):
@@ -86,8 +90,16 @@ class ImportQueue:
         with self.runtime.lock:
             return snapshot(list(self.jobs.values()))
 
-    def enqueue(self, files: list[tuple[Path, str]]):
+    def enqueue(self, files: list[tuple[Path, str]], project_id: str | None = None, *, title: str | None = None):
+        """Queue files for import; with a project, each paper joins it once it is in.
+
+        ``title`` is what the user knows a single fetched file by (a search
+        result's title), shown instead of the name the download happened to get.
+        """
         with self.runtime.lock:
+            if project_id:
+                # Refuse before anything runs, not after the papers are in.
+                self.projects.directory(project_id)
             pending = {
                 item["source"]
                 for job in self.jobs.values()
@@ -101,7 +113,11 @@ class ImportQueue:
             ]
             if not items:
                 raise InvalidRequest("These files are already being imported")
+            if title and len(items) == 1:
+                items[0]["title"] = title.strip()[:500]
             job = {"id": uuid.uuid4().hex, "items": items}
+            if project_id:
+                job["projectId"] = project_id
             self.jobs[job["id"]] = job
             self.save(job)
             self.executor.submit(self.run, job)
@@ -145,11 +161,31 @@ class ImportQueue:
                 result = {"status": "failed", "error": str(exc)}
             with self.runtime.lock:
                 item.update(step=None, **result)
+                self.join_project(job, item)
                 self.save(job)
             ingested |= result["status"] in INGESTED
+            if result["status"] in HELD:
+                # The paper is on disk now; the list need not wait for the batch.
+                self.runtime.events.publish("papers")
         if ingested:
             self.runtime.reindex()
             self.runtime.events.publish("papers")
+
+    def join_project(self, job, item) -> None:
+        """Add a finished paper to the workspace its import was started from.
+
+        A workspace that was renamed or archived meanwhile keeps the paper out
+        of it, and the item says why instead of failing the import.
+        """
+        project_id = job.get("projectId")
+        if not project_id or item["status"] not in HELD or not item.get("paperId"):
+            return
+        try:
+            self.projects.update_papers(project_id, [item["paperId"]], "add")
+        except (InvalidRequest, NotFound) as error:
+            item["projectError"] = str(error)
+            return
+        self.runtime.events.publish("projects", projects=[project_id])
 
     def record_step(self, job, item, step: str) -> None:
         with self.runtime.lock:

@@ -22,25 +22,6 @@ describe("Settings Routes", () => {
   });
 
   describe("PUT /", () => {
-    it("updates globalInstructions", async () => {
-      const routes = createSettingsRoutes({
-        serverSettingsService: mockServerSettingsService,
-      });
-
-      const response = await routes.request("/", {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          globalInstructions: "Always answer concisely",
-        }),
-      });
-
-      expect(response.status).toBe(200);
-      expect(mockServerSettingsService.updateSettings).toHaveBeenCalledWith({
-        globalInstructions: "Always answer concisely",
-      });
-    });
-
     it("accepts valid newSessionDefaults", async () => {
       const routes = createSettingsRoutes({
         serverSettingsService: mockServerSettingsService,

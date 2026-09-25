@@ -1,4 +1,4 @@
-"""Maintenance tasks, the readiness they report, and the library audit."""
+"""Maintenance tasks and the readiness they report."""
 from __future__ import annotations
 
 from fastapi import APIRouter
@@ -22,7 +22,3 @@ def start_task(kind: str, tasks: Tasks):
 def cancel_task(kind: str, tasks: Tasks):
     return tasks.cancel(kind)
 
-
-@router.get("/audit")
-def audit(status: Status):
-    return status.audit()

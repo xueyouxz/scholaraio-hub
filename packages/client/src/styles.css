@@ -9,6 +9,15 @@
 @import "./features/session/session.css" layer(components);
 @import "./features/session/session-markdown.css" layer(markdown);
 
+@plugin "@tailwindcss/typography";
+
+/*
+ * The app has one light palette. Tailwind's `dark:` would otherwise follow the
+ * OS, and Streamdown's code blocks would switch to Shiki's dark token colors on
+ * a light background. Dark styles apply only under an explicit `.dark`.
+ */
+@custom-variant dark (&:where(.dark, .dark *));
+
 @source "../node_modules/streamdown/dist/*.js";
 @source "../node_modules/@streamdown/code/dist/*.js";
 @source "../node_modules/@streamdown/math/dist/*.js";
@@ -97,6 +106,15 @@
     min-height: 100%;
   }
 
+  /* Nothing shows a scrollbar: every scroll area scrolls by wheel, touch and keys alone. */
+  * {
+    scrollbar-width: none;
+  }
+
+  *::-webkit-scrollbar {
+    display: none;
+  }
+
   body {
     margin: 0;
     @apply bg-surface text-on-surface font-sans text-sm leading-relaxed;
@@ -153,6 +171,21 @@
     resize: vertical;
   }
 
+  /* Selected text takes the brand tint instead of the platform's blue. */
+  ::selection {
+    background-color: color-mix(in srgb, var(--color-primary) 18%, transparent);
+    color: inherit;
+  }
+
+  /* A browser-filled field keeps the surface it sits on, not the autofill blue. */
+  input:-webkit-autofill,
+  input:-webkit-autofill:hover,
+  input:-webkit-autofill:focus {
+    -webkit-text-fill-color: var(--color-on-surface);
+    box-shadow: 0 0 0 1000px transparent inset;
+    transition: background-color 9999s ease-out 0s;
+  }
+
   :where(button, a, input, textarea, select, summary):focus-visible {
     outline: 2px solid var(--color-primary);
     outline-offset: 3px;
@@ -174,17 +207,29 @@
     background: linear-gradient(135deg, #005235 0%, #1a6b4a 100%);
   }
 
-  .no-scrollbar::-webkit-scrollbar {
-    display: none;
-  }
-
-  .no-scrollbar {
-    -ms-overflow-style: none;
-    scrollbar-width: none;
-  }
-
   .animate-search-progress {
     animation: search-progress 1.6s cubic-bezier(0.4, 0, 0.2, 1) infinite;
+  }
+
+  /* Typography's `prose`, in the palette: the paper reader's full text. */
+  .paper-prose.prose {
+    --tw-prose-body: var(--color-on-surface);
+    --tw-prose-headings: var(--color-on-surface);
+    --tw-prose-lead: var(--color-on-surface-variant);
+    --tw-prose-links: var(--color-primary);
+    --tw-prose-bold: var(--color-on-surface);
+    --tw-prose-counters: var(--color-on-surface-muted);
+    --tw-prose-bullets: var(--color-outline-variant);
+    --tw-prose-hr: color-mix(in srgb, var(--color-outline-variant) 60%, transparent);
+    --tw-prose-quotes: var(--color-on-surface-variant);
+    --tw-prose-quote-borders: color-mix(in srgb, var(--color-primary) 30%, transparent);
+    --tw-prose-captions: var(--color-on-surface-muted);
+    --tw-prose-kbd: var(--color-on-surface);
+    --tw-prose-code: var(--color-on-surface);
+    --tw-prose-pre-code: var(--color-on-surface);
+    --tw-prose-pre-bg: var(--color-surface-code);
+    --tw-prose-th-borders: var(--color-outline-variant);
+    --tw-prose-td-borders: color-mix(in srgb, var(--color-outline-variant) 50%, transparent);
   }
 
   .skeleton-shimmer {
@@ -218,70 +263,6 @@
   100% {
     background-position: 400px 0;
   }
-}
-
-/* ─────────────────────────────────────────────────────────────────────────
-   Global classes used by pages not yet migrated to Tailwind utilities.
-   Unlayered, as before; move a block into `@layer components` when its page
-   is next touched.
-   ───────────────────────────────────────────────────────────────────────── */
-
-.title {
-  margin: 0 0 0.3rem;
-  color: #3f4943;
-  font: 700 10px / 1 "JetBrains Mono", ui-monospace, monospace;
-  letter-spacing: 0.24em;
-  text-transform: uppercase;
-}
-
-.card-meta {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 10px;
-  align-items: center;
-}
-
-.stack,
-.list {
-  display: grid;
-  gap: 12px;
-}
-
-.panel,
-.card,
-.empty {
-  border: 1px solid rgba(111, 122, 114, 0.16);
-  border-radius: 20px;
-  background: rgba(255, 255, 255, 0.78);
-  box-shadow: 0 18px 40px rgba(23, 29, 26, 0.06);
-}
-
-.panel {
-  overflow: hidden;
-}
-
-.panel-header {
-  padding: 1rem 1.2rem 0.9rem;
-  border-bottom: 1px solid rgba(111, 122, 114, 0.16);
-}
-
-.panel-body {
-  padding: 1.15rem 1.2rem 1.2rem;
-}
-
-.card {
-  display: grid;
-  gap: 4px;
-  padding: 1rem;
-}
-
-.card-title {
-  font: 600 1rem / 1.35 "Noto Serif SC", ui-serif, Georgia, serif;
-}
-
-.empty {
-  padding: 1rem 1.1rem;
-  color: #3f4943;
 }
 
 /* The dialog element paints its own backdrop; this is the atelier's. */
@@ -359,14 +340,6 @@
 }
 
 /* Option pills keep one row: on narrow composers they shrink to their icons. */
-.hub-composer-options {
-  scrollbar-width: none;
-}
-
-.hub-composer-options::-webkit-scrollbar {
-  display: none;
-}
-
 @container (max-width: 34rem) {
   .hub-composer-pill .hub-composer-pill-label {
     display: none;

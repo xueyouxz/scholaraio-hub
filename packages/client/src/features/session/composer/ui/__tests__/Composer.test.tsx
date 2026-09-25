@@ -405,24 +405,6 @@ describe("Composer slash commands", () => {
     expect(container?.textContent).not.toContain("/review");
   });
 
-  it("merges extra commands without duplicating names", async () => {
-    render({
-      extraCommands: [
-        { name: "review", description: "duplicate" },
-        { name: "summarize", description: "Summarize papers", source: "research" },
-      ],
-    });
-    await flush();
-    type("/");
-    expect(suggestions().map((item) => item.text)).toEqual([
-      "/attach",
-      "/review",
-      "/research <q>",
-      "/commit",
-      "/summarize",
-    ]);
-  });
-
   it("completes a Codex skill anywhere in the message as a $mention", async () => {
     commands.list = [
       { name: "cite", description: "Cite", trigger: "$", position: "anywhere" },
@@ -630,7 +612,7 @@ describe("Composer action button", () => {
   });
 
   it("sends again once the agent is waiting for input", () => {
-    render({ running: true, thinking: false, onStop: vi.fn() });
+    render({ running: true, stoppable: false, onStop: vi.fn() });
     expect(actions()).toEqual(["Send"]);
   });
 

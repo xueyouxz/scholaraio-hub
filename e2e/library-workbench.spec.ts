@@ -22,7 +22,7 @@ test("import → keyword search → read → cited conversation → reload", asy
   await page.keyboard.press("Escape");
   await expect(importDialog).toHaveCount(0);
   await page.goto("/library");
-  await expect(page.getByRole("heading", { name: "检索文献", exact: true })).toBeVisible();
+  await expect(page.getByLabel("检索文献")).toBeVisible();
   await page.getByLabel("检索文献").fill("molecular");
   await page.getByLabel("检索文献").press("Enter");
   await page.getByRole("button", { name: /Spectroscopy Research/ }).click();
@@ -132,12 +132,11 @@ test("imported history renders tables, math, diff and incomplete Markdown safely
   await expect(
     page.getByText('const result = "未闭合代码块";', { exact: false }).first(),
   ).toBeVisible();
-  // Edit rows open by default, as in the pre-refactor tool timeline.
-  await expect(page.getByRole("button", { name: /Edit\s*result\.txt/ })).toHaveAttribute(
-    "aria-expanded",
-    "true",
-  );
-  await expect(page.locator("diffs-container")).toBeVisible();
+  // An edit folds to one line with its stats; opening it shows the diff.
+  const edit = page.getByRole("button", { name: /result\.txt/ }).first();
+  await edit.click();
+  await expect(edit).toHaveAttribute("aria-expanded", "true");
+  await expect(page.locator("diffs-container").first()).toBeVisible();
   expect(await page.evaluate(() => Reflect.get(window, "__unsafeExecuted"))).toBeUndefined();
   expect(await page.locator('a[href^="javascript:"]').count()).toBe(0);
   await expect(page.getByRole("textbox", { name: "Message" })).toHaveCount(0);
@@ -179,7 +178,7 @@ test("internal project → cards → reading → first message preserves project
   await selectionBar.getByRole("button", { name: "加入 Workspace" }).click();
   await selectionBar.getByRole("button", { name: projectName, exact: true }).click();
   await expect(selectionBar).toHaveCount(0);
-  await page.goto(`/library?project=${encodeURIComponent(projectName)}`);
+  await page.goto(`/workspaces/${encodeURIComponent(projectName)}`);
   await page.getByRole("button", { name: "列表视图" }).click();
   await expect(page.getByRole("button", { name: "列表视图" })).toHaveAttribute(
     "aria-pressed",
@@ -205,7 +204,10 @@ test("internal project → cards → reading → first message preserves project
   );
   expect(new URL(page.url()).searchParams.get("project")).toBe(projectName);
   await page.getByRole("button", { name: "← 返回", exact: true }).click();
-  expect(new URL(page.url()).searchParams.get("project")).toBe(projectName);
+  // Back to the workspace page it was opened from, view settings included.
+  await expect
+    .poll(() => new URL(page.url()).pathname)
+    .toBe(`/workspaces/${encodeURIComponent(projectName)}`);
   await page.getByRole("button", { name: /Spectroscopy Research/ }).click();
   await page.getByRole("button", { name: "阅读文献", exact: true }).click();
   await page.getByRole("link", { name: "询问本文" }).click();

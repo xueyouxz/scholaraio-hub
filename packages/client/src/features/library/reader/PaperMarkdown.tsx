@@ -5,7 +5,7 @@ import rehypeKatex from "rehype-katex";
 import rehypeRaw from "rehype-raw";
 import remarkGfm from "remark-gfm";
 import remarkMath from "remark-math";
-import { buildPaperImageUrl } from "../paperUtils";
+import { paperAssetUrl } from "../paperSummary";
 
 interface Props {
   content: string;
@@ -17,7 +17,7 @@ interface Props {
 function rewriteImageUrls(content: string, paperId: string): string {
   return content.replace(
     /!\[([^\]]*)\]\(images\/([^)\s]+)\)/g,
-    (_, alt: string, filename: string) => `![${alt}](${buildPaperImageUrl(paperId, filename)})`,
+    (_, alt: string, filename: string) => `![${alt}](${paperAssetUrl(paperId, filename)})`,
   );
 }
 
@@ -40,7 +40,7 @@ function PaperImage({ src, alt }: { src?: string; alt?: string }) {
 
   return (
     <>
-      <span className="block my-5">
+      <span className="not-prose block my-5">
         <button
           type="button"
           aria-label={alt ? `放大图片：${alt}` : "放大图片"}
@@ -79,185 +79,84 @@ function PaperImage({ src, alt }: { src?: string; alt?: string }) {
   );
 }
 
+// ─── Source lines ─────────────────────────────────────────────────────────────
+
+interface SourceNode {
+  type: string;
+  properties?: Record<string, unknown>;
+  position?: { start: { line: number }; end: { line: number } };
+}
+
+/**
+ * Tag each top-level block with the paper.md lines it came from.
+ *
+ * The reader saves its place and follows citations by line, so every block the
+ * reader can land on carries `data-line` / `data-end-line`, and the block that
+ * holds a cited line is marked.
+ */
+function rehypeSourceLines({ highlight }: { highlight?: number }) {
+  return (tree: { children: SourceNode[] }) => {
+    for (const node of tree.children) {
+      if (node.type !== "element" || !node.position) continue;
+      const { start, end } = node.position;
+      const marked = highlight !== undefined && start.line <= highlight && end.line >= highlight;
+      node.properties = {
+        ...node.properties,
+        id: `line-${start.line}`,
+        dataLine: start.line,
+        dataEndLine: end.line,
+        ...(marked ? { className: [...classNames(node), "bg-secondary-container"] } : {}),
+      };
+    }
+  };
+}
+
+function classNames(node: SourceNode): string[] {
+  const value = node.properties?.className;
+  return Array.isArray(value) ? value.map(String) : [];
+}
+
 // ─── Main component ───────────────────────────────────────────────────────────
 
+/**
+ * A paper's full text, set by Tailwind Typography.
+ *
+ * `prose` owns the typesetting; the palette comes in through `paper-prose` in
+ * styles.css. MinerU writes every section heading as `#`, so heading sizes are
+ * pulled in to keep a flat outline from shouting.
+ */
 export const PaperMarkdown = memo(function PaperMarkdown({
   content,
   paperId,
   highlightedLine,
 }: Props) {
-  const rewritten = rewriteImageUrls(content, paperId);
-  const source = (node?: { position?: { start: { line: number }; end: { line: number } } }) => {
-    const position = node?.position;
-    return position
-      ? {
-          id: `line-${position.start.line}`,
-          "data-line": position.start.line,
-          "data-end-line": position.end.line,
-          style:
-            highlightedLine &&
-            position.start.line <= highlightedLine &&
-            position.end.line >= highlightedLine
-              ? { backgroundColor: "var(--color-secondary-container)" }
-              : undefined,
-        }
-      : {};
-  };
-
   return (
-    <ReactMarkdown
-      disallowedElements={["script", "iframe", "object", "embed", "form", "input", "style"]}
-      remarkPlugins={[remarkGfm, remarkMath]}
-      rehypePlugins={[rehypeRaw, [rehypeKatex, { strict: false, throwOnError: false }]]}
-      components={{
-        h1: ({ children, node }) => (
-          <h1
-            {...source(node)}
-            className="font-serif text-xl font-bold text-on-surface leading-snug mt-8 mb-3 first:mt-0"
-          >
-            {children}
-          </h1>
-        ),
-        h2: ({ children, node }) => (
-          <h2
-            {...source(node)}
-            className="font-serif text-lg font-bold text-on-surface leading-snug mt-7 mb-2.5"
-          >
-            {children}
-          </h2>
-        ),
-        h3: ({ children, node }) => (
-          <h3
-            {...source(node)}
-            className="font-serif text-base font-semibold text-on-surface leading-snug mt-6 mb-2"
-          >
-            {children}
-          </h3>
-        ),
-        h4: ({ children, node }) => (
-          <h4
-            {...source(node)}
-            className="font-serif text-sm font-semibold text-on-surface leading-snug mt-5 mb-1.5"
-          >
-            {children}
-          </h4>
-        ),
-        h5: ({ children, node }) => (
-          <h5
-            {...source(node)}
-            className="font-serif text-sm font-medium text-on-surface leading-snug mt-4 mb-1"
-          >
-            {children}
-          </h5>
-        ),
-        h6: ({ children, node }) => (
-          <h6
-            {...source(node)}
-            className="font-mono text-[10px] uppercase tracking-widest text-on-surface-variant mt-4 mb-1"
-          >
-            {children}
-          </h6>
-        ),
-        p: ({ children, node }) => (
-          <p {...source(node)} className="text-sm text-on-surface leading-relaxed mb-3">
-            {children}
-          </p>
-        ),
-        a: ({ href, children }) => (
-          <a
-            href={href}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="text-primary underline underline-offset-2 hover:opacity-80 transition-opacity"
-          >
-            {children}
-          </a>
-        ),
-        ul: ({ children, node }) => (
-          <ul
-            {...source(node)}
-            className="list-disc list-outside pl-5 mb-3 space-y-1 text-sm text-on-surface"
-          >
-            {children}
-          </ul>
-        ),
-        ol: ({ children, node }) => (
-          <ol
-            {...source(node)}
-            className="list-decimal list-outside pl-5 mb-3 space-y-1 text-sm text-on-surface"
-          >
-            {children}
-          </ol>
-        ),
-        li: ({ children }) => <li className="leading-relaxed">{children}</li>,
-        blockquote: ({ children, node }) => (
-          <blockquote
-            {...source(node)}
-            className="border-l-4 border-primary/30 pl-4 my-4 text-on-surface-variant italic"
-          >
-            {children}
-          </blockquote>
-        ),
-        hr: () => <hr className="border-0 border-t border-outline-variant/15 my-6" />,
-        code: ({ children, className }) => {
-          const isBlock = className?.startsWith("language-");
-          if (isBlock) {
-            return (
-              <code className="block font-mono text-xs text-on-surface leading-relaxed whitespace-pre-wrap break-words">
-                {children}
-              </code>
-            );
-          }
-          return (
-            <code className="font-mono text-[11px] text-on-surface bg-surface-container-high px-1 py-0.5 rounded">
-              {children}
-            </code>
-          );
-        },
-        pre: ({ children, node }) => (
-          <pre
-            {...source(node)}
-            className="bg-surface-container-high rounded-lg px-4 py-3 my-3 overflow-x-auto border border-outline-variant/10"
-          >
-            {children}
-          </pre>
-        ),
-        table: ({ children, node }) => (
-          <div className="overflow-x-auto my-4">
-            <table {...source(node)} className="w-full text-sm border-collapse">
-              {children}
-            </table>
-          </div>
-        ),
-        thead: ({ children }) => (
-          <thead className="border-b border-outline-variant/20">{children}</thead>
-        ),
-        tbody: ({ children }) => (
-          <tbody className="divide-y divide-outline-variant/10">{children}</tbody>
-        ),
-        tr: ({ children }) => <tr className="hover:bg-surface-container/50">{children}</tr>,
-        th: ({ children, rowSpan, colSpan }) => (
-          <th
-            rowSpan={rowSpan}
-            colSpan={colSpan}
-            className="text-left text-[10px] font-mono uppercase tracking-widest text-on-surface-variant px-3 py-2 font-semibold"
-          >
-            {children}
-          </th>
-        ),
-        td: ({ children, rowSpan, colSpan }) => (
-          <td
-            rowSpan={rowSpan}
-            colSpan={colSpan}
-            className="text-on-surface px-3 py-2 leading-relaxed"
-          >
-            {children}
-          </td>
-        ),
-        img: ({ src, alt }) => <PaperImage src={src} alt={alt} />,
-      }}
-    >
-      {rewritten}
-    </ReactMarkdown>
+    <div className="paper-prose prose prose-sm max-w-none break-words prose-h1:text-xl prose-h2:text-lg prose-h3:text-base prose-code:before:content-none prose-code:after:content-none">
+      <ReactMarkdown
+        disallowedElements={["script", "iframe", "object", "embed", "form", "input", "style"]}
+        remarkPlugins={[remarkGfm, remarkMath]}
+        rehypePlugins={[
+          rehypeRaw,
+          [rehypeKatex, { strict: false, throwOnError: false }],
+          [rehypeSourceLines, { highlight: highlightedLine }],
+        ]}
+        components={{
+          a: ({ node: _node, ...props }) => (
+            <a {...props} target="_blank" rel="noopener noreferrer" />
+          ),
+          // Wide tables scroll inside the column instead of pushing it wider.
+          table: ({ node: _node, ...props }) => (
+            <div className="overflow-x-auto">
+              <table {...props} />
+            </div>
+          ),
+          img: ({ src, alt }) => (
+            <PaperImage src={typeof src === "string" ? src : undefined} alt={alt} />
+          ),
+        }}
+      >
+        {rewriteImageUrls(content, paperId)}
+      </ReactMarkdown>
+    </div>
   );
 });

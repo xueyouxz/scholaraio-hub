@@ -1,11 +1,18 @@
 import { Suspense, lazy } from "react";
-import { BrowserRouter, Navigate, Route, Routes } from "react-router-dom";
+import { BrowserRouter, Navigate, Route, Routes, useParams } from "react-router-dom";
 import { NavigationLayout } from "./components/NavigationLayout";
 const LibraryLayout = lazy(() =>
   import("../features/library/LibraryLayout").then((module) => ({ default: module.LibraryLayout })),
 );
-const LibraryPage = lazy(() =>
-  import("../features/library/LibraryPage").then((module) => ({ default: module.LibraryPage })),
+const LibraryBrowsePage = lazy(() =>
+  import("../features/library/LibraryBrowsePage").then((module) => ({
+    default: module.LibraryBrowsePage,
+  })),
+);
+const WorkspacePapersPage = lazy(() =>
+  import("../features/library/WorkspacePapersPage").then((module) => ({
+    default: module.WorkspacePapersPage,
+  })),
 );
 const LibraryDashboard = lazy(() => import("../features/library/LibraryDashboard"));
 const ReaderPage = lazy(() =>
@@ -25,9 +32,12 @@ const SkillsPage = lazy(() =>
 const ProjectsPage = lazy(() =>
   import("./pages/ProjectsPage").then((module) => ({ default: module.ProjectsPage })),
 );
-const AgentsPage = lazy(() =>
-  import("./pages/AgentsPage").then((module) => ({ default: module.AgentsPage })),
-);
+/** A workspace's page, fresh for each workspace. */
+function WorkspaceRoute() {
+  const { projectId = "" } = useParams();
+  return <WorkspacePapersPage key={projectId} projectId={projectId} />;
+}
+
 export function App() {
   return (
     <BrowserRouter>
@@ -39,19 +49,17 @@ export function App() {
           <Route element={<NavigationLayout />}>
             <Route path="/" element={<Navigate to="/library" replace />} />
             <Route path="/library" element={<LibraryLayout />}>
-              <Route index element={<LibraryPage />} />
-              <Route path="import" element={<Navigate replace to="/library?import=1" />} />
+              <Route index element={<LibraryBrowsePage />} />
               <Route path="insights" element={<LibraryDashboard />} />
             </Route>
             <Route path="/library/:paperId" element={<ReaderPage />} />
+            <Route path="/workspaces/:projectId" element={<WorkspaceRoute />} />
             <Route path="/sessions" element={<SessionPage />} />
             <Route path="/sessions/:sessionId" element={<SessionPage />} />
             <Route path="/projects" element={<ProjectsPage />} />
-            <Route path="/agents" element={<AgentsPage />} />
             <Route path="/settings" element={<SettingsPage />} />
             <Route path="/skills" element={<SkillsPage />} />
             <Route path="/skills/:skillId" element={<SkillsPage />} />
-            <Route path="/new-session" element={<Navigate to="/sessions" replace />} />
             <Route path="*" element={<Navigate to="/library" replace />} />
           </Route>
         </Routes>

@@ -18,10 +18,6 @@ const TABS = [
 
 export function LibraryLayout() {
   const [params, setParams] = useSearchParams();
-  const project = params.get("project");
-  // Only the project carries across tabs: a query or a sort belongs to the
-  // view that owns it.
-  const scope = project ? `?project=${encodeURIComponent(project)}` : "";
   const importing = params.get("import") === "1";
   const closeImport = () =>
     setParams(
@@ -39,7 +35,7 @@ export function LibraryLayout() {
           {TABS.map(({ path, label, icon: Icon }) => (
             <NavLink
               key={label}
-              to={`/library${path ? `/${path}` : ""}${scope}`}
+              to={`/library${path ? `/${path}` : ""}`}
               end={!path}
               className={({ isActive }) =>
                 `flex items-center gap-1.5 px-3 py-1.5 rounded-full text-sm font-medium transition-colors ${

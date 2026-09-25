@@ -1,148 +1,136 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type { AgentEvent } from "../src/agent/events.js";
-import { MessageQueue } from "../src/sdk/messageQueue.js";
-import type { StartSessionOptions } from "../src/sdk/providers/types.js";
-import { Supervisor } from "../src/supervisor/Supervisor.js";
+import { MessageQueue } from "../src/providers/MessageQueue.js";
+import type { AgentEvent } from "../src/providers/events.js";
+import type { StartSessionOptions } from "../src/providers/types.js";
+import { type SessionMessageRequest, Supervisor } from "../src/supervisor/Supervisor.js";
+import type { ProcessEvent } from "../src/supervisor/types.js";
 import { createScriptedProvider, providerFromSessionFactory } from "./helpers/scriptedProvider.js";
+
+const request = (overrides: Partial<SessionMessageRequest> = {}): SessionMessageRequest => ({
+  sessionId: "app-1",
+  projectPath: "/tmp/test",
+  message: { text: "hi" },
+  ...overrides,
+});
 
 describe("Supervisor", () => {
   let supervisor: Supervisor;
   let startCalls: StartSessionOptions[];
+  let events: Array<{ sessionId: string; event: ProcessEvent }>;
 
   beforeEach(() => {
     startCalls = [];
+    events = [];
     supervisor = new Supervisor({
       provider: createScriptedProvider({ startCalls, holdOpen: true }),
       idleTimeoutMs: 60_000,
+      onEvent: (sessionId, event) => events.push({ sessionId, event }),
     });
   });
 
-  afterEach(async () => {
-    await supervisor.close();
+  afterEach(() => {
+    supervisor.close();
   });
 
-  describe("startSession", () => {
-    it("starts a process that takes the provider's session id", async () => {
-      const process = await supervisor.startSession({
-        projectPath: "/tmp/test",
-        message: { text: "hi" },
-      });
-
-      expect(process.projectPath).toBe("/tmp/test");
-      expect(process.sessionId).toBe("scripted-1");
+  it("starts a process for our session, which learns the provider's id", async () => {
+    const process = await supervisor.send(request());
+    expect(process.sessionId).toBe("app-1");
+    expect(supervisor.get("app-1")).toBe(process);
+    await vi.waitFor(() => expect(process.nativeSessionId).toBe("scripted-1"));
+    expect(events[0]).toEqual({
+      sessionId: "app-1",
+      event: { type: "agent", event: { type: "session.started", sessionId: "scripted-1" } },
     });
+  });
 
-    it("passes the requested settings to the provider", async () => {
-      await supervisor.startSession({
-        projectPath: "/tmp/test",
-        message: { text: "hi" },
+  it("passes the requested settings to the provider", async () => {
+    await supervisor.send(
+      request({
         permissionMode: "plan",
-        modelSettings: {
-          model: "opus",
-          thinking: { type: "adaptive" },
-          effort: "high",
-          globalInstructions: "Prefer concise answers.",
-        },
-      });
-
-      expect(startCalls[0]).toMatchObject({
-        cwd: "/tmp/test",
-        initialMessage: { text: "hi" },
-        permissionMode: "plan",
-        model: "opus",
-        thinking: { type: "adaptive" },
-        effort: "high",
-        globalInstructions: "Prefer concise answers.",
-      });
-    });
-
-    it("tells its owner about every process it creates", async () => {
-      const created: string[] = [];
-      const owned = new Supervisor({
-        provider: createScriptedProvider({ holdOpen: true }),
-        onProcessCreated: (process) => created.push(process.ownerId ?? ""),
-      });
-      await owned.startSession({
-        projectPath: "/tmp/test",
-        ownerId: "app-1",
-        message: { text: "hi" },
-      });
-      expect(created).toEqual(["app-1"]);
-      await owned.close();
+        settings: { model: "opus", thinking: { type: "adaptive" }, effort: "high" },
+      }),
+    );
+    expect(startCalls[0]).toMatchObject({
+      cwd: "/tmp/test",
+      initialMessage: { text: "hi" },
+      permissionMode: "plan",
+      model: "opus",
+      thinking: { type: "adaptive" },
+      effort: "high",
     });
   });
 
-  describe("resumeSession", () => {
-    it("resumes the named session in a new process", async () => {
-      const process = await supervisor.resumeSession({
-        sessionId: "sess-123",
-        projectPath: "/tmp/test",
-        message: { text: "continue" },
-      });
+  it("resumes the native conversation in a new process", async () => {
+    await supervisor.send(request({ nativeSessionId: "sess-123" }));
+    expect(startCalls[0]?.resumeSessionId).toBe("sess-123");
+  });
 
-      expect(process.sessionId).toBe("sess-123");
-      expect(startCalls[0]?.resumeSessionId).toBe("sess-123");
-    });
+  it("sends to the session's live process while it still matches", async () => {
+    const first = await supervisor.send(request({ nativeSessionId: "sess-123" }));
+    const second = await supervisor.send(
+      request({ nativeSessionId: "sess-123", message: { text: "second" } }),
+    );
+    expect(second).toBe(first);
+    expect(startCalls).toHaveLength(1);
+  });
 
-    it("sends to the live process of the same session", async () => {
-      const request = { sessionId: "sess-123", projectPath: "/tmp/test" };
-      const first = await supervisor.resumeSession({ ...request, message: { text: "first" } });
-      const second = await supervisor.resumeSession({ ...request, message: { text: "second" } });
+  it("keeps separate processes for separate sessions", async () => {
+    const first = await supervisor.send(request());
+    const second = await supervisor.send(request({ sessionId: "app-2" }));
+    expect(second.id).not.toBe(first.id);
+  });
 
-      expect(second).toBe(first);
-      expect(startCalls).toHaveLength(1);
-    });
-
-    it("starts a separate process for a different session", async () => {
-      const first = await supervisor.resumeSession({
-        sessionId: "sess-123",
-        projectPath: "/tmp/test",
-        message: { text: "first" },
-      });
-      const second = await supervisor.resumeSession({
-        sessionId: "sess-456",
-        projectPath: "/tmp/test",
-        message: { text: "second" },
-      });
-
+  it.each([
+    ["the model", { settings: { model: "sonnet" } }],
+    ["the effort", { settings: { effort: "high" } }],
+    ["the native conversation (a rewind)", { nativeSessionId: "fork-1" }],
+  ])(
+    "replaces the live process when %s changes, without reporting its ending",
+    async (_, change) => {
+      const first = await supervisor.send(request({ nativeSessionId: "sess-123" }));
+      const second = await supervisor.send(
+        request({ nativeSessionId: "sess-123", ...change, message: { text: "again" } }),
+      );
       expect(second.id).not.toBe(first.id);
+      expect(first.isTerminated).toBe(true);
+      expect(startCalls).toHaveLength(2);
+      expect(events.some(({ event }) => event.type === "terminated")).toBe(false);
+    },
+  );
+
+  it("starts a new process once the old one died, reporting the death", async () => {
+    let started = 0;
+    const dying = new Supervisor({
+      provider: providerFromSessionFactory(async (options) => {
+        started += 1;
+        async function* stream(): AsyncIterableIterator<AgentEvent> {
+          yield { type: "session.started", sessionId: options.resumeSessionId ?? "dying-1" };
+          throw new Error("process exited");
+        }
+        return { events: stream(), queue: new MessageQueue(), abort: () => {} };
+      }),
+      onEvent: (sessionId, event) => events.push({ sessionId, event }),
+    });
+    const first = await dying.send(request({ nativeSessionId: "dying-1" }));
+    await vi.waitFor(() => expect(first.isTerminated).toBe(true));
+    expect(dying.get("app-1")).toBeUndefined();
+    expect(events.at(-1)?.event).toMatchObject({
+      type: "terminated",
+      reason: "provider stream failed",
     });
 
-    it("restarts the process when the effort changes", async () => {
-      const request = { sessionId: "sess-123", projectPath: "/tmp/test" };
-      const first = await supervisor.resumeSession({ ...request, message: { text: "first" } });
-      const second = await supervisor.resumeSession({
-        ...request,
-        message: { text: "think harder" },
-        modelSettings: { effort: "high" },
-      });
+    const second = await dying.send(request({ nativeSessionId: "dying-1" }));
+    expect(second.id).not.toBe(first.id);
+    expect(started).toBe(2);
+    dying.close();
+  });
 
-      expect(second.id).not.toBe(first.id);
-      expect(startCalls[1]).toMatchObject({ resumeSessionId: "sess-123", effort: "high" });
-    });
-
-    it("starts a new process once the old one died", async () => {
-      let started = 0;
-      const dying = new Supervisor({
-        provider: providerFromSessionFactory(async (options) => {
-          started += 1;
-          async function* events(): AsyncIterableIterator<AgentEvent> {
-            yield { type: "session.started", sessionId: options.resumeSessionId ?? "dying-1" };
-            throw new Error("process exited");
-          }
-          return { events: events(), queue: new MessageQueue(), abort: () => {} };
-        }),
-      });
-      const request = { sessionId: "dying-1", projectPath: "/tmp/test" };
-      const first = await dying.resumeSession({ ...request, message: { text: "first" } });
-      await vi.waitFor(() => expect(first.isTerminated).toBe(true));
-
-      const second = await dying.resumeSession({ ...request, message: { text: "again" } });
-
-      expect(second.id).not.toBe(first.id);
-      expect(started).toBe(2);
-      await dying.close();
-    });
+  it("release stops the process silently", async () => {
+    const process = await supervisor.send(request());
+    supervisor.release("app-1", "Session deleted");
+    expect(process.terminationReason).toBe("Session deleted");
+    expect(supervisor.get("app-1")).toBeUndefined();
+    expect(events.some(({ event }) => event.type === "terminated")).toBe(false);
   });
 
   it("names the default provider for no name, and refuses an unknown one", () => {
@@ -158,13 +146,13 @@ describe("Supervisor", () => {
       const idle = new Supervisor({
         provider: providerFromSessionFactory(async () => {
           started += 1;
-          async function* events(): AsyncIterableIterator<AgentEvent> {
-            yield { type: "session.started", sessionId: "idle-alive-session-1" };
+          async function* stream(): AsyncIterableIterator<AgentEvent> {
+            yield { type: "session.started", sessionId: "idle-native" };
             yield { type: "turn.completed" };
             while (!aborted) await new Promise((resolve) => setTimeout(resolve, 10));
           }
           return {
-            events: events(),
+            events: stream(),
             queue: new MessageQueue(),
             abort: () => {
               aborted = true;
@@ -173,29 +161,25 @@ describe("Supervisor", () => {
           };
         }),
         idleTimeoutMs: 100,
+        onEvent: () => {},
       });
 
-      const process = await idle.startSession({
-        projectPath: "/tmp/test",
-        message: { text: "Keep this session alive" },
-      });
+      const process = await idle.send(request({ message: { text: "Keep this session alive" } }));
       await vi.advanceTimersByTimeAsync(0);
       expect(process.state.type).toBe("idle");
 
       await vi.advanceTimersByTimeAsync(150);
 
       expect(aborted).toBe(true);
-      expect(process.sessionId).toBe("idle-alive-session-1");
+      expect(process.nativeSessionId).toBe("idle-native");
       // The session outlives its worker: the next message starts a new one.
       aborted = false;
-      const next = await idle.resumeSession({
-        sessionId: "idle-alive-session-1",
-        projectPath: "/tmp/test",
-        message: { text: "again" },
-      });
+      const next = await idle.send(
+        request({ nativeSessionId: "idle-native", message: { text: "again" } }),
+      );
       expect(next.id).not.toBe(process.id);
       expect(started).toBe(2);
-      await idle.close();
+      idle.close();
     } finally {
       vi.useRealTimers();
     }

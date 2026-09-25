@@ -1,7 +1,8 @@
 import type { LibraryCitation } from "@scholaraio-hub/shared";
 import { describe, expect, it } from "vitest";
+import { linkCitations } from "../citations";
 import { type Part, isVisiblePart } from "../parts";
-import { buildTurnTree, linkCitations } from "../turnTree";
+import { buildTurnTree } from "../turnTree";
 
 const tool = (toolName: string, id: string, parentCallId?: string) =>
   ({
@@ -31,8 +32,8 @@ const citation: LibraryCitation = {
 
 const ids = (segments: ReturnType<typeof buildTurnTree>["segments"]) =>
   segments.map((segment) =>
-    segment.kind === "explored"
-      ? `explored(${segment.calls.map((call) => call.index).join(",")})`
+    segment.kind === "activity"
+      ? `activity(${segment.items.map((item) => item.index).join(",")})`
       : segment.index,
   );
 
@@ -59,7 +60,7 @@ describe("buildTurnTree", () => {
     expect(turn.nested.size).toBe(0);
   });
 
-  it("groups exploration within each timeline separately", () => {
+  it("folds tool work within each timeline separately", () => {
     const parts = [
       tool("Task", "task"),
       tool("Read", "a", "task"),
@@ -68,8 +69,8 @@ describe("buildTurnTree", () => {
       tool("Glob", "d"),
     ];
     const turn = buildTurnTree(parts);
-    expect(ids(turn.segments)).toEqual([0, "explored(3,4)"]);
-    expect(ids(turn.nested.get("task")?.segments ?? [])).toEqual(["explored(1,2)"]);
+    expect(ids(turn.segments)).toEqual(["activity(0,3,4)"]);
+    expect(ids(turn.nested.get("task")?.segments ?? [])).toEqual(["activity(1,2)"]);
   });
 
   it("collects citations and leaves them off the timeline", () => {

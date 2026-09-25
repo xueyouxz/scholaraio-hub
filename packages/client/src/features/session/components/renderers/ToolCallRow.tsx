@@ -1,14 +1,14 @@
 import { readToolOutput } from "@scholaraio-hub/shared";
+import { ChevronRight } from "lucide-react";
 import { type ReactNode, memo, useState } from "react";
 import type { ToolPart } from "../../lib/parts";
+import { DiffStatsLabel } from "./blocks";
 import { rendererFor, toolLabel } from "./registry";
 import type { ToolStatus, ToolView } from "./types";
 
-export type { ToolPart };
-
 /** Normalize an AI SDK dynamic-tool part into the provider-neutral view. */
 export function toolView(part: ToolPart, streaming: boolean): ToolView {
-  const running = part.state === "output-available" && part.preliminary === true;
+  const partial = part.state === "output-available" && part.preliminary === true;
   const result =
     part.state === "output-available"
       ? readToolOutput(part.output)
@@ -17,14 +17,14 @@ export function toolView(part: ToolPart, streaming: boolean): ToolView {
         : undefined;
   let status: ToolStatus;
   if (part.state === "output-denied") status = "error";
-  else if (result && !running) status = result.isError ? "error" : "complete";
+  else if (result && !partial) status = result.isError ? "error" : "complete";
   else status = streaming ? "pending" : "aborted";
   return {
     name: part.toolName,
     input: part.input,
     status,
     result,
-    running,
+    partial,
     inputStreaming: part.state === "input-streaming",
   };
 }
@@ -95,6 +95,7 @@ export const ToolCallRow = memo(function ToolCallRow({
     : undefined;
   const outcome =
     view.status === "pending" ? undefined : (renderer.resultSummary?.(view) ?? toolUses);
+  const stats = view.status === "complete" ? renderer.diffStats?.(view) : undefined;
   // While a subagent works, its latest step is the useful preview.
   const preview = expanded ? null : view.status === "pending" && nested?.latest ? (
     <span className="tool-nested-latest">{nested.latest}</span>
@@ -126,7 +127,8 @@ export const ToolCallRow = memo(function ToolCallRow({
           {toolLabel(renderer, view)}
         </span>
         <span className="tool-summary">{renderer.summary(view)}</span>
-        {outcome ? (
+        {stats ? <DiffStatsLabel {...stats} /> : null}
+        {outcome && !stats ? (
           <span className={`tool-outcome${view.status === "error" ? " text-error" : ""}`}>
             {outcome}
           </span>
@@ -134,9 +136,7 @@ export const ToolCallRow = memo(function ToolCallRow({
         {view.status === "aborted" ? (
           <span className="tool-aborted-label">(interrupted)</span>
         ) : null}
-        <span className="expand-chevron" aria-hidden="true">
-          {expanded ? "▾" : "▸"}
-        </span>
+        <Chevron open={expanded} />
       </button>
       {interaction ? <div className="tool-row-interaction">{interaction}</div> : null}
       {preview && !interaction ? <div className="tool-row-preview">{preview}</div> : null}
@@ -153,7 +153,19 @@ export const ToolCallRow = memo(function ToolCallRow({
   );
 }, sameToolCall);
 
-function Spinner() {
+/** The disclosure mark after a row's text: a V pointing right, turned down when open. */
+export function Chevron({ open }: { open: boolean }) {
+  return (
+    <ChevronRight
+      size={13}
+      strokeWidth={2}
+      aria-hidden="true"
+      className={`disclosure-chevron${open ? " open" : ""}`}
+    />
+  );
+}
+
+export function Spinner() {
   return (
     <svg className="spinner" width="12" height="12" viewBox="0 0 16 16" aria-hidden="true">
       <circle

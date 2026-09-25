@@ -22,22 +22,24 @@ describe("skills directory", () => {
 
   it("seeds once from the legacy location", async () => {
     const root = dataDir();
-    const directory = await ensureSkillsDirectory(root, legacySkills());
+    const directory = await ensureSkillsDirectory(skillsDirectory(root), legacySkills());
     expect(readFileSync(path.join(directory, "search", "SKILL.md"), "utf8")).toContain("search");
   });
 
   it("keeps the user's own edits on later starts", async () => {
     const root = dataDir();
     const legacy = legacySkills();
-    const directory = await ensureSkillsDirectory(root, legacy);
+    const directory = await ensureSkillsDirectory(skillsDirectory(root), legacy);
     writeFileSync(path.join(directory, "search", "SKILL.md"), "---\nname: mine\n---\n");
 
-    await ensureSkillsDirectory(root, legacy);
+    await ensureSkillsDirectory(skillsDirectory(root), legacy);
     expect(readFileSync(path.join(directory, "search", "SKILL.md"), "utf8")).toContain("mine");
   });
 
   it("creates an empty directory when there is nothing to seed", async () => {
     const missing = path.join(tmpdir(), "skills-absent-", String(Date.now()));
-    expect(readdirSync(await ensureSkillsDirectory(dataDir(), missing))).toEqual([]);
+    expect(readdirSync(await ensureSkillsDirectory(skillsDirectory(dataDir()), missing))).toEqual(
+      [],
+    );
   });
 });

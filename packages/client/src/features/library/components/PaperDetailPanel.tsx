@@ -1,23 +1,35 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { BookOpen, FolderPlus, X } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
-import { useNavigate, useSearchParams } from "react-router-dom";
-import { libraryApi } from "../../../core/library";
-import { StatusBadge } from "../../../shared/ui/StatusBadge";
-import { buildPaperImageUrl } from "../paperUtils";
-import type { PaperReference } from "../types";
+import { useLocation, useNavigate } from "react-router-dom";
+import { libraryApi, readerUrl } from "../../../core/library";
+import { paperAssetUrl } from "../paperSummary";
+import type { PaperSummary } from "../paperSummary";
+import { StatusBadge } from "./StatusBadge";
 
 interface Props {
-  paper: PaperReference | null;
+  /** The workspace the panel is shown in; scopes references and the reader. */
+  projectId?: string;
+  paper: PaperSummary | null;
   onClose: () => void;
 }
 
-export function PaperDetailPanel({ paper, onClose }: Props) {
+export function PaperDetailPanel({ paper, projectId, onClose }: Props) {
   const navigate = useNavigate();
-  const [params] = useSearchParams();
+  const location = useLocation();
+  // Every paper opened from here comes back to this page, in this workspace.
+  const openReader = (paperId: string) =>
+    navigate(readerUrl(paperId, { projectId, returnTo: `${location.pathname}${location.search}` }));
   const queryClient = useQueryClient();
   const [wsOpen, setWsOpen] = useState(false);
   const [addedTo, setAddedTo] = useState<Set<string>>(new Set());
+  // Another paper starts with the workspace menu closed and nothing added yet.
+  const [shownId, setShownId] = useState(paper?.id);
+  if (shownId !== paper?.id) {
+    setShownId(paper?.id);
+    setWsOpen(false);
+    setAddedTo(new Set());
+  }
   const wsRef = useRef<HTMLDivElement>(null);
 
   const workspacesQuery = useQuery({
@@ -28,10 +40,10 @@ export function PaperDetailPanel({ paper, onClose }: Props) {
   });
 
   const addPaperMutation = useMutation({
-    mutationFn: ({ workspaceName, paperId }: { workspaceName: string; paperId: string }) =>
-      libraryApi.projectPapers(workspaceName, [paperId], "add"),
+    mutationFn: ({ projectId, paperId }: { projectId: string; paperId: string }) =>
+      libraryApi.projectPapers(projectId, [paperId], "add"),
     onSuccess: (_res, variables) => {
-      setAddedTo((prev) => new Set([...prev, variables.workspaceName]));
+      setAddedTo((prev) => new Set([...prev, variables.projectId]));
       queryClient.invalidateQueries({ queryKey: ["library", "projects"] });
       queryClient.invalidateQueries({
         queryKey: ["library", "projects"],
@@ -46,7 +58,6 @@ export function PaperDetailPanel({ paper, onClose }: Props) {
     enabled: !!paper,
   });
   const images = imageQuery.data?.images ?? (paper?.coverImage ? [paper.coverImage] : []);
-  const projectId = params.get("project") || undefined;
   const referencesQuery = useQuery({
     queryKey: ["library", "references", paper?.id, projectId],
     queryFn: ({ signal }) => libraryApi.references(paper?.id ?? "", signal, projectId),
@@ -83,14 +94,8 @@ export function PaperDetailPanel({ paper, onClose }: Props) {
     return () => document.removeEventListener("keydown", handler);
   }, [paper, wsOpen, onClose]);
   const addingTo = addPaperMutation.isPending
-    ? (addPaperMutation.variables?.workspaceName ?? null)
+    ? (addPaperMutation.variables?.projectId ?? null)
     : null;
-
-  useEffect(() => {
-    if (paper === undefined) return;
-    setWsOpen(false);
-    setAddedTo(new Set());
-  }, [paper]);
 
   useEffect(() => {
     if (!wsOpen) return;
@@ -101,10 +106,10 @@ export function PaperDetailPanel({ paper, onClose }: Props) {
     return () => document.removeEventListener("mousedown", handler);
   }, [wsOpen]);
 
-  const handleAdd = (wsName: string) => {
+  const handleAdd = (targetProjectId: string) => {
     if (!paper || addingTo) return;
     setWsOpen(false);
-    addPaperMutation.mutate({ workspaceName: wsName, paperId: paper.id });
+    addPaperMutation.mutate({ projectId: targetProjectId, paperId: paper.id });
   };
 
   return (
@@ -134,7 +139,7 @@ export function PaperDetailPanel({ paper, onClose }: Props) {
           </div>
 
           {/* Body */}
-          <div className="flex-1 overflow-y-auto no-scrollbar px-5 py-4 space-y-5">
+          <div className="flex-1 overflow-y-auto px-5 py-4 space-y-5">
             {/* Authors */}
             <div>
               <p className="text-[10px] font-mono uppercase tracking-[0.2em] text-on-surface-variant/60 mb-1.5">
@@ -174,14 +179,9 @@ export function PaperDetailPanel({ paper, onClose }: Props) {
               </p>
               <div className="flex flex-wrap gap-2">
                 <StatusBadge status={paper.status} />
-                {paper.hasPdfFile ? (
+                {paper.hasPdf ? (
                   <span className="text-[10px] font-mono font-bold text-secondary bg-secondary-container/30 px-2 py-0.5 rounded leading-none uppercase">
                     PDF
-                  </span>
-                ) : null}
-                {paper.isIndexed ? (
-                  <span className="text-[10px] font-mono font-bold text-primary bg-primary-container/10 px-2 py-0.5 rounded leading-none uppercase">
-                    Indexed
                   </span>
                 ) : null}
               </div>
@@ -193,11 +193,11 @@ export function PaperDetailPanel({ paper, onClose }: Props) {
                 <p className="text-[10px] font-mono uppercase tracking-[0.2em] text-on-surface-variant/60 mb-2">
                   图片
                 </p>
-                <div className="flex gap-2 overflow-x-auto no-scrollbar" style={{ height: 160 }}>
+                <div className="flex gap-2 overflow-x-auto" style={{ height: 160 }}>
                   {images.map((filename) => (
                     <img
                       key={filename}
-                      src={buildPaperImageUrl(paper.id, filename)}
+                      src={paperAssetUrl(paper.id, filename)}
                       alt=""
                       loading="lazy"
                       className="h-full w-auto object-contain shrink-0"
@@ -283,11 +283,7 @@ export function PaperDetailPanel({ paper, onClose }: Props) {
                         <button
                           type="button"
                           className="cursor-pointer border-0 bg-transparent p-0 text-left text-primary"
-                          onClick={() =>
-                            navigate(
-                              `/library/${encodeURIComponent(reference.paper?.id ?? "")}?mode=overview`,
-                            )
-                          }
+                          onClick={() => openReader(reference.paper?.id ?? "")}
                         >
                           {reference.paper.title}
                         </button>
@@ -313,9 +309,7 @@ export function PaperDetailPanel({ paper, onClose }: Props) {
                       <button
                         type="button"
                         className="cursor-pointer border-0 bg-transparent p-0 text-left text-primary"
-                        onClick={() =>
-                          navigate(`/library/${encodeURIComponent(source.id)}?mode=overview`)
-                        }
+                        onClick={() => openReader(source.id)}
                       >
                         {source.title}
                       </button>
@@ -333,14 +327,10 @@ export function PaperDetailPanel({ paper, onClose }: Props) {
           ) : null}
           {/* Footer actions */}
           <div className="shrink-0 px-5 pb-5 pt-4 border-t border-outline-variant/10 space-y-2.5">
-            {paper.hasPdfFile ? (
+            {paper.hasPdf ? (
               <button
                 type="button"
-                onClick={() =>
-                  navigate(
-                    `/library/${encodeURIComponent(paper.id)}?returnTo=${encodeURIComponent(`/library?${params}`)}&mode=overview${params.get("project") ? `&project=${encodeURIComponent(params.get("project") ?? "")}` : ""}`,
-                  )
-                }
+                onClick={() => openReader(paper.id)}
                 className="flex items-center justify-center gap-2 w-full py-2.5 rounded-xl bg-surface-container text-on-surface text-xs font-semibold hover:bg-surface-container-high transition-colors border-0 cursor-pointer"
               >
                 <BookOpen className="w-3.5 h-3.5" />
@@ -359,7 +349,7 @@ export function PaperDetailPanel({ paper, onClose }: Props) {
                 {addingTo ? `添加到 ${addingTo}…` : "添加到文献项目"}
               </button>
               {wsOpen ? (
-                <div className="absolute bottom-full mb-2 left-0 right-0 bg-surface-container-highest border border-outline-variant/20 rounded-xl p-1.5 shadow-xl z-50 max-h-44 overflow-y-auto no-scrollbar">
+                <div className="absolute bottom-full mb-2 left-0 right-0 bg-surface-container-highest border border-outline-variant/20 rounded-xl p-1.5 shadow-xl z-50 max-h-44 overflow-y-auto">
                   {workspaces.length === 0 ? (
                     <p className="text-xs text-on-surface-variant px-3 py-2">暂无工作区</p>
                   ) : (

@@ -1,3 +1,4 @@
+import type { ProjectionPoint } from "@scholaraio-hub/shared";
 import {
   type D3ZoomEvent,
   type ZoomTransform,
@@ -8,33 +9,48 @@ import {
   zoom,
   zoomIdentity,
 } from "d3";
-import { Lasso, RotateCcw, ZoomIn } from "lucide-react";
+import { Hand, Lasso, Minus, Plus, RotateCcw } from "lucide-react";
 import { forwardRef, useEffect, useImperativeHandle, useRef, useState } from "react";
-import type { ScholarProjectionPoint } from "../../../../core/scholarTypes";
-import type { TopicColorMap } from "../../types";
+import type { TopicColorMap } from "../../utils/topicColors";
 
 export interface ScatterPlotData {
-  points: ScholarProjectionPoint[];
+  points: ProjectionPoint[];
   activeIds: Set<string> | null;
   selectedId: string | null;
   topicColors: TopicColorMap;
 }
 
-export type ScatterMode = "none" | "zoom" | "lasso";
+export type ScatterMode = "pan" | "lasso";
 
-const DPR = typeof window !== "undefined" ? window.devicePixelRatio || 1 : 1;
 const HIT_RADIUS = 12;
+const POINT_RADIUS = 3;
+/** How far the map may be zoomed out and in. */
+const ZOOM_EXTENT: [number, number] = [0.8, 16];
+const ZOOM_STEP = 1.6;
+const ENTRANCE_MS = 700;
+const PRIMARY = "#005235";
 
+const reducedMotion = () =>
+  typeof window !== "undefined" && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+const easeOut = (t: number) => 1 - (1 - t) ** 3;
+
+/**
+ * The map's imperative half: canvas, scales, zoom and lasso.
+ *
+ * React hands it data through `update`; everything that changes per frame —
+ * the zoom transform, the hovered point, the entrance animation — lives here.
+ */
 class ScatterPlotController {
   private canvas: HTMLCanvasElement;
   private tooltip: HTMLDivElement;
   private transform: ZoomTransform = zoomIdentity;
-  private hoveredPt: ScholarProjectionPoint | null = null;
-  private mode: ScatterMode = "none";
+  private hoveredPt: ProjectionPoint | null = null;
+  private mode: ScatterMode = "pan";
+  private dpr = typeof window !== "undefined" ? window.devicePixelRatio || 1 : 1;
 
   private xScale = scaleLinear<number, number>().range([40, 560]);
   private yScale = scaleLinear<number, number>().range([360, 40]);
-  private qt = quadtree<ScholarProjectionPoint>()
+  private qt = quadtree<ProjectionPoint>()
     .x(() => 0)
     .y(() => 0);
 
@@ -45,17 +61,27 @@ class ScatterPlotController {
     topicColors: new Map(),
   };
 
-  private pointsRef: ScholarProjectionPoint[] = [];
+  private pointsRef: ProjectionPoint[] = [];
   private lassoPath: [number, number][] = [];
   private frozenLassoPath: [number, number][] = [];
   private lassoSelectedIds: Set<string> | null = null;
   private isLassoing = false;
+  /** 0 → 1 while points grow in after new data arrives. */
+  private appear = 1;
+  private frame = 0;
 
   private resizeObserver: ResizeObserver;
   private zoomBehavior = zoom<HTMLCanvasElement, unknown>()
-    .scaleExtent([0.3, 20])
+    .scaleExtent(ZOOM_EXTENT)
+    // Lasso mode keeps the wheel for zooming; dragging draws the lasso instead.
+    .filter((event: Event) =>
+      this.mode === "lasso"
+        ? event.type === "wheel"
+        : !(event as MouseEvent).button && !(event as MouseEvent).ctrlKey,
+    )
     .on("zoom", (e: D3ZoomEvent<HTMLCanvasElement, unknown>) => {
       this.transform = e.transform;
+      this.hideTooltip();
       this.draw();
     });
 
@@ -65,13 +91,13 @@ class ScatterPlotController {
     private onLassoSelect: (ids: Set<string>) => void,
   ) {
     this.canvas = document.createElement("canvas");
-    this.canvas.style.cssText = "display:block;cursor:default;width:100%;height:100%";
+    this.canvas.style.cssText = "display:block;width:100%;height:100%;cursor:grab";
     container.appendChild(this.canvas);
     container.style.position = "relative";
 
     this.tooltip = document.createElement("div");
     this.tooltip.style.cssText =
-      "pointer-events:none;position:absolute;display:none;z-index:10;background:var(--color-surface-container-high,#1e1e1e);border:1px solid rgba(0,0,0,0.12);border-radius:8px;padding:2px 8px;font-size:11px;max-width:220px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis";
+      "pointer-events:none;position:absolute;z-index:10;opacity:0;transition:opacity 120ms ease;background:var(--color-surface-container-lowest);border:1px solid color-mix(in srgb, var(--color-outline-variant) 40%, transparent);box-shadow:0 8px 24px rgba(23,29,26,0.12);border-radius:8px;padding:4px 8px;font-size:11px;max-width:260px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:var(--color-on-surface)";
     container.appendChild(this.tooltip);
 
     this.canvas.addEventListener("mousemove", this.onMouseMove);
@@ -79,6 +105,7 @@ class ScatterPlotController {
     this.canvas.addEventListener("mouseup", this.onMouseUp);
     this.canvas.addEventListener("click", this.onMouseClick);
     this.canvas.addEventListener("mouseleave", this.onMouseLeave);
+    select(this.canvas).call(this.zoomBehavior).on("dblclick.zoom", null);
 
     this.resizeObserver = new ResizeObserver((entries) => {
       const { width, height } = entries[0]?.contentRect || { width: 0, height: 0 };
@@ -91,7 +118,26 @@ class ScatterPlotController {
   }
 
   resetZoom() {
-    select(this.canvas).transition().duration(250).call(this.zoomBehavior.transform, zoomIdentity);
+    this.frozenLassoPath = [];
+    this.lassoSelectedIds = null;
+    select(this.canvas)
+      .transition()
+      .duration(reducedMotion() ? 0 : 350)
+      .call(this.zoomBehavior.transform, zoomIdentity);
+    this.draw();
+  }
+
+  zoomBy(factor: number) {
+    select(this.canvas)
+      .transition()
+      .duration(reducedMotion() ? 0 : 250)
+      .call(this.zoomBehavior.scaleBy, factor);
+  }
+
+  clearLasso() {
+    this.frozenLassoPath = [];
+    this.lassoSelectedIds = null;
+    this.draw();
   }
 
   setMode(mode: ScatterMode) {
@@ -99,18 +145,8 @@ class ScatterPlotController {
     this.lassoPath = [];
     this.isLassoing = false;
     this.hoveredPt = null;
-    this.tooltip.style.display = "none";
-
-    if (mode === "none") {
-      this.frozenLassoPath = [];
-      this.lassoSelectedIds = null;
-    }
-
-    const sel = select(this.canvas);
-    mode === "zoom" ? sel.call(this.zoomBehavior) : sel.on(".zoom", null);
-    this.canvas.style.cursor =
-      mode === "lasso" ? "crosshair" : mode === "zoom" ? "crosshair" : "default";
-
+    this.hideTooltip();
+    this.canvas.style.cursor = mode === "lasso" ? "crosshair" : "grab";
     this.draw();
   }
 
@@ -118,48 +154,94 @@ class ScatterPlotController {
     this.data = data;
     if (data.points !== this.pointsRef) {
       this.pointsRef = data.points;
+      this.frozenLassoPath = [];
+      this.lassoSelectedIds = null;
       this.transform = zoomIdentity;
+      select(this.canvas).call(this.zoomBehavior.transform, zoomIdentity);
       this.updateView();
+      this.animateIn();
     } else {
       this.draw();
     }
   }
 
   destroy() {
+    cancelAnimationFrame(this.frame);
     this.resizeObserver.disconnect();
+    select(this.canvas).on(".zoom", null).interrupt();
+    this.canvas.removeEventListener("mousemove", this.onMouseMove);
+    this.canvas.removeEventListener("mousedown", this.onMouseDown);
+    this.canvas.removeEventListener("mouseup", this.onMouseUp);
+    this.canvas.removeEventListener("click", this.onMouseClick);
+    this.canvas.removeEventListener("mouseleave", this.onMouseLeave);
     this.canvas.remove();
     this.tooltip.remove();
   }
 
+  /** Grow the points in from nothing, so new data arrives rather than appears. */
+  private animateIn() {
+    cancelAnimationFrame(this.frame);
+    if (reducedMotion() || !this.data.points.length) {
+      this.appear = 1;
+      this.draw();
+      return;
+    }
+    const start = performance.now();
+    const step = (now: number) => {
+      // A frame's timestamp is when the frame began, which can precede `start`;
+      // unclamped, the first frame's radius goes negative, arc() throws, and
+      // the animation (and the map) stops there, blank.
+      this.appear = Math.min(1, Math.max(0, (now - start) / ENTRANCE_MS));
+      this.draw();
+      if (this.appear < 1) this.frame = requestAnimationFrame(step);
+    };
+    this.appear = 0;
+    this.frame = requestAnimationFrame(step);
+  }
+
+  private hideTooltip() {
+    this.tooltip.style.opacity = "0";
+  }
+
   private resize(w: number, h: number) {
-    this.canvas.width = Math.floor(w) * DPR;
-    this.canvas.height = Math.floor(h) * DPR;
+    this.dpr = window.devicePixelRatio || 1;
+    this.canvas.width = Math.floor(w * this.dpr);
+    this.canvas.height = Math.floor(h * this.dpr);
     this.canvas.style.width = `${w}px`;
     this.canvas.style.height = `${h}px`;
+    // Panning stops a little past the map's edge instead of losing it off-screen.
+    this.zoomBehavior
+      .extent([
+        [0, 0],
+        [w, h],
+      ])
+      .translateExtent([
+        [-w * 0.25, -h * 0.25],
+        [w * 1.25, h * 1.25],
+      ]);
     this.updateView();
   }
 
   private updateView() {
     const { points } = this.data;
-    const w = this.canvas.width / DPR || 1;
-    const h = this.canvas.height / DPR || 1;
+    const w = this.canvas.width / this.dpr || 1;
+    const h = this.canvas.height / this.dpr || 1;
+    const pad = 28;
 
     if (points.length) {
       const [xMin, xMax] = extent(points, (p) => p.x) as [number, number];
       const [yMin, yMax] = extent(points, (p) => p.y) as [number, number];
-      const xPad = (xMax - xMin) * 0.05 || 0.1;
-      const yPad = (yMax - yMin) * 0.05 || 0.1;
-
-      this.xScale.domain([xMin - xPad, xMax + xPad]).range([40, w - 40]);
-      this.yScale.domain([yMin - yPad, yMax + yPad]).range([h - 40, 40]);
-
-      this.qt = quadtree<ScholarProjectionPoint>()
+      const xPad = (xMax - xMin) * 0.04 || 0.1;
+      const yPad = (yMax - yMin) * 0.04 || 0.1;
+      this.xScale.domain([xMin - xPad, xMax + xPad]).range([pad, w - pad]);
+      this.yScale.domain([yMin - yPad, yMax + yPad]).range([h - pad, pad]);
+      this.qt = quadtree<ProjectionPoint>()
         .x((p) => this.xScale(p.x))
         .y((p) => this.yScale(p.y))
         .addAll(points);
     } else {
-      this.xScale.domain([-1, 1]).range([40, w - 40]);
-      this.yScale.domain([-1, 1]).range([h - 40, 40]);
+      this.xScale.domain([-1, 1]).range([pad, w - pad]);
+      this.yScale.domain([-1, 1]).range([h - pad, pad]);
     }
     this.draw();
   }
@@ -170,39 +252,40 @@ class ScatterPlotController {
     const { points, activeIds, selectedId, topicColors } = this.data;
     const t = this.transform;
     const effectiveActive = this.lassoSelectedIds ?? activeIds;
+    const grow = easeOut(this.appear);
+    // Points grow slightly with zoom, so a close look is not a scatter of specks.
+    const radius = POINT_RADIUS * Math.min(2, Math.max(1, Math.sqrt(t.k))) * grow;
 
     ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
     ctx.save();
-    ctx.scale(DPR, DPR);
+    ctx.scale(this.dpr, this.dpr);
 
-    let selectedPt: ScholarProjectionPoint | null = null;
-
-    const drawPt = (pt: ScholarProjectionPoint, r: number) => {
+    let selectedPt: ProjectionPoint | null = null;
+    const drawPt = (pt: ProjectionPoint, r: number) => {
       ctx.fillStyle = topicColors.get(pt.topicId) ?? "#bfc9c0";
       ctx.beginPath();
       ctx.arc(t.applyX(this.xScale(pt.x)), t.applyY(this.yScale(pt.y)), r, 0, Math.PI * 2);
       ctx.fill();
     };
 
-    // 背景点（未命中筛选）
+    // Points outside the current selection recede.
     if (effectiveActive) {
-      ctx.globalAlpha = 0.12;
+      ctx.globalAlpha = 0.12 * grow;
       for (const pt of points) {
         if (pt.id === selectedId) selectedPt = pt;
-        if (!effectiveActive.has(pt.id)) drawPt(pt, 3);
+        if (!effectiveActive.has(pt.id)) drawPt(pt, radius);
       }
     }
 
-    // 激活点/正常点
-    ctx.globalAlpha = 1;
+    ctx.globalAlpha = 0.9 * grow;
     for (const pt of points) {
       if (!effectiveActive || effectiveActive.has(pt.id)) {
         if (pt.id === selectedId) selectedPt = pt;
-        if (pt !== this.hoveredPt && pt !== selectedPt) drawPt(pt, 3);
+        if (pt !== this.hoveredPt && pt !== selectedPt) drawPt(pt, radius);
       }
     }
+    ctx.globalAlpha = 1;
 
-    // 悬浮高亮点
     if (this.hoveredPt) {
       const cx = t.applyX(this.xScale(this.hoveredPt.x));
       const cy = t.applyY(this.yScale(this.hoveredPt.y));
@@ -210,44 +293,41 @@ class ScatterPlotController {
       ctx.strokeStyle = "#ffffff";
       ctx.lineWidth = 1.5;
       ctx.beginPath();
-      ctx.arc(cx, cy, 4, 0, Math.PI * 2);
+      ctx.arc(cx, cy, radius + 1.5, 0, Math.PI * 2);
       ctx.fill();
       ctx.stroke();
     }
 
-    // 选中点（绿色外环）
     if (selectedPt) {
       const cx = t.applyX(this.xScale(selectedPt.x));
       const cy = t.applyY(this.yScale(selectedPt.y));
-      ctx.fillStyle = topicColors.get(selectedPt.topicId) ?? "#22c55e";
-      ctx.strokeStyle = "#22c55e";
+      ctx.strokeStyle = PRIMARY;
       ctx.lineWidth = 2;
       ctx.beginPath();
-      ctx.arc(cx, cy, 6, 0, Math.PI * 2);
+      ctx.arc(cx, cy, radius + 4, 0, Math.PI * 2);
       ctx.stroke();
+      ctx.fillStyle = topicColors.get(selectedPt.topicId) ?? PRIMARY;
       ctx.beginPath();
-      ctx.arc(cx, cy, 3, 0, Math.PI * 2);
+      ctx.arc(cx, cy, radius, 0, Math.PI * 2);
       ctx.fill();
     }
 
     ctx.restore();
 
-    // 绘制套索轨迹
     const drawLassoPath = (path: [number, number][], frozen: boolean) => {
-      if (path.length < 2) return;
+      const first = path[0];
+      if (path.length < 2 || !first) return;
+      const dpr = this.dpr;
       ctx.save();
-      ctx.strokeStyle = "#005235";
-      ctx.lineWidth = (frozen ? 1.5 : 2) * DPR;
-      ctx.setLineDash(frozen ? [] : [6 * DPR, 4 * DPR]);
+      ctx.strokeStyle = PRIMARY;
+      ctx.lineWidth = (frozen ? 1.5 : 2) * dpr;
+      ctx.setLineDash(frozen ? [] : [6 * dpr, 4 * dpr]);
       ctx.fillStyle = frozen ? "rgba(0,82,53,0.05)" : "rgba(0,82,53,0.08)";
       ctx.beginPath();
-      const first = path[0];
-      if (!first) return;
-      ctx.moveTo(t.applyX(first[0]) * DPR, t.applyY(first[1]) * DPR);
+      ctx.moveTo(t.applyX(first[0]) * dpr, t.applyY(first[1]) * dpr);
       for (let i = 1; i < path.length; i++) {
         const pt = path[i];
-        if (!pt) continue;
-        ctx.lineTo(t.applyX(pt[0]) * DPR, t.applyY(pt[1]) * DPR);
+        if (pt) ctx.lineTo(t.applyX(pt[0]) * dpr, t.applyY(pt[1]) * dpr);
       }
       ctx.closePath();
       ctx.fill();
@@ -265,24 +345,24 @@ class ScatterPlotController {
 
     if (this.lassoPath.length > 2) {
       const selected = new Set<string>();
+      const path = this.lassoPath;
       for (const pt of this.data.points) {
         const px = this.xScale(pt.x);
         const py = this.yScale(pt.y);
         let inside = false;
-        // 射线法判断点是否在多边形内
-        for (let i = 0, j = this.lassoPath.length - 1; i < this.lassoPath.length; j = i++) {
-          const pi = this.lassoPath[i];
-          const pj = this.lassoPath[j];
+        // Ray casting: count how many polygon edges a ray from the point crosses.
+        for (let i = 0, j = path.length - 1; i < path.length; j = i++) {
+          const pi = path[i];
+          const pj = path[j];
           if (!pi || !pj) continue;
           const [xi, yi] = pi;
           const [xj, yj] = pj;
-          if (yi > py !== yj > py && px < ((xj - xi) * (py - yi)) / (yj - yi) + xi) {
+          if (yi > py !== yj > py && px < ((xj - xi) * (py - yi)) / (yj - yi) + xi)
             inside = !inside;
-          }
         }
         if (inside) selected.add(pt.id);
       }
-      this.frozenLassoPath = [...this.lassoPath];
+      this.frozenLassoPath = [...path];
       this.lassoSelectedIds = selected;
       this.onLassoSelect(selected);
     }
@@ -291,7 +371,10 @@ class ScatterPlotController {
   }
 
   private onMouseDown = (e: MouseEvent) => {
-    if (this.mode !== "lasso") return;
+    if (this.mode === "pan") {
+      this.canvas.style.cursor = "grabbing";
+      return;
+    }
     const rect = this.canvas.getBoundingClientRect();
     this.isLassoing = true;
     this.frozenLassoPath = [];
@@ -301,12 +384,15 @@ class ScatterPlotController {
     ];
   };
 
-  private onMouseUp = () => this.mode === "lasso" && this.commitLasso();
+  private onMouseUp = () => {
+    if (this.mode === "lasso") this.commitLasso();
+    else this.canvas.style.cursor = "grab";
+  };
 
   private onMouseLeave = () => {
     if (this.mode === "lasso") this.commitLasso();
     this.hoveredPt = null;
-    this.tooltip.style.display = "none";
+    this.hideTooltip();
     this.draw();
   };
 
@@ -320,31 +406,31 @@ class ScatterPlotController {
       this.draw();
       return;
     }
+    if (e.buttons) return;
 
-    if (this.mode === "zoom") {
-      const pt =
-        this.qt.find(
-          this.transform.invertX(mx),
-          this.transform.invertY(my),
-          HIT_RADIUS / (this.transform.k || 1),
-        ) ?? null;
-      if (pt !== this.hoveredPt) {
-        this.hoveredPt = pt;
-        if (pt) {
-          this.tooltip.style.display = "block";
-          this.tooltip.style.left = `${mx + 12}px`;
-          this.tooltip.style.top = `${my - 8}px`;
-          this.tooltip.textContent = pt.title || pt.id;
-        } else {
-          this.tooltip.style.display = "none";
-        }
-        this.draw();
-      }
+    const pt =
+      this.qt.find(
+        this.transform.invertX(mx),
+        this.transform.invertY(my),
+        HIT_RADIUS / (this.transform.k || 1),
+      ) ?? null;
+    if (pt === this.hoveredPt) return;
+    this.hoveredPt = pt;
+    if (pt) {
+      this.tooltip.style.left = `${Math.min(mx + 12, rect.width - 200)}px`;
+      this.tooltip.style.top = `${my - 28}px`;
+      this.tooltip.textContent = pt.year ? `${pt.title || pt.id} · ${pt.year}` : pt.title || pt.id;
+      this.tooltip.style.opacity = "1";
+      if (this.mode === "pan") this.canvas.style.cursor = "pointer";
+    } else {
+      this.hideTooltip();
+      if (this.mode === "pan") this.canvas.style.cursor = "grab";
     }
+    this.draw();
   };
 
   private onMouseClick = (e: MouseEvent) => {
-    if (this.mode !== "zoom") return;
+    if (this.mode !== "pan" || e.defaultPrevented) return;
     const rect = this.canvas.getBoundingClientRect();
     const pt = this.qt.find(
       this.transform.invertX(e.clientX - rect.left),
@@ -356,12 +442,11 @@ class ScatterPlotController {
 }
 
 export interface ScatterPlotRef {
-  resetZoom: () => void;
-  resetMode: () => void;
+  clearLasso: () => void;
 }
 
 interface ScatterPlotProps {
-  points: ScholarProjectionPoint[];
+  points: ProjectionPoint[];
   activeIds: Set<string> | null;
   selectedId: string | null;
   topicColors: TopicColorMap;
@@ -370,11 +455,18 @@ interface ScatterPlotProps {
   onReset?: () => void;
 }
 
+const toolClass = (active = false) =>
+  `p-1.5 rounded-md transition-colors ${
+    active
+      ? "bg-primary/15 text-primary"
+      : "text-on-surface-variant hover:bg-surface-container-high"
+  }`;
+
 export const ScatterPlot = forwardRef<ScatterPlotRef, ScatterPlotProps>(
   ({ points, activeIds, selectedId, topicColors, onPointClick, onLassoSelect, onReset }, ref) => {
     const containerRef = useRef<HTMLDivElement>(null);
     const controllerRef = useRef<ScatterPlotController | null>(null);
-    const [scatterMode, setScatterMode] = useState<ScatterMode>("none");
+    const [mode, setMode] = useState<ScatterMode>("pan");
 
     const callbacks = useRef({ onPointClick, onLassoSelect });
     callbacks.current = { onPointClick, onLassoSelect };
@@ -382,8 +474,7 @@ export const ScatterPlot = forwardRef<ScatterPlotRef, ScatterPlotProps>(
     useImperativeHandle(
       ref,
       () => ({
-        resetZoom: () => controllerRef.current?.resetZoom(),
-        resetMode: () => setScatterMode("none"),
+        clearLasso: () => controllerRef.current?.clearLasso(),
       }),
       [],
     );
@@ -403,44 +494,65 @@ export const ScatterPlot = forwardRef<ScatterPlotRef, ScatterPlotProps>(
     }, []);
 
     useEffect(() => {
-      controllerRef.current?.setMode(scatterMode);
-    }, [scatterMode]);
+      controllerRef.current?.setMode(mode);
+    }, [mode]);
 
     useEffect(() => {
       controllerRef.current?.update({ points, activeIds, selectedId, topicColors });
     }, [points, activeIds, selectedId, topicColors]);
 
-    const toggleMode = (m: ScatterMode) => setScatterMode((prev) => (prev === m ? "none" : m));
-
     return (
-      <div className="w-full h-full relative">
-        <div ref={containerRef} className="w-full h-full" />
-        <div className="absolute top-2 right-2 flex items-center gap-0.5 p-0.5">
+      <div className="relative h-full w-full">
+        <div ref={containerRef} className="h-full w-full" />
+        <div className="absolute right-2 top-2 flex items-center gap-0.5 p-0.5">
           <button
             type="button"
-            onClick={() => toggleMode("zoom")}
-            className={`p-1.5 rounded-md transition-colors ${scatterMode === "zoom" ? "bg-primary/15 text-primary" : "text-on-surface-variant hover:bg-surface-container-high"}`}
-            title="缩放/点选"
+            aria-label="平移与点选"
+            aria-pressed={mode === "pan"}
+            title="拖动平移、滚轮缩放、点击查看"
+            onClick={() => setMode("pan")}
+            className={toolClass(mode === "pan")}
           >
-            <ZoomIn className="w-3.5 h-3.5" />
+            <Hand className="w-3.5 h-3.5" />
           </button>
           <button
             type="button"
-            onClick={() => toggleMode("lasso")}
-            className={`p-1.5 rounded-md transition-colors ${scatterMode === "lasso" ? "bg-primary/15 text-primary" : "text-on-surface-variant hover:bg-surface-container-high"}`}
+            aria-label="套索选择"
+            aria-pressed={mode === "lasso"}
             title="套索选择"
+            onClick={() => setMode((prev) => (prev === "lasso" ? "pan" : "lasso"))}
+            className={toolClass(mode === "lasso")}
           >
             <Lasso className="w-3.5 h-3.5" />
           </button>
           <button
             type="button"
+            aria-label="放大"
+            title="放大"
+            onClick={() => controllerRef.current?.zoomBy(ZOOM_STEP)}
+            className={toolClass()}
+          >
+            <Plus className="w-3.5 h-3.5" />
+          </button>
+          <button
+            type="button"
+            aria-label="缩小"
+            title="缩小"
+            onClick={() => controllerRef.current?.zoomBy(1 / ZOOM_STEP)}
+            className={toolClass()}
+          >
+            <Minus className="w-3.5 h-3.5" />
+          </button>
+          <button
+            type="button"
+            aria-label="重置视图"
+            title="重置"
             onClick={() => {
-              setScatterMode("none");
+              setMode("pan");
               controllerRef.current?.resetZoom();
               onReset?.();
             }}
-            className="p-1.5 rounded-md text-on-surface-variant hover:bg-surface-container-high transition-colors"
-            title="重置"
+            className={toolClass()}
           >
             <RotateCcw className="w-3.5 h-3.5" />
           </button>

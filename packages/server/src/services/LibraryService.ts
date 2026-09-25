@@ -2,7 +2,17 @@ import { type ChildProcess, spawn } from "node:child_process";
 import { randomBytes } from "node:crypto";
 import { existsSync } from "node:fs";
 import { createInterface } from "node:readline";
-import { pythonRuntime, scholarSourceDir } from "../runtime/python.js";
+import { pythonRuntime, scholaraioSourceDir } from "../runtime/python.js";
+
+/** The library answered a request with an error status; `detail` is its message. */
+export class LibraryRequestError extends Error {
+  constructor(
+    readonly status: number,
+    readonly detail: string,
+  ) {
+    super(`文献请求失败 (${status}): ${detail}`);
+  }
+}
 
 /** Owns the Python child. All callers share this instance and its shutdown path. */
 export class LibraryService {
@@ -27,7 +37,7 @@ export class LibraryService {
       runtime.executable,
       ["-m", "scholaraio.interfaces.api", "--data-dir", this.dataDir, "--watch-stdin"],
       {
-        cwd: scholarSourceDir,
+        cwd: scholaraioSourceDir,
         env: {
           ...runtime.env(),
           SCHOLARAIO_HUB_INTERNAL_TOKEN: this.token,
@@ -37,10 +47,13 @@ export class LibraryService {
       },
     );
     this.child = child;
+    // A failure belongs to the child that had it; a restart starts clean.
+    this.failure = undefined;
     child.stderr?.on("data", (data: Buffer) =>
       console.error(`[Library] ${data.toString().trim()}`),
     );
     child.on("exit", (code, signal) => {
+      if (this.child !== child) return;
       this.baseUrl = undefined;
       this.failure = `文献服务已退出 (${signal ?? code})`;
     });
@@ -102,8 +115,7 @@ export class LibraryService {
 
   async json<T>(resource: string, init?: RequestInit): Promise<T> {
     const response = await this.request(resource, init);
-    if (!response.ok)
-      throw new Error(`文献请求失败 (${response.status}): ${await response.text()}`);
+    if (!response.ok) throw new LibraryRequestError(response.status, await response.text());
     return response.json() as Promise<T>;
   }
 

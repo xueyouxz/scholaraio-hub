@@ -1,10 +1,17 @@
 import { randomUUID } from "node:crypto";
-import { mkdir, readFile, readdir, rename, writeFile } from "node:fs/promises";
+import { mkdir, readFile, readdir, rename, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { type StoredSession, readLegacyThinking } from "@scholaraio-hub/shared";
+import { SessionNotFoundError } from "./errors.js";
 
 export interface SessionRecord extends StoredSession {
   nativeSessionId?: string;
+  /**
+   * A fork works in the directory of the session it was forked from: Claude
+   * Code files a transcript by its working directory, so the forked native
+   * session only resumes there.
+   */
+  workspaceSessionId?: string;
 }
 
 /** Application-owned records; native CLI transcripts remain owned by their provider. */
@@ -18,14 +25,26 @@ export class SessionStore {
     return path.join(this.dataDir, "sessions", id);
   }
 
+  /** The private working directory of a session that has no literature project. */
+  workspace(record: SessionRecord): string {
+    return path.join(this.directory(record.workspaceSessionId ?? record.id), "workspace");
+  }
+
   async initialize(): Promise<void> {
     const base = path.join(this.dataDir, "sessions");
     await mkdir(base, { recursive: true });
     for (const entry of await readdir(base, { withFileTypes: true })) {
       if (!entry.isDirectory()) continue;
-      const data = JSON.parse(
-        await readFile(path.join(base, entry.name, "session.json"), "utf8"),
-      ) as SessionRecord;
+      const file = path.join(base, entry.name, "session.json");
+      let content: string;
+      try {
+        content = await readFile(file, "utf8");
+      } catch (error) {
+        // A deleted session whose workspace its forks still use keeps only its directory.
+        if ((error as NodeJS.ErrnoException).code === "ENOENT") continue;
+        throw error;
+      }
+      const data = JSON.parse(content) as SessionRecord;
       if (
         data.id !== entry.name ||
         !Array.isArray(data.messages) ||
@@ -52,7 +71,7 @@ export class SessionStore {
 
   get(id: string): SessionRecord {
     const record = this.records.get(id);
-    if (!record) throw new Error("Session not found");
+    if (!record) throw new SessionNotFoundError(id);
     return record;
   }
 
@@ -60,13 +79,18 @@ export class SessionStore {
     return [...this.records.values()]
       .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))
       .map((record) => {
-        const { nativeSessionId: _native, messages: _messages, ...summary } = record;
+        const {
+          nativeSessionId: _native,
+          workspaceSessionId: _workspace,
+          messages: _messages,
+          ...summary
+        } = record;
         return { ...structuredClone(summary), messages: [] };
       });
   }
 
-  public(record: SessionRecord): StoredSession {
-    const { nativeSessionId: _native, ...visible } = record;
+  toStoredSession(record: SessionRecord): StoredSession {
+    const { nativeSessionId: _native, workspaceSessionId: _workspace, ...visible } = record;
     return structuredClone(visible);
   }
 
@@ -131,6 +155,21 @@ export class SessionStore {
       })
       .catch((error) => console.error("[SessionStore] save failed", error));
     return next;
+  }
+
+  /**
+   * Forget a session and remove its files. When forks still work in its
+   * directory, the directory stays and only the record goes. Provider-native
+   * transcripts are the provider's and are left alone.
+   */
+  async remove(id: string): Promise<void> {
+    this.get(id);
+    // Only wait for a pending write to settle: save() has already logged one that failed.
+    await this.writes.get(id)?.catch(() => undefined);
+    this.records.delete(id);
+    const shared = [...this.records.values()].some((record) => record.workspaceSessionId === id);
+    if (shared) await rm(path.join(this.directory(id), "session.json"), { force: true });
+    else await rm(this.directory(id), { recursive: true, force: true });
   }
 
   async flush(): Promise<void> {

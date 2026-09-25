@@ -34,6 +34,10 @@ export interface SessionMessageMetadata {
   model?: string;
   usage?: { inputTokens: number; outputTokens: number; cachedInputTokens?: number };
   contextWindow?: number;
+  /** How long the turn ran, from the prompt being taken to its last event. */
+  durationMs?: number;
+  /** When the turn ended (ISO 8601). */
+  finishedAt?: string;
 }
 
 /**

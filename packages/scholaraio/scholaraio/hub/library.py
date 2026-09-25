@@ -8,11 +8,11 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from scholaraio.core.config import Config
 from scholaraio.hub.acquire import AcquireService
 from scholaraio.hub.analytics import AnalyticsService
 from scholaraio.hub.artifacts import AnalysisArtifacts
 from scholaraio.hub.citations import CitationService
+from scholaraio.hub.discover import DiscoverService
 from scholaraio.hub.events import EventBus
 from scholaraio.hub.exports import ExportService
 from scholaraio.hub.imports import ImportQueue
@@ -20,7 +20,6 @@ from scholaraio.hub.maintenance import MaintenanceJobs
 from scholaraio.hub.metadata import MetadataService
 from scholaraio.hub.papers import PaperService
 from scholaraio.hub.projects import ProjectService
-from scholaraio.hub.repository import PaperRepository
 from scholaraio.hub.retrieval import RetrievalService
 from scholaraio.hub.runtime import LibraryRuntime
 from scholaraio.hub.search import SearchService
@@ -41,17 +40,18 @@ class HubLibrary:
         self.papers = PaperService(runtime)
         self.search = SearchService(runtime, self.projects)
         self.retrieval = RetrievalService(runtime, self.projects, self.search)
-        self.analytics = AnalyticsService(runtime, self.projects, artifacts)
+        self.analytics = AnalyticsService(runtime, artifacts)
         self.citations = CitationService(runtime, self.projects)
         self.metadata = MetadataService(runtime)
         self.exports = ExportService(runtime, self.projects)
         self.settings = SettingsService(runtime)
+        self.discover = DiscoverService(runtime)
 
         # Background work, each on its own single worker thread.
-        self.imports = ImportQueue(runtime)
+        self.imports = ImportQueue(runtime, self.projects)
         self.acquire = AcquireService(runtime, self.imports)
         jobs = MaintenanceJobs(runtime, artifacts, model_dir=tasks_root / "topic-model")
-        self.tasks = TaskRunner(runtime, jobs.registry(), root=tasks_root)
+        self.tasks = TaskRunner(runtime, jobs.registry(), root=tasks_root, lanes=jobs.lanes())
         self.status = LibraryStatus(runtime, self.tasks, artifacts)
         self.watcher = ProjectWatcher(self.projects.root, runtime.events)
 
@@ -62,26 +62,10 @@ class HubLibrary:
         self.imports.close()
         self.tasks.close()
 
-    # Shared state, for callers that act on the library as a whole.
-
-    @property
-    def root(self) -> Path:
-        return self.runtime.root
-
-    @property
-    def cfg(self) -> Config:
-        return self.runtime.cfg
-
     @property
     def events(self) -> EventBus:
+        """The bus the ``/events`` stream subscribes to."""
         return self.runtime.events
-
-    @property
-    def repository(self) -> PaperRepository:
-        return self.runtime.papers
-
-    def reindex(self) -> None:
-        self.runtime.reindex()
 
 
 __all__ = ["HubLibrary"]

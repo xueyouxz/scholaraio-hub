@@ -1,5 +1,6 @@
 import { Suspense, lazy } from "react";
-import { editPatch, patchStats } from "./patch";
+import { FilePath } from "./blocks";
+import { fileChanges, totalStats } from "./fileChanges";
 import {
   askUserQuestionRenderer,
   bashRenderer,
@@ -27,17 +28,12 @@ const editRenderer: ToolRenderer = {
     const changes = (view.input as { changes?: unknown } | undefined)?.changes;
     return Array.isArray(changes) ? `${changes.length} files` : "…";
   },
-  resultSummary: (view) => {
-    if (!view.result) return undefined;
-    if (view.result.isError) return truncate(contentText(view.result), 80);
-    const patch = editPatch(view.input, view.result.detail);
-    if (!patch) return undefined;
-    const { added, removed } = patchStats(patch);
-    return `+${added} −${removed}`;
-  },
-  defaultExpanded: (view) => !view.result?.isError,
+  resultSummary: (view) =>
+    view.result?.isError ? truncate(contentText(view.result), 80) : undefined,
+  diffStats: (view) => totalStats(fileChanges(view)),
   body: (view) => (
     <>
+      <FilePath path={field(view.input, "file_path")} />
       <Suspense fallback={<span className="tool-pending-message">加载差异…</span>}>
         <EditDiff input={view.input} detail={view.result?.detail} />
       </Suspense>
@@ -80,8 +76,13 @@ export function toolLabel(renderer: ToolRenderer, view: ToolView): string {
   return view.status === "pending" ? renderer.verb.pending : renderer.verb.done;
 }
 
+/** The name a call is filed under here: Claude Code's synonyms resolved. */
+export function canonicalToolName(toolName: string): string {
+  return ALIASES[toolName] ?? toolName;
+}
+
 export function rendererFor(toolName: string): ToolRenderer {
-  return RENDERERS.get(ALIASES[toolName] ?? toolName) ?? fallbackRenderer;
+  return RENDERERS.get(canonicalToolName(toolName)) ?? fallbackRenderer;
 }
 
 /** One-line description of a call, for places that only show a label. */
@@ -90,7 +91,7 @@ export function toolSummary(toolName: string, input: unknown): string {
     name: toolName,
     input,
     status: "pending",
-    running: false,
+    partial: false,
     inputStreaming: false,
   });
 }

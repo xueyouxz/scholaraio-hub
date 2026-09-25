@@ -32,13 +32,10 @@ class SearchService:
         self.runtime = runtime
         self.projects = projects
 
-    def query(self, text: str, *, limit: int = 50, project_id: str | None = None, mode: str | None = None) -> dict:
+    def query(self, text: str, mode: str, *, limit: int = 50, project_id: str | None = None) -> dict:
         """One search request as the browser makes it."""
         scope = self.projects.scope_set(project_id)
-        limit = clamp_limit(limit)
-        if mode:
-            return self.browse(text, mode, limit, scope)
-        return {"results": self.keyword(text, limit, scope)}
+        return self.browse(text, mode, clamp_limit(limit), scope)
 
     def keyword(self, text: str, limit: int = 50, paper_ids: set[str] | None = None) -> list[dict[str, Any]]:
         """Papers whose metadata or full text matches every word."""

@@ -23,10 +23,13 @@ class CamelModel(BaseModel):
     model_config = ConfigDict(alias_generator=to_camel, populate_by_name=True)
 
 
-class ContextInput(CamelModel):
-    query: str = Field(max_length=20000)
+class ScopeInput(CamelModel):
     paper_ids: list[str] = Field(default_factory=list, max_length=100)
     project_id: ProjectId = None
+
+
+class ContextInput(ScopeInput):
+    query: str = Field(max_length=20000)
 
 
 class ProjectInput(CamelModel):
@@ -72,13 +75,14 @@ class ExportInput(CamelModel):
     style: Literal["apa", "vancouver", "chicago-author-date", "mla"] = "apa"
 
 
-class CitationCheckInput(CamelModel):
-    text: str = Field(min_length=1, max_length=400000)
-    project_id: ProjectId = None
-
-
 class AcquireInput(CamelModel):
     locator: str = Field(min_length=1, max_length=2000)
+    project_id: ProjectId = None
+    title: str | None = Field(default=None, max_length=500)
+
+
+class SettingsCheckInput(CamelModel):
+    target: Literal["mineru", "llm", "embed"]
 
 
 class ReadingPosition(CamelModel):

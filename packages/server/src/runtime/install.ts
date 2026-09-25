@@ -1,7 +1,7 @@
 import { spawnSync } from "node:child_process";
 import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import path from "node:path";
-import { type PythonRuntime, pythonRuntime, scholarSourceDir } from "./python.js";
+import { type PythonRuntime, pythonRuntime, scholaraioSourceDir } from "./python.js";
 
 /**
  * What a data directory's Python runtime can do beyond the core library.
@@ -45,7 +45,7 @@ export function uvSyncCommand(
     args: [
       "sync",
       "--project",
-      scholarSourceDir,
+      scholaraioSourceDir,
       "--locked",
       ...extras.flatMap((extra) => ["--extra", extra]),
       "--no-default-groups",

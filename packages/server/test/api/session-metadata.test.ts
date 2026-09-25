@@ -2,9 +2,9 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import type { AgentEvent } from "../../src/agent/events.js";
 import { createApp } from "../../src/app.js";
-import { MessageQueue } from "../../src/sdk/messageQueue.js";
+import { MessageQueue } from "../../src/providers/MessageQueue.js";
+import type { AgentEvent } from "../../src/providers/events.js";
 import { LibraryService } from "../../src/services/LibraryService.js";
 import { providerFromSessionFactory } from "../helpers/scriptedProvider.js";
 
@@ -27,7 +27,7 @@ describe("assistant turn metadata", () => {
       if (options.initialMessage) queue.push(options.initialMessage);
       async function* events(): AsyncIterableIterator<AgentEvent> {
         yield { type: "session.started", sessionId: "native-1" };
-        for await (const _ of queue.generator()) {
+        for await (const _ of queue.messages()) {
           yield { type: "model.resolved", model: "claude-opus-5" };
           yield { type: "text.delta", blockId: "b", delta: "ok" };
           yield {
@@ -37,7 +37,7 @@ describe("assistant turn metadata", () => {
           };
         }
       }
-      return { events: events(), queue, abort: () => queue.push({ text: "" }) };
+      return { events: events(), queue, abort: () => queue.close() };
     });
     server = createApp({ dataDir: root, provider, libraryService: new NoLibrary(root) });
     await server.ready;
@@ -68,6 +68,8 @@ describe("assistant turn metadata", () => {
       model: "claude-opus-5",
       usage: { inputTokens: 1200, outputTokens: 340 },
       contextWindow: 200_000,
+      durationMs: expect.any(Number),
+      finishedAt: expect.any(String),
     });
   });
 });

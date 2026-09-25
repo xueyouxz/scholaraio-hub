@@ -4,24 +4,10 @@ import {
   filterCommands,
   findLeadingCommand,
   joinLeadingCommand,
-  leadingSlashQuery,
-  mergeCommands,
   splitLeadingCommand,
 } from "../slashCommands";
 
 const command = (name: string): SlashCommand => ({ name, description: name });
-
-describe("leadingSlashQuery", () => {
-  it("reads the query typed right after a leading slash", () => {
-    expect(leadingSlashQuery("/")).toBe("");
-    expect(leadingSlashQuery("/rev")).toBe("rev");
-  });
-
-  it("stops once the command is followed by whitespace or does not lead", () => {
-    expect(leadingSlashQuery("/review x")).toBeNull();
-    expect(leadingSlashQuery("see /rev")).toBeNull();
-  });
-});
 
 describe("filterCommands", () => {
   it("keeps prefix matches case-insensitively in original order", () => {
@@ -63,14 +49,5 @@ describe("splitLeadingCommand", () => {
     expect(joinLeadingCommand(token, body)).toBe("/review fix it");
     expect(joinLeadingCommand(token, "")).toBe("/review ");
     expect(joinLeadingCommand("", "plain")).toBe("plain");
-  });
-});
-
-describe("mergeCommands", () => {
-  it("appends extra commands whose names are free", () => {
-    expect(mergeCommands([command("a")], [command("a"), command("b")]).map((c) => c.name)).toEqual([
-      "a",
-      "b",
-    ]);
   });
 });

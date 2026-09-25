@@ -6,12 +6,10 @@ it here, so the two never drift apart.
 """
 from __future__ import annotations
 
-from dataclasses import asdict
 from pathlib import Path
 from typing import Any
 
 from scholaraio.hub.repository import PaperRecord
-from scholaraio.services.chunks import iter_paper_chunks
 from scholaraio.stores.papers import authors_text, find_pdf
 
 COVER_SUFFIXES = frozenset({".png", ".jpg", ".jpeg", ".webp"})
@@ -64,7 +62,6 @@ def paper_detail(record: PaperRecord) -> dict[str, Any]:
         **paper_row(record),
         "markdown": markdown.read_text(encoding="utf-8") if markdown.exists() else "",
         "l3Conclusion": conclusion if isinstance(conclusion, str) else "",
-        "chunks": [asdict(chunk) for chunk in iter_paper_chunks(directory, meta=meta)],
     }
 
 

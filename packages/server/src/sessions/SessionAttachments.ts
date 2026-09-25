@@ -7,8 +7,8 @@ import {
   type UploadedFile,
 } from "@scholaraio-hub/shared";
 import type { SessionStore } from "./SessionStore.js";
+import { SessionInputError } from "./errors.js";
 
-export class AttachmentError extends Error {}
 export const MAX_ATTACHMENT_BYTES = ATTACHMENT_LIMITS.maxBytes;
 /** Drafts never claimed by a new session are removed after this long. */
 export const DRAFT_ATTACHMENT_TTL_MS = 24 * 60 * 60 * 1000;
@@ -38,7 +38,7 @@ export class SessionAttachments {
     const folder = path.join(workspace, ".attachments");
     await mkdir(folder, { recursive: true });
     if ((await realpath(workspace)) !== workspace || (await realpath(folder)) !== folder)
-      throw new AttachmentError("附件目录不能使用符号链接");
+      throw new SessionInputError("附件目录不能使用符号链接");
     return {
       folder,
       manifests: path.join(this.store.directory(sessionId), "attachments"),
@@ -50,7 +50,8 @@ export class SessionAttachments {
     const root = path.join(await realpath(this.store.dataDir), "draft-attachments");
     const folder = path.join(root, "files");
     await mkdir(folder, { recursive: true });
-    if ((await realpath(folder)) !== folder) throw new AttachmentError("附件目录不能使用符号链接");
+    if ((await realpath(folder)) !== folder)
+      throw new SessionInputError("附件目录不能使用符号链接");
     return {
       folder,
       manifests: path.join(root, "manifests"),
@@ -60,7 +61,7 @@ export class SessionAttachments {
 
   private async write(area: Area, file: File): Promise<SessionAttachment> {
     if (!file.size || file.size > MAX_ATTACHMENT_BYTES)
-      throw new AttachmentError("附件不能为空，且单个文件不能超过 25 MB");
+      throw new SessionInputError("附件不能为空，且单个文件不能超过 25 MB");
     const id = randomUUID();
     const filename =
       path
@@ -96,22 +97,23 @@ export class SessionAttachments {
   }
 
   private async read(area: Area, id: string): Promise<{ metadata: Manifest; filePath: string }> {
-    if (!ATTACHMENT_ID.test(id)) throw new AttachmentError("附件不存在");
+    if (!ATTACHMENT_ID.test(id)) throw new SessionInputError("附件不存在");
     let metadata: Manifest;
     try {
       metadata = JSON.parse(await readFile(path.join(area.manifests, `${id}.json`), "utf8"));
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code === "ENOENT")
-        throw new AttachmentError("附件不属于当前会话或已被移除");
+        throw new SessionInputError("附件不属于当前会话或已被移除");
       throw error;
     }
     if (metadata.id !== id || path.basename(metadata.name) !== metadata.name)
-      throw new AttachmentError("附件记录无效");
+      throw new SessionInputError("附件记录无效");
     const filePath = path.join(area.folder, metadata.name);
-    if ((await realpath(filePath)) !== filePath) throw new AttachmentError("附件不能使用符号链接");
+    if ((await realpath(filePath)) !== filePath)
+      throw new SessionInputError("附件不能使用符号链接");
     const info = await stat(filePath);
     if (!info.isFile() || info.size > MAX_ATTACHMENT_BYTES)
-      throw new AttachmentError("附件文件无效");
+      throw new SessionInputError("附件文件无效");
     return { metadata, filePath };
   }
 
@@ -135,7 +137,7 @@ export class SessionAttachments {
   }
 
   async upload(sessionId: string, file: File): Promise<SessionAttachment> {
-    if (this.store.get(sessionId).readOnly) throw new AttachmentError("只读会话不能上传附件");
+    if (this.store.get(sessionId).readOnly) throw new SessionInputError("只读会话不能上传附件");
     return this.write(await this.sessionArea(sessionId), file);
   }
 
@@ -159,7 +161,7 @@ export class SessionAttachments {
       message.parts.some((part) => part.type === "file" && part.url === metadata.url),
     );
     const queued = record.queuedMessages?.some((message) => message.attachmentIds.includes(id));
-    if (sent || queued) throw new AttachmentError("已发送或排队的附件不能删除");
+    if (sent || queued) throw new SessionInputError("已发送或排队的附件不能删除");
     await rm(filePath, { force: true });
     await rm(path.join(area.manifests, `${id}.json`), { force: true });
   }
@@ -168,10 +170,6 @@ export class SessionAttachments {
   async uploadDraft(file: File): Promise<SessionAttachment> {
     await this.sweepDrafts();
     return this.write(await this.draftArea(), file);
-  }
-
-  async resolveDraft(id: string): Promise<{ visible: SessionAttachment; file: UploadedFile }> {
-    return this.resolveIn(await this.draftArea(), id);
   }
 
   async removeDraft(id: string): Promise<void> {

@@ -4,10 +4,14 @@ import { access } from "node:fs/promises";
 import { createServer } from "node:net";
 import path from "node:path";
 import { loadConfig } from "../config.js";
+import {
+  claudeProvider,
+  resolveLocalClaudeCodeExecutable,
+} from "../providers/claude/ClaudeProvider.js";
+import { codexProvider } from "../providers/codex/CodexProvider.js";
+import { findCodexCli } from "../providers/codex/cli.js";
 import { runtimeCapabilities } from "../runtime/install.js";
 import { pythonRuntime } from "../runtime/python.js";
-import { detectCodexCli } from "../sdk/cli-detection.js";
-import { resolveLocalClaudeCodeExecutable } from "../sdk/providers/claude.js";
 
 /** Check the data directory, port, Python runtime and the AI CLIs' local logins. */
 export async function doctor(): Promise<number> {
@@ -36,10 +40,9 @@ export async function doctor(): Promise<number> {
   let ownServer = false;
   if (!portAvailable) {
     try {
-      const response = await fetch(
-        `${config.httpsSelfSigned ? "https" : "http"}://${config.host}:${config.port}/api/status`,
-        { signal: AbortSignal.timeout(2000) },
-      );
+      const response = await fetch(`http://${config.host}:${config.port}/api/status`, {
+        signal: AbortSignal.timeout(2000),
+      });
       const status = (await response.json()) as { dataDir?: string };
       ownServer = status.dataDir === config.dataDir;
     } catch (error) {
@@ -69,40 +72,32 @@ export async function doctor(): Promise<number> {
   const clientBuilt = existsSync(path.join(config.clientDistDir, "index.html"));
   if (config.nodeEnv === "production")
     console.log(`Client build: ${clientBuilt ? "present" : "missing; run pnpm build"}`);
-  const codex = await detectCodexCli();
-  console.log(`Codex: ${codex.found ? `${codex.path} (${codex.version})` : codex.error}`);
+  const codex = await findCodexCli();
+  console.log(
+    `Codex: ${codex ? `${codex.path} (${codex.version})` : "Codex CLI cannot run. Repair with: npm install -g @openai/codex"}`,
+  );
   const claudePath = resolveLocalClaudeCodeExecutable();
   const claude = claudePath
     ? spawnSync(claudePath, ["--version"], { encoding: "utf8", timeout: 10000 })
     : undefined;
   console.log(`Claude: ${claude?.status === 0 ? claude.stdout.trim() : "not executable"}`);
-  const claudeAuth =
-    claude?.status === 0 && claudePath
-      ? spawnSync(claudePath, ["auth", "status"], { encoding: "utf8", timeout: 10000 })
-      : undefined;
-  let claudeLoggedIn = false;
-  if (claudeAuth?.status === 0) {
-    try {
-      claudeLoggedIn = JSON.parse(claudeAuth.stdout).loggedIn === true;
-    } catch (error) {
-      console.error("Cannot parse Claude auth status:", error);
-    }
-  }
-  const codexAuth = codex.path
-    ? spawnSync(codex.path, ["login", "status"], { encoding: "utf8", timeout: 10000 })
-    : undefined;
+  // The providers decide what counts as logged in; the doctor asks them the same way the app does.
+  const [claudeAuth, codexAuth] = await Promise.all([
+    claudeProvider.getAuthStatus(),
+    codexProvider.getAuthStatus(),
+  ]);
   console.log(
-    `Claude local login: ${claudeLoggedIn ? "present" : "unavailable; run claude auth login"}`,
+    `Claude local login: ${claudeAuth.authenticated ? "present" : "unavailable; run claude auth login"}`,
   );
   console.log(
-    `Codex local login: ${codexAuth?.status === 0 ? "present" : "unavailable; run codex login"}`,
+    `Codex local login: ${codexAuth.authenticated ? "present" : "unavailable; run codex login"}`,
   );
   console.log("Local login does not prove that a remote token has not expired or been revoked.");
   return writable &&
     (portAvailable || ownServer) &&
     (clientBuilt || config.nodeEnv !== "production") &&
     python.status === 0 &&
-    (claudeLoggedIn || codexAuth?.status === 0)
+    (claudeAuth.authenticated || codexAuth.authenticated)
     ? 0
     : 1;
 }

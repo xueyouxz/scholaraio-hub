@@ -4,7 +4,6 @@ import { libraryApi } from "../../../core/library";
 import { ResizableSessionPanel } from "./ResizableSessionPanel";
 
 interface WorkspacePaperRowProps {
-  id: string;
   title: string;
   authors: string;
   year: number;
@@ -32,23 +31,23 @@ function WorkspacePaperRow({ title, authors, year, selected, onClick }: Workspac
 }
 
 interface WorkspacePapersPanelProps {
-  workspaceName: string;
+  projectId: string;
   selectedPaperId: string | null;
   onSelectPaper: (paperId: string | null) => void;
   onClose: () => void;
 }
 
 export function WorkspacePapersPanel({
-  workspaceName,
+  projectId,
   selectedPaperId,
   onSelectPaper,
   onClose,
 }: WorkspacePapersPanelProps) {
   const query = useQuery({
-    queryKey: ["library", "project-papers", workspaceName],
+    queryKey: ["library", "project-papers", projectId],
     queryFn: async ({ signal }) => {
       const [project, library] = await Promise.all([
-        libraryApi.project(workspaceName, signal),
+        libraryApi.project(projectId, signal),
         libraryApi.papers(signal),
       ]);
       const ids = new Set(project.paperIds);
@@ -70,9 +69,9 @@ export function WorkspacePapersPanel({
       <div className="flex items-center justify-between px-3 py-2 border-b border-outline-variant/10 shrink-0">
         <span
           className="text-xs font-medium text-on-surface-variant uppercase tracking-wide truncate"
-          title={workspaceName}
+          title={projectId}
         >
-          {workspaceName}
+          {projectId}
         </span>
         <button
           type="button"
@@ -104,7 +103,6 @@ export function WorkspacePapersPanel({
           papers.map((paper) => (
             <WorkspacePaperRow
               key={paper.id}
-              id={paper.id}
               title={paper.title}
               authors={paper.authors}
               year={Number(paper.year)}
@@ -120,13 +118,13 @@ export function WorkspacePapersPanel({
 
 export function ResizableWorkspacePapersPanel({
   open,
-  workspaceName,
+  projectId,
   selectedPaperId,
   onSelectPaper,
   onClose,
 }: {
   open: boolean;
-  workspaceName: string;
+  projectId: string;
   selectedPaperId: string | null;
   onSelectPaper: (id: string | null) => void;
   onClose: () => void;
@@ -139,7 +137,7 @@ export function ResizableWorkspacePapersPanel({
       onClose={onClose}
     >
       <WorkspacePapersPanel
-        workspaceName={workspaceName}
+        projectId={projectId}
         selectedPaperId={selectedPaperId}
         onSelectPaper={onSelectPaper}
         onClose={onClose}

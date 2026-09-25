@@ -1,21 +1,20 @@
-"""Bringing papers in: uploaded files, identifiers, reference exports, retries."""
+"""Bringing papers in: uploaded files, identifiers, retries."""
 from __future__ import annotations
 
 from pathlib import Path
 from typing import Annotated
 
-from fastapi import APIRouter, File, UploadFile
+from fastapi import APIRouter, File, Form, UploadFile
 
 from scholaraio.hub.errors import InvalidRequest, TooLarge
 from scholaraio.hub.imports import ImportQueue
+from scholaraio.hub.projects import NAME_LIMIT
 from scholaraio.interfaces.api.dependencies import Acquire, Imports
 from scholaraio.interfaces.api.schemas import AcquireInput
 
 MAX_FILES = 500
 MAX_BATCH_BYTES = 500 * 1024 * 1024
-MAX_REFERENCES_BYTES = 4 * 1024 * 1024
 BLOCK_BYTES = 1024 * 1024
-REFERENCE_SUFFIXES = (".bib", ".ris", ".txt", ".enw")
 
 router = APIRouter(prefix="/imports", tags=["imports"])
 
@@ -26,7 +25,11 @@ def list_jobs(imports: Imports):
 
 
 @router.post("", status_code=202)
-async def upload(imports: Imports, files: Annotated[list[UploadFile], File()]):
+async def upload(
+    imports: Imports,
+    files: Annotated[list[UploadFile], File()],
+    project_id: Annotated[str | None, Form(alias="projectId", max_length=NAME_LIMIT)] = None,
+):
     if len(files) > MAX_FILES:
         raise InvalidRequest(f"Import at most {MAX_FILES} PDFs per batch")
     try:
@@ -35,7 +38,7 @@ async def upload(imports: Imports, files: Annotated[list[UploadFile], File()]):
         for file in files:
             await file.close()
     try:
-        return imports.enqueue(staged)
+        return imports.enqueue(staged, project_id or None)
     except BaseException:
         discard(staged)
         raise
@@ -70,18 +73,7 @@ def discard(staged: list[tuple[Path, str]]) -> None:
 
 @router.post("/fetch", status_code=202)
 def fetch(body: AcquireInput, acquire: Acquire):
-    return acquire.fetch(body.locator)
-
-
-@router.post("/references", status_code=202)
-async def import_references(acquire: Acquire, file: Annotated[UploadFile, File()]):
-    if not (file.filename or "").lower().endswith(REFERENCE_SUFFIXES):
-        raise InvalidRequest("Only BibTeX or RIS exports are supported")
-    try:
-        payload = await file.read(MAX_REFERENCES_BYTES)
-    finally:
-        await file.close()
-    return acquire.import_references(payload.decode("utf-8", "replace"))
+    return acquire.fetch(body.locator, body.project_id, body.title)
 
 
 @router.post("/{job_id}/retry", status_code=202)

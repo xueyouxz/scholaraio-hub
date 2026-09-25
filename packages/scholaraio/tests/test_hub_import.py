@@ -52,8 +52,8 @@ def test_uploads_are_staged_outside_every_scanned_inbox(library, tmp_path):
     paper_pdf(source)
     destination, _ = staged(library, source, "paper.pdf")
 
-    assert destination.is_relative_to(library.cfg.state_root)
-    assert not destination.is_relative_to(library.cfg.inbox_dir)
+    assert destination.is_relative_to(library.runtime.cfg.state_root)
+    assert not destination.is_relative_to(library.runtime.cfg.inbox_dir)
 
 
 def test_a_batch_reports_each_file_and_leaves_the_library_searchable(library, tmp_path, monkeypatch):
@@ -108,11 +108,11 @@ def test_the_same_file_is_recognised_without_a_doi(library, tmp_path):
 
 
 def test_extraction_falls_back_to_regex_without_an_llm_key(library, monkeypatch):
-    library.cfg.ingest.extractor = "robust"
-    monkeypatch.setattr(type(library.cfg), "resolved_api_key", lambda _self: "")
+    library.runtime.cfg.ingest.extractor = "robust"
+    monkeypatch.setattr(type(library.runtime.cfg), "resolved_api_key", lambda _self: "")
     assert library.imports.extraction_config().ingest.extractor == "regex"
 
-    monkeypatch.setattr(type(library.cfg), "resolved_api_key", lambda _self: "key")
+    monkeypatch.setattr(type(library.runtime.cfg), "resolved_api_key", lambda _self: "key")
     assert library.imports.extraction_config().ingest.extractor == "robust"
 
 
@@ -121,7 +121,7 @@ def test_papers_ingested_here_are_visible_to_the_pipeline_dedup(library, tmp_pat
     paper_pdf(source)
     library.imports.import_file(source, "Paper.pdf", no_api=True)
 
-    dois, pub_nums, arxiv_ids = identifiers.collect_existing_ids(library.cfg.papers_dir)
+    dois, pub_nums, arxiv_ids = identifiers.collect_existing_ids(library.runtime.cfg.papers_dir)
     assert (dois, pub_nums, arxiv_ids) == ({}, {}, {})  # no DOI was found, and none was invented
     assert len(library.papers.list()) == 1
 
@@ -140,3 +140,28 @@ def test_a_pdf_that_names_itself_keeps_that_title(library, tmp_path):
     assert paper["authors"] == "Ada Lovelace"
     # Still incomplete: a self-declared title is not an identified paper.
     assert result["status"] == "completed_incomplete"
+
+
+def test_an_import_started_from_a_workspace_lands_in_it(library, tmp_path, monkeypatch):
+    monkeypatch.setattr(
+        "scholaraio.services.ingest_metadata.enrich_metadata", lambda meta: meta, raising=False
+    )
+    library.projects.create("Drag review")
+    source = tmp_path / "paper.pdf"
+    paper_pdf(source)
+
+    job = library.imports.enqueue([staged(library, source, "paper.pdf")], "Drag review")
+    finished = wait_for_job(library, job["id"])
+    paper_id = finished["items"][0]["paperId"]
+
+    assert finished["projectId"] == "Drag review"
+    assert library.projects.get("Drag review")["paperIds"] == [paper_id]
+
+
+def test_an_import_for_a_missing_workspace_is_refused_before_it_runs(library, tmp_path):
+    source = tmp_path / "paper.pdf"
+    paper_pdf(source)
+
+    with pytest.raises(LookupError):
+        library.imports.enqueue([staged(library, source, "paper.pdf")], "Nowhere")
+    assert library.imports.list() == []

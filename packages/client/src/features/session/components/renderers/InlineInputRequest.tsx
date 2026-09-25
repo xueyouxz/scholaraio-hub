@@ -103,7 +103,7 @@ export function InlineInputRequest({
               </div>
             ) : null}
             <input
-              className="hub-input inline-question-text"
+              className="inline-question-text"
               type={question.secret ? "password" : "text"}
               autoComplete={question.secret ? "off" : undefined}
               aria-label={question.question}

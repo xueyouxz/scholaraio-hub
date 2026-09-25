@@ -17,7 +17,7 @@ from scholaraio.interfaces.api.app import create_app
 
 def document() -> dict:
     # Describing the routes needs no library: the app is built, never started.
-    described = create_app(Path("."), token="unused").openapi()
+    described = create_app(Path(".")).openapi()
     for part in ("paths", "components"):
         without_titles(described.get(part, {}))
     return described

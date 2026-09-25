@@ -495,6 +495,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/directories/{target}/reveal": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Reveal
+         * @description Open one of the library's own directories; no path comes from the caller.
+         */
+        post: operations["reveal_directories__target__reveal_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -842,6 +862,10 @@ export interface components {
         RefetchResult: {
             changed: boolean;
             paper: components["schemas"]["LibraryPaper"];
+        };
+        RevealedDirectory: {
+            opened: boolean;
+            path: string;
         };
         Scope: {
             /** @description None means the whole library. */
@@ -1927,6 +1951,37 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["SettingsCheck"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    reveal_directories__target__reveal_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                target: "data" | "papers" | "workspaces";
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RevealedDirectory"];
                 };
             };
             /** @description Validation Error */

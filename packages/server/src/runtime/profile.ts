@@ -1,7 +1,7 @@
 import { mkdtempSync } from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
-import { resolvePort, resolveProfileName } from "@scholaraio-hub/shared";
+import { resolveLibraryPort, resolvePort, resolveProfileName } from "@scholaraio-hub/shared";
 import { loadRuntimeEnv } from "../env.js";
 
 type Env = Record<string, string | undefined>;
@@ -13,6 +13,8 @@ export interface Profile {
   nodeEnv: string;
   dataDir: string;
   port: number;
+  /** The library service's port. */
+  libraryPort: number;
 }
 
 let testDataDir: string | undefined;
@@ -42,6 +44,7 @@ export function resolveProfile(env: Env): Profile {
     nodeEnv: env.NODE_ENV || (name === "production" ? "production" : "development"),
     dataDir: env.SCHOLARAIO_HUB_DATA_DIR || defaultDataDir(name),
     port: resolvePort(env),
+    libraryPort: resolveLibraryPort(env),
   };
 }
 

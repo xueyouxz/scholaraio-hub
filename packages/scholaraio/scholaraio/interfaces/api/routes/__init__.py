@@ -5,6 +5,7 @@ from __future__ import annotations
 from scholaraio.interfaces.api.routes import (
     analytics,
     citations,
+    directories,
     imports,
     papers,
     projects,
@@ -24,6 +25,7 @@ ROUTERS = [
     imports.router,
     tasks.router,
     settings.router,
+    directories.router,
 ]
 
 __all__ = ["ROUTERS"]

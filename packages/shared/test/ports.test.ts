@@ -1,5 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { DEFAULT_DEV_PORT, resolvePort, resolveProfileName } from "../src/ports.js";
+import {
+  DEFAULT_DEV_PORT,
+  resolveLibraryPort,
+  resolvePort,
+  resolveProfileName,
+} from "../src/ports.js";
 
 describe("profiles", () => {
   it("names the instance from NODE_ENV when no profile is given", () => {
@@ -39,5 +44,12 @@ describe("ports", () => {
 
   it("honors an explicit port without adding an offset", () => {
     expect(resolvePort({ NODE_ENV: "test", PORT: "65535" })).toBe(65535);
+  });
+
+  it("puts the library service on the port after the Hub's unless told otherwise", () => {
+    expect(resolveLibraryPort({ SCHOLARAIO_HUB_PROFILE: "production" })).toBe(3401);
+    expect(resolveLibraryPort({ NODE_ENV: "test" })).toBe(3601);
+    expect(resolveLibraryPort({ PORT: "4000" })).toBe(4001);
+    expect(resolveLibraryPort({ PORT: "4000", LIBRARY_PORT: "5000" })).toBe(5000);
   });
 });

@@ -26,6 +26,11 @@ class Health(CamelModel):
     status: Literal["ok"]
 
 
+class RevealedDirectory(CamelModel):
+    opened: bool
+    path: str
+
+
 # ---- papers ---------------------------------------------------------------
 
 

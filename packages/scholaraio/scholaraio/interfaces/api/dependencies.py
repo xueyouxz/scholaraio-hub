@@ -14,6 +14,7 @@ from scholaraio.hub import HubLibrary
 from scholaraio.hub.acquire import AcquireService
 from scholaraio.hub.analytics import AnalyticsService
 from scholaraio.hub.citations import CitationService
+from scholaraio.hub.directories import DirectoryService
 from scholaraio.hub.discover import DiscoverService
 from scholaraio.hub.events import EventBus
 from scholaraio.hub.exports import ExportService
@@ -46,6 +47,7 @@ def _service(name: str):
 Acquire = Annotated[AcquireService, _service("acquire")]
 Analytics = Annotated[AnalyticsService, _service("analytics")]
 Citations = Annotated[CitationService, _service("citations")]
+Directories = Annotated[DirectoryService, _service("directories")]
 Discover = Annotated[DiscoverService, _service("discover")]
 Events = Annotated[EventBus, _service("events")]
 Exports = Annotated[ExportService, _service("exports")]

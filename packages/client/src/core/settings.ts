@@ -24,9 +24,9 @@ export const settingsApi = {
     requestJson<{ usageLimits: ProviderUsageLimits[] }>("/api/providers/usage-limits", {
       signal,
     }),
-  /** Show one of the Hub's own directories in the desktop file manager. */
+  /** Show one of the library's own directories in the desktop file manager. */
   openDirectory: (target: "data" | "papers" | "workspaces") =>
-    requestJson<{ opened: boolean }>(`/api/status/data-dir/open?target=${target}`, {
+    requestJson<{ opened: boolean }>(`/api/library/directories/${target}/reveal`, {
       method: "POST",
     }),
 };

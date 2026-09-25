@@ -2,6 +2,7 @@
 import json
 import os
 import select
+import socket
 import subprocess
 import sys
 import time
@@ -13,19 +14,24 @@ from urllib.request import Request, urlopen
 import pytest
 
 PROJECT = Path(__file__).resolve().parents[1]
-TOKEN = "lifecycle-test-token"
+
+
+def free_port():
+    with socket.socket() as probe:
+        probe.bind(("127.0.0.1", 0))
+        return probe.getsockname()[1]
 
 
 def read_json_line(stream):
-    assert select.select([stream], [], [], 15)[0], "Service startup timed out"
+    assert select.select([stream], [], [], 15)[0], "Launcher startup timed out"
     line = stream.readline()
-    assert line, "Service exited before announcing its port"
+    assert line, "Launcher exited before naming its service"
     return json.loads(line)
 
 
 def healthy(port):
     try:
-        with urlopen(Request(f"http://127.0.0.1:{port}/health", headers={"x-hub-token": TOKEN}), timeout=0.5) as response:
+        with urlopen(Request(f"http://127.0.0.1:{port}/health"), timeout=0.5) as response:
             return response.status == 200
     except (URLError, TimeoutError, ConnectionError):
         return False
@@ -51,14 +57,13 @@ from scholaraio.interfaces.api.server import main
 HubLibrary.close = lambda self: time.sleep(60)
 main()
 """]
-    command += ["--data-dir", str(tmp_path / "data")]
+    port = free_port()
+    command += ["--data-dir", str(tmp_path / "data"), "--port", str(port)]
     if watch:
         command.append("--watch-stdin")
     with (tmp_path / "service.log").open("w+") as log:
-        child = subprocess.Popen(command, cwd=PROJECT, stdin=subprocess.PIPE, stdout=subprocess.PIPE,
-                                 stderr=log, env={**os.environ, "SCHOLARAIO_HUB_INTERNAL_TOKEN": TOKEN})
+        child = subprocess.Popen(command, cwd=PROJECT, stdin=subprocess.PIPE, stdout=subprocess.DEVNULL, stderr=log)
         try:
-            port = read_json_line(child.stdout)["port"]
             wait_for(lambda: healthy(port), "Service never became healthy")
             yield child, port
         finally:
@@ -66,7 +71,6 @@ main()
                 child.kill()
             child.wait(timeout=5)
             child.stdin.close()
-            child.stdout.close()
 
 
 def test_pipe_eof_shuts_down_healthy_service(tmp_path):
@@ -103,16 +107,14 @@ def test_service_exits_when_parent_disappears(tmp_path, parent_exit):
     launcher = """
 import json, subprocess, sys
 child = subprocess.Popen([sys.executable, '-m', 'scholaraio.interfaces.api',
-                          '--data-dir', sys.argv[1], '--watch-stdin'],
-                         stdin=subprocess.PIPE, stdout=subprocess.PIPE)
-info = json.loads(child.stdout.readline())
-print(json.dumps({**info, 'pid': child.pid}), flush=True)
+                          '--data-dir', sys.argv[1], '--port', sys.argv[2], '--watch-stdin'],
+                         stdin=subprocess.PIPE)
+print(json.dumps({'port': int(sys.argv[2]), 'pid': child.pid}), flush=True)
 sys.stdin.read()
 """
     with (tmp_path / "parent.log").open("w+") as log:
-        parent = subprocess.Popen([sys.executable, "-c", launcher, str(tmp_path / "data")], cwd=PROJECT,
-                                  stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=log,
-                                  env={**os.environ, "SCHOLARAIO_HUB_INTERNAL_TOKEN": TOKEN})
+        parent = subprocess.Popen([sys.executable, "-c", launcher, str(tmp_path / "data"), str(free_port())],
+                                  cwd=PROJECT, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=log)
         info = None
         try:
             info = read_json_line(parent.stdout)
@@ -131,3 +133,17 @@ sys.stdin.read()
             parent.stdout.close()
             if info and healthy(info["port"]):
                 os.kill(info["pid"], 9)
+
+
+def test_a_taken_port_is_one_clear_message(tmp_path):
+    with socket.socket() as taken:
+        taken.bind(("127.0.0.1", 0))
+        taken.listen()
+        port = taken.getsockname()[1]
+        result = subprocess.run(
+            [sys.executable, "-m", "scholaraio.interfaces.api", "--data-dir", str(tmp_path / "data"), "--port", str(port)],
+            cwd=PROJECT, capture_output=True, text=True, timeout=30,
+        )
+    assert result.returncode == 1
+    assert f"127.0.0.1:{port}" in result.stderr
+    assert "Traceback" not in result.stderr

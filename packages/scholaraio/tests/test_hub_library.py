@@ -2,10 +2,9 @@ import json
 from pathlib import Path
 
 import pymupdf
-from fastapi.testclient import TestClient
 
 from scholaraio.hub import HubLibrary
-from scholaraio.interfaces.api.app import create_app
+from tests.hub_client import hub_client
 
 
 def test_existing_analysis_artifacts_are_read_without_rebuilding(tmp_path):
@@ -83,12 +82,10 @@ def test_import_search_duplicate_and_context(tmp_path):
         library.close()
 
 
-def test_pdf_range_position_and_auth(tmp_path):
+def test_pdf_range_and_position(tmp_path):
     source = tmp_path / "source.pdf"
     pdf_file(source)
-    with TestClient(create_app(tmp_path / "app", "test-secret")) as client:
-        assert client.get("/papers").status_code == 401
-        client.headers["x-hub-token"] = "test-secret"
+    with hub_client(tmp_path / "app") as client:
         pid = ingest(client.app.state.library, source, "Paper.pdf")["paperId"]
         response = client.get(f"/papers/{pid}/pdf", headers={"Range": "bytes=0-19"})
         assert response.status_code == 206
@@ -117,8 +114,7 @@ def test_attachment_boundaries_and_batch_results(tmp_path):
     import time
     source = tmp_path / "source.pdf"
     pdf_file(source)
-    with TestClient(create_app(tmp_path / "app", "test-secret")) as client:
-        client.headers["x-hub-token"] = "test-secret"
+    with hub_client(tmp_path / "app") as client:
         pid = ingest(client.app.state.library, source, "Paper.pdf")["paperId"]
         directory, _ = client.app.state.library.runtime.papers.find(pid)
         (directory / "images").mkdir()
@@ -142,8 +138,7 @@ def test_projects_membership_scope_and_restart(tmp_path):
     root = tmp_path / "app"
     source = tmp_path / "source.pdf"
     pdf_file(source)
-    headers = {"x-hub-token": "test"}
-    with TestClient(create_app(root, "test"), headers=headers) as client:
+    with hub_client(root) as client:
         pid = ingest(client.app.state.library, source, "Paper.pdf")["paperId"]
         assert client.post("/projects", json={"name": "文献项目"}).status_code == 201
         assert client.post("/projects", json={"name": "文献项目"}).status_code == 400
@@ -158,7 +153,7 @@ def test_projects_membership_scope_and_restart(tmp_path):
         context = client.post("/context", json={"query": "总结", "projectId": "文献项目"}).json()
         assert {c["paperId"] for c in context["citations"]} == {pid}
         assert client.post("/scope", json={"projectId": "missing"}).status_code == 404
-    with TestClient(create_app(root, "test"), headers=headers) as client:
+    with hub_client(root) as client:
         assert client.get("/projects").json()["projects"][0]["paperIds"] == [pid]
         assert client.post("/projects/文献项目/papers", json={"paperIds": [pid], "action": "remove"}).json()["paperCount"] == 0
         assert client.post("/context", json={"query": "molecular", "projectId": "文献项目"}).json()["citations"] == []
@@ -170,7 +165,7 @@ def test_project_boundaries_and_invalid_indexes(tmp_path):
 
     from scholaraio.projects.workspace import create
     root = tmp_path / "app"
-    with TestClient(create_app(root, "test"), headers={"x-hub-token": "test"}) as client:
+    with hub_client(root) as client:
         for name in ["../outside", "a/b", ".hidden", "C:drive", " invalid ", "\n"]:
             assert client.post("/projects", json={"name": name}).status_code == 400
         external = tmp_path / "external"
@@ -272,7 +267,7 @@ def test_projects_can_be_renamed_and_archived(tmp_path):
     root = tmp_path / "app"
     source = tmp_path / "source.pdf"
     pdf_file(source)
-    with TestClient(create_app(root, "test"), headers={"x-hub-token": "test"}) as client:
+    with hub_client(root) as client:
         library = client.app.state.library
         pid = ingest(library, source, "Paper.pdf")["paperId"]
         client.post("/projects", json={"name": "review"})
@@ -293,7 +288,7 @@ def test_projects_can_be_renamed_and_archived(tmp_path):
 
 
 def test_renaming_onto_an_existing_project_is_refused(tmp_path):
-    with TestClient(create_app(tmp_path / "app", "test"), headers={"x-hub-token": "test"}) as client:
+    with hub_client(tmp_path / "app") as client:
         client.post("/projects", json={"name": "review"})
         client.post("/projects", json={"name": "survey"})
         response = client.post("/projects/review/rename", json={"name": "survey"})
@@ -370,7 +365,7 @@ def test_citation_views_respect_the_project_scope(tmp_path):
 def test_filling_in_a_missing_doi_clears_the_incomplete_mark(tmp_path):
     source = tmp_path / "source.pdf"
     pdf_file(source)
-    with TestClient(create_app(tmp_path / "app", "test"), headers={"x-hub-token": "test"}) as client:
+    with hub_client(tmp_path / "app") as client:
         library = client.app.state.library
         pid = ingest(library, source, "Research.pdf")["paperId"]
         assert library.papers.detail(pid)["metadataStatus"] == "incomplete"
@@ -393,7 +388,7 @@ def test_filling_in_a_missing_doi_clears_the_incomplete_mark(tmp_path):
 def test_a_paper_without_a_doi_cannot_be_refetched(tmp_path):
     source = tmp_path / "source.pdf"
     pdf_file(source)
-    with TestClient(create_app(tmp_path / "app", "test"), headers={"x-hub-token": "test"}) as client:
+    with hub_client(tmp_path / "app") as client:
         pid = ingest(client.app.state.library, source, "Research.pdf")["paperId"]
         response = client.post(f"/papers/{pid}/refetch")
         assert response.status_code == 400

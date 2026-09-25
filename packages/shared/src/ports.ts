@@ -38,3 +38,11 @@ export function resolvePort(env: PortEnv = {}): number {
         : DEFAULT_DEV_PORT;
   return parsePort(env.PORT, fallback);
 }
+
+/**
+ * The library service's port: `LIBRARY_PORT`, else the one after the Hub's,
+ * so every profile's pair stays apart (3400/3401, 3500/3501, 3600/3601).
+ */
+export function resolveLibraryPort(env: PortEnv = {}): number {
+  return parsePort(env.LIBRARY_PORT, resolvePort(env) + 1);
+}

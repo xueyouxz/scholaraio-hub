@@ -1377,6 +1377,53 @@
           }
         }
       }
+    },
+    "/directories/{target}/reveal": {
+      "post": {
+        "tags": [
+          "directories"
+        ],
+        "summary": "Reveal",
+        "description": "Open one of the library's own directories; no path comes from the caller.",
+        "operationId": "reveal_directories__target__reveal_post",
+        "parameters": [
+          {
+            "name": "target",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "enum": [
+                "data",
+                "papers",
+                "workspaces"
+              ],
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RevealedDirectory"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
     }
   },
   "components": {
@@ -2879,6 +2926,21 @@
         "required": [
           "changed",
           "paper"
+        ]
+      },
+      "RevealedDirectory": {
+        "properties": {
+          "opened": {
+            "type": "boolean"
+          },
+          "path": {
+            "type": "string"
+          }
+        },
+        "type": "object",
+        "required": [
+          "opened",
+          "path"
         ]
       },
       "Scope": {

@@ -10,6 +10,7 @@ describe("resolveProfile", () => {
       nodeEnv: "development",
       dataDir: path.join(os.homedir(), ".scholaraio-hub-dev"),
       port: 3500,
+      libraryPort: 3501,
     });
   });
 
@@ -19,6 +20,7 @@ describe("resolveProfile", () => {
       nodeEnv: "production",
       dataDir: path.join(os.homedir(), ".scholaraio-hub"),
       port: 3400,
+      libraryPort: 3401,
     });
   });
 

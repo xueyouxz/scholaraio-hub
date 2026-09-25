@@ -17,6 +17,7 @@ export interface Config {
   clientDistDir: string;
   idleTimeoutMs: number;
   port: number;
+  libraryPort: number;
   host: string;
   logDir: string;
   logFile: string;
@@ -45,6 +46,7 @@ export function loadConfig(): Config {
     clientDistDir: env.CLIENT_DIST_DIR ?? path.resolve(__dirname, "..", "..", "client", "dist"),
     idleTimeoutMs: (env.IDLE_TIMEOUT ?? 5 * 60) * 1000,
     port: profile.port,
+    libraryPort: profile.libraryPort,
     host: env.HOST ?? "127.0.0.1",
     logDir: env.LOG_DIR ?? path.join(dataDir, "logs"),
     logFile: env.LOG_FILE ?? "server.log",

@@ -9,10 +9,11 @@ from fastapi import FastAPI
 from scholaraio.hub import HubLibrary
 from scholaraio.interfaces.api.errors import install_error_handlers
 from scholaraio.interfaces.api.routes import ROUTERS
-from scholaraio.interfaces.api.security import require_token
+from scholaraio.interfaces.api.security import AccessPolicy, install_access_policy
 
 
-def create_app(root: Path, token: str) -> FastAPI:
+def create_app(root: Path, policy: AccessPolicy | None = None) -> FastAPI:
+    """The service for the library at ``root``; ``policy`` says who may call it."""
     @asynccontextmanager
     async def lifespan(app: FastAPI):
         library = HubLibrary(root)
@@ -23,7 +24,7 @@ def create_app(root: Path, token: str) -> FastAPI:
             library.close()
 
     app = FastAPI(title="ScholarAIO library", lifespan=lifespan)
-    require_token(app, token)
+    install_access_policy(app, policy or AccessPolicy())
     install_error_handlers(app)
     for router in ROUTERS:
         app.include_router(router)

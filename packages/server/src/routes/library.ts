@@ -64,6 +64,7 @@ export function createLibraryRoutes(service: LibraryService) {
     ["POST", "/imports"],
     ["POST", "/imports/fetch"],
     ["POST", "/imports/:id/retry"],
+    ["POST", "/directories/:target/reveal"],
   ];
   for (const [method, resource] of resources) {
     routes.on(method, resource, async (c) => {

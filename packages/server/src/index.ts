@@ -33,7 +33,12 @@ if (config.nodeEnv === "production" && !existsSync(path.join(config.clientDistDi
 }
 // Development serves the client from Vite on this same port; production from the build.
 const devFrontend = config.nodeEnv === "development" ? new DevFrontend() : undefined;
-const library = new LibraryService(config.dataDir);
+const library = new LibraryService(config.dataDir, {
+  host: config.host,
+  port: config.libraryPort,
+  hubPort: config.port,
+  allowedHosts: config.allowedHosts,
+});
 const settings = new ServerSettingsService({ dataDir: config.dataDir });
 let application: ReturnType<typeof createApp> | undefined;
 let server: ReturnType<typeof serve> | undefined;

@@ -1,15 +1,9 @@
-import path from "node:path";
 import type { HttpBindings } from "@hono/node-server";
-import {
-  type LibrarySettings,
-  type ProviderName,
-  resolveProfileName,
-} from "@scholaraio-hub/shared";
+import { type ProviderName, resolveProfileName } from "@scholaraio-hub/shared";
 import { Hono } from "hono";
 import { HTTPException } from "hono/http-exception";
 import type { ContentfulStatusCode } from "hono/utils/http-status";
 import { z } from "zod";
-import { openInFileManager } from "./files/reveal.js";
 import { createStaticRoutes } from "./frontend/static.js";
 import { loggerFor } from "./logging/logger.js";
 import { hostCheck, parseAllowedHosts, requireCsrfHeader } from "./middleware/security.js";
@@ -22,7 +16,6 @@ import { createProvidersRoutes } from "./routes/providers.js";
 import { createSessionRoutes } from "./routes/sessions.js";
 import { createSettingsRoutes } from "./routes/settings.js";
 import { createSkillsRoutes } from "./routes/skills.js";
-import { validate } from "./routes/validate.js";
 import { LibraryRequestError, LibraryService } from "./services/LibraryService.js";
 import { ProviderUsageLimitService } from "./services/ProviderUsageLimitService.js";
 import type { ServerSettingsService } from "./services/ServerSettingsService.js";
@@ -119,40 +112,6 @@ export function createApp(options: AppOptions) {
       profile: options.profile ?? resolveProfileName(process.env),
       library: library.available,
     }),
-  );
-  // Reveals a directory this Hub owns. No path comes from the browser: it names
-  // which one, and the path is the library's own, checked to lie inside dataDir.
-  app.post(
-    "/api/status/data-dir/open",
-    validate(
-      "query",
-      z.object({
-        target: z
-          .enum(["data", "papers", "workspaces"], {
-            error: (issue) => `未知的目录：${issue.input}`,
-          })
-          .default("data"),
-      }),
-    ),
-    async (c) => {
-      const { target } = c.req.valid("query");
-      try {
-        let directory = dataDir;
-        if (target !== "data") {
-          const settings = await library.json<LibrarySettings>("/settings");
-          directory = path.resolve(
-            target === "papers" ? settings.papersDir : settings.workspaceDir,
-          );
-          const relative = path.relative(path.resolve(dataDir), directory);
-          if (relative.startsWith("..") || path.isAbsolute(relative))
-            return c.json({ error: "该目录不在数据目录内，不能从这里打开" }, 400);
-        }
-        openInFileManager(directory);
-        return c.json({ opened: true, dataDir: directory });
-      } catch (error) {
-        return c.json({ error: error instanceof Error ? error.message : "无法打开数据目录" }, 500);
-      }
-    },
   );
   if (options.serverSettingsService)
     app.route(

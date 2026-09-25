@@ -6,17 +6,12 @@ from pathlib import Path
 
 import pytest
 import yaml
-from fastapi.testclient import TestClient
-
 from scholaraio.interfaces.api.app import create_app
-
-TOKEN = "contract-token"
-
+from tests.hub_client import hub_client
 
 @pytest.fixture
 def client(tmp_path):
-    app = create_app(tmp_path / "app", TOKEN)
-    with TestClient(app, headers={"x-hub-token": TOKEN}, raise_server_exceptions=False) as client:
+    with hub_client(tmp_path / "app", raise_server_exceptions=False) as client:
         yield client
 
 
@@ -135,7 +130,7 @@ def test_every_route_is_proxied_or_called_by_the_server(tmp_path):
     A route on neither side of that list is one nothing can reach; a proxied
     route this API lacks is a page that can only fail.
     """
-    app = create_app(tmp_path / "app", TOKEN)
+    app = create_app(tmp_path / "app")
     served = {
         (method.upper(), _shape(path))
         for path, operations in app.openapi()["paths"].items()

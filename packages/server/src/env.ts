@@ -32,6 +32,7 @@ const RuntimeEnvSchema = z
     NODE_ENV: z.string().optional(),
     HOST: z.string().optional(),
     PORT: optionalInteger,
+    LIBRARY_PORT: optionalInteger,
     SCHOLARAIO_HUB_DATA_DIR: z.string().optional(),
     SCHOLARAIO_HUB_PROFILE: z.string().optional(),
     CLIENT_DIST_DIR: z.string().optional(),

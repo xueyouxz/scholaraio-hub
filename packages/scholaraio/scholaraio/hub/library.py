@@ -12,6 +12,7 @@ from scholaraio.hub.acquire import AcquireService
 from scholaraio.hub.analytics import AnalyticsService
 from scholaraio.hub.artifacts import AnalysisArtifacts
 from scholaraio.hub.citations import CitationService
+from scholaraio.hub.directories import DirectoryService
 from scholaraio.hub.discover import DiscoverService
 from scholaraio.hub.events import EventBus
 from scholaraio.hub.exports import ExportService
@@ -46,6 +47,7 @@ class HubLibrary:
         self.exports = ExportService(runtime, self.projects)
         self.settings = SettingsService(runtime)
         self.discover = DiscoverService(runtime)
+        self.directories = DirectoryService(runtime)
 
         # Background work, each on its own single worker thread.
         self.imports = ImportQueue(runtime, self.projects)

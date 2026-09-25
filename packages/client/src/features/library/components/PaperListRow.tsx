@@ -1,20 +1,18 @@
 import { Check } from "lucide-react";
-import { buildPaperImageUrl } from "../paperUtils";
-import type { PaperReference } from "../types";
+import { paperAssetUrl } from "../paperSummary";
+import type { PaperSummary } from "../paperSummary";
 
 interface Props {
-  paper: PaperReference;
+  paper: PaperSummary;
   isSelected?: boolean;
   onClick?: () => void;
   selectionMode?: boolean;
   isChecked?: boolean;
   addedLabel?: string | null;
-  failedReason?: string | null;
 }
 
 const STATUS_COLORS: Record<string, string> = {
   ingested: "bg-primary/20 text-primary",
-  indexing: "bg-secondary/20 text-secondary",
   pending: "bg-tertiary/20 text-tertiary",
   "no-pdf": "bg-error/20 text-error",
 };
@@ -26,14 +24,12 @@ export function PaperListRow({
   selectionMode,
   isChecked,
   addedLabel,
-  failedReason,
 }: Props) {
   const initial = (paper.title || "?")[0]?.toUpperCase() ?? "?";
   const avatarColor = STATUS_COLORS[paper.status] ?? "bg-surface-container text-on-surface-variant";
-  const coverUrl = paper.coverImage ? buildPaperImageUrl(paper.id, paper.coverImage) : null;
-  const stateClass = failedReason
-    ? "bg-surface-container-low border-error/40 ring-1 ring-error/20"
-    : selectionMode && isChecked
+  const coverUrl = paper.coverImage ? paperAssetUrl(paper.id, paper.coverImage) : null;
+  const stateClass =
+    selectionMode && isChecked
       ? "bg-primary-container/20 border-primary/40 ring-1 ring-primary/30"
       : isSelected
         ? "bg-surface-container-high border-outline-variant/20 ring-1 ring-primary/20"
@@ -43,7 +39,6 @@ export function PaperListRow({
     <button
       type="button"
       onClick={onClick}
-      title={failedReason ?? undefined}
       className={`group relative w-full text-left flex items-stretch rounded-xl border transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40 overflow-hidden ${stateClass}`}
       style={{ height: 152 }}
     >
@@ -93,7 +88,7 @@ export function PaperListRow({
             ) : null}
             {paper.year ? (
               <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-surface-container text-on-surface-variant leading-none">
-                {paper.date ?? paper.year}
+                {paper.year}
               </span>
             ) : null}
           </div>
@@ -106,12 +101,12 @@ export function PaperListRow({
               摘要
             </span>
           ) : null}
-          {paper.hasPdf ? (
+          {paper.hasFullText ? (
             <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-secondary/10 text-secondary leading-none">
               全文
             </span>
           ) : null}
-          {paper.hasPdfFile ? (
+          {paper.hasPdf ? (
             <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-tertiary/10 text-tertiary leading-none">
               PDF
             </span>

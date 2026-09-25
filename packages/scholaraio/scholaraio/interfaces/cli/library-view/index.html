@@ -1,0 +1,193 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>ScholarAIO Library</title>
+  <link rel="stylesheet" href="/styles.css">
+  <link rel="stylesheet" href="/workflows.css">
+</head>
+<body>
+  <main class="shell">
+    <header class="topbar">
+      <div class="brand-block">
+        <div class="status-dot" id="connection-dot"></div>
+        <div>
+          <h1>ScholarAIO Library</h1>
+          <div class="topline">
+            <span id="connection-label">Connecting</span>
+            <span class="divider"></span>
+            <span id="updated-at">--</span>
+          </div>
+        </div>
+      </div>
+      <nav class="tabs" aria-label="Library source">
+        <button class="tab is-active" id="tab-main" data-tab="main" type="button">Main Papers</button>
+        <button class="tab" id="tab-proceedings" data-tab="proceedings" type="button">Proceedings</button>
+      </nav>
+    </header>
+
+    <section class="workspace">
+      <aside class="filter-panel">
+        <section class="monitor-card">
+          <div class="monitor-card-header">
+            <div class="monitor-title" id="source-title">Main Papers</div>
+            <div class="source-root-row">
+              <div class="monitor-subtitle" id="source-root">--</div>
+              <button class="soft-button compact-button" id="source-copy-button" type="button">Copy</button>
+            </div>
+          </div>
+          <div class="metric-list">
+            <div class="metric-row">
+              <span class="metric-label">Records</span>
+              <span class="metric-value" id="metric-total">--</span>
+            </div>
+          </div>
+        </section>
+
+        <section class="monitor-card filter-card" aria-labelledby="search-heading">
+          <div class="filter-heading-row">
+            <div>
+              <div class="monitor-title filter-title" id="search-heading">Search &amp; filter</div>
+            </div>
+            <button class="soft-button compact-button" id="clear-filters-button" type="button">Clear all</button>
+          </div>
+
+          <label class="field-label" for="search-mode">Search mode</label>
+          <select class="select-input" id="search-mode">
+            <option value="metadata">Metadata</option>
+            <option value="keyword">Keyword</option>
+            <option value="semantic">Semantic</option>
+            <option value="unified">Unified</option>
+          </select>
+
+          <label class="field-label" for="search-input">Query</label>
+          <div class="search-query-row">
+            <input class="text-input" id="search-input" type="search" autocomplete="off" placeholder="Search this library">
+            <button class="primary-button" id="search-button" type="button" hidden>Search</button>
+          </div>
+          <div class="search-diagnostics" id="search-diagnostics" role="status" aria-live="polite">
+            Metadata mode filters the loaded records instantly.
+          </div>
+
+          <div class="filter-divider"></div>
+
+          <label class="field-label" for="title-filter">Title</label>
+          <input class="text-input" id="title-filter" type="search" autocomplete="off" placeholder="Contains title text">
+
+          <label class="field-label" for="author-filter">Author</label>
+          <input class="text-input" id="author-filter" type="search" autocomplete="off" placeholder="Name or partial name">
+
+          <div class="year-filter-grid">
+            <label>
+              <span class="field-label">Year from</span>
+              <input class="text-input" id="year-from-filter" type="number" inputmode="numeric" min="1000" max="9999" placeholder="From">
+            </label>
+            <label>
+              <span class="field-label">Year to</span>
+              <input class="text-input" id="year-to-filter" type="number" inputmode="numeric" min="1000" max="9999" placeholder="To">
+            </label>
+          </div>
+
+          <label class="field-label" for="journal-filter">Journal / source</label>
+          <input class="text-input" id="journal-filter" type="search" autocomplete="off" placeholder="Journal or proceedings">
+
+          <label class="field-label" for="doi-filter">DOI</label>
+          <input class="text-input" id="doi-filter" type="search" autocomplete="off" placeholder="10.xxxx/...">
+
+          <label class="field-label" for="type-filter">Type</label>
+          <select class="select-input" id="type-filter">
+            <option value="">All types</option>
+          </select>
+
+          <label class="field-label" for="volume-filter" id="volume-filter-label">Volume</label>
+          <select class="select-input" id="volume-filter">
+            <option value="">All volumes</option>
+          </select>
+
+          <div class="active-filter-count" id="active-filter-count">No active filters</div>
+        </section>
+      </aside>
+
+      <section class="table-panel" id="table-panel">
+        <div class="table-toolbar">
+          <div id="records-toolbar-title">
+            <div class="table-count" id="table-count">--</div>
+          </div>
+          <div class="pdf-toolbar-title" id="pdf-toolbar-title" hidden>
+            <button class="soft-button" id="pdf-back-button" type="button">Back to records</button>
+            <button class="soft-button" id="pdf-fullscreen-button" type="button">Fullscreen</button>
+            <div>
+              <div class="monitor-kicker">PDF</div>
+              <div class="table-count" id="pdf-title">--</div>
+            </div>
+          </div>
+          <button class="soft-button" id="refresh-button" type="button">Refresh</button>
+        </div>
+        <div class="table-wrap" id="records-view">
+          <table>
+            <thead>
+              <tr>
+                <th data-sort="title">Title</th>
+                <th data-sort="authors_text">Authors</th>
+                <th data-sort="year">Year</th>
+                <th data-sort="paper_type">Type</th>
+                <th>Status</th>
+              </tr>
+            </thead>
+            <tbody id="paper-table-body"></tbody>
+          </table>
+          <div class="empty-state" id="empty-state" hidden>No records.</div>
+        </div>
+        <div class="pdf-viewer" id="pdf-viewer" hidden>
+          <iframe id="pdf-frame" title="PDF preview"></iframe>
+        </div>
+      </section>
+
+      <aside class="detail-panel">
+        <section class="monitor-card detail-card">
+          <div class="monitor-card-header">
+            <div class="monitor-title" id="detail-title">Select a record</div>
+          </div>
+
+          <div class="detail-actions" id="detail-actions" hidden>
+            <button class="action-button action-button-primary" id="copy-bibtex-button" type="button">Copy BibTeX</button>
+            <button class="action-button" id="preview-pdf-button" type="button">Preview PDF</button>
+            <button class="action-button" id="native-pdf-button" type="button">Open in default viewer</button>
+          </div>
+          <div class="pdf-sync-status" id="pdf-sync-status" role="status" aria-live="polite" hidden></div>
+
+          <div class="detail-section">
+            <div class="section-title">Metadata</div>
+            <dl class="metadata-grid" id="metadata-grid"></dl>
+          </div>
+
+          <details class="detail-section" open>
+            <summary class="section-title">Abstract</summary>
+            <div class="detail-text markdown-body" id="detail-abstract">--</div>
+          </details>
+
+          <details class="detail-section">
+            <summary class="section-title">Conclusion</summary>
+            <div class="detail-text markdown-body" id="detail-conclusion">--</div>
+          </details>
+
+          <details class="detail-section">
+            <summary class="section-title">TOC</summary>
+            <div class="toc-list" id="toc-list"></div>
+          </details>
+
+          <div class="detail-section">
+            <div class="section-title">Quality</div>
+            <div class="issue-list" id="issue-list"></div>
+          </div>
+
+        </section>
+      </aside>
+    </section>
+  </main>
+  <div class="toast" id="toast" role="status" aria-live="polite" hidden></div>
+  <script src="/rendering.js"></script>
+  <script type="module" src="/app.js"></script>
+</body>
+</html>

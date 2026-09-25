@@ -4,8 +4,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import tailwindcss from "@tailwindcss/vite";
 import react from "@vitejs/plugin-react";
-import { defineConfig, loadEnv } from "vite";
-import { resolveDerivedPorts } from "./packages/shared/src/ports";
+import { defineConfig } from "vite";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -30,10 +29,9 @@ function resolveAppVersion(): string {
   }
 }
 
+// Builds the client, and configures the dev server that `packages/server`
+// runs in middleware mode on the application's own port (src/frontend/dev.ts).
 export default defineConfig(({ mode }) => {
-  const env = loadEnv(mode, __dirname, "");
-  const host = env.HOST || "127.0.0.1";
-  const ports = resolveDerivedPorts({ ...process.env, ...env });
   const isDev = mode === "development";
 
   return {
@@ -44,30 +42,9 @@ export default defineConfig(({ mode }) => {
       alias: {
         "@": path.resolve(__dirname, "packages/client/src"),
       },
-    },
-    server: {
-      host,
-      port: ports.client,
-      strictPort: true,
-      proxy: {
-        "/api": {
-          target: `http://${host}:${ports.app}`,
-          changeOrigin: false,
-        },
-        "/hub": {
-          target: `http://${host}:${ports.app}`,
-          changeOrigin: false,
-        },
-        "/health": {
-          target: `http://${host}:${ports.app}`,
-          changeOrigin: false,
-        },
-      },
-    },
-    preview: {
-      host,
-      port: ports.preview,
-      strictPort: true,
+      // Dev reads @scholaraio-hub/shared from source (like the tsx server), so
+      // shared edits apply without rebuilding packages/shared/dist.
+      conditions: isDev ? ["scholaraio-source"] : [],
     },
     build: {
       outDir: path.resolve(__dirname, "packages/client/dist"),

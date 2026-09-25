@@ -1,0 +1,64 @@
+{
+  "events": [
+    {
+      "type": "session.started",
+      "sessionId": "thread-golden"
+    },
+    {
+      "type": "reasoning.delta",
+      "blockId": "item-reason-turn-1",
+      "delta": "先检索文献"
+    },
+    {
+      "type": "text.delta",
+      "blockId": "item-answer-turn-1",
+      "delta": "这篇论文"
+    },
+    {
+      "type": "text.delta",
+      "blockId": "item-answer-turn-1",
+      "delta": "提出了新方法。"
+    },
+    {
+      "type": "turn.completed",
+      "usage": {
+        "inputTokens": 120,
+        "outputTokens": 45,
+        "cachedInputTokens": 64
+      }
+    }
+  ],
+  "chunks": [
+    {
+      "type": "reasoning-start",
+      "id": "item-reason-turn-1"
+    },
+    {
+      "type": "reasoning-delta",
+      "id": "item-reason-turn-1",
+      "delta": "先检索文献"
+    },
+    {
+      "type": "text-start",
+      "id": "item-answer-turn-1"
+    },
+    {
+      "type": "text-delta",
+      "id": "item-answer-turn-1",
+      "delta": "这篇论文"
+    },
+    {
+      "type": "text-delta",
+      "id": "item-answer-turn-1",
+      "delta": "提出了新方法。"
+    },
+    {
+      "type": "reasoning-end",
+      "id": "item-reason-turn-1"
+    },
+    {
+      "type": "text-end",
+      "id": "item-answer-turn-1"
+    }
+  ]
+}

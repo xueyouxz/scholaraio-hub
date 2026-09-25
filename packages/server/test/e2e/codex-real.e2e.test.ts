@@ -2,8 +2,8 @@ import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { CodexProvider } from "../../src/sdk/providers/codex.js";
-import type { SDKMessage } from "../../src/sdk/types.js";
+import type { SDKMessage } from "../../src/providers/claude/sdk-message.js";
+import { CodexProvider } from "../../src/providers/codex/CodexProvider.js";
 
 const FOREGROUND = process.env.FOREGROUND === "1";
 
@@ -50,14 +50,13 @@ describe("Codex Real E2E", () => {
 
     provider = new CodexProvider();
 
-    const installed = await provider.isInstalled();
-    if (!installed) {
+    const status = await provider.getAuthStatus();
+    if (!status.installed) {
       console.log("Skipping Codex real tests - Codex CLI not installed");
       return;
     }
 
-    const authenticated = await provider.isAuthenticated();
-    if (!authenticated) {
+    if (!status.authenticated) {
       console.log("Skipping Codex real tests - Codex CLI not authenticated");
       return;
     }

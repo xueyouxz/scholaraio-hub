@@ -47,6 +47,6 @@ Providers differ — never assume a capability is universal:
 
 ## Where this lives
 
-- `packages/server/src/sdk/providers/` — provider adapters
+- `packages/server/src/providers/` — provider adapters (`claude/`, `codex/`)
 - `packages/server/src/supervisor/` — process/turn lifecycle
 - Client session controls under `packages/client/src/features/session/`

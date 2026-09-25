@@ -1,0 +1,211 @@
+{
+  "events": [
+    {
+      "type": "session.started",
+      "sessionId": "thread-golden"
+    },
+    {
+      "type": "reasoning.delta",
+      "blockId": "item-think-turn-4",
+      "delta": "先看测试"
+    },
+    {
+      "type": "reasoning.delta",
+      "blockId": "item-think-turn-4",
+      "delta": "\n再跑命令"
+    },
+    {
+      "type": "tool.call",
+      "callId": "plan-turn-4-1",
+      "name": "TodoWrite",
+      "input": {
+        "todos": [
+          {
+            "content": "运行测试",
+            "status": "in_progress",
+            "activeForm": "运行测试"
+          },
+          {
+            "content": "修复失败",
+            "status": "pending",
+            "activeForm": "修复失败"
+          }
+        ]
+      }
+    },
+    {
+      "type": "tool.result",
+      "callId": "plan-turn-4-1",
+      "output": "Plan updated",
+      "isError": false
+    },
+    {
+      "type": "tool.call",
+      "callId": "item-test",
+      "name": "Bash",
+      "input": {
+        "command": "pnpm test"
+      }
+    },
+    {
+      "type": "tool.output.delta",
+      "callId": "item-test",
+      "delta": "running 3 tests\n"
+    },
+    {
+      "type": "tool.output.delta",
+      "callId": "item-test",
+      "delta": "3 passed\n"
+    },
+    {
+      "type": "tool.result",
+      "callId": "item-test",
+      "output": "running 3 tests\n3 passed\n",
+      "isError": false
+    },
+    {
+      "type": "tool.call",
+      "callId": "item-todo",
+      "name": "TodoWrite",
+      "input": {
+        "todos": [
+          {
+            "content": "运行测试",
+            "status": "completed",
+            "activeForm": "运行测试"
+          },
+          {
+            "content": "修复失败",
+            "status": "pending",
+            "activeForm": "修复失败"
+          }
+        ]
+      }
+    },
+    {
+      "type": "tool.result",
+      "callId": "item-todo",
+      "output": "Plan updated",
+      "isError": false
+    },
+    {
+      "type": "turn.completed"
+    }
+  ],
+  "chunks": [
+    {
+      "type": "reasoning-start",
+      "id": "item-think-turn-4"
+    },
+    {
+      "type": "reasoning-delta",
+      "id": "item-think-turn-4",
+      "delta": "先看测试"
+    },
+    {
+      "type": "reasoning-delta",
+      "id": "item-think-turn-4",
+      "delta": "\n再跑命令"
+    },
+    {
+      "type": "tool-input-available",
+      "toolCallId": "plan-turn-4-1",
+      "toolName": "TodoWrite",
+      "input": {
+        "todos": [
+          {
+            "content": "运行测试",
+            "status": "in_progress",
+            "activeForm": "运行测试"
+          },
+          {
+            "content": "修复失败",
+            "status": "pending",
+            "activeForm": "修复失败"
+          }
+        ]
+      },
+      "dynamic": true
+    },
+    {
+      "type": "tool-output-available",
+      "toolCallId": "plan-turn-4-1",
+      "output": {
+        "content": "Plan updated",
+        "isError": false
+      },
+      "dynamic": true
+    },
+    {
+      "type": "tool-input-available",
+      "toolCallId": "item-test",
+      "toolName": "Bash",
+      "input": {
+        "command": "pnpm test"
+      },
+      "dynamic": true
+    },
+    {
+      "type": "tool-output-available",
+      "toolCallId": "item-test",
+      "output": {
+        "content": "running 3 tests\n",
+        "isError": false
+      },
+      "dynamic": true,
+      "preliminary": true
+    },
+    {
+      "type": "tool-output-available",
+      "toolCallId": "item-test",
+      "output": {
+        "content": "running 3 tests\n3 passed\n",
+        "isError": false
+      },
+      "dynamic": true,
+      "preliminary": true
+    },
+    {
+      "type": "tool-output-available",
+      "toolCallId": "item-test",
+      "output": {
+        "content": "running 3 tests\n3 passed\n",
+        "isError": false
+      },
+      "dynamic": true
+    },
+    {
+      "type": "tool-input-available",
+      "toolCallId": "item-todo",
+      "toolName": "TodoWrite",
+      "input": {
+        "todos": [
+          {
+            "content": "运行测试",
+            "status": "completed",
+            "activeForm": "运行测试"
+          },
+          {
+            "content": "修复失败",
+            "status": "pending",
+            "activeForm": "修复失败"
+          }
+        ]
+      },
+      "dynamic": true
+    },
+    {
+      "type": "tool-output-available",
+      "toolCallId": "item-todo",
+      "output": {
+        "content": "Plan updated",
+        "isError": false
+      },
+      "dynamic": true
+    },
+    {
+      "type": "reasoning-end",
+      "id": "item-think-turn-4"
+    }
+  ]
+}

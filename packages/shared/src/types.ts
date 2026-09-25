@@ -1,25 +1,12 @@
 /**
  * Provider name - which AI agent provider to use.
- * - "claude": Claude via Anthropic SDK
- * - "codex": OpenAI Codex via SDK (cloud models)
- * - "codex-oss": Codex via CLI with --oss (local models via Ollama)
- * - "gemini": Google Gemini via CLI
- * - "opencode": OpenCode via HTTP server (multi-provider agent)
+ * - "claude": Claude Code via the Anthropic Agent SDK
+ * - "codex": OpenAI Codex via the codex app-server
+ *
+ * Every name here must have an implementation in
+ * `packages/server/src/sdk/providers/index.ts`.
  */
-export type ProviderName =
-  | "claude"
-  | "claude-ollama"
-  | "codex"
-  | "codex-oss"
-  | "gemini"
-  | "gemini-acp"
-  | "opencode";
-
-/**
- * The default provider when none is specified.
- * Used for backward compatibility with existing sessions that don't have provider set.
- */
-export const DEFAULT_PROVIDER: ProviderName = "claude";
+export type ProviderName = "claude" | "codex";
 
 /**
  * Model information for a provider.
@@ -31,16 +18,18 @@ export interface ModelInfo {
   name: string;
   /** Description of the model's capabilities (optional) */
   description?: string;
-  /** Model size in bytes (for local models) */
-  size?: number;
-  /** Context window size in tokens (for local models) */
-  contextWindow?: number;
-  /** Parameter count string, e.g. "30.5B" (for local models) */
-  parameterSize?: string;
-  /** Base model this preset was derived from, e.g. "qwen3-coder:30b" */
-  parentModel?: string;
-  /** Quantization level, e.g. "Q4_K_M" */
-  quantizationLevel?: string;
+  /** The provider's own default model. */
+  isDefault?: boolean;
+  /** Effort levels the provider offers for this model, in its order and naming. */
+  efforts?: EffortOption[];
+  /** The effort the provider uses when none is chosen. */
+  defaultEffort?: string;
+}
+
+/** One effort level as the provider names and describes it. */
+export interface EffortOption {
+  id: string;
+  description?: string;
 }
 
 /**
@@ -53,8 +42,15 @@ export interface SlashCommand {
   description: string;
   /** Hint for command arguments (e.g., "<file>") */
   argumentHint?: string;
-  /** Where the skill command was discovered. */
-  source?: "project" | "global" | "research";
+  /** Where the command comes from: the provider, the hub's research skills, or the composer itself. */
+  source?: "provider" | "project" | "global" | "research" | "client";
+  /**
+   * How the composer invokes it: `/name` for commands, `$name` for Codex skill
+   * mentions. Defaults to "/".
+   */
+  trigger?: "/" | "$";
+  /** Only at the very start of the message (default), or at any word. */
+  position?: "leading" | "anywhere";
 }
 
 /**
@@ -97,14 +93,47 @@ export interface ProviderInfo {
   enabled: boolean;
   expiresAt?: string;
   user?: { email?: string; name?: string };
+  /** Subscription plan of the login ("pro", "plus"…); absent for API-key logins. */
+  plan?: string;
   /** Available models for this provider */
   models?: ModelInfo[];
-  /** Whether this provider supports permission modes (default: true for backward compat) */
-  supportsPermissionMode?: boolean;
-  /** Whether this provider supports extended thinking toggle (default: true for backward compat) */
-  supportsThinkingToggle?: boolean;
-  /** Whether this provider supports slash commands (default: false) */
-  supportsSlashCommands?: boolean;
+  /** What the composer offers for this provider, in the provider's own terms. */
+  capabilities: ProviderCapabilities;
+}
+
+/** One permission choice as the provider names it, and the hub mode it maps to. */
+export interface PermissionModeOption {
+  id: PermissionMode;
+  label: string;
+  description?: string;
+}
+
+/** One thinking choice as the provider names it. */
+export interface ThinkingModeOption {
+  id: ThinkingMode;
+  label: string;
+}
+
+/** Hub-wide limits on files attached to one message. */
+export const ATTACHMENT_LIMITS = { maxBytes: 25 * 1024 * 1024, maxCount: 10 } as const;
+
+/**
+ * What a provider offers, as one descriptor instead of `supportsX` booleans.
+ * Choices carry the provider's own names; the UI renders them and hard-codes none.
+ */
+export interface ProviderCapabilities {
+  /** Permission choices in the provider's order; empty when it has none. */
+  permissionModes: PermissionModeOption[];
+  /** Thinking switch choices; empty when the provider only has effort levels. */
+  thinkingModes: ThinkingModeOption[];
+  /**
+   * Where the provider honours a slash command: only at the start of the
+   * message, or at any word (skills referenced mid-sentence).
+   */
+  slashCommands: "leading" | "anywhere";
+  /** Whether the provider reports context as the share used or the share left. */
+  contextUsage: "used" | "remaining";
+  attachments: { maxBytes: number; maxCount: number };
 }
 
 export type ProviderUsageLimitWindowName =
@@ -171,42 +200,17 @@ export interface NewSessionDefaults {
   permissionMode?: PermissionMode;
 }
 
-/**
- * Model option for Claude sessions.
- * - "default": Use the CLI's default model
- * - "best": Use Claude Code's best available model alias
- * - "sonnet": Claude Sonnet
- * - "sonnet[1m]": Claude Sonnet with 1M context when available
- * - "opus": Claude Opus
- * - "opus[1m]": Claude Opus with 1M context when available
- * - "haiku": Claude Haiku
- * - "opusplan": Plan with Opus, execute with Sonnet
- */
-export type ModelOption =
-  | "default"
-  | "best"
-  | "sonnet"
-  | "sonnet[1m]"
-  | "opus"
-  | "opus[1m]"
-  | "haiku"
-  | "opusplan";
+/** Whether the model thinks before answering, for providers that offer the switch. */
+export type ThinkingMode = "off" | "adaptive";
 
 /**
- * Effort level for Claude's response quality.
- * Maps to the SDK's effort parameter.
+ * A session's execution options in the provider's own terms: `effort` is one of
+ * the model's `efforts` ids (Claude "low".."max", Codex "none".."xhigh").
  */
-export type EffortLevel = "low" | "medium" | "high" | "max";
-
-/**
- * Thinking + effort option sent from client to server.
- * Wire format (backward compatible):
- * - "off": Thinking disabled
- * - "auto": Adaptive thinking, no effort override
- * - "on:low" | "on:medium" | "on:high" | "on:max": Forced-on thinking at effort level
- * - EffortLevel (plain): Adaptive thinking with effort (backward compat with old clients)
- */
-export type ThinkingOption = "off" | "auto" | `on:${EffortLevel}` | EffortLevel;
+export interface ExecutionOptions {
+  thinking?: ThinkingMode;
+  effort?: string;
+}
 
 /**
  * Thinking configuration for the SDK.
@@ -216,64 +220,25 @@ export type ThinkingConfig =
   | { type: "enabled"; budgetTokens?: number }
   | { type: "disabled" };
 
-/**
- * Convert thinking option to SDK thinking config + effort level.
- * On Opus 4.6+, "enabled" type is for older models and crashes the CLI.
- * Instead, "on" mode uses adaptive + explicit effort level.
- */
-export function thinkingOptionToConfig(option: ThinkingOption): {
-  thinking: ThinkingConfig;
-  effort?: EffortLevel;
-} {
-  if (option === "off") {
-    return { thinking: { type: "disabled" } };
-  }
-  if (option === "auto") {
-    return { thinking: { type: "adaptive" } };
-  }
-  // "on:high" etc. = adaptive thinking with explicit effort level
-  if (option.startsWith("on:")) {
-    const effort = option.slice(3) as EffortLevel;
-    return { thinking: { type: "adaptive" }, effort };
-  }
-  // Plain EffortLevel = adaptive + effort (backward compat with old clients)
-  return { thinking: { type: "adaptive" }, effort: option as EffortLevel };
+export function thinkingModeToConfig(mode: ThinkingMode): ThinkingConfig {
+  return mode === "off" ? { type: "disabled" } : { type: "adaptive" };
 }
 
 /**
- * Session ownership - who controls the session.
- * - "none": No active process
- * - "self": Process is running and owned by this server
- * - "external": Session is being controlled by an external program
+ * Sessions stored before thinking and effort were separate kept one combined
+ * value: "off" | "auto" | "on:<effort>" | "<effort>".
  */
-export type SessionOwnership =
-  | { owner: "none" }
-  | {
-      owner: "self";
-      processId: string;
-      permissionMode?: PermissionMode;
-      modeVersion?: number;
-    }
-  | { owner: "external" };
-
-/**
- * Metadata about a file in a project.
- */
-export interface FileMetadata {
-  /** File path relative to project root */
-  path: string;
-  /** File size in bytes */
-  size: number;
-  /** MIME type (e.g., "text/typescript", "image/png") */
-  mimeType: string;
-  /** Whether the file is a text file (can be displayed inline) */
-  isText: boolean;
+export function readLegacyThinking(value: string): ExecutionOptions {
+  if (value === "off" || value === "adaptive") return { thinking: value };
+  if (value === "auto") return { thinking: "adaptive" };
+  const effort = value.startsWith("on:") ? value.slice(3) : value;
+  return effort ? { thinking: "adaptive", effort } : {};
 }
 
 /**
  * An entry in a project filesystem browse response.
  */
-export interface ProjectFsEntry {
+export interface SessionFsEntry {
   name: string;
   isDir: boolean;
   /** True for files/dirs whose name starts with "." */
@@ -281,77 +246,10 @@ export interface ProjectFsEntry {
 }
 
 /**
- * Response from GET /api/projects/:projectId/fs/browse
+ * Response from GET /api/sessions/:id/fs/browse
  */
-export interface ProjectFsBrowseResponse {
+export interface SessionDirectoryListing {
   /** Relative path from project root that was listed */
   path: string;
-  entries: ProjectFsEntry[];
-}
-
-/**
- * Response from the file content API.
- */
-export interface FileContentResponse {
-  /** File metadata */
-  metadata: FileMetadata;
-  /** File content (only for text files under size limit) */
-  content?: string;
-  /** URL to fetch raw file content */
-  rawUrl: string;
-  /** Syntax-highlighted HTML (when highlight=true and language is supported) */
-  highlightedHtml?: string;
-  /** Language used for highlighting */
-  highlightedLanguage?: string;
-  /** Whether the file was truncated for highlighting */
-  highlightedTruncated?: boolean;
-  /** Rendered markdown HTML (for .md files when highlight=true) */
-  renderedMarkdownHtml?: string;
-}
-
-/**
- * A hunk from a unified diff patch.
- * Contains line numbers and the actual diff lines with prefixes.
- */
-export interface PatchHunk {
-  /** Starting line number in the old file */
-  oldStart: number;
-  /** Number of lines from old file in this hunk */
-  oldLines: number;
-  /** Starting line number in the new file */
-  newStart: number;
-  /** Number of lines in new file in this hunk */
-  newLines: number;
-  /** Diff lines prefixed with ' ' (context), '-' (removed), or '+' (added) */
-  lines: string[];
-}
-
-/**
- * Server-computed augment for Edit tool_use blocks.
- * Provides pre-computed structuredPatch and highlighted diff HTML
- * so the client can render consistent unified diffs.
- */
-export interface EditAugment {
-  /** The tool_use ID this augment is for */
-  toolUseId: string;
-  /** Augment type discriminator */
-  type: "edit";
-  /** Computed unified diff with context lines */
-  structuredPatch: PatchHunk[];
-  /** Syntax-highlighted diff HTML (shiki, CSS variables theme) */
-  diffHtml: string;
-  /** The file path being edited */
-  filePath: string;
-}
-
-/**
- * Permission rules for session tool filtering.
- * Patterns like "Bash(curl *)" match tool name + glob against tool input.
- * Evaluation order: deny first, then allow, then fall through to permission mode.
- */
-export interface PermissionRules {
-  // Patterns to auto-approve (e.g., ["Bash(tsx */browser-cli.ts *)"])
-  allow?: string[];
-  // Patterns to auto-deny (e.g., ["Bash(curl *)", "Bash(*| bash*)"])
-  deny?: string[];
+  entries: SessionFsEntry[];
 }

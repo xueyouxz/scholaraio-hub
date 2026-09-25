@@ -1,11 +1,9 @@
-import type { ProviderInfo, ProviderName } from "@scholaraio-hub/shared";
+import type { ProviderInfo } from "@scholaraio-hub/shared";
 import { Hono } from "hono";
-import { getAllProviders } from "../sdk/providers/index.js";
-import type { ModelInfoService } from "../services/ModelInfoService.js";
+import { getAllProviders } from "../providers/index.js";
 import type { ProviderUsageLimitService } from "../services/ProviderUsageLimitService.js";
 
 interface ProviderRouteDeps {
-  modelInfoService?: ModelInfoService;
   providerUsageLimitService?: ProviderUsageLimitService;
   /** If non-empty, only these provider names are exposed. */
   enabledProviders?: string[];
@@ -14,18 +12,20 @@ interface ProviderRouteDeps {
 /**
  * Creates provider-related API routes.
  *
- * GET /api/providers - Get all providers with their auth status
- * GET /api/providers/:name - Get specific provider status
+ * GET /api/providers - every enabled provider with its auth status and models
+ * GET /api/providers/usage-limits - their usage-limit windows
  */
 export function createProvidersRoutes(deps: ProviderRouteDeps = {}): Hono {
   const routes = new Hono();
-  // GET /api/providers - Get all available providers with auth status and models
+  const enabledProviders = () => {
+    const providers = getAllProviders();
+    if (!deps.enabledProviders?.length) return providers;
+    const enabled = new Set(deps.enabledProviders);
+    return providers.filter((provider) => enabled.has(provider.name));
+  };
+
   routes.get("/", async (c) => {
-    let providers = getAllProviders();
-    if (deps.enabledProviders && deps.enabledProviders.length > 0) {
-      const enabled = new Set(deps.enabledProviders);
-      providers = providers.filter((p) => enabled.has(p.name));
-    }
+    const providers = enabledProviders();
     const providerInfos: ProviderInfo[] = [];
 
     for (const provider of providers) {
@@ -33,7 +33,6 @@ export function createProvidersRoutes(deps: ProviderRouteDeps = {}): Hono {
         provider.getAuthStatus(),
         provider.getAvailableModels(),
       ]);
-      deps.modelInfoService?.ingestModels(provider.name as ProviderName, models);
       providerInfos.push({
         name: provider.name,
         displayName: provider.displayName,
@@ -42,10 +41,9 @@ export function createProvidersRoutes(deps: ProviderRouteDeps = {}): Hono {
         enabled: authStatus.enabled,
         expiresAt: authStatus.expiresAt?.toISOString(),
         user: authStatus.user,
+        plan: authStatus.plan,
         models,
-        supportsPermissionMode: provider.supportsPermissionMode,
-        supportsThinkingToggle: provider.supportsThinkingToggle,
-        supportsSlashCommands: provider.supportsSlashCommands,
+        capabilities: provider.capabilities,
       });
     }
 
@@ -57,46 +55,8 @@ export function createProvidersRoutes(deps: ProviderRouteDeps = {}): Hono {
       return c.json({ usageLimits: [] });
     }
 
-    let providers = getAllProviders();
-    if (deps.enabledProviders && deps.enabledProviders.length > 0) {
-      const enabled = new Set(deps.enabledProviders);
-      providers = providers.filter((p) => enabled.has(p.name));
-    }
-
-    const usageLimits = await deps.providerUsageLimitService.getUsageLimits(providers);
+    const usageLimits = await deps.providerUsageLimitService.getUsageLimits(enabledProviders());
     return c.json({ usageLimits });
-  });
-
-  // GET /api/providers/:name - Get specific provider status with models
-  routes.get("/:name", async (c) => {
-    const name = c.req.param("name");
-    const providers = getAllProviders();
-    const provider = providers.find((p) => p.name === name);
-
-    if (!provider) {
-      return c.json({ error: "Provider not found" }, 404);
-    }
-
-    const [authStatus, models] = await Promise.all([
-      provider.getAuthStatus(),
-      provider.getAvailableModels(),
-    ]);
-    deps.modelInfoService?.ingestModels(provider.name as ProviderName, models);
-    const providerInfo: ProviderInfo = {
-      name: provider.name,
-      displayName: provider.displayName,
-      installed: authStatus.installed,
-      authenticated: authStatus.authenticated,
-      enabled: authStatus.enabled,
-      expiresAt: authStatus.expiresAt?.toISOString(),
-      user: authStatus.user,
-      models,
-      supportsPermissionMode: provider.supportsPermissionMode,
-      supportsThinkingToggle: provider.supportsThinkingToggle,
-      supportsSlashCommands: provider.supportsSlashCommands,
-    };
-
-    return c.json({ provider: providerInfo });
   });
 
   return routes;

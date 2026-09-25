@@ -1,11 +1,10 @@
 import type { ScholaraioSkill, ScholaraioSkillCategory } from "@scholaraio-hub/shared";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Check, Copy, RefreshCw, Sparkles } from "lucide-react";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { usePageTitle } from "../../app/components/NavigationLayout";
-import { api } from "../../core/api";
-import { queryKeys } from "../../core/queryKeys";
+import { skillsApi, skillsQuery } from "../../core/settings";
 import { SkillDetailView } from "./SkillDetailView";
 
 interface GroupedCategory {
@@ -31,23 +30,23 @@ function groupSkills(
 
 export function SkillsPage() {
   const { setTitle } = usePageTitle();
-  setTitle("Skills");
+  useEffect(() => {
+    setTitle("Skills");
+    return () => setTitle("");
+  }, [setTitle]);
 
   const { skillId } = useParams<{ skillId?: string }>();
   const queryClient = useQueryClient();
   const [collapsed, setCollapsed] = useState<Set<string>>(() => new Set(["__uncategorized__"]));
 
   const listQuery = useQuery({
-    queryKey: queryKeys.scholaraioSkills(),
-    queryFn: ({ signal }) => api.listScholaraioSkills({ signal }),
-    staleTime: Number.POSITIVE_INFINITY,
+    ...skillsQuery,
   });
 
   const refreshMutation = useMutation({
-    mutationFn: () => api.refreshScholaraioSkills(),
+    mutationFn: () => skillsApi.refresh(),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: queryKeys.scholaraioSkills() });
-      queryClient.invalidateQueries({ queryKey: ["scholaraio-skills"] });
+      queryClient.invalidateQueries({ queryKey: skillsQuery.queryKey });
     },
   });
 
@@ -67,7 +66,9 @@ export function SkillsPage() {
 
   return (
     <div className="flex-1 flex min-h-0 overflow-hidden">
-      <aside className="w-80 shrink-0 border-r border-outline-variant flex flex-col bg-surface">
+      <aside
+        className={`${skillId ? "hidden md:flex" : "flex"} w-full md:w-80 shrink-0 border-r border-outline-variant flex-col bg-surface`}
+      >
         <div className="flex items-center justify-between px-4 py-3 border-b border-outline-variant">
           <div className="flex items-center gap-2">
             <Sparkles className="w-4 h-4 text-primary" />
@@ -111,11 +112,7 @@ export function SkillsPage() {
                     type="button"
                     onClick={() => toggleCategory(category.id)}
                     className="w-full flex items-center justify-between px-2 py-1.5 rounded hover:bg-surface-container text-on-surface-variant"
-                    title={
-                      isUncategorized
-                        ? "这些 skill 是 scholaraio 仓库新增的，尚未在前端归类。运行 pnpm skills:sync 后提 PR。"
-                        : undefined
-                    }
+                    title={isUncategorized ? "尚未分类的科研工作流" : undefined}
                   >
                     <span className="font-sans text-xs font-semibold uppercase tracking-wider">
                       {category.label}（{skills.length}）
@@ -137,7 +134,9 @@ export function SkillsPage() {
           )}
         </div>
       </aside>
-      <main className="flex-1 min-w-0 overflow-y-auto bg-background">
+      <div
+        className={`${skillId ? "block" : "hidden md:block"} flex-1 min-w-0 overflow-y-auto bg-surface`}
+      >
         {skillId ? (
           <SkillDetailView skillName={skillId} />
         ) : (
@@ -152,13 +151,19 @@ export function SkillsPage() {
             </div>
           </div>
         )}
-      </main>
+      </div>
     </div>
   );
 }
 
 function SkillListItem({ skill, active }: { skill: ScholaraioSkill; active: boolean }) {
   const [copied, setCopied] = useState(false);
+  useEffect(() => {
+    if (!copied) return;
+    const timer = window.setTimeout(() => setCopied(false), 1200);
+    return () => window.clearTimeout(timer);
+  }, [copied]);
+  const [copyError, setCopyError] = useState(false);
 
   return (
     <div className="flex items-stretch group">
@@ -178,13 +183,20 @@ function SkillListItem({ skill, active }: { skill: ScholaraioSkill; active: bool
         onClick={(e) => {
           e.preventDefault();
           e.stopPropagation();
-          void navigator.clipboard.writeText(`/${skill.name}`).then(() => {
-            setCopied(true);
-            window.setTimeout(() => setCopied(false), 1200);
-          });
+          void navigator.clipboard
+            .writeText(`/${skill.name}`)
+            .then(() => {
+              setCopied(true);
+              setCopyError(false);
+            })
+            .catch((error) => {
+              console.warn("复制失败", error);
+              setCopyError(true);
+            });
         }}
-        title={`复制 /${skill.name}`}
-        className="px-2 rounded-r text-on-surface-variant opacity-0 group-hover:opacity-100 hover:bg-surface-container transition-opacity"
+        aria-label={copyError ? "复制失败，请重试" : `复制 /${skill.name}`}
+        title={copyError ? "复制失败，请重试" : `复制 /${skill.name}`}
+        className="px-2 rounded-r text-on-surface-variant opacity-0 group-hover:opacity-100 focus-visible:opacity-100 hover:bg-surface-container transition-opacity"
       >
         {copied ? <Check className="w-3.5 h-3.5 text-primary" /> : <Copy className="w-3.5 h-3.5" />}
       </button>

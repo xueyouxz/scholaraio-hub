@@ -1,0 +1,98 @@
+{
+  "sessionId": "thread-golden",
+  "notifications": [
+    {
+      "method": "item/started",
+      "params": {
+        "threadId": "thread-golden",
+        "turnId": "turn-2",
+        "item": {
+          "id": "item-cmd",
+          "type": "commandExecution",
+          "command": "rg --files packages",
+          "status": "inProgress"
+        }
+      }
+    },
+    {
+      "method": "item/completed",
+      "params": {
+        "threadId": "thread-golden",
+        "turnId": "turn-2",
+        "item": {
+          "id": "item-cmd",
+          "type": "commandExecution",
+          "command": "rg --files packages",
+          "aggregatedOutput": "packages/server/src/app.ts\npackages/client/src/main.tsx",
+          "exitCode": 0,
+          "status": "completed"
+        }
+      }
+    },
+    {
+      "method": "item/completed",
+      "params": {
+        "threadId": "thread-golden",
+        "turnId": "turn-2",
+        "item": {
+          "id": "item-edit",
+          "type": "fileChange",
+          "status": "completed",
+          "changes": [
+            {
+              "path": "packages/server/src/app.ts",
+              "kind": { "type": "update" },
+              "diff": "@@ -1 +1 @@\n-old\n+new\n"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "method": "item/completed",
+      "params": {
+        "threadId": "thread-golden",
+        "turnId": "turn-2",
+        "item": {
+          "id": "item-mcp",
+          "type": "mcpToolCall",
+          "server": "library",
+          "tool": "search",
+          "arguments": { "query": "diffusion" },
+          "result": { "hits": 2 },
+          "status": "completed"
+        }
+      }
+    },
+    {
+      "method": "item/completed",
+      "params": {
+        "threadId": "thread-golden",
+        "turnId": "turn-2",
+        "item": {
+          "id": "item-todo",
+          "type": "todoList",
+          "items": [
+            { "text": "读论文", "completed": true },
+            { "text": "写总结", "completed": false }
+          ]
+        }
+      }
+    },
+    {
+      "method": "item/completed",
+      "params": {
+        "threadId": "thread-golden",
+        "turnId": "turn-2",
+        "item": { "id": "item-search", "type": "webSearch", "query": "codex app-server" }
+      }
+    },
+    {
+      "method": "turn/completed",
+      "params": {
+        "threadId": "thread-golden",
+        "turn": { "id": "turn-2", "status": "completed", "items": [], "error": null }
+      }
+    }
+  ]
+}

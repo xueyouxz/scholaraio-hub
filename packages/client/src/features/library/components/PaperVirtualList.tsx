@@ -1,19 +1,21 @@
 import { useVirtualizer } from "@tanstack/react-virtual";
 import { useRef } from "react";
-import type { PaperReference } from "../types";
+import type { PaperSummary } from "../paperSummary";
 import { PaperListRow } from "./PaperListRow";
+
+/** How a page lays papers out: rows (this list) or cards. */
+export type ViewMode = "list" | "grid";
 
 const ROW_HEIGHT = 152;
 const ROW_GAP = 8;
 
 interface Props {
-  papers: PaperReference[];
+  papers: PaperSummary[];
   selectedId?: string | null;
-  onSelect: (paper: PaperReference) => void;
+  onSelect: (paper: PaperSummary) => void;
   selectionMode?: boolean;
   checkedIds?: Set<string>;
   addedMap?: Map<string, string>;
-  failedMap?: Map<string, string>;
 }
 
 export function PaperVirtualList({
@@ -23,7 +25,6 @@ export function PaperVirtualList({
   selectionMode,
   checkedIds,
   addedMap,
-  failedMap,
 }: Props) {
   const parentRef = useRef<HTMLDivElement>(null);
 
@@ -37,7 +38,7 @@ export function PaperVirtualList({
   const items = virtualizer.getVirtualItems();
 
   return (
-    <div ref={parentRef} className="overflow-y-auto no-scrollbar" style={{ height: "100%" }}>
+    <div ref={parentRef} className="overflow-y-auto" style={{ height: "100%" }}>
       <div
         style={{
           height: virtualizer.getTotalSize(),
@@ -67,7 +68,6 @@ export function PaperVirtualList({
                 selectionMode={selectionMode}
                 isChecked={checkedIds?.has(paper.id) ?? false}
                 addedLabel={addedMap?.get(paper.id) ?? null}
-                failedReason={failedMap?.get(paper.id) ?? null}
               />
             </div>
           );

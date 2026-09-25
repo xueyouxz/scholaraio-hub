@@ -1,10 +1,6 @@
 export const DEFAULT_PORT = 3400;
-
-export interface DerivedPorts {
-  app: number;
-  client: number;
-  preview: number;
-}
+export const DEFAULT_DEV_PORT = 3500;
+export const DEFAULT_TEST_PORT = 3600;
 
 type PortEnv = Record<string, string | undefined>;
 
@@ -18,16 +14,27 @@ function parsePort(value: string | undefined, fallback: number): number {
   return parsed;
 }
 
-export function resolveBasePort(env: PortEnv = {}): number {
-  return parsePort(env.PORT, DEFAULT_PORT);
+/**
+ * Which Hub instance this is. The profile picks the data directory and the
+ * default port; `production` is the one users run, anything else is isolated
+ * from it. Tests always get the test profile, whatever else is set, so a test
+ * run can never touch real data or a running Hub's port.
+ */
+export function resolveProfileName(env: PortEnv = {}): string {
+  if (env.NODE_ENV === "test") return "test";
+  const explicit = env.SCHOLARAIO_HUB_PROFILE?.trim();
+  if (explicit) return explicit;
+  return env.NODE_ENV === "production" ? "production" : "dev";
 }
 
-export function resolveDerivedPorts(env: PortEnv = {}): DerivedPorts {
-  const app = resolveBasePort(env);
-
-  return {
-    app,
-    client: parsePort(env.CLIENT_PORT, app + 1),
-    preview: parsePort(env.CLIENT_PREVIEW_PORT, app + 2),
-  };
+/** The application's one port: page, API and, in development, Vite's HMR socket. */
+export function resolvePort(env: PortEnv = {}): number {
+  const profile = resolveProfileName(env);
+  const fallback =
+    profile === "production"
+      ? DEFAULT_PORT
+      : profile === "test"
+        ? DEFAULT_TEST_PORT
+        : DEFAULT_DEV_PORT;
+  return parsePort(env.PORT, fallback);
 }

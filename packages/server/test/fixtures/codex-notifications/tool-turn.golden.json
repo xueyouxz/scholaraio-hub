@@ -1,0 +1,231 @@
+{
+  "events": [
+    {
+      "type": "session.started",
+      "sessionId": "thread-golden"
+    },
+    {
+      "type": "tool.call",
+      "callId": "item-cmd",
+      "name": "Glob",
+      "input": {
+        "pattern": "**/*",
+        "path": "packages"
+      }
+    },
+    {
+      "type": "tool.result",
+      "callId": "item-cmd",
+      "output": "packages/server/src/app.ts\npackages/client/src/main.tsx",
+      "isError": false,
+      "detail": {
+        "filenames": ["packages/server/src/app.ts", "packages/client/src/main.tsx"],
+        "numFiles": 2,
+        "truncated": false
+      }
+    },
+    {
+      "type": "tool.call",
+      "callId": "item-edit",
+      "name": "Edit",
+      "input": {
+        "changes": [
+          {
+            "path": "packages/server/src/app.ts",
+            "kind": "update",
+            "diff": "@@ -1 +1 @@\n-old\n+new\n"
+          }
+        ],
+        "file_path": "packages/server/src/app.ts"
+      }
+    },
+    {
+      "type": "tool.result",
+      "callId": "item-edit",
+      "output": "File changes applied:\nupdate: packages/server/src/app.ts",
+      "isError": false
+    },
+    {
+      "type": "tool.call",
+      "callId": "item-mcp",
+      "name": "library:search",
+      "input": {
+        "query": "diffusion"
+      }
+    },
+    {
+      "type": "tool.result",
+      "callId": "item-mcp",
+      "output": "{\"hits\":2}",
+      "isError": false
+    },
+    {
+      "type": "tool.call",
+      "callId": "item-todo",
+      "name": "TodoWrite",
+      "input": {
+        "todos": [
+          {
+            "content": "读论文",
+            "status": "completed",
+            "activeForm": "读论文"
+          },
+          {
+            "content": "写总结",
+            "status": "pending",
+            "activeForm": "写总结"
+          }
+        ]
+      }
+    },
+    {
+      "type": "tool.result",
+      "callId": "item-todo",
+      "output": "Plan updated",
+      "isError": false
+    },
+    {
+      "type": "tool.call",
+      "callId": "item-search",
+      "name": "WebSearch",
+      "input": {
+        "query": "codex app-server"
+      }
+    },
+    {
+      "type": "tool.result",
+      "callId": "item-search",
+      "output": "Search completed for: codex app-server",
+      "isError": false,
+      "detail": {
+        "query": "codex app-server",
+        "results": [],
+        "durationSeconds": 0
+      }
+    },
+    {
+      "type": "turn.completed"
+    }
+  ],
+  "chunks": [
+    {
+      "type": "tool-input-available",
+      "toolCallId": "item-cmd",
+      "toolName": "Glob",
+      "input": {
+        "pattern": "**/*",
+        "path": "packages"
+      },
+      "dynamic": true
+    },
+    {
+      "type": "tool-output-available",
+      "toolCallId": "item-cmd",
+      "output": {
+        "content": "packages/server/src/app.ts\npackages/client/src/main.tsx",
+        "isError": false,
+        "detail": {
+          "filenames": ["packages/server/src/app.ts", "packages/client/src/main.tsx"],
+          "numFiles": 2,
+          "truncated": false
+        }
+      },
+      "dynamic": true
+    },
+    {
+      "type": "tool-input-available",
+      "toolCallId": "item-edit",
+      "toolName": "Edit",
+      "input": {
+        "changes": [
+          {
+            "path": "packages/server/src/app.ts",
+            "kind": "update",
+            "diff": "@@ -1 +1 @@\n-old\n+new\n"
+          }
+        ],
+        "file_path": "packages/server/src/app.ts"
+      },
+      "dynamic": true
+    },
+    {
+      "type": "tool-output-available",
+      "toolCallId": "item-edit",
+      "output": {
+        "content": "File changes applied:\nupdate: packages/server/src/app.ts",
+        "isError": false
+      },
+      "dynamic": true
+    },
+    {
+      "type": "tool-input-available",
+      "toolCallId": "item-mcp",
+      "toolName": "library:search",
+      "input": {
+        "query": "diffusion"
+      },
+      "dynamic": true
+    },
+    {
+      "type": "tool-output-available",
+      "toolCallId": "item-mcp",
+      "output": {
+        "content": "{\"hits\":2}",
+        "isError": false
+      },
+      "dynamic": true
+    },
+    {
+      "type": "tool-input-available",
+      "toolCallId": "item-todo",
+      "toolName": "TodoWrite",
+      "input": {
+        "todos": [
+          {
+            "content": "读论文",
+            "status": "completed",
+            "activeForm": "读论文"
+          },
+          {
+            "content": "写总结",
+            "status": "pending",
+            "activeForm": "写总结"
+          }
+        ]
+      },
+      "dynamic": true
+    },
+    {
+      "type": "tool-output-available",
+      "toolCallId": "item-todo",
+      "output": {
+        "content": "Plan updated",
+        "isError": false
+      },
+      "dynamic": true
+    },
+    {
+      "type": "tool-input-available",
+      "toolCallId": "item-search",
+      "toolName": "WebSearch",
+      "input": {
+        "query": "codex app-server"
+      },
+      "dynamic": true
+    },
+    {
+      "type": "tool-output-available",
+      "toolCallId": "item-search",
+      "output": {
+        "content": "Search completed for: codex app-server",
+        "isError": false,
+        "detail": {
+          "query": "codex app-server",
+          "results": [],
+          "durationSeconds": 0
+        }
+      },
+      "dynamic": true
+    }
+  ]
+}

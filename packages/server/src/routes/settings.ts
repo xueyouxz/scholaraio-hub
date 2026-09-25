@@ -83,18 +83,6 @@ export function createSettingsRoutes(deps: SettingsRoutesDeps): Hono {
     const body = await c.req.json<Partial<ServerSettings>>();
     const updates: Partial<ServerSettings> = {};
 
-    if ("globalInstructions" in body) {
-      if (
-        body.globalInstructions === undefined ||
-        body.globalInstructions === null ||
-        body.globalInstructions === ""
-      ) {
-        updates.globalInstructions = undefined;
-      } else if (typeof body.globalInstructions === "string") {
-        updates.globalInstructions = body.globalInstructions.slice(0, 10000);
-      }
-    }
-
     if ("newSessionDefaults" in body) {
       const parsedDefaults = parseNewSessionDefaults(body.newSessionDefaults);
       if (parsedDefaults === null) {

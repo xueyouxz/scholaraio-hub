@@ -1,0 +1,122 @@
+{
+  "sessionId": "thread-golden",
+  "notifications": [
+    {
+      "method": "item/reasoning/summaryTextDelta",
+      "params": {
+        "threadId": "thread-golden",
+        "turnId": "turn-4",
+        "itemId": "item-think",
+        "summaryIndex": 0,
+        "delta": "先看测试"
+      }
+    },
+    {
+      "method": "item/reasoning/summaryTextDelta",
+      "params": {
+        "threadId": "thread-golden",
+        "turnId": "turn-4",
+        "itemId": "item-think",
+        "summaryIndex": 1,
+        "delta": "再跑命令"
+      }
+    },
+    {
+      "method": "item/completed",
+      "params": {
+        "threadId": "thread-golden",
+        "turnId": "turn-4",
+        "item": { "id": "item-think", "type": "reasoning", "summary": ["先看测试", "再跑命令"] }
+      }
+    },
+    {
+      "method": "turn/plan/updated",
+      "params": {
+        "threadId": "thread-golden",
+        "turnId": "turn-4",
+        "explanation": null,
+        "plan": [
+          { "step": "运行测试", "status": "inProgress" },
+          { "step": "修复失败", "status": "pending" }
+        ]
+      }
+    },
+    {
+      "method": "item/started",
+      "params": {
+        "threadId": "thread-golden",
+        "turnId": "turn-4",
+        "item": {
+          "id": "item-test",
+          "type": "commandExecution",
+          "command": "pnpm test",
+          "status": "inProgress"
+        }
+      }
+    },
+    {
+      "method": "item/commandExecution/outputDelta",
+      "params": {
+        "threadId": "thread-golden",
+        "turnId": "turn-4",
+        "itemId": "item-test",
+        "delta": "running 3 tests\n"
+      }
+    },
+    {
+      "method": "item/commandExecution/outputDelta",
+      "params": {
+        "threadId": "thread-golden",
+        "turnId": "turn-4",
+        "itemId": "item-test",
+        "delta": "3 passed\n"
+      }
+    },
+    {
+      "method": "item/completed",
+      "params": {
+        "threadId": "thread-golden",
+        "turnId": "turn-4",
+        "item": {
+          "id": "item-test",
+          "type": "commandExecution",
+          "command": "pnpm test",
+          "aggregatedOutput": "running 3 tests\n3 passed\n",
+          "exitCode": 0,
+          "status": "completed"
+        }
+      }
+    },
+    {
+      "method": "item/commandExecution/outputDelta",
+      "params": {
+        "threadId": "thread-golden",
+        "turnId": "turn-4",
+        "itemId": "item-test",
+        "delta": "late output after completion\n"
+      }
+    },
+    {
+      "method": "item/completed",
+      "params": {
+        "threadId": "thread-golden",
+        "turnId": "turn-4",
+        "item": {
+          "id": "item-todo",
+          "type": "todoList",
+          "items": [
+            { "text": "运行测试", "completed": true },
+            { "text": "修复失败", "completed": false }
+          ]
+        }
+      }
+    },
+    {
+      "method": "turn/completed",
+      "params": {
+        "threadId": "thread-golden",
+        "turn": { "id": "turn-4", "status": "completed", "items": [], "error": null }
+      }
+    }
+  ]
+}

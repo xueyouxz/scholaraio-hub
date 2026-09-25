@@ -1,6 +1,6 @@
 import { readFile, readdir } from "node:fs/promises";
 import { join } from "node:path";
-import type { ScholaraioSkill, ScholaraioSkillDetail } from "@scholaraio-hub/shared";
+import type { ScholaraioSkill, ScholaraioSkillDetail, SlashCommand } from "@scholaraio-hub/shared";
 import { getCategoryIdForSkill } from "./scholaraioCategories.js";
 
 interface CachedSkill extends ScholaraioSkillDetail {}
@@ -82,6 +82,21 @@ export async function listScholaraioSkills(dir: string): Promise<ScholaraioSkill
   return [...map.values()]
     .map(({ body: _body, path: _path, ...rest }) => rest)
     .sort((a, b) => a.name.localeCompare(b.name));
+}
+
+/**
+ * The same skills as leading `/name` commands. The hub expands them itself
+ * (see SessionService), so every provider offers them; the skills page and the
+ * command list read one scan and one refresh.
+ */
+export async function researchSlashCommands(dir: string): Promise<SlashCommand[]> {
+  return (await listScholaraioSkills(dir)).map(({ name, description }) => ({
+    name,
+    description,
+    source: "research",
+    trigger: "/",
+    position: "leading",
+  }));
 }
 
 export async function getScholaraioSkill(

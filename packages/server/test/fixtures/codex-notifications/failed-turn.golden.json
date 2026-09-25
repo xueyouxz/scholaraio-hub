@@ -1,0 +1,60 @@
+{
+  "events": [
+    {
+      "type": "session.started",
+      "sessionId": "thread-golden"
+    },
+    {
+      "type": "tool.call",
+      "callId": "item-cmd-fail",
+      "name": "Bash",
+      "input": {
+        "command": "pnpm test"
+      }
+    },
+    {
+      "type": "tool.result",
+      "callId": "item-cmd-fail",
+      "output": "Exit code: 1\n1 test failed",
+      "isError": true
+    },
+    {
+      "type": "notice",
+      "key": "item-error-turn-3",
+      "level": "error",
+      "text": "模型调用超时"
+    },
+    {
+      "type": "turn.completed",
+      "error": "Codex turn aborted"
+    }
+  ],
+  "chunks": [
+    {
+      "type": "tool-input-available",
+      "toolCallId": "item-cmd-fail",
+      "toolName": "Bash",
+      "input": {
+        "command": "pnpm test"
+      },
+      "dynamic": true
+    },
+    {
+      "type": "tool-output-available",
+      "toolCallId": "item-cmd-fail",
+      "output": {
+        "content": "Exit code: 1\n1 test failed",
+        "isError": true
+      },
+      "dynamic": true
+    },
+    {
+      "type": "data-notice",
+      "id": "item-error-turn-3",
+      "data": {
+        "level": "error",
+        "text": "模型调用超时"
+      }
+    }
+  ]
+}

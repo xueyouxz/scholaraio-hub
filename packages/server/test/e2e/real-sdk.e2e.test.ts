@@ -2,11 +2,12 @@ import { mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from "n
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { detectClaudeCli } from "../../src/sdk/cli-detection.js";
-import { MessageQueue } from "../../src/sdk/messageQueue.js";
-import { RealClaudeSDK } from "../../src/sdk/real.js";
-import type { SDKMessage, StartSessionOptions, UserMessage } from "../../src/sdk/types.js";
-import { Process } from "../../src/supervisor/Process.js";
+import { MessageQueue } from "../../src/providers/MessageQueue.js";
+import { ClaudeProvider } from "../../src/providers/claude/ClaudeProvider.js";
+import type { SDKMessage } from "../../src/providers/claude/sdk-message.js";
+import type { StartSessionOptions } from "../../src/providers/types.js";
+import type { UserMessage } from "../../src/providers/types.js";
+import { AgentProcess } from "../../src/supervisor/AgentProcess.js";
 
 /**
  * E2E tests for the real Claude SDK.
@@ -55,11 +56,11 @@ function logMessage(message: SDKMessage) {
 }
 
 describe("Real SDK E2E", () => {
-  let sdk: RealClaudeSDK;
+  let sdk: ClaudeProvider;
   let testDir: string;
   let cliAvailable = false;
 
-  beforeAll(() => {
+  beforeAll(async () => {
     // Check if we should run real SDK tests
     if (process.env.REAL_SDK_TESTS !== "true") {
       console.log("Skipping real SDK tests - set REAL_SDK_TESTS=true to enable");
@@ -67,14 +68,12 @@ describe("Real SDK E2E", () => {
     }
 
     // Check if CLI is installed
-    const cliInfo = detectClaudeCli();
-    if (!cliInfo.found) {
+    const status = await new ClaudeProvider().getAuthStatus();
+    if (!status.installed) {
       console.log("Skipping real SDK tests - Claude CLI not installed");
-      console.log(cliInfo.error);
       return;
     }
 
-    console.log(`Using Claude CLI: ${cliInfo.path} (${cliInfo.version})`);
     cliAvailable = true;
 
     // Create a temp directory for the test project
@@ -83,7 +82,7 @@ describe("Real SDK E2E", () => {
     // Create a simple test file
     writeFileSync(join(testDir, "test.txt"), "Hello from test file");
 
-    sdk = new RealClaudeSDK();
+    sdk = new ClaudeProvider();
   });
 
   afterAll(() => {
@@ -299,7 +298,7 @@ describe("Real SDK E2E", () => {
       permissionMode: "bypassPermissions",
     });
 
-    // Also test what Process.buildUserMessageContent produces
+    // Also test what AgentProcess records for the same message
     const mockIterator = (async function* () {
       yield {
         type: "system",
@@ -307,7 +306,7 @@ describe("Real SDK E2E", () => {
         session_id: "test",
       } as SDKMessage;
     })();
-    const testProcess = new Process(mockIterator, {
+    const testProcess = new AgentProcess(mockIterator, {
       projectPath: testDir,
       projectId: "test",
       sessionId: "test",
@@ -387,14 +386,14 @@ describe("Real SDK E2E", () => {
     expect(jsonlUserMessage).toBeDefined();
     const jsonlUserContent = jsonlUserMessage?.message?.content;
 
-    // Verify our Process content is correct
+    // Verify our AgentProcess content is correct
     expect(processContent).toContain('Say "got it" and nothing else');
     expect(processContent).toContain("User uploaded files:");
     expect(processContent).toContain("data.txt");
     expect(processContent).toContain("1.0 KB");
     expect(processContent).toContain("text/plain");
 
-    // THE CRITICAL TEST: Verify JSONL content matches what Process produces
+    // THE CRITICAL TEST: Verify JSONL content matches what AgentProcess produces
     // This is what deduplication relies on
     log("[comparing]");
     log("  JSONL:", jsonlUserContent);

@@ -1,0 +1,130 @@
+{
+  "events": [
+    {
+      "type": "session.started",
+      "sessionId": "thread-golden"
+    },
+    {
+      "type": "tool.call",
+      "callId": "spawn-1",
+      "name": "Task",
+      "input": {
+        "description": "检查测试失败原因",
+        "prompt": "检查测试失败原因\n只读，不要修改文件",
+        "subagent_type": "codex"
+      }
+    },
+    {
+      "type": "text.delta",
+      "blockId": "child-msg-child-turn-1",
+      "delta": "正在检查",
+      "parentCallId": "spawn-1"
+    },
+    {
+      "type": "tool.call",
+      "callId": "child-cmd",
+      "name": "Read",
+      "input": {
+        "file_path": "src/app.ts"
+      },
+      "parentCallId": "spawn-1"
+    },
+    {
+      "type": "tool.result",
+      "callId": "child-cmd",
+      "output": "export {}",
+      "isError": false,
+      "detail": {
+        "type": "text",
+        "file": {
+          "filePath": "src/app.ts",
+          "content": "export {}",
+          "numLines": 1,
+          "startLine": 1,
+          "totalLines": 1
+        }
+      },
+      "parentCallId": "spawn-1"
+    },
+    {
+      "type": "tool.result",
+      "callId": "spawn-1",
+      "output": "原因：缺少环境变量",
+      "isError": false
+    },
+    {
+      "type": "turn.completed"
+    }
+  ],
+  "chunks": [
+    {
+      "type": "tool-input-available",
+      "toolCallId": "spawn-1",
+      "toolName": "Task",
+      "input": {
+        "description": "检查测试失败原因",
+        "prompt": "检查测试失败原因\n只读，不要修改文件",
+        "subagent_type": "codex"
+      },
+      "dynamic": true
+    },
+    {
+      "type": "text-start",
+      "id": "spawn-1/child-msg-child-turn-1",
+      "providerMetadata": {
+        "hub": {
+          "parentCallId": "spawn-1"
+        }
+      }
+    },
+    {
+      "type": "text-delta",
+      "id": "spawn-1/child-msg-child-turn-1",
+      "delta": "正在检查"
+    },
+    {
+      "type": "tool-input-available",
+      "toolCallId": "child-cmd",
+      "toolName": "Read",
+      "input": {
+        "file_path": "src/app.ts"
+      },
+      "dynamic": true,
+      "toolMetadata": {
+        "parentCallId": "spawn-1"
+      }
+    },
+    {
+      "type": "tool-output-available",
+      "toolCallId": "child-cmd",
+      "output": {
+        "content": "export {}",
+        "isError": false,
+        "detail": {
+          "type": "text",
+          "file": {
+            "filePath": "src/app.ts",
+            "content": "export {}",
+            "numLines": 1,
+            "startLine": 1,
+            "totalLines": 1
+          }
+        }
+      },
+      "dynamic": true
+    },
+    {
+      "type": "tool-output-available",
+      "toolCallId": "spawn-1",
+      "output": {
+        "content": "原因：缺少环境变量",
+        "isError": false
+      },
+      "dynamic": true
+    },
+    {
+      "type": "text-end",
+      "id": "spawn-1/child-msg-child-turn-1"
+    }
+  ]
+}

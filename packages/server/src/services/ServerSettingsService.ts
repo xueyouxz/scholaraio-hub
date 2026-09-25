@@ -1,7 +1,7 @@
 /**
  * ServerSettingsService - Manages server-wide settings that persist across restarts
  *
- * Phase 4 MVP trim: keep only settings required by the session core flow.
+ * Only what the session flow needs: the new-session form's defaults.
  */
 
 import * as fs from "node:fs/promises";
@@ -11,13 +11,11 @@ import type { NewSessionDefaults } from "@scholaraio-hub/shared";
 const CURRENT_VERSION = 1;
 
 export interface ServerSettings {
-  /** Free-form instructions appended to the system prompt for all sessions */
-  globalInstructions?: string;
   /** Defaults applied when opening the new session form */
   newSessionDefaults?: NewSessionDefaults;
 }
 
-export const DEFAULT_SERVER_SETTINGS: ServerSettings = {};
+const DEFAULT_SERVER_SETTINGS: ServerSettings = {};
 
 interface SettingsState {
   version: number;
@@ -82,11 +80,6 @@ export class ServerSettingsService {
   getSettings(): ServerSettings {
     this.ensureInitialized();
     return { ...this.state.settings };
-  }
-
-  getSetting<K extends keyof ServerSettings>(key: K): ServerSettings[K] {
-    this.ensureInitialized();
-    return this.state.settings[key];
   }
 
   async updateSettings(updates: Partial<ServerSettings>): Promise<ServerSettings> {

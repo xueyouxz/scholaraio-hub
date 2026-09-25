@@ -4,22 +4,25 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "vite --config ../../vite.config.ts",
     "build": "vite build --config ../../vite.config.ts",
-    "preview": "vite preview --config ../../vite.config.ts",
     "typecheck": "tsc --noEmit -p tsconfig.json",
     "test": "vitest run --config vitest.config.ts"
   },
   "dependencies": {
+    "@ai-sdk/react": "^4.0.110",
+    "@pierre/diffs": "^1.4.3",
     "@scholaraio-hub/shared": "workspace:*",
+    "@streamdown/cjk": "^1.0.3",
+    "@streamdown/code": "^1.1.1",
+    "@streamdown/math": "^1.0.2",
     "@tanstack/react-query": "^5.100.11",
     "@tanstack/react-virtual": "^3.13.24",
+    "ai": "^7.0.107",
     "d3": "^7.9.0",
     "katex": "^0.16.47",
     "lucide-react": "^0.511.0",
     "pdfjs-dist": "5.4.296",
     "react": "^19.0.0",
-    "react-arborist": "^3.7.0",
     "react-dom": "^19.0.0",
     "react-markdown": "^10.1.0",
     "react-pdf": "^10.4.1",
@@ -28,10 +31,10 @@
     "rehype-raw": "^7.0.0",
     "remark-gfm": "^4.0.1",
     "remark-math": "^6.0.0",
-    "zod": "^4.3.6",
-    "zustand": "^5.0.2"
+    "streamdown": "^2.6.0"
   },
   "devDependencies": {
+    "@tailwindcss/typography": "^0.5.20",
     "@types/d3": "^7.4.3",
     "@types/react": "^19.0.1",
     "@types/react-dom": "^19.0.2",

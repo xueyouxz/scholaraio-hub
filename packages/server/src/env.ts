@@ -1,14 +1,16 @@
 import { existsSync, readFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { resolveProfileName } from "@scholaraio-hub/shared";
 import { parse as parseDotenv } from "dotenv";
 import { z } from "zod";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
-const repoRoot = path.resolve(__dirname, "../..");
-
-const PermissionModeSchema = z.enum(["default", "acceptEdits", "plan", "bypassPermissions"]);
+// env.ts lives at packages/server/src (and builds to packages/server/dist), so the
+// repo root is three levels up. Using "../.." pointed at packages/, where no .env
+// files exist, so repo-root .env/.env.local were silently never loaded.
+const repoRoot = path.resolve(__dirname, "../../..");
 
 const LogLevelSchema = z.enum(["fatal", "error", "warn", "info", "debug", "trace"]);
 
@@ -53,23 +55,11 @@ const RuntimeEnvSchema = z
     NODE_ENV: z.string().optional(),
     HOST: z.string().optional(),
     PORT: optionalInteger,
-    CLIENT_PORT: optionalInteger,
-    CLIENT_PREVIEW_PORT: optionalInteger,
     SCHOLARAIO_HUB_DATA_DIR: z.string().optional(),
     SCHOLARAIO_HUB_PROFILE: z.string().optional(),
-    CLAUDE_SESSIONS_DIR: z.string().optional(),
-    CLAUDE_CONFIG_DIR: z.string().optional(),
-    CLAUDE_PROJECTS_DIR: z.string().optional(),
-    CODEX_SESSIONS_DIR: z.string().optional(),
-    CODEX_WATCH_PERIODIC_RESCAN_MS: optionalInteger,
     CLIENT_DIST_DIR: z.string().optional(),
-    PROJECT_SCAN_CACHE_TTL_MS: optionalInteger,
+    SCHOLARAIO_SKILLS_DIR: z.string().optional(),
     IDLE_TIMEOUT: optionalInteger,
-    PERMISSION_MODE: PermissionModeSchema.optional(),
-    MAX_WORKERS: optionalInteger,
-    IDLE_PREEMPT_THRESHOLD: optionalInteger,
-    MAX_UPLOAD_SIZE_MB: optionalInteger,
-    MAX_QUEUE_SIZE: optionalInteger,
     LOG_DIR: z.string().optional(),
     LOG_FILE: z.string().optional(),
     LOG_LEVEL: LogLevelSchema.optional(),
@@ -77,15 +67,23 @@ const RuntimeEnvSchema = z
     LOG_TO_FILE: optionalBoolean,
     LOG_PRETTY: optionalBoolean,
     ENABLED_PROVIDERS: optionalStringArray,
-    VOICE_INPUT_ENABLED: optionalBoolean,
-    HTTPS_SELF_SIGNED: optionalBoolean,
-    SCHOLARAIO_API_URL: z.string().optional(),
-    SCHOLARAIO_SKILLS_DIR: z.string().optional(),
+    ALLOWED_HOSTS: z.string().optional(),
+    LOG_SDK_MESSAGES: optionalBoolean,
+    SCHOLARAIO_HUB_UV: z.string().optional(),
   })
   .passthrough();
 
+/** Every variable the Hub itself reads; none of them is meant for an agent's process. */
+export const HUB_ENV_KEYS: readonly string[] = Object.keys(RuntimeEnvSchema.shape);
+
 let hasLoadedEnvFiles = false;
 
+/**
+ * Fill unset variables from the repo-root env files: `.env`, `.env.local`,
+ * then `.env.<profile>` and `.env.<profile>.local`, later files winning. The
+ * shell always wins over every file. The profile is read after the first two,
+ * so `.env.local` may choose it.
+ */
 function loadEnvFilesIntoProcessEnv(env: NodeJS.ProcessEnv): void {
   if (hasLoadedEnvFiles) {
     return;
@@ -93,28 +91,19 @@ function loadEnvFilesIntoProcessEnv(env: NodeJS.ProcessEnv): void {
 
   hasLoadedEnvFiles = true;
 
-  const nodeEnv = env.NODE_ENV || "development";
-  const profile = env.SCHOLARAIO_HUB_PROFILE;
-  const fileNames = [
-    ".env",
-    ".env.local",
-    `.env.${nodeEnv}`,
-    `.env.${nodeEnv}.local`,
-    profile ? `.env.profile.${profile}` : undefined,
-    profile ? `.env.profile.${profile}.local` : undefined,
-  ].filter((value): value is string => Boolean(value));
-
   const loadedValues: Record<string, string> = {};
-
-  for (const fileName of fileNames) {
+  const load = (fileName: string) => {
     const filePath = path.join(repoRoot, fileName);
-
-    if (!existsSync(filePath)) {
-      continue;
+    if (existsSync(filePath)) {
+      Object.assign(loadedValues, parseDotenv(readFileSync(filePath, "utf-8")));
     }
+  };
 
-    Object.assign(loadedValues, parseDotenv(readFileSync(filePath, "utf-8")));
-  }
+  load(".env");
+  load(".env.local");
+  const profile = resolveProfileName({ ...loadedValues, ...env });
+  load(`.env.${profile}`);
+  load(`.env.${profile}.local`);
 
   for (const [key, value] of Object.entries(loadedValues)) {
     if (env[key] === undefined) {

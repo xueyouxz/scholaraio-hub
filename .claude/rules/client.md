@@ -8,6 +8,10 @@ paths:
 Scope: Vite + React 19 frontend. These load when Claude works under `packages/client/`.
 Terms used here are defined in [`../glossary.md`](../glossary.md).
 
+Before writing or reviewing frontend code, read the
+[frontend skills applicability rules](../topics/frontend-skills.md) and use the
+linked project skills relevant to the task.
+
 ## React Resource Management
 
 Any resource a component acquires — timers, intervals, event listeners, subscriptions,

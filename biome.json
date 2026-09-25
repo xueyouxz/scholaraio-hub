@@ -3,11 +3,12 @@
   "files": {
     "ignore": [
       "**/node_modules/**",
+      "**/.pnpm-store/**",
       "**/dist/**",
       "**/coverage/**",
       "**/playwright-report/**",
       "**/test-results/**",
-      "packages/server/src/sdk/providers/codex-protocol/generated/**",
+      "packages/server/src/providers/codex/protocol/generated/**",
       "reference/**",
       "temp/**"
     ]
@@ -24,7 +25,11 @@
   "linter": {
     "enabled": true,
     "rules": {
-      "recommended": true
+      "recommended": true,
+      "correctness": {
+        "noUnusedImports": "error",
+        "noUnusedVariables": "error"
+      }
     }
   },
   "javascript": {

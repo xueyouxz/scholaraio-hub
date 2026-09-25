@@ -1,11 +1,9 @@
 import { useQuery } from "@tanstack/react-query";
 import { X } from "lucide-react";
-import { useEffect, useRef, useState } from "react";
-import { scholar } from "../../../core/api";
-import { queryKeys } from "../../../core/queryKeys";
+import { libraryApi } from "../../../core/library";
+import { ResizableSessionPanel } from "./ResizableSessionPanel";
 
 interface WorkspacePaperRowProps {
-  id: string;
   title: string;
   authors: string;
   year: number;
@@ -33,22 +31,28 @@ function WorkspacePaperRow({ title, authors, year, selected, onClick }: Workspac
 }
 
 interface WorkspacePapersPanelProps {
-  workspaceName: string;
+  projectId: string;
   selectedPaperId: string | null;
   onSelectPaper: (paperId: string | null) => void;
   onClose: () => void;
 }
 
 export function WorkspacePapersPanel({
-  workspaceName,
+  projectId,
   selectedPaperId,
   onSelectPaper,
   onClose,
 }: WorkspacePapersPanelProps) {
   const query = useQuery({
-    queryKey: queryKeys.scholar.workspace(workspaceName),
-    queryFn: ({ signal }) => scholar.getWorkspace(workspaceName, { signal }),
-    select: (data) => data.workspace,
+    queryKey: ["library", "project-papers", projectId],
+    queryFn: async ({ signal }) => {
+      const [project, library] = await Promise.all([
+        libraryApi.project(projectId, signal),
+        libraryApi.papers(signal),
+      ]);
+      const ids = new Set(project.paperIds);
+      return { papers: library.papers.filter((paper) => ids.has(paper.id)) };
+    },
     staleTime: 30_000,
   });
 
@@ -65,15 +69,16 @@ export function WorkspacePapersPanel({
       <div className="flex items-center justify-between px-3 py-2 border-b border-outline-variant/10 shrink-0">
         <span
           className="text-xs font-medium text-on-surface-variant uppercase tracking-wide truncate"
-          title={workspaceName}
+          title={projectId}
         >
-          {workspaceName}
+          {projectId}
         </span>
         <button
           type="button"
           onClick={onClose}
           className="text-on-surface-variant hover:text-on-surface transition-colors"
-          title="Close"
+          title="关闭项目文献"
+          aria-label="关闭项目文献"
         >
           <X size={13} />
         </button>
@@ -98,10 +103,9 @@ export function WorkspacePapersPanel({
           papers.map((paper) => (
             <WorkspacePaperRow
               key={paper.id}
-              id={paper.id}
               title={paper.title}
               authors={paper.authors}
-              year={paper.year}
+              year={Number(paper.year)}
               selected={selectedPaperId === paper.id}
               onClick={() => onSelectPaper(selectedPaperId === paper.id ? null : paper.id)}
             />
@@ -112,97 +116,32 @@ export function WorkspacePapersPanel({
   );
 }
 
-const SIDEBAR_WIDTH_KEY = "workspace-papers-panel-width";
-const DEFAULT_WIDTH = 320;
-const MIN_WIDTH = 220;
-const MAX_WIDTH_VW = 0.5;
-
-interface ResizableProps {
-  open: boolean;
-  workspaceName: string;
-  selectedPaperId: string | null;
-  onSelectPaper: (paperId: string | null) => void;
-  onClose: () => void;
-}
-
 export function ResizableWorkspacePapersPanel({
   open,
-  workspaceName,
+  projectId,
   selectedPaperId,
   onSelectPaper,
   onClose,
-}: ResizableProps) {
-  const [width, setWidth] = useState(() => {
-    const stored = localStorage.getItem(SIDEBAR_WIDTH_KEY);
-    return stored ? Math.max(MIN_WIDTH, Number(stored)) : DEFAULT_WIDTH;
-  });
-  const dragging = useRef(false);
-  const [isDragging, setIsDragging] = useState(false);
-  const startX = useRef(0);
-  const startWidth = useRef(0);
-  // Lazy mount inner panel on first open so we don't pay query/effect cost
-  // before the user ever opens it; keep it mounted afterwards so reopening
-  // is instant (no flicker, cached data preserved).
-  const [hasOpened, setHasOpened] = useState(open);
-  useEffect(() => {
-    if (open) setHasOpened(true);
-  }, [open]);
-
-  useEffect(() => {
-    const onMove = (e: MouseEvent) => {
-      if (!dragging.current) return;
-      const delta = startX.current - e.clientX;
-      const maxWidth = window.innerWidth * MAX_WIDTH_VW;
-      const next = Math.min(maxWidth, Math.max(MIN_WIDTH, startWidth.current + delta));
-      setWidth(next);
-    };
-    const onUp = () => {
-      if (!dragging.current) return;
-      dragging.current = false;
-      setIsDragging(false);
-      setWidth((w) => {
-        localStorage.setItem(SIDEBAR_WIDTH_KEY, String(w));
-        return w;
-      });
-    };
-    window.addEventListener("mousemove", onMove);
-    window.addEventListener("mouseup", onUp);
-    return () => {
-      window.removeEventListener("mousemove", onMove);
-      window.removeEventListener("mouseup", onUp);
-    };
-  }, []);
-
-  const onDragStart = (e: React.MouseEvent) => {
-    e.preventDefault();
-    dragging.current = true;
-    setIsDragging(true);
-    startX.current = e.clientX;
-    startWidth.current = width;
-  };
-
+}: {
+  open: boolean;
+  projectId: string;
+  selectedPaperId: string | null;
+  onSelectPaper: (id: string | null) => void;
+  onClose: () => void;
+}) {
   return (
-    <div
-      className={`flex h-full shrink-0 justify-end overflow-hidden ${isDragging ? "" : "transition-[width] duration-200 ease-out"}`}
-      style={{ width: open ? width : 0 }}
-      aria-hidden={!open}
+    <ResizableSessionPanel
+      open={open}
+      title="项目文献"
+      storageKey="workspace-papers-panel-width"
+      onClose={onClose}
     >
-      <div className="flex h-full shrink-0" style={{ width }}>
-        <div
-          className="w-1 cursor-col-resize hover:bg-primary/30 active:bg-primary/50 shrink-0 transition-colors"
-          onMouseDown={onDragStart}
-        />
-        <div className="flex-1 border-l border-outline-variant/10 bg-surface flex flex-col min-h-0 overflow-hidden">
-          {hasOpened ? (
-            <WorkspacePapersPanel
-              workspaceName={workspaceName}
-              selectedPaperId={selectedPaperId}
-              onSelectPaper={onSelectPaper}
-              onClose={onClose}
-            />
-          ) : null}
-        </div>
-      </div>
-    </div>
+      <WorkspacePapersPanel
+        projectId={projectId}
+        selectedPaperId={selectedPaperId}
+        onSelectPaper={onSelectPaper}
+        onClose={onClose}
+      />
+    </ResizableSessionPanel>
   );
 }

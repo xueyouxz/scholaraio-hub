@@ -1,7 +1,7 @@
 import { PassThrough } from "node:stream";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-describe("logger auto-init defaults", () => {
+describe("logger defaults", () => {
   afterEach(() => {
     vi.unstubAllEnvs();
     vi.doUnmock("node:fs");
@@ -30,22 +30,16 @@ describe("logger auto-init defaults", () => {
   });
 
   it("still honors explicit initLogger file config when requested", async () => {
-    const createWriteStream = vi.fn();
+    const createWriteStream = vi.fn((_path: string) => new PassThrough());
     vi.doMock("node:fs", async () => {
       const actual = await vi.importActual<typeof import("node:fs")>("node:fs");
-      return {
-        ...actual,
-        createWriteStream: vi.fn(() => {
-          createWriteStream();
-          return new PassThrough();
-        }),
-      };
+      return { ...actual, mkdirSync: vi.fn(), createWriteStream };
     });
 
     const loggerModule = await import("../../src/logging/logger.js");
-    loggerModule.initLogger({ logToFile: true });
+    loggerModule.initLogger({ logToFile: true, logDir: "/tmp/hub-logs" });
 
     expect(createWriteStream).toHaveBeenCalledTimes(1);
-    expect(loggerModule.getLogFilePath()).toContain("server.log");
+    expect(createWriteStream.mock.calls[0]?.[0]).toBe("/tmp/hub-logs/server.log");
   });
 });

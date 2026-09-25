@@ -9,11 +9,12 @@ import * as path from "node:path";
 import { Hono } from "hono";
 
 export interface StaticServeOptions {
-  /** Path to the built client dist directory */
+  /** Path to the built client dist directory (startup has checked it exists). */
   distPath: string;
-  /** Optional base path prefix to strip from requests (e.g., "/_stable") */
-  basePath?: string;
 }
+
+// frame-ancestors must be an HTTP header; a meta tag cannot set it.
+const FRAME_POLICY = "frame-ancestors 'self'";
 
 /**
  * Create Hono routes for serving static files.
@@ -23,34 +24,19 @@ export interface StaticServeOptions {
  * - index.html for all other routes (SPA fallback)
  */
 export function createStaticRoutes(options: StaticServeOptions): Hono {
-  const { distPath, basePath } = options;
+  const distPath = path.resolve(options.distPath);
   const app = new Hono();
-
-  // Check if dist directory exists
-  if (!fs.existsSync(distPath)) {
-    console.warn(
-      `[Static] Warning: dist directory not found at ${distPath}. Run 'pnpm build' first.`,
-    );
-  }
 
   // Path to index.html for SPA fallback (read fresh each request to pick up rebuilds)
   const indexPath = path.join(distPath, "index.html");
 
   // Serve static files
   app.get("*", async (c) => {
-    let reqPath = c.req.path;
-
-    // Strip base path prefix if configured (e.g., "/_stable" -> "")
-    if (basePath && reqPath.startsWith(basePath)) {
-      reqPath = reqPath.slice(basePath.length) || "/";
-    }
-
-    // Try to serve the exact file
+    const reqPath = c.req.path;
     const filePath = path.join(distPath, reqPath);
-
-    // Security: ensure we're not escaping the dist directory
-    const normalizedFilePath = path.normalize(filePath);
-    if (!normalizedFilePath.startsWith(distPath)) {
+    // Never serve outside dist: `/a/dist-other` shares the prefix but not the directory.
+    const relative = path.relative(distPath, filePath);
+    if (relative.startsWith("..") || path.isAbsolute(relative)) {
       return c.text("Forbidden", 403);
     }
 
@@ -72,11 +58,7 @@ export function createStaticRoutes(options: StaticServeOptions): Hono {
           "Cache-Control": cacheControl,
         };
 
-        // Add CSP frame-ancestors for HTML files (must be HTTP header, not meta tag)
-        if (ext === ".html") {
-          headers["Content-Security-Policy"] =
-            "frame-ancestors 'self' tauri://localhost https://tauri.localhost";
-        }
+        if (ext === ".html") headers["Content-Security-Policy"] = FRAME_POLICY;
 
         return c.body(content, 200, headers);
       }
@@ -95,9 +77,7 @@ export function createStaticRoutes(options: StaticServeOptions): Hono {
     try {
       const indexHtml = await fs.promises.readFile(indexPath, "utf-8");
       return c.html(indexHtml, 200, {
-        // frame-ancestors must be set via HTTP header (not meta tag)
-        "Content-Security-Policy":
-          "frame-ancestors 'self' tauri://localhost https://tauri.localhost",
+        "Content-Security-Policy": FRAME_POLICY,
         // Don't cache index.html (hashed asset paths change on rebuild)
         "Cache-Control": "no-cache",
       });

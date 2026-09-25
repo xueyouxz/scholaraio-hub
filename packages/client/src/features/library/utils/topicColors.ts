@@ -1,3 +1,6 @@
+/** Topic id → the colour the map and lists draw it in. */
+export type TopicColorMap = Map<number, string>;
+
 const OUTLIER_COLOR = "#bfc9c0";
 
 const PALETTE = [

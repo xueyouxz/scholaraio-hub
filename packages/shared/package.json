@@ -1,16 +1,15 @@
 {
   "name": "@scholaraio-hub/shared",
   "version": "0.1.0",
-  "private": false,
+  "private": true,
   "type": "module",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
-  "files": ["dist"],
   "exports": {
     ".": {
-      "source": "./src/index.ts",
-      "import": "./dist/index.js",
-      "types": "./dist/index.d.ts"
+      "scholaraio-source": "./src/index.ts",
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
     }
   },
   "scripts": {
@@ -18,14 +17,12 @@
     "typecheck": "tsc -p tsconfig.json --pretty false",
     "test": "vitest run --config vitest.config.ts"
   },
-  "publishConfig": {
-    "access": "public"
-  },
   "devDependencies": {
     "@types/node": "^22.19.17",
     "vitest": "^2.1.8"
   },
   "dependencies": {
+    "ai": "^7.0.107",
     "zod": "^4.3.4"
   }
 }

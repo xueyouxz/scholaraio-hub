@@ -4,6 +4,7 @@
 
 - Node.js `>= 20`
 - pnpm `>= 10.27.0`
+- [uv](https://docs.astral.sh/uv/getting-started/installation/), which installs the Python library runtime
 
 Enable pnpm if not already available:
 
@@ -17,8 +18,11 @@ corepack enable
 git clone https://github.com/xueyouxz/scholaraio-hub.git
 cd scholaraio-hub
 pnpm install
-cp .env.example .env.local
+pnpm hub setup
 ```
+
+`pnpm hub setup` installs the Python runtime into the development data directory
+(`~/.scholaraio-hub-dev`). Optional overrides go in `.env.local`; see `.env.example`.
 
 Install Playwright for E2E tests (one-time):
 
@@ -34,7 +38,9 @@ Start the dev server:
 pnpm dev
 ```
 
-The API runs on `http://localhost:3400` and the Vite dev server on `http://localhost:3401`.
+Open `http://127.0.0.1:3500`: the server serves the API and, through Vite in middleware
+mode, the client with hot module replacement, on the same port as production uses one.
+`pnpm hub doctor` shows which data directory and port the current profile resolves to.
 
 ## Code style
 
@@ -87,8 +93,9 @@ Avoid vague subjects like `Fix bug` or `Update code`.
 ```
 packages/
   client/   # Vite + React frontend
-  server/   # Hono API, session supervision, watchers
-  shared/   # Shared types, schemas, port logic
-scripts/    # Build and dev utilities
+  server/   # Hono API, session supervision, providers, `pnpm hub` commands
+  shared/   # Shared types, schemas, profile and port rules
+  scholaraio/  # Python library service (sidecar)
+scripts/    # hub.mjs entry and CI helpers
 e2e/        # Playwright smoke tests
 ```

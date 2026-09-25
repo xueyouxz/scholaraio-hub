@@ -69,11 +69,3 @@ export function describeCardinalityRequirement(skillName: string): string {
 export function filterReadingContextSkills(skills: ScholaraioSkill[]): ScholaraioSkill[] {
   return skills.filter((s) => READING_CONTEXT_CATEGORY_IDS.has(s.category));
 }
-
-/** Build the message-input prefill for a skill chip click. */
-export function buildSkillInvocation(skillName: string, paperIds: string[]): string {
-  const card = getSkillCardinality(skillName);
-  let ids = paperIds;
-  if (card === "single") ids = paperIds.slice(0, 1);
-  return ids.length > 0 ? `/${skillName} ${ids.join(" ")}` : `/${skillName}`;
-}

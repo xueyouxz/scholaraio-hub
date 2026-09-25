@@ -1,0 +1,188 @@
+[build-system]
+requires = ["setuptools>=42"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "scholaraio"
+version = "2.0.0"
+description = "Scholar All-In-One — an academic harness for AI agents"
+readme = {file = "README.md", content-type = "text/markdown"}
+requires-python = ">=3.10"
+license = "MIT"
+authors = [
+    {name = "Zimo Liao", email = "zimoliao@mail.ustc.edu.cn"},
+]
+keywords = ["academic", "literature", "research", "knowledge-base", "agent-skills", "academic-workflow"]
+classifiers = [
+    "Development Status :: 5 - Production/Stable",
+    "Intended Audience :: Science/Research",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Scientific/Engineering",
+    "Topic :: Text Processing :: Indexing",
+]
+dependencies = [
+    "requests>=2.28",
+    "pyyaml>=6.0",
+    "defusedxml>=0.7",
+    "beautifulsoup4>=4.12",
+]
+
+[project.urls]
+Homepage = "https://github.com/zimoliao/scholaraio"
+Repository = "https://github.com/zimoliao/scholaraio"
+Issues = "https://github.com/zimoliao/scholaraio/issues"
+
+[project.optional-dependencies]
+hub = ["fastapi>=0.115", "uvicorn>=0.34", "python-multipart>=0.0.20", "pymupdf>=1.24"]
+hub-test = ["pytest>=8", "httpx>=0.28"]
+mineru-cloud = [
+    "mineru-open-api>=0.5.9",
+]
+embed = [
+    "sentence-transformers>=3.0",
+    "numpy>=1.24",
+    "faiss-cpu>=1.7",
+    # Default model source; without it the first embedding run has no way to
+    # download the model except HuggingFace.
+    "modelscope>=1.10",
+]
+topics = [
+    "scholaraio[embed]",
+    "bertopic>=0.16",
+    "pandas>=2.0",
+]
+pdf = [
+    "pymupdf>=1.24",
+]
+import = [
+    "endnote-utils>=1.0",
+    "pyzotero>=1.5",
+]
+office = [
+    "markitdown[docx,pptx,xlsx]>=0.1",
+    "python-docx>=1.1",
+    "python-pptx>=1.0",
+    "openpyxl>=3.1",
+]
+full = [
+    "scholaraio[embed]",
+    "scholaraio[topics]",
+    "scholaraio[import]",
+    "scholaraio[pdf]",
+    "scholaraio[office]",
+    "modelscope>=1.10",
+    "curl-cffi>=0.5",
+]
+dev = [
+    "pytest>=7.0",
+    "pytest-cov>=4.0",
+    "ruff>=0.4",
+    "mypy>=1.8",
+    "mkdocs>=1.6",
+    "mkdocs-material>=9.5",
+    "mkdocstrings[python]>=0.24",
+    "types-PyYAML>=6.0",
+    "types-requests>=2.28",
+    "tomli>=2.0; python_version < '3.11'",
+    "pre-commit>=3.5",
+]
+
+[project.scripts]
+scholaraio = "scholaraio.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["scholaraio*"]
+namespaces = false
+
+[tool.setuptools.package-data]
+"scholaraio.interfaces.cli" = ["library-view/*"]
+
+# ---------- ruff ----------
+[tool.ruff]
+target-version = "py310"
+line-length = 120
+
+[tool.ruff.lint]
+select = [
+    "E",   # pycodestyle errors
+    "W",   # pycodestyle warnings
+    "F",   # pyflakes
+    "I",   # isort
+    "UP",  # pyupgrade
+    "B",   # flake8-bugbear
+    "SIM", # flake8-simplify
+    "RUF", # ruff-specific
+]
+ignore = [
+    "E501",   # line too long — handled by formatter
+    "SIM108", # ternary operator — readability preference
+    "B905",   # zip strict — Python 3.10 compat
+    "UP007",  # X | Y union syntax — keep Optional[] for clarity
+    "RUF001", # ambiguous Unicode char in string — Chinese text is intentional
+    "RUF002", # ambiguous Unicode char in docstring — Chinese docstrings by design
+    "RUF003", # ambiguous Unicode char in comment — Chinese comments by design
+    "E741",   # ambiguous variable name — domain-specific short names (l, I, O)
+]
+
+[tool.ruff.lint.per-file-ignores]
+# Existing modules: suppress style nits that don't affect correctness
+"scholaraio/*.py" = ["SIM105", "SIM102", "SIM115", "E402", "F841", "RUF059", "B904"]
+"scholaraio/**/*.py" = ["SIM105", "SIM102", "SIM115", "E402", "F841", "RUF059", "B904"]
+
+[tool.ruff.lint.isort]
+known-first-party = ["scholaraio"]
+
+# ---------- mypy ----------
+[tool.mypy]
+python_version = "3.10"
+warn_return_any = false
+warn_unused_configs = true
+ignore_missing_imports = true
+disallow_untyped_defs = false
+check_untyped_defs = false
+disable_error_code = ["import-untyped"]
+
+# Strict checking for new/well-typed modules
+[[tool.mypy.overrides]]
+module = ["tests.*"]
+warn_return_any = true
+check_untyped_defs = true
+
+# Lenient for modules with heavy optional imports and dynamic typing
+[[tool.mypy.overrides]]
+module = [
+    "scholaraio.services.topics",
+    "scholaraio.services.vectors",
+    "scholaraio.cli",
+
+    "scholaraio.stores.explore",
+    "scholaraio.services.ingest.*",
+    "scholaraio.services.ingest_metadata.*",
+]
+ignore_errors = true
+
+# ---------- pytest ----------
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-v --tb=short"
+markers = [
+    "slow: marks tests that need network or heavy computation",
+]
+
+# ---------- coverage ----------
+[tool.coverage.run]
+source = ["scholaraio"]
+omit = ["scholaraio/cli.py"]
+
+[tool.coverage.report]
+show_missing = true
+skip_empty = true
+exclude_lines = [
+    "pragma: no cover",
+    "if TYPE_CHECKING:",
+    "if __name__",
+]

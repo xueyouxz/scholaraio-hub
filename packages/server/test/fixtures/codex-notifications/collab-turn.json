@@ -1,0 +1,78 @@
+{
+  "sessionId": "thread-golden",
+  "notifications": [
+    {
+      "method": "item/completed",
+      "params": {
+        "threadId": "thread-golden",
+        "turnId": "turn-5",
+        "item": {
+          "id": "spawn-1",
+          "type": "collabAgentToolCall",
+          "tool": "spawnAgent",
+          "status": "completed",
+          "senderThreadId": "thread-golden",
+          "receiverThreadIds": ["child-1"],
+          "prompt": "检查测试失败原因\n只读，不要修改文件",
+          "agentsStates": { "child-1": { "status": "running", "message": null } }
+        }
+      }
+    },
+    {
+      "method": "item/agentMessage/delta",
+      "params": {
+        "threadId": "child-1",
+        "turnId": "child-turn-1",
+        "itemId": "child-msg",
+        "delta": "正在检查"
+      }
+    },
+    {
+      "method": "item/completed",
+      "params": {
+        "threadId": "child-1",
+        "turnId": "child-turn-1",
+        "item": {
+          "id": "child-cmd",
+          "type": "commandExecution",
+          "command": "cat src/app.ts",
+          "aggregatedOutput": "export {}",
+          "exitCode": 0,
+          "status": "completed"
+        }
+      }
+    },
+    {
+      "method": "item/completed",
+      "params": {
+        "threadId": "unrelated-thread",
+        "turnId": "other",
+        "item": { "id": "leak", "type": "agentMessage", "text": "must not appear" }
+      }
+    },
+    {
+      "method": "item/completed",
+      "params": {
+        "threadId": "thread-golden",
+        "turnId": "turn-5",
+        "item": {
+          "id": "wait-1",
+          "type": "collabAgentToolCall",
+          "tool": "wait",
+          "status": "completed",
+          "senderThreadId": "thread-golden",
+          "receiverThreadIds": ["child-1"],
+          "prompt": null,
+          "agentsStates": { "child-1": { "status": "completed", "message": "原因：缺少环境变量" } }
+        }
+      }
+    },
+    {
+      "method": "turn/completed",
+      "params": {
+        "threadId": "thread-golden",
+        "turn": { "id": "turn-5", "status": "completed", "items": [], "error": null }
+      }
+    }
+  ]
+}

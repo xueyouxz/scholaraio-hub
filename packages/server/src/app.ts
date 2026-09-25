@@ -1,365 +1,148 @@
+import path from "node:path";
 import type { HttpBindings } from "@hono/node-server";
+import { resolveProfileName } from "@scholaraio-hub/shared";
 import { Hono } from "hono";
-import { etag } from "hono/etag";
+import { HTTPException } from "hono/http-exception";
+import type { ContentfulStatusCode } from "hono/utils/http-status";
+import { z } from "zod";
+import { openInFileManager } from "./files/reveal.js";
 import { createStaticRoutes } from "./frontend/static.js";
-import type { SessionIndexService } from "./indexes/index.js";
-import type { ProjectMetadataService, SessionMetadataService } from "./metadata/index.js";
-import { hostCheckMiddleware, requireCustomHeader } from "./middleware/security.js";
-import type { NotificationService } from "./notifications/index.js";
-import { CODEX_SESSIONS_DIR, CodexSessionScanner } from "./projects/codex-scanner.js";
-import { ProjectScanner } from "./projects/scanner.js";
-import { createFilesRoutes } from "./routes/files.js";
-import { createFsRoutes } from "./routes/fs.js";
-import { health } from "./routes/health.js";
-import { createProcessesRoutes } from "./routes/processes.js";
-import { createProjectsRoutes } from "./routes/projects.js";
+import { hostCheck, parseAllowedHosts, requireCsrfHeader } from "./middleware/security.js";
+import { claudeProvider } from "./providers/claude/ClaudeProvider.js";
+import type { AgentProvider } from "./providers/types.js";
+import { createLibraryRuntimeRoutes } from "./routes/library-runtime.js";
+import { createLibraryRoutes } from "./routes/library.js";
+import { createProjectRoutes } from "./routes/projects.js";
 import { createProvidersRoutes } from "./routes/providers.js";
-import { createScholarRoutes } from "./routes/scholar.js";
-import { createGlobalSessionsRoute } from "./routes/sessions-global.js";
-import { createSessionsRoutes } from "./routes/sessions.js";
+import { createSessionRoutes } from "./routes/sessions.js";
 import { createSettingsRoutes } from "./routes/settings.js";
 import { createSkillsRoutes } from "./routes/skills.js";
-import { createStreamsRoutes } from "./routes/streams.js";
-import { type UploadDeps, createUploadRoutes } from "./routes/upload.js";
-import { createVersionRoutes } from "./routes/version.js";
-import type { ClaudeSDK, PermissionMode, RealClaudeSDKInterface } from "./sdk/types.js";
-import type { ModelInfoService } from "./services/ModelInfoService.js";
+import { LibraryRequestError, LibraryService } from "./services/LibraryService.js";
 import { ProviderUsageLimitService } from "./services/ProviderUsageLimitService.js";
 import type { ServerSettingsService } from "./services/ServerSettingsService.js";
-import { CodexSessionReader } from "./sessions/codex-reader.js";
-import { findSessionSummaryAcrossProviders } from "./sessions/provider-resolution.js";
-import { ClaudeSessionReader } from "./sessions/reader.js";
-import type { ISessionReader } from "./sessions/types.js";
-import { ExternalSessionTracker } from "./supervisor/ExternalSessionTracker.js";
-import { Supervisor } from "./supervisor/Supervisor.js";
-import type { Project } from "./supervisor/types.js";
-import type { EventBus } from "./watcher/index.js";
+import { VectorRuntimeService } from "./services/VectorRuntimeService.js";
+import { SessionService } from "./sessions/SessionService.js";
+import { SessionStore } from "./sessions/SessionStore.js";
+import {
+  SessionConflictError,
+  SessionInputError,
+  SessionNotFoundError,
+} from "./sessions/errors.js";
+import { skillsDirectory } from "./skills/skillsDirectory.js";
 
 export interface AppOptions {
-  sdk?: ClaudeSDK;
-  scholarAioApiUrl?: string;
-  realSdk?: RealClaudeSDKInterface;
-  projectsDir?: string;
+  dataDir: string;
+  /** Agent provider used when a session does not name one (defaults to Claude) */
+  provider?: AgentProvider;
+  /** The caller's library service, which the caller also closes; otherwise the app runs its own. */
+  libraryService?: LibraryService;
   idleTimeoutMs?: number;
-  defaultPermissionMode?: PermissionMode;
-  eventBus?: EventBus;
-  upgradeWebSocket?: UploadDeps["upgradeWebSocket"];
-  projectScanCacheTtlMs?: number;
-  maxWorkers?: number;
-  idlePreemptThresholdMs?: number;
-  maxUploadSizeBytes?: number;
-  maxQueueSize?: number;
   serverSettingsService?: ServerSettingsService;
-  modelInfoService?: ModelInfoService;
-  providerUsageLimitService?: ProviderUsageLimitService;
   enabledProviders?: string[];
-  installId?: string;
-  voiceInputEnabled?: boolean;
-  sessionMetadataService?: SessionMetadataService;
-  projectMetadataService?: ProjectMetadataService;
-  notificationService?: NotificationService;
-  sessionIndexService?: SessionIndexService;
   frontendDistPath?: string;
   scholaraioSkillsDir?: string;
+  /** `ALLOWED_HOSTS`: extra hostnames the API answers besides loopback, or "*". */
+  allowedHosts?: string;
 }
 
-export interface AppResult {
-  app: Hono<{ Bindings: HttpBindings }>;
-  supervisor: Supervisor;
-  scanner: ProjectScanner;
-  readerFactory: (project: Project) => ISessionReader;
+/** The status a failed API request answers with, by what went wrong. */
+function statusFor(error: Error): ContentfulStatusCode {
+  if (error instanceof SessionNotFoundError) return 404;
+  if (error instanceof SessionConflictError) return 409;
+  if (
+    error instanceof SessionInputError ||
+    error instanceof z.ZodError ||
+    error instanceof SyntaxError
+  )
+    return 400;
+  // The library's own client errors pass through; its failures are a bad gateway.
+  if (error instanceof LibraryRequestError)
+    return (error.status < 500 ? error.status : 502) as ContentfulStatusCode;
+  return 500;
 }
 
-export function createApp(options: AppOptions): AppResult {
+export function createApp(options: AppOptions) {
   const app = new Hono<{ Bindings: HttpBindings }>();
-
-  const scanner = new ProjectScanner({
-    projectsDir: options.projectsDir,
-    projectMetadataService: options.projectMetadataService,
-    eventBus: options.eventBus,
-    cacheTtlMs: options.projectScanCacheTtlMs,
-  });
-  const codexScanner = new CodexSessionScanner();
-  const providerUsageLimitService =
-    options.providerUsageLimitService ?? new ProviderUsageLimitService();
-  const readerCache = new Map<string, ISessionReader>();
-  const maxReaderCacheSize = 500;
-
-  const getOrCreateReader = <T extends ISessionReader>(key: string, factory: () => T): T => {
-    const cached = readerCache.get(key);
-    if (cached) return cached as T;
-
-    const reader = factory();
-    readerCache.set(key, reader);
-
-    while (readerCache.size > maxReaderCacheSize) {
-      const oldestKey = readerCache.keys().next().value;
-      if (!oldestKey) break;
-      readerCache.delete(oldestKey);
-    }
-
-    return reader;
-  };
-
-  const readerFactory = (project: Project): ISessionReader => {
-    const modelInfoService = options.modelInfoService;
-    const mergedKey =
-      project.mergedSessionDirs && project.mergedSessionDirs.length > 0
-        ? `::merged=${project.mergedSessionDirs.join(",")}`
-        : "";
-
-    switch (project.provider) {
-      case "codex":
-      case "codex-oss":
-        return getOrCreateReader(
-          `codex::${project.sessionDir}::${project.path}`,
-          () =>
-            new CodexSessionReader({
-              sessionsDir: project.sessionDir,
-              projectPath: project.path,
-            }),
-        );
-      default:
-        return getOrCreateReader(
-          `claude::${project.sessionDir}${mergedKey}`,
-          () =>
-            new ClaudeSessionReader({
-              sessionDir: project.sessionDir,
-              additionalDirs: project.mergedSessionDirs,
-              getContextWindow: modelInfoService
-                ? (model, provider) => modelInfoService.getContextWindow(model, provider)
-                : undefined,
-            }),
-        );
-    }
-  };
-
-  const codexReaderFactory = (projectPath: string): CodexSessionReader =>
-    getOrCreateReader(
-      `codex-extra::${CODEX_SESSIONS_DIR}::${projectPath}`,
-      () =>
-        new CodexSessionReader({
-          sessionsDir: CODEX_SESSIONS_DIR,
-          projectPath,
-        }),
-    );
-
-  const getSessionSummary = async (sessionId: string, projectId: string) => {
-    const project = await scanner.getProject(projectId);
-    if (!project) return null;
-
-    const resolved = await findSessionSummaryAcrossProviders(project, sessionId, project.id, {
-      readerFactory,
-      codexSessionsDir: CODEX_SESSIONS_DIR,
-      codexReaderFactory,
-    });
-
-    return resolved?.summary ?? null;
-  };
-
-  const supervisor = new Supervisor({
-    sdk: options.sdk,
-    realSdk: options.realSdk,
+  const { dataDir } = options;
+  const store = new SessionStore(dataDir);
+  const library = options.libraryService ?? new LibraryService(dataDir);
+  const usage = new ProviderUsageLimitService();
+  const vectorRuntime = new VectorRuntimeService(dataDir, library);
+  const skillsDir = options.scholaraioSkillsDir ?? skillsDirectory(dataDir);
+  const sessions = new SessionService(store, library, {
+    provider: options.provider ?? claudeProvider,
     idleTimeoutMs: options.idleTimeoutMs,
-    defaultPermissionMode: options.defaultPermissionMode,
-    eventBus: options.eventBus,
-    maxWorkers: options.maxWorkers,
-    idlePreemptThresholdMs: options.idlePreemptThresholdMs,
-    maxQueueSize: options.maxQueueSize,
-    onSessionSummary: getSessionSummary,
-    onProviderSDKMessage: (provider, message) =>
-      providerUsageLimitService.recordSDKMessage(provider, message),
+    skillsDir,
+    onUsageLimits: (limits) => usage.record(limits),
   });
-
-  const externalTracker = options.eventBus
-    ? new ExternalSessionTracker({
-        eventBus: options.eventBus,
-        supervisor,
-        scanner,
-        decayMs: 30000,
-        getSessionSummary,
-      })
-    : undefined;
-
-  app.use("/health/*", (c, next) => next());
-  app.route("/health", health);
-
-  // Security middleware for the sensitive surfaces (API + filesystem browse).
-  // hostCheck guards against DNS rebinding; requireCustomHeader guards mutating
-  // requests against CSRF. /health and the static frontend are intentionally exempt.
-  // Mounted before the route registrations below so they run first.
-  app.use("/api/*", hostCheckMiddleware);
-  app.use("/api/*", requireCustomHeader);
-  app.use("/hub/fs", hostCheckMiddleware);
-  app.use("/hub/fs/*", hostCheckMiddleware);
-  app.use("/hub/fs", requireCustomHeader);
-  app.use("/hub/fs/*", requireCustomHeader);
-
-  // Apply ETag/304 negotiation to read-mostly JSON aggregate endpoints.
-  // SSE/stream and SDK message routes are excluded because their responses
-  // are not body-stable (or are streaming).
-  const etagMw = etag();
-  app.use("/api/version", etagMw);
-  app.use("/api/projects", etagMw);
-  app.use("/api/projects/:projectId", etagMw);
-  app.use("/api/projects/:projectId/sessions", etagMw);
-  app.use("/api/sessions", etagMw);
-  app.use("/api/processes", etagMw);
-  app.use("/api/providers", etagMw);
-  app.use("/api/providers/usage-limits", etagMw);
-
-  app.route(
-    "/api/version",
-    createVersionRoutes({
-      installId: options.installId,
-      voiceInputEnabled: options.voiceInputEnabled,
-    }),
-  );
-
-  app.route(
-    "/api/projects",
-    createProjectsRoutes({
-      scanner,
-      readerFactory,
-      supervisor,
-      externalTracker,
-      codexScanner,
-      notificationService: options.notificationService,
-      sessionMetadataService: options.sessionMetadataService,
-      projectMetadataService: options.projectMetadataService,
-      sessionIndexService: options.sessionIndexService,
-      codexSessionsDir: CODEX_SESSIONS_DIR,
-      codexReaderFactory,
-    }),
-  );
-
-  app.route(
-    "/api/projects",
-    createFilesRoutes({
-      scanner,
-    }),
-  );
-
-  app.route(
-    "/api/sessions",
-    createGlobalSessionsRoute({
-      scanner,
-      readerFactory,
-      supervisor,
-      externalTracker,
-      notificationService: options.notificationService,
-      sessionMetadataService: options.sessionMetadataService,
-      sessionIndexService: options.sessionIndexService,
-      codexSessionsDir: CODEX_SESSIONS_DIR,
-      codexReaderFactory,
-    }),
-  );
-
-  app.route(
-    "/api",
-    createSessionsRoutes({
-      supervisor,
-      scanner,
-      readerFactory,
-      externalTracker,
-      codexScanner,
-      codexSessionsDir: CODEX_SESSIONS_DIR,
-      codexReaderFactory,
-      notificationService: options.notificationService,
-      sessionMetadataService: options.sessionMetadataService,
-      eventBus: options.eventBus,
-      serverSettingsService: options.serverSettingsService,
-      modelInfoService: options.modelInfoService,
-      scholaraioSkillsDir: options.scholaraioSkillsDir,
-    }),
-  );
-
-  app.route(
-    "/api",
-    createStreamsRoutes({
-      supervisor,
-      eventBus: options.eventBus,
-    }),
-  );
-
-  app.route(
-    "/api/processes",
-    createProcessesRoutes({
-      supervisor,
-      scanner,
-      readerFactory,
-      processSessionSourceFactory: (process, project) => {
-        switch (process.provider) {
-          case "codex":
-          case "codex-oss":
-            return {
-              reader: codexReaderFactory(project.path),
-              sessionDir: CODEX_SESSIONS_DIR,
-            };
-          default:
-            return {
-              reader: readerFactory(project),
-              sessionDir: project.sessionDir,
-            };
-        }
-      },
-      sessionIndexService: options.sessionIndexService,
-      sessionMetadataService: options.sessionMetadataService,
-    }),
-  );
-
+  const ready = store.initialize();
+  app.use("/api/*", hostCheck(parseAllowedHosts(options.allowedHosts)));
+  app.use("/api/*", requireCsrfHeader);
+  app.use("/api/*", async (_c, next) => {
+    await ready;
+    await next();
+  });
+  // Registered first: these two also decide where a project's sessions run.
+  app.route("/api/library/projects", createProjectRoutes(library, store));
+  app.route("/api/library/runtime", createLibraryRuntimeRoutes(vectorRuntime));
+  app.route("/api/library", createLibraryRoutes(library));
+  app.route("/api/sessions", createSessionRoutes(sessions, options.serverSettingsService));
+  app.route("/api/skills", createSkillsRoutes({ scholaraioSkillsDir: skillsDir }));
   app.route(
     "/api/providers",
     createProvidersRoutes({
-      modelInfoService: options.modelInfoService,
-      providerUsageLimitService,
-      enabledProviders: options.enabledProviders ?? ["claude", "codex"],
+      providerUsageLimitService: usage,
+      enabledProviders: options.enabledProviders,
     }),
   );
-
-  if (options.serverSettingsService) {
+  app.get("/api/status", (c) =>
+    c.json({
+      dataDir,
+      profile: resolveProfileName(process.env),
+      library: library.available,
+    }),
+  );
+  // Reveals a directory this Hub owns. No path comes from the browser: it names
+  // which one, and the path is the library's own, checked to lie inside dataDir.
+  app.post("/api/status/data-dir/open", async (c) => {
+    const target = c.req.query("target") ?? "data";
+    try {
+      let directory = dataDir;
+      if (target === "papers" || target === "workspaces") {
+        const settings = await library.json<{ papersDir: string; workspaceDir: string }>(
+          "/settings",
+        );
+        directory = path.resolve(target === "papers" ? settings.papersDir : settings.workspaceDir);
+        const relative = path.relative(path.resolve(dataDir), directory);
+        if (relative.startsWith("..") || path.isAbsolute(relative))
+          return c.json({ error: "该目录不在数据目录内，不能从这里打开" }, 400);
+      } else if (target !== "data") {
+        return c.json({ error: `未知的目录：${target}` }, 400);
+      }
+      openInFileManager(directory);
+      return c.json({ opened: true, dataDir: directory });
+    } catch (error) {
+      return c.json({ error: error instanceof Error ? error.message : "无法打开数据目录" }, 500);
+    }
+  });
+  if (options.serverSettingsService)
     app.route(
       "/api/settings",
-      createSettingsRoutes({
-        serverSettingsService: options.serverSettingsService,
-      }),
+      createSettingsRoutes({ serverSettingsService: options.serverSettingsService }),
     );
-  }
-
-  if (options.upgradeWebSocket) {
-    app.route(
-      "/api",
-      createUploadRoutes({
-        scanner,
-        upgradeWebSocket: options.upgradeWebSocket,
-        maxUploadSizeBytes: options.maxUploadSizeBytes,
-      }),
-    );
-  }
-
-  app.route(
-    "/api/scholar",
-    createScholarRoutes({
-      scholarAioApiUrl: options.scholarAioApiUrl ?? "http://127.0.0.1:8765",
-    }),
-  );
-
-  app.route(
-    "/api/skills",
-    createSkillsRoutes({
-      scholaraioSkillsDir:
-        options.scholaraioSkillsDir ?? `${process.env.HOME ?? ""}/scholaraio/skills`,
-    }),
-  );
-
-  app.route("/hub/fs", createFsRoutes());
-
-  if (options.frontendDistPath) {
+  // Unknown APIs must never be served the SPA index.
+  app.all("/api/*", (c) => c.json({ error: "Not found" }, 404));
+  app.onError((error, c) => {
+    if (error instanceof HTTPException) return error.getResponse();
+    console.error("[API] request failed", error);
+    return c.json({ error: error.message }, statusFor(error));
+  });
+  if (options.frontendDistPath)
     app.route("/", createStaticRoutes({ distPath: options.frontendDistPath }));
-  }
-
-  return { app, supervisor, scanner, readerFactory };
+  const close = async () => {
+    await vectorRuntime.close();
+    await sessions.close();
+    if (!options.libraryService) await library.close();
+  };
+  return { app, sessions, ready, close };
 }
-
-export const app = new Hono();
-app.route("/health", health);

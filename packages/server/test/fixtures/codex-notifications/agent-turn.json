@@ -1,0 +1,60 @@
+{
+  "sessionId": "thread-golden",
+  "notifications": [
+    {
+      "method": "item/started",
+      "params": {
+        "threadId": "thread-golden",
+        "turnId": "turn-1",
+        "item": { "id": "item-reason", "type": "reasoning", "text": "先检索文献" }
+      }
+    },
+    {
+      "method": "item/agentMessage/delta",
+      "params": {
+        "threadId": "thread-golden",
+        "turnId": "turn-1",
+        "itemId": "item-answer",
+        "delta": "这篇论文"
+      }
+    },
+    {
+      "method": "item/agentMessage/delta",
+      "params": {
+        "threadId": "thread-golden",
+        "turnId": "turn-1",
+        "itemId": "item-answer",
+        "delta": "提出了新方法。"
+      }
+    },
+    {
+      "method": "item/completed",
+      "params": {
+        "threadId": "thread-golden",
+        "turnId": "turn-1",
+        "item": {
+          "id": "item-answer",
+          "type": "agentMessage",
+          "text": "这篇论文提出了新方法。"
+        }
+      }
+    },
+    {
+      "method": "thread/tokenUsage/updated",
+      "params": {
+        "threadId": "thread-golden",
+        "turnId": "turn-1",
+        "tokenUsage": {
+          "last": { "inputTokens": 120, "outputTokens": 45, "cachedInputTokens": 64 }
+        }
+      }
+    },
+    {
+      "method": "turn/completed",
+      "params": {
+        "threadId": "thread-golden",
+        "turn": { "id": "turn-1", "status": "completed", "items": [], "error": null }
+      }
+    }
+  ]
+}

@@ -5,7 +5,7 @@ paths:
 
 # Client Rules (`packages/client`)
 
-Scope: Vite + React 19 frontend. These load when Claude works under `packages/client/`.
+Scope: Vite + React 19 frontend (`packages/client/`).
 Terms used here are defined in [`../glossary.md`](../glossary.md).
 
 Before writing or reviewing frontend code, read the

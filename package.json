@@ -14,7 +14,7 @@
     "hub": "node scripts/hub.mjs",
     "build": "pnpm --filter @scholaraio-hub/shared build && pnpm --filter @scholaraio-hub/server build && pnpm --filter @scholaraio-hub/client build",
     "clean": "node scripts/clean.mjs",
-    "lint": "biome check .",
+    "lint": "biome check . && node scripts/check-conventions.mjs",
     "lint:fix": "biome check --write .",
     "typecheck": "pnpm --filter @scholaraio-hub/shared build && pnpm --filter @scholaraio-hub/server typecheck && pnpm --filter @scholaraio-hub/client typecheck",
     "test": "pnpm --filter @scholaraio-hub/shared test && pnpm --filter @scholaraio-hub/server test && pnpm --filter @scholaraio-hub/client test",

@@ -1,12 +1,13 @@
 # CI & Local Verification
 
-> On-demand deep dive. Referenced by the root [`CLAUDE.md`](../../CLAUDE.md).
+> On-demand deep dive. Referenced by the root [`AGENTS.md`](../../AGENTS.md).
 > Read before changing `.github/workflows/`, the local CI script, or any cross-package
 > build wiring.
 
 ## The pipeline
 
-- **`.github/workflows/ci.yml`** (every PR + push to `main`): `lint`, `typecheck`,
+- **`.github/workflows/ci.yml`** (every PR + push to `main`): `lint` (Biome, then
+  `scripts/check-conventions.mjs`), `typecheck`,
   `test` (+ the `packages/server` Vitest e2e layer), `e2e` (Playwright), and a
   non-blocking `audit`. A reusable composite action (`.github/actions/setup`) installs
   pnpm (version from the root `packageManager`) + Node + deps so the toolchain lives in
@@ -57,3 +58,5 @@ Real regressions the pipeline surfaced — check for them when builds break:
 
 - Pinned pnpm version: **only** in the root `package.json` `packageManager` field.
 - CI jobs ↔ `scripts/ci-local.mjs`: add/remove in both.
+- A convention every agent must follow belongs in `scripts/check-conventions.mjs` (run by
+  `pnpm lint`, lint-staged and the Claude hook), not in an agent-specific hook.

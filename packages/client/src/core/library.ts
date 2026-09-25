@@ -133,7 +133,7 @@ export const libraryApi = {
   vectorRuntime: (signal?: AbortSignal) =>
     requestJson<VectorRuntimeStatus>("/api/library/runtime", { signal }),
   installVectorRuntime: () =>
-    requestJson<VectorRuntimeStatus>("/api/library/runtime/embed", { method: "POST" }),
+    requestJson<VectorRuntimeStatus>("/api/library/runtime/semantic", { method: "POST" }),
   startTask: (kind: LibraryTaskKind) =>
     requestJson<LibraryTask>(`/api/library/tasks/${pathSegment(kind)}`, { method: "POST" }),
   cancelTask: (kind: LibraryTaskKind) =>

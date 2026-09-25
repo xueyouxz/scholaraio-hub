@@ -25,8 +25,8 @@ through `hub/views.py`, not by walking `iter_paper_dirs` again.
 
 ## Errors
 
-Raise `InvalidRequest` / `NotFound` / `TooLarge` from `hub/errors.py` for anything the
-caller caused. Data on disk that exists but cannot be read is a `RuntimeError` (500).
+Raise `InvalidRequest` / `NotFound` / `TooLarge` / `Conflict` from `hub/errors.py` for
+anything the caller caused. Data on disk that exists but cannot be read is a `RuntimeError` (500).
 Do not rely on a builtin `KeyError` becoming a 404.
 
 ## Wire Format

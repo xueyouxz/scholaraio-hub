@@ -1,0 +1,7 @@
+{
+  "$comment": "What the Hub's Python runtime installs: the extras every runtime gets, and the extras each optional capability adds. Read by `pnpm hub setup` and by the library service when a capability is installed from the browser.",
+  "core": ["hub", "mineru-cloud"],
+  "capabilities": {
+    "semantic": ["topics"]
+  }
+}

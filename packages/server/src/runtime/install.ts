@@ -10,17 +10,20 @@ import { type PythonRuntime, pythonRuntime, scholaraioSourceDir } from "./python
  * removes everything else, so whoever syncs must name every capability the
  * data directory already has, not only the one being added.
  */
-export type Capability = "semantic";
+export type Capability = string;
 
-/** The library service and MinerU's cloud CLI, which PDF parsing uses. */
-const CORE_EXTRAS = ["hub", "mineru-cloud"];
+/**
+ * The core extras and each capability's extras, shared with the library
+ * service, which installs a capability when the browser asks for it
+ * (`scholaraio/hub/runtime_install.py`).
+ */
+const RUNTIME_CAPABILITIES = JSON.parse(
+  readFileSync(path.join(scholaraioSourceDir, "runtime-capabilities.json"), "utf8"),
+) as { core: string[]; capabilities: Record<Capability, string[]> };
 
-const CAPABILITY_EXTRAS: Record<Capability, readonly string[]> = {
-  // topics pulls embed with it: one environment serves both.
-  semantic: ["topics"],
-};
-
-const CAPABILITIES = Object.keys(CAPABILITY_EXTRAS) as Capability[];
+const CORE_EXTRAS = RUNTIME_CAPABILITIES.core;
+const CAPABILITY_EXTRAS = RUNTIME_CAPABILITIES.capabilities;
+const CAPABILITIES = Object.keys(CAPABILITY_EXTRAS);
 
 interface RuntimeManifest {
   version: 1;
@@ -130,7 +133,7 @@ export function planRuntimeSync(dataDir: string, add: readonly Capability[] = []
   const runtime = pythonRuntime(dataDir);
   const current = runtimeCapabilities(dataDir);
   const capabilities = CAPABILITIES.filter((item) => add.includes(item) || current.includes(item));
-  const extras = [...CORE_EXTRAS, ...capabilities.flatMap((item) => CAPABILITY_EXTRAS[item])];
+  const extras = [...CORE_EXTRAS, ...capabilities.flatMap((item) => CAPABILITY_EXTRAS[item] ?? [])];
   return {
     capabilities,
     ...uvSyncCommand(runtime.root, runtime.uvCacheDir, extras),

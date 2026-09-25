@@ -22,6 +22,8 @@ const STOP_GRACE_MS = 5000;
 const RESTART_DELAY_MS = 1000;
 const RESTART_LIMIT = 3;
 const RESTART_WINDOW_MS = 5 * 60 * 1000;
+/** The service's "restart me" (after installing into its own runtime; see `server.py`). */
+const RESTART_EXIT_CODE = 75;
 
 /** Python's level names, as the service's log lines name them (see `interfaces/api/server.py`). */
 const PYTHON_LEVELS: Record<string, Level> = {
@@ -121,7 +123,7 @@ export class LibraryService {
       this.baseUrl = undefined;
       this.ready = false;
       this.failure = `文献服务已退出 (${signal ?? code})`;
-      if (!this.stopping) this.scheduleRestart(this.failure);
+      if (!this.stopping) this.scheduleRestart(this.failure, code === RESTART_EXIT_CODE);
     });
     try {
       this.baseUrl = `http://${connectHost(host)}:${port}`;
@@ -145,20 +147,23 @@ export class LibraryService {
     }
   }
 
-  /** Start a service that exited on its own again, unless it keeps doing so. */
-  private scheduleRestart(reason: string): void {
+  /** Start a service that exited on its own again, unless it keeps doing so uninvited. */
+  private scheduleRestart(reason: string, requested: boolean): void {
     const now = Date.now();
     while (this.restarts.length && now - (this.restarts[0] ?? now) > RESTART_WINDOW_MS)
       this.restarts.shift();
-    if (this.restarts.length >= RESTART_LIMIT) {
+    if (!requested && this.restarts.length >= RESTART_LIMIT) {
       log().error(
         { reason, restarts: this.restarts.length },
         "Library service keeps exiting; left stopped",
       );
       return;
     }
-    this.restarts.push(now);
-    log().warn({ reason }, "Library service exited; restarting");
+    if (requested) log().info("Library service asked for a restart");
+    else {
+      this.restarts.push(now);
+      log().warn({ reason }, "Library service exited; restarting");
+    }
     this.restartTimer = setTimeout(() => {
       this.restartTimer = undefined;
       this.start().catch((error) => log().error({ err: error }, "Library service restart failed"));

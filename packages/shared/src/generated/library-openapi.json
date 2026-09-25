@@ -1424,6 +1424,70 @@
           }
         }
       }
+    },
+    "/runtime": {
+      "get": {
+        "tags": [
+          "runtime"
+        ],
+        "summary": "Status",
+        "operationId": "status_runtime_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RuntimeInstallStatus"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/runtime/{capability}": {
+      "post": {
+        "tags": [
+          "runtime"
+        ],
+        "summary": "Install",
+        "description": "Install the capability's packages; the service restarts itself once they land.",
+        "operationId": "install_runtime__capability__post",
+        "parameters": [
+          {
+            "name": "capability",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "const": "semantic",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "202": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RuntimeInstallStatus"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
     }
   },
   "components": {
@@ -2942,6 +3006,61 @@
           "opened",
           "path"
         ]
+      },
+      "RuntimeInstallStatus": {
+        "properties": {
+          "state": {
+            "type": "string",
+            "enum": [
+              "idle",
+              "installing",
+              "ready",
+              "failed"
+            ]
+          },
+          "log": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "startedAt": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "finishedAt": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "type": "object",
+        "required": [
+          "state",
+          "log"
+        ],
+        "description": "How installing an optional runtime capability is going."
       },
       "Scope": {
         "properties": {

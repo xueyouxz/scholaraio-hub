@@ -9,6 +9,7 @@ from scholaraio.interfaces.api.routes import (
     imports,
     papers,
     projects,
+    runtime,
     search,
     settings,
     system,
@@ -26,6 +27,7 @@ ROUTERS = [
     tasks.router,
     settings.router,
     directories.router,
+    runtime.router,
 ]
 
 __all__ = ["ROUTERS"]

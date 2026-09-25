@@ -9,7 +9,6 @@ import { loggerFor } from "./logging/logger.js";
 import { hostCheck, parseAllowedHosts, requireCsrfHeader } from "./middleware/security.js";
 import { claudeProvider } from "./providers/claude/ClaudeProvider.js";
 import type { AgentProvider } from "./providers/types.js";
-import { createLibraryRuntimeRoutes } from "./routes/library-runtime.js";
 import { createLibraryRoutes } from "./routes/library.js";
 import { createProjectRoutes } from "./routes/projects.js";
 import { createProvidersRoutes } from "./routes/providers.js";
@@ -19,7 +18,6 @@ import { createSkillsRoutes } from "./routes/skills.js";
 import { LibraryRequestError, LibraryService } from "./services/LibraryService.js";
 import { ProviderUsageLimitService } from "./services/ProviderUsageLimitService.js";
 import type { ServerSettingsService } from "./services/ServerSettingsService.js";
-import { VectorRuntimeService } from "./services/VectorRuntimeService.js";
 import { SessionService } from "./sessions/SessionService.js";
 import { SessionStore } from "./sessions/SessionStore.js";
 import {
@@ -78,7 +76,6 @@ export function createApp(options: AppOptions) {
   const store = new SessionStore(dataDir);
   const library = options.libraryService ?? new LibraryService(dataDir);
   const usage = new ProviderUsageLimitService();
-  const vectorRuntime = new VectorRuntimeService(dataDir, library);
   const skillsDir = options.scholaraioSkillsDir ?? skillsDirectory(dataDir);
   const sessions = new SessionService(store, library, {
     provider: options.provider ?? claudeProvider,
@@ -93,9 +90,8 @@ export function createApp(options: AppOptions) {
     await ready;
     await next();
   });
-  // Registered first: these two also decide where a project's sessions run.
+  // Registered first: renaming or archiving a project also decides where its sessions run.
   app.route("/api/library/projects", createProjectRoutes(library, store));
-  app.route("/api/library/runtime", createLibraryRuntimeRoutes(vectorRuntime));
   app.route("/api/library", createLibraryRoutes(library));
   app.route("/api/sessions", createSessionRoutes(sessions, options.serverSettingsService));
   app.route("/api/skills", createSkillsRoutes({ scholaraioSkillsDir: skillsDir }));
@@ -134,7 +130,6 @@ export function createApp(options: AppOptions) {
   if (options.frontendDistPath)
     app.route("/", createStaticRoutes({ distPath: options.frontendDistPath }));
   const close = async () => {
-    await vectorRuntime.close();
     await sessions.close();
     if (!options.libraryService) await library.close();
   };

@@ -25,10 +25,16 @@ class TooLarge(InvalidRequest):
     status_code = 413
 
 
+class Conflict(HubError):
+    """The request cannot be carried out now: the same work is already under way."""
+
+    status_code = 409
+
+
 class NotFound(HubError, LookupError):
     """The request names a paper, project, job or task that does not exist."""
 
     status_code = 404
 
 
-__all__ = ["HubError", "InvalidRequest", "NotFound", "TooLarge"]
+__all__ = ["Conflict", "HubError", "InvalidRequest", "NotFound", "TooLarge"]

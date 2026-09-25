@@ -6,6 +6,9 @@ directory, where to listen, the Hub's port (whose page may call this service
 from the browser) and the extra host names the user allowed. With
 ``--watch-stdin`` the service exits when the launcher's pipe closes, so it never
 outlives the launcher, even one that was killed.
+
+The service exits with :data:`RESTART_EXIT_CODE` when it needs a new process
+(after installing packages into its own runtime); the launcher restarts it.
 """
 from __future__ import annotations
 
@@ -23,6 +26,8 @@ import uvicorn
 from scholaraio.interfaces.api.app import create_app
 from scholaraio.interfaces.api.security import AccessPolicy
 
+# "Restart me": EX_TEMPFAIL, which the launcher answers by starting the service again.
+RESTART_EXIT_CODE = 75
 # Once the owner is gone, how long cleanup may take before the process is killed.
 SHUTDOWN_GRACE_SECONDS = 5
 LOG_FORMAT = "%(asctime)s %(levelname)s %(name)s: %(message)s"
@@ -92,8 +97,14 @@ def main(argv: list[str] | None = None) -> None:
     configure_logging(args.log_file)
     policy = AccessPolicy.parse(args.allowed_hosts, args.hub_port)
     sock = listen(args.host, args.port)
+    restart = threading.Event()
+
+    def request_restart() -> None:
+        restart.set()
+        server.should_exit = True
+
     config = uvicorn.Config(
-        create_app(args.data_dir, policy),
+        create_app(args.data_dir, policy, request_restart),
         # Our handlers, not uvicorn's: its records reach the same outputs.
         log_config=None,
         log_level="warning",
@@ -111,6 +122,9 @@ def main(argv: list[str] | None = None) -> None:
     finally:
         stopped.set()
         sock.close()
+    if restart.is_set():
+        _log.info("Exiting for a restart")
+        sys.exit(RESTART_EXIT_CODE)
 
 
-__all__ = ["main"]
+__all__ = ["RESTART_EXIT_CODE", "main"]

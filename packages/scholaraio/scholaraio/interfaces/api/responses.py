@@ -31,6 +31,17 @@ class RevealedDirectory(CamelModel):
     path: str
 
 
+class RuntimeInstallStatus(CamelModel):
+    """How installing an optional runtime capability is going."""
+
+    state: Literal["idle", "installing", "ready", "failed"]
+    # Tail of the installer's output, so the browser can show what it is doing.
+    log: list[str]
+    error: str | None = None
+    started_at: str | None = None
+    finished_at: str | None = None
+
+
 # ---- papers ---------------------------------------------------------------
 
 

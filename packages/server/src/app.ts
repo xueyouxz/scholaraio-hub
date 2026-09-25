@@ -1,12 +1,17 @@
 import path from "node:path";
 import type { HttpBindings } from "@hono/node-server";
-import { type LibrarySettings, resolveProfileName } from "@scholaraio-hub/shared";
+import {
+  type LibrarySettings,
+  type ProviderName,
+  resolveProfileName,
+} from "@scholaraio-hub/shared";
 import { Hono } from "hono";
 import { HTTPException } from "hono/http-exception";
 import type { ContentfulStatusCode } from "hono/utils/http-status";
 import { z } from "zod";
 import { openInFileManager } from "./files/reveal.js";
 import { createStaticRoutes } from "./frontend/static.js";
+import { loggerFor } from "./logging/logger.js";
 import { hostCheck, parseAllowedHosts, requireCsrfHeader } from "./middleware/security.js";
 import { claudeProvider } from "./providers/claude/ClaudeProvider.js";
 import type { AgentProvider } from "./providers/types.js";
@@ -39,11 +44,13 @@ export interface AppOptions {
   libraryService?: LibraryService;
   idleTimeoutMs?: number;
   serverSettingsService?: ServerSettingsService;
-  enabledProviders?: string[];
+  enabledProviders?: ProviderName[];
   frontendDistPath?: string;
   scholaraioSkillsDir?: string;
   /** `ALLOWED_HOSTS`: extra hostnames the API answers besides loopback, or "*". */
   allowedHosts?: string;
+  /** The profile the server was started with; see `resolveProfile`. */
+  profile?: string;
 }
 
 /** What a failed API request tells the client; for bad input, each field that was wrong. */
@@ -109,7 +116,7 @@ export function createApp(options: AppOptions) {
   app.get("/api/status", (c) =>
     c.json({
       dataDir,
-      profile: resolveProfileName(process.env),
+      profile: options.profile ?? resolveProfileName(process.env),
       library: library.available,
     }),
   );
@@ -153,13 +160,17 @@ export function createApp(options: AppOptions) {
       createSettingsRoutes({ serverSettingsService: options.serverSettingsService }),
     );
   // Unknown APIs must never be served the SPA index.
-  app.all("/api/*", (c) => c.json({ error: "Not found" }, 404));
+  app.all("/api/*", (c) => c.json({ error: "接口不存在" }, 404));
   app.onError((error, c) => {
     // A thrown response (body limit) stands; a bare status (malformed JSON) answers as JSON.
     if (error instanceof HTTPException)
       return error.res ? error.getResponse() : c.json({ error: error.message }, error.status);
-    console.error("[API] request failed", error);
-    return c.json({ error: messageFor(error) }, statusFor(error));
+    const status = statusFor(error);
+    const request = { method: c.req.method, path: c.req.path, status };
+    // A refused request is the caller's to fix; only the server's own failures need a stack.
+    if (status >= 500) loggerFor("api").error({ ...request, err: error }, "Request failed");
+    else loggerFor("api").info({ ...request, reason: messageFor(error) }, "Request refused");
+    return c.json({ error: messageFor(error) }, status);
   });
   if (options.frontendDistPath)
     app.route("/", createStaticRoutes({ distPath: options.frontendDistPath }));

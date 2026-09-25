@@ -1,11 +1,11 @@
-/**
- * Server settings API routes
- *
- * Phase 4 MVP trim: keep only new session defaults and global instructions.
- */
+/** Server settings API routes: the new-session form's defaults. */
 
 import { zValidator } from "@hono/zod-validator";
-import { ALL_PERMISSION_MODES, type NewSessionDefaults } from "@scholaraio-hub/shared";
+import {
+  ALL_PERMISSION_MODES,
+  type NewSessionDefaults,
+  PROVIDER_NAMES,
+} from "@scholaraio-hub/shared";
 import { Hono } from "hono";
 import { z } from "zod";
 import type { ServerSettingsService } from "../services/ServerSettingsService.js";
@@ -24,7 +24,7 @@ const SettingsUpdateSchema = z.object({
       z.null(),
       z.literal(""),
       z.object({
-        provider: z.preprocess(blank, z.enum(["claude", "codex"]).optional()),
+        provider: z.preprocess(blank, z.enum(PROVIDER_NAMES).optional()),
         model: z.preprocess(blank, z.string().optional()),
         permissionMode: z.preprocess(blank, z.enum(ALL_PERMISSION_MODES).optional()),
       }),
@@ -53,12 +53,11 @@ export function createSettingsRoutes(deps: SettingsRoutesDeps): Hono {
   app.put(
     "/",
     zValidator("json", SettingsUpdateSchema, (result, c) => {
-      if (!result.success) return c.json({ error: "Invalid newSessionDefaults setting" }, 400);
+      if (!result.success) return c.json({ error: "新会话默认设置无效" }, 400);
     }),
     async (c) => {
       const { newSessionDefaults } = c.req.valid("json");
-      if (newSessionDefaults === undefined)
-        return c.json({ error: "At least one valid setting is required" }, 400);
+      if (newSessionDefaults === undefined) return c.json({ error: "请至少提供一项设置" }, 400);
       const settings = await serverSettingsService.updateSettings({
         newSessionDefaults: savedDefaults(newSessionDefaults),
       });

@@ -16,7 +16,7 @@ import {
   type ProviderUsageLimits,
   type SlashCommand,
 } from "@scholaraio-hub/shared";
-import { getLogger } from "../../logging/logger.js";
+import { loggerFor } from "../../logging/logger.js";
 import { withTimeout } from "../../utils/timeout.js";
 import { agentEnv } from "../agent-env.js";
 import type {
@@ -33,7 +33,7 @@ import { CodexSession } from "./CodexSession.js";
 import { codexVersion, findCodexCli } from "./cli.js";
 import { listCodexSkills, toCodexSkillCommand } from "./skills.js";
 
-const log = getLogger().child({ component: "codex-provider" });
+const log = () => loggerFor("codex-provider");
 
 export interface CodexProviderConfig {
   /** Path to codex binary (auto-detected if not specified); tests point it at a fake. */
@@ -184,7 +184,7 @@ export class CodexProvider implements AgentProvider {
         plan: claims["https://api.openai.com/auth"]?.chatgpt_plan_type || undefined,
       };
     } catch (error) {
-      log.debug({ error }, "Cannot read the ChatGPT account from auth.json");
+      log().debug({ err: error }, "Cannot read the ChatGPT account from auth.json");
       return null;
     }
   }
@@ -214,7 +214,7 @@ export class CodexProvider implements AgentProvider {
       if (models.length > 0) this.modelCache = { models, expiresAt: now + MODEL_CACHE_TTL_MS };
       return models;
     } catch (error) {
-      log.warn({ error }, "Failed to query Codex app-server model list; offering none");
+      log().warn({ err: error }, "Failed to query Codex app-server model list; offering none");
       return [];
     }
   }

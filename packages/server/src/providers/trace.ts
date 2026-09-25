@@ -1,5 +1,6 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
+import { loggerFor } from "../logging/logger.js";
 
 /**
  * Opt-in trace of what providers send before any translation — Claude SDK
@@ -14,7 +15,11 @@ let writeStream: fs.WriteStream | null = null;
 export function initProviderTrace(options: { enabled: boolean; logDir: string }): void {
   if (!options.enabled) return;
   fs.mkdirSync(options.logDir, { recursive: true });
-  writeStream = fs.createWriteStream(path.join(options.logDir, "sdk-raw.jsonl"), { flags: "a" });
+  // The trace holds whole prompts, files and tool output: readable by this user only.
+  writeStream = fs.createWriteStream(path.join(options.logDir, "sdk-raw.jsonl"), {
+    flags: "a",
+    mode: 0o600,
+  });
   write({ _meta: "trace_started", timestamp: new Date().toISOString(), pid: process.pid });
 }
 
@@ -38,7 +43,7 @@ function write(record: unknown): void {
     writeStream?.write(`${JSON.stringify(record)}\n`);
   } catch (error) {
     // A debug trace must never break a session; say once why it stopped.
-    console.warn("[Trace] provider trace write failed; tracing stops", error);
+    loggerFor("trace").warn({ err: error }, "Provider trace write failed; tracing stops");
     writeStream = null;
   }
 }

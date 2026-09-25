@@ -1,5 +1,30 @@
 import { Hono } from "hono";
+import { loggerFor } from "../logging/logger.js";
 import type { LibraryService } from "../services/LibraryService.js";
+
+/**
+ * The upstream body, except that a browser leaving mid-stream (a page change
+ * closing the event stream) ends it instead of failing it: that is how such a
+ * stream normally stops, not an error to report.
+ */
+function endsQuietly(body: ReadableStream<Uint8Array>, signal: AbortSignal) {
+  const reader = body.getReader();
+  return new ReadableStream<Uint8Array>({
+    async pull(controller) {
+      try {
+        const { done, value } = await reader.read();
+        if (done) controller.close();
+        else controller.enqueue(value);
+      } catch (error) {
+        if (signal.aborted) controller.close();
+        else controller.error(error);
+      }
+    },
+    cancel(reason) {
+      return reader.cancel(reason);
+    },
+  });
+}
 
 /**
  * Explicit application routes; no arbitrary upstream URL or filesystem proxy.
@@ -80,9 +105,14 @@ export function createLibraryRoutes(service: LibraryService) {
           await response.body?.cancel();
           return new Response(null, { status: 304, headers: output });
         }
-        return new Response(response.body, { status: response.status, headers: output });
+        return new Response(response.body && endsQuietly(response.body, c.req.raw.signal), {
+          status: response.status,
+          headers: output,
+        });
       } catch (error) {
-        console.error("[Library] request failed", error);
+        // The browser went away before the library answered: nobody to tell.
+        if (c.req.raw.signal.aborted) return new Response(null, { status: 499 });
+        loggerFor("library").error({ err: error, method, path: upstreamPath }, "Request failed");
         return c.json({ error: "文献服务不可用，请检查启动日志。" }, 503);
       }
     });

@@ -1,4 +1,5 @@
 import { spawn } from "node:child_process";
+import { loggerFor } from "../logging/logger.js";
 
 /** The platform's file manager, and how it is told to show a directory. */
 function revealCommand(directory: string): [string, string[]] {
@@ -17,7 +18,7 @@ export function openInFileManager(directory: string): void {
   const [command, args] = revealCommand(directory);
   const child = spawn(command, args, { detached: true, stdio: "ignore" });
   child.once("error", (error) => {
-    console.error("[Hub] Could not open the data directory:", error.message);
+    loggerFor("reveal").error({ err: error, directory }, "Could not open the directory");
   });
   child.unref();
 }

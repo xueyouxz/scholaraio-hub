@@ -66,7 +66,7 @@ describe("Settings Routes", () => {
 
       expect(response.status).toBe(400);
       const json = await response.json();
-      expect(json.error).toBe("Invalid newSessionDefaults setting");
+      expect(json.error).toBe("新会话默认设置无效");
     });
 
     it("treats blank fields as absent and clears the defaults when none are left", async () => {
@@ -90,7 +90,7 @@ describe("Settings Routes", () => {
       }
       const missing = await put({});
       expect(missing.status).toBe(400);
-      expect((await missing.json()).error).toBe("At least one valid setting is required");
+      expect((await missing.json()).error).toBe("请至少提供一项设置");
     });
   });
 });

@@ -7,48 +7,25 @@ import { z } from "zod";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
-// env.ts lives at packages/server/src (and builds to packages/server/dist), so the
-// repo root is three levels up. Using "../.." pointed at packages/, where no .env
-// files exist, so repo-root .env/.env.local were silently never loaded.
+// env.ts lives at packages/server/src (and builds to packages/server/dist).
 const repoRoot = path.resolve(__dirname, "../../..");
 
 const LogLevelSchema = z.enum(["fatal", "error", "warn", "info", "debug", "trace"]);
 
-const optionalInteger = z.preprocess((value) => {
-  if (value === undefined || value === "") {
-    return undefined;
-  }
-
-  const parsed = Number.parseInt(String(value), 10);
-  return Number.isFinite(parsed) ? parsed : value;
-}, z.number().int().nonnegative().optional());
-
-const optionalBoolean = z.preprocess((value) => {
-  if (value === undefined || value === "") {
-    return undefined;
-  }
-
-  if (value === true || value === "true" || value === "1") {
-    return true;
-  }
-
-  if (value === false || value === "false" || value === "0") {
-    return false;
-  }
-
-  return value;
-}, z.boolean().optional());
-
-const optionalStringArray = z.preprocess((value) => {
-  if (typeof value !== "string" || value.trim() === "") {
-    return undefined;
-  }
-
-  return value
-    .split(",")
-    .map((item) => item.trim())
-    .filter(Boolean);
-}, z.array(z.string()).optional());
+/** An unset variable and an empty one mean the same: not configured. */
+const blank = (value: unknown) => (value === "" ? undefined : value);
+const optionalInteger = z.preprocess(blank, z.coerce.number().int().nonnegative().optional());
+const optionalBoolean = z.preprocess(blank, z.stringbool().optional());
+const optionalStringArray = z.preprocess(
+  (value) =>
+    typeof value === "string" && value.trim()
+      ? value
+          .split(",")
+          .map((item) => item.trim())
+          .filter(Boolean)
+      : undefined,
+  z.array(z.string()).optional(),
+);
 
 const RuntimeEnvSchema = z
   .object({
@@ -70,11 +47,26 @@ const RuntimeEnvSchema = z
     ALLOWED_HOSTS: z.string().optional(),
     LOG_SDK_MESSAGES: optionalBoolean,
     SCHOLARAIO_HUB_UV: z.string().optional(),
+    // Which Claude Code executable to run, and where its login lives.
+    CLAUDE_CODE_EXECUTABLE: z.string().optional(),
+    CLAUDE_CODE_PATH: z.string().optional(),
+    CLAUDE_CODE_KEYCHAIN_SERVICE: z.string().optional(),
+    // Debug: another usage endpoint for Claude's rate-limit windows.
+    CLAUDE_OAUTH_USAGE_URL: z.string().optional(),
   })
   .passthrough();
 
-/** Every variable the Hub itself reads; none of them is meant for an agent's process. */
-export const HUB_ENV_KEYS: readonly string[] = Object.keys(RuntimeEnvSchema.shape);
+/** Variables the Hub reads that describe the user's Claude Code, so its agents keep them too. */
+const SHARED_WITH_AGENTS = new Set([
+  "CLAUDE_CODE_EXECUTABLE",
+  "CLAUDE_CODE_PATH",
+  "CLAUDE_CODE_KEYCHAIN_SERVICE",
+]);
+
+/** Every variable that belongs to the Hub alone; none of them reaches an agent's process. */
+export const HUB_ENV_KEYS: readonly string[] = Object.keys(RuntimeEnvSchema.shape).filter(
+  (key) => !SHARED_WITH_AGENTS.has(key),
+);
 
 let hasLoadedEnvFiles = false;
 

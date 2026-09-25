@@ -1,4 +1,5 @@
 import type { PermissionMode, ProviderName } from "@scholaraio-hub/shared";
+import { readStoredJson, writeStoredJson } from "../../../../core/browserStorage";
 import type { SessionOptions } from "../../../../core/sessions";
 
 /** What the composer remembers per agent, so a new chat opens where the last one left off. */
@@ -10,13 +11,7 @@ export interface ComposerPreference {
 const key = (provider: ProviderName) => `hub-composer:choice:${provider}`;
 
 export function readComposerPreference(provider: ProviderName): ComposerPreference {
-  try {
-    const stored = localStorage.getItem(key(provider));
-    return stored ? (JSON.parse(stored) as ComposerPreference) : {};
-  } catch (error) {
-    console.warn("Could not read the last composer choices", error);
-    return {};
-  }
+  return readStoredJson<ComposerPreference>(key(provider), {});
 }
 
 /** Remember the model and permission mode the user just picked for this agent. */
@@ -25,12 +20,5 @@ export function rememberComposerChoice(provider: ProviderName, patch: SessionOpt
   if (patch.model !== undefined) remembered.model = patch.model;
   if (patch.permissionMode !== undefined) remembered.permissionMode = patch.permissionMode;
   if (Object.keys(remembered).length === 0) return;
-  try {
-    localStorage.setItem(
-      key(provider),
-      JSON.stringify({ ...readComposerPreference(provider), ...remembered }),
-    );
-  } catch (error) {
-    console.warn("Could not save the composer choices", error);
-  }
+  writeStoredJson(key(provider), { ...readComposerPreference(provider), ...remembered });
 }

@@ -6,17 +6,31 @@ import { readFile } from "node:fs/promises";
 import path from "node:path";
 import { serveStatic } from "@hono/node-server/serve-static";
 import { Hono } from "hono";
+import { loggerFor } from "../logging/logger.js";
 
 export interface StaticServeOptions {
   /** Path to the built client dist directory (startup has checked it exists). */
   distPath: string;
 }
 
-// frame-ancestors must be an HTTP header; a meta tag cannot set it.
-const FRAME_POLICY = "frame-ancestors 'self'";
+/**
+ * Scripts come only from this server's build (WebAssembly for the PDF and code
+ * renderers), so markup that slips into rendered content cannot run any; styles,
+ * fonts and images stay open for the web fonts and figures that papers link to.
+ * frame-ancestors must be an HTTP header; a meta tag cannot set it.
+ */
+const CONTENT_SECURITY_POLICY = [
+  "script-src 'self' 'wasm-unsafe-eval'",
+  "object-src 'none'",
+  "base-uri 'self'",
+  "frame-ancestors 'self'",
+].join("; ");
 
 // The page names the current build's assets, so it is never cached.
-const PAGE_HEADERS = { "Content-Security-Policy": FRAME_POLICY, "Cache-Control": "no-cache" };
+const PAGE_HEADERS = {
+  "Content-Security-Policy": CONTENT_SECURITY_POLICY,
+  "Cache-Control": "no-cache",
+};
 
 /**
  * Files from the build, and the page for every other path (the client routes
@@ -48,7 +62,7 @@ export function createStaticRoutes(options: StaticServeOptions): Hono {
     try {
       return c.html(await readFile(indexPath, "utf-8"));
     } catch (error) {
-      console.error(`[Static] Cannot read ${indexPath}:`, error);
+      loggerFor("static").error({ err: error, indexPath }, "Cannot read the client page");
       return c.text("Not found. Did you run 'pnpm build' to build the client?", 404);
     }
   });

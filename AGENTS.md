@@ -40,9 +40,11 @@ repeating numbers.
   100-col width. Run `pnpm lint:fix` before a PR.
 - **No bypass comments**: never use ignore comments to silence type/lint/logic errors —
   fix the cause. `pnpm lint` rejects them.
-- **Naming**: `PascalCase` files for classes (`SessionStore.ts`), kebab-case for other
-  modules and scripts; `camelCase` for functions. Rename a file when you are changing it
-  anyway, not in bulk.
+- **Naming**: `PascalCase` files for classes and React components (`SessionStore.ts`,
+  `Composer.tsx`); other modules are kebab-case in `server`/`shared`/`scripts` and
+  camelCase in `client` (`libraryEvents.ts`, `useComposerDraft.ts`). `camelCase` for
+  functions and variables, `UPPER_SNAKE_CASE` for module-level constants. Rename a file
+  when you are changing it anyway, not in bulk.
 - **Single source of truth**: don't restate volatile facts. The profile decides data
   directory and port (`packages/shared/src/ports.ts`, `packages/server/src/runtime/profile.ts`);
   env vars are documented in `.env.example` (review `packages/server/src/config.ts` /

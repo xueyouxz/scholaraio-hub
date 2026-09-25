@@ -1,12 +1,19 @@
 /**
- * Provider name - which AI agent provider to use.
+ * The agent providers, in the order they are offered:
  * - "claude": Claude Code via the Anthropic Agent SDK
  * - "codex": OpenAI Codex via the codex app-server
  *
  * Every name here must have an implementation in
- * `packages/server/src/sdk/providers/index.ts`.
+ * `packages/server/src/providers/index.ts`.
  */
-export type ProviderName = "claude" | "codex";
+export const PROVIDER_NAMES = ["claude", "codex"] as const;
+export type ProviderName = (typeof PROVIDER_NAMES)[number];
+/** The provider a request or setting uses when it names none. */
+export const DEFAULT_PROVIDER: ProviderName = "claude";
+
+export function isProviderName(value: unknown): value is ProviderName {
+  return PROVIDER_NAMES.some((name) => name === value);
+}
 
 /**
  * Model information for a provider.
@@ -99,6 +106,8 @@ export interface ProviderInfo {
   models?: ModelInfo[];
   /** What the composer offers for this provider, in the provider's own terms. */
   capabilities: ProviderCapabilities;
+  /** Why the provider's status could not be read; the other fields then say nothing. */
+  error?: string;
 }
 
 /** One permission choice as the provider names it, and the hub mode it maps to. */

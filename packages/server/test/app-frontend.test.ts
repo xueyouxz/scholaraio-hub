@@ -63,7 +63,9 @@ describe("App frontend integration", () => {
       const page = await server.app.request(url);
       expect(await page.text()).toContain("client");
       expect(page.headers.get("cache-control")).toBe("no-cache");
-      expect(page.headers.get("content-security-policy")).toBe("frame-ancestors 'self'");
+      const policy = page.headers.get("content-security-policy");
+      expect(policy).toContain("script-src 'self' 'wasm-unsafe-eval'");
+      expect(policy).toContain("frame-ancestors 'self'");
     }
     expect((await server.app.request("/api/nope")).status).toBe(404);
   });

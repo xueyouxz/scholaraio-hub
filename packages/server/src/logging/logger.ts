@@ -1,23 +1,18 @@
-import * as fs from "node:fs";
 import * as path from "node:path";
 import pino from "pino";
 
-/**
- * Valid log levels.
- */
-const LOG_LEVELS = ["trace", "debug", "info", "warn", "error", "fatal", "silent"] as const;
-export type LogLevel = (typeof LOG_LEVELS)[number];
+export type LogLevel = pino.LevelWithSilent;
 
 export interface LogConfig {
   /** Directory for log files; required when `logToFile` is set. */
   logDir: string;
   logFile: string;
-  /** Minimum log level for console. */
+  /** Minimum log level for the console. */
   consoleLevel: LogLevel;
   /** Minimum log level for the file. */
   fileLevel: LogLevel;
   logToFile: boolean;
-  /** Use pretty printing for console. */
+  /** Human-readable console output instead of JSON lines. */
   prettyPrint: boolean;
 }
 
@@ -34,160 +29,115 @@ const CONSOLE_ONLY: LogConfig = {
   prettyPrint: true,
 };
 
-let logger: pino.Logger | null = null;
-let originalConsole: {
-  log: typeof console.log;
-  error: typeof console.error;
-  warn: typeof console.warn;
-  info: typeof console.info;
-  debug: typeof console.debug;
-} | null = null;
+/** How much one log file may hold, and how many rotated files are kept. */
+const LOG_ROTATION = { size: "10m", frequency: "daily", limit: { count: 7 } } as const;
 
 /**
- * Initialize the logger with the given configuration.
- * This should be called once at server startup.
+ * What every logger shares. Errors are serialized under either key (pino alone
+ * turns an Error under `error` into `{}`), and credentials never reach a log.
  */
-export function initLogger(config: Partial<LogConfig> = {}): pino.Logger {
-  const finalConfig = { ...CONSOLE_ONLY, ...config };
-  let fileLoggingInitError: Error | null = null;
+const LOGGER_OPTIONS: pino.LoggerOptions = {
+  serializers: { err: pino.stdSerializers.err, error: pino.stdSerializers.err },
+  redact: {
+    paths: [
+      "authorization",
+      "*.authorization",
+      "headers.authorization",
+      "token",
+      "*.token",
+      "apiKey",
+      "*.apiKey",
+    ],
+    censor: "[redacted]",
+  },
+};
 
-  const streams: pino.StreamEntry[] = [];
+let root: pino.Logger | undefined;
+const children = new Map<string, pino.Logger>();
 
-  // Console stream
-  if (finalConfig.prettyPrint) {
-    const pretty = pino.transport({
-      target: "pino-pretty",
+function transportFor(config: LogConfig): pino.DestinationStream {
+  const targets: pino.TransportTargetOptions[] = [
+    config.prettyPrint
+      ? {
+          target: "pino-pretty",
+          level: config.consoleLevel,
+          options: {
+            colorize: true,
+            translateTime: "SYS:HH:MM:ss",
+            ignore: "pid,hostname,console",
+          },
+        }
+      : { target: "pino/file", level: config.consoleLevel, options: { destination: 1 } },
+  ];
+  if (config.logToFile)
+    targets.push({
+      target: "pino-roll",
+      level: config.fileLevel,
+      // Logs hold prompts and paths: readable by this user only.
       options: {
-        colorize: true,
-        translateTime: "HH:MM:ss",
-        ignore: "pid,hostname,console",
+        file: path.join(config.logDir, config.logFile),
+        mkdir: true,
+        mode: 0o600,
+        ...LOG_ROTATION,
       },
     });
-    streams.push({
-      stream: pretty,
-      level: finalConfig.consoleLevel as pino.Level,
-    });
-  } else {
-    streams.push({
-      stream: process.stdout,
-      level: finalConfig.consoleLevel as pino.Level,
-    });
-  }
-
-  // File stream
-  if (finalConfig.logToFile) {
-    try {
-      fs.mkdirSync(finalConfig.logDir, { recursive: true });
-      const logPath = path.join(finalConfig.logDir, finalConfig.logFile);
-      const fileStream = fs.createWriteStream(logPath, { flags: "a" });
-      fileStream.on("error", (err) => {
-        const error = err instanceof Error ? err : new Error(String(err));
-        process.stderr.write(`[logger] Failed to write log file ${logPath}: ${error.message}\n`);
-      });
-      streams.push({
-        stream: fileStream,
-        level: finalConfig.fileLevel as pino.Level,
-      });
-    } catch (err) {
-      fileLoggingInitError = err instanceof Error ? err : new Error(String(err));
-    }
-  }
-
-  // Determine minimum level across all streams (pino needs base level <= stream levels)
-  const minLevel = getMinLevel(finalConfig.consoleLevel, finalConfig.fileLevel);
-
-  if (streams.length === 0) {
-    // No streams configured, use a silent logger
-    logger = pino({ level: "silent" });
-  } else if (streams.length === 1 && streams[0]) {
-    logger = pino({ level: streams[0].level }, streams[0].stream);
-  } else {
-    logger = pino({ level: minLevel }, pino.multistream(streams));
-  }
-
-  if (fileLoggingInitError) {
-    logger.warn(
-      { err: fileLoggingInitError, logDir: finalConfig.logDir },
-      "Failed to initialize file logging; continuing with console-only logger",
-    );
-  }
-
-  return logger;
+  return pino.transport({ targets });
 }
 
 /**
- * Get the minimum (most verbose) of two log levels.
+ * Set up logging; the server calls this once at startup. Loggers obtained
+ * earlier through `loggerFor` follow the new configuration. `destination`
+ * replaces the configured outputs (tests).
  */
-function getMinLevel(a: LogLevel, b: LogLevel): LogLevel {
-  const order: Record<LogLevel, number> = {
-    trace: 0,
-    debug: 1,
-    info: 2,
-    warn: 3,
-    error: 4,
-    fatal: 5,
-    silent: 6,
-  };
-  return order[a] <= order[b] ? a : b;
+export function initLogger(
+  config: Partial<LogConfig> = {},
+  destination?: pino.DestinationStream,
+): pino.Logger {
+  const final = { ...CONSOLE_ONLY, ...config };
+  // pino's own level must let through whatever the most verbose output wants.
+  const rank = (level: LogLevel) => pino.levels.values[level] ?? Number.POSITIVE_INFINITY;
+  const outputs = final.logToFile ? [final.consoleLevel, final.fileLevel] : [final.consoleLevel];
+  const level = outputs.reduce((a, b) => (rank(a) <= rank(b) ? a : b));
+  root = pino({ ...LOGGER_OPTIONS, level }, destination ?? transportFor(final));
+  children.clear();
+  return root;
 }
 
-/**
- * Get the logger instance. Must call initLogger first.
- */
+/** The root logger; configured with the defaults when `initLogger` has not run. */
 export function getLogger(): pino.Logger {
-  if (!logger) {
-    // Auto-initialize with defaults if not yet initialized
-    return initLogger();
-  }
-  return logger;
+  return root ?? initLogger();
 }
 
 /**
- * Intercept console.log/error/warn/info and route through pino logger.
- * Call this after initLogger() to capture all console output.
+ * The logger of one part of the server, tagged `component`. Call it where
+ * you log rather than once at module load: modules load before the server
+ * configures logging, and this always answers with the current configuration.
+ */
+export function loggerFor(component: string): pino.Logger {
+  let child = children.get(component);
+  if (!child) {
+    child = getLogger().child({ component });
+    children.set(component, child);
+  }
+  return child;
+}
+
+/**
+ * Route console output through the logger, so third-party code that prints
+ * (SDKs, Vite) lands in the same outputs. The Hub's own code uses `loggerFor`.
  */
 export function interceptConsole(): void {
-  if (originalConsole) {
-    // Already intercepted
-    return;
-  }
-
-  const log = getLogger();
-
-  // Save original console methods
-  originalConsole = {
-    log: console.log.bind(console),
-    error: console.error.bind(console),
-    warn: console.warn.bind(console),
-    info: console.info.bind(console),
-    debug: console.debug.bind(console),
-  };
-
-  // Replace console methods
-  console.log = (...args: unknown[]) => {
-    log.info({ console: true }, formatConsoleArgs(args));
-  };
-
-  console.error = (...args: unknown[]) => {
-    log.error({ console: true }, formatConsoleArgs(args));
-  };
-
-  console.warn = (...args: unknown[]) => {
-    log.warn({ console: true }, formatConsoleArgs(args));
-  };
-
-  console.info = (...args: unknown[]) => {
-    log.info({ console: true }, formatConsoleArgs(args));
-  };
-
-  console.debug = (...args: unknown[]) => {
-    log.debug({ console: true }, formatConsoleArgs(args));
-  };
+  const write =
+    (level: "info" | "warn" | "error" | "debug") =>
+    (...args: unknown[]) =>
+      getLogger()[level]({ console: true }, formatConsoleArgs(args));
+  console.log = write("info");
+  console.info = write("info");
+  console.warn = write("warn");
+  console.error = write("error");
+  console.debug = write("debug");
 }
 
-/**
- * Format console arguments into a string for pino.
- */
 function formatConsoleArgs(args: unknown[]): string {
   return args
     .map((arg) => {

@@ -11,6 +11,7 @@ back a topic rebuild.
 from __future__ import annotations
 
 import json
+import logging
 import threading
 import uuid
 from collections.abc import Callable, Mapping
@@ -22,6 +23,8 @@ from typing import Any
 from scholaraio.hub.errors import InvalidRequest
 from scholaraio.hub.runtime import LibraryRuntime
 from scholaraio.hub.storage import atomic_json
+
+_log = logging.getLogger("scholaraio.hub.tasks")
 
 ACTIVE = ("queued", "running")
 
@@ -170,6 +173,7 @@ class TaskRunner:
         try:
             summary = self.jobs[kind](Progress(self, record, stop))
         except Exception as exc:  # the browser shows the reason and offers a restart
+            _log.exception("Task %s failed", kind)
             self.update(record, status="failed", phase=None, error=str(exc), finishedAt=now())
             return
         self.update(

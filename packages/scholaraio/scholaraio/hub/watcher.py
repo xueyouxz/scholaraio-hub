@@ -6,11 +6,14 @@ browser already listens to.
 """
 from __future__ import annotations
 
+import logging
 import threading
 from pathlib import Path
 
 from scholaraio.hub.events import Publisher
 from scholaraio.projects import workspace
+
+_log = logging.getLogger("scholaraio.hub.watcher")
 
 # How often the project index is checked for edits made outside Hub.
 POLL_SECONDS = 2.0
@@ -45,7 +48,7 @@ class ProjectWatcher:
             try:
                 current = self.snapshot()
             except OSError as error:  # a project moved mid-scan; try again next tick
-                print(f"[library] project scan failed: {error}", flush=True)
+                _log.warning("Project scan failed: %s", error)
                 continue
             changed = sorted(
                 name

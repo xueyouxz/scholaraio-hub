@@ -42,7 +42,27 @@ def test_a_bug_is_a_500_not_a_missing_resource(client, monkeypatch):
 
     monkeypatch.setattr(client.app.state.library.papers, "list", broken)
 
-    assert client.get("/papers").status_code == 500
+    response = client.get("/papers")
+    assert response.status_code == 500
+    assert response.json() == {"error": "文献服务内部错误，详见服务日志。"}
+
+
+def test_a_failure_the_caller_did_not_cause_is_logged_with_its_traceback(client, monkeypatch, caplog):
+    def unreadable():
+        raise RuntimeError("index unreadable")
+
+    monkeypatch.setattr(client.app.state.library.papers, "list", unreadable)
+
+    with caplog.at_level("ERROR", logger="scholaraio.api"):
+        assert client.get("/papers").status_code == 500
+    assert "GET /papers failed" in caplog.text
+    assert "index unreadable" in caplog.text
+
+
+def test_invalid_input_answers_in_the_same_shape_as_every_other_failure(client):
+    response = client.put("/papers/unknown/position", json={"page": "not a number"})
+    assert response.status_code == 422
+    assert set(response.json()) == {"error"}
 
 
 def test_an_unreadable_settings_overlay_is_a_storage_fault(client):

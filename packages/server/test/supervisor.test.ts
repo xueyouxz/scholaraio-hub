@@ -138,6 +138,35 @@ describe("Supervisor", () => {
     expect(() => supervisor.providerFor("nope" as never)).toThrow("Unknown provider: nope");
   });
 
+  it("stops a process whose approval nobody answers, saying why", async () => {
+    vi.useFakeTimers();
+    try {
+      const waiting = new Supervisor({
+        provider: createScriptedProvider({ startCalls, holdOpen: true }),
+        unansweredInputTimeoutMs: 1000,
+        onEvent: (sessionId, event) => events.push({ sessionId, event }),
+      });
+      const process = await waiting.send(request());
+      const answer = process.handleToolApproval(
+        "Bash",
+        { command: "ls" },
+        {
+          signal: new AbortController().signal,
+        },
+      );
+      expect(process.state.type).toBe("waiting-input");
+      await vi.advanceTimersByTimeAsync(61_000);
+      expect(process.isTerminated).toBe(true);
+      await expect(answer).resolves.toMatchObject({ behavior: "deny" });
+      const ended = events.find(({ event }) => event.type === "terminated")?.event;
+      expect(ended).toMatchObject({ type: "terminated" });
+      expect(ended?.type === "terminated" && ended.error?.message).toContain("无人回应");
+      waiting.close();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it("releases live idle workers after the configured timeout", async () => {
     vi.useFakeTimers();
     try {

@@ -1,23 +1,14 @@
 import { type Dispatch, type SetStateAction, useCallback, useEffect, useState } from "react";
+import { readStored, writeStored } from "../../../../core/browserStorage";
 
 const draftStorageKey = (draftKey: string) => `hub-composer:${draftKey}`;
 
 export function readComposerDraft(draftKey: string): string {
-  try {
-    return sessionStorage.getItem(draftStorageKey(draftKey)) ?? "";
-  } catch (error) {
-    console.warn("Could not read the saved draft", error);
-    return "";
-  }
+  return readStored(draftStorageKey(draftKey), "session") ?? "";
 }
 
 function writeComposerDraft(draftKey: string, text: string) {
-  try {
-    if (text) sessionStorage.setItem(draftStorageKey(draftKey), text);
-    else sessionStorage.removeItem(draftStorageKey(draftKey));
-  } catch (error) {
-    console.warn("Could not save the draft", error);
-  }
+  writeStored(draftStorageKey(draftKey), text || null, "session");
 }
 
 /**

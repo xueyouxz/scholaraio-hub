@@ -1,5 +1,6 @@
 import * as path from "node:path";
 import { fileURLToPath } from "node:url";
+import { PROVIDER_NAMES, type ProviderName, isProviderName } from "@scholaraio-hub/shared";
 import type { Level as LogLevel } from "pino";
 import { loadRuntimeEnv } from "./env.js";
 import { resolveProfile } from "./runtime/profile.js";
@@ -23,7 +24,7 @@ export interface Config {
   logFileLevel: LogLevel;
   logToFile: boolean;
   logPretty: boolean;
-  enabledProviders: string[];
+  enabledProviders: ProviderName[];
   /** Research skills: `SCHOLARAIO_SKILLS_DIR`, else `<dataDir>/skills`. */
   skillsDir: string;
   /** Extra hostnames the API answers besides loopback, or "*"; see `hostCheck`. */
@@ -49,8 +50,9 @@ export function loadConfig(): Config {
     logFile: env.LOG_FILE ?? "server.log",
     logLevel: env.LOG_LEVEL ?? "info",
     logFileLevel: env.LOG_FILE_LEVEL ?? "info",
-    logToFile: env.LOG_TO_FILE ?? false,
-    logPretty: env.LOG_PRETTY ?? true,
+    // A production server keeps a log to read afterwards; a terminal gets readable lines.
+    logToFile: env.LOG_TO_FILE ?? profile.nodeEnv === "production",
+    logPretty: env.LOG_PRETTY ?? Boolean(process.stdout.isTTY),
     enabledProviders: parseEnabledProviders(env.ENABLED_PROVIDERS),
     skillsDir: env.SCHOLARAIO_SKILLS_DIR ?? skillsDirectory(dataDir),
     allowedHosts: env.ALLOWED_HOSTS,
@@ -58,10 +60,13 @@ export function loadConfig(): Config {
   };
 }
 
-function parseEnabledProviders(value: string[] | undefined): string[] {
-  if (!value?.length) {
-    return ["claude", "codex"];
-  }
-
-  return value.filter((item) => item === "claude" || item === "codex");
+/** The providers `ENABLED_PROVIDERS` names, or all of them; unknown names are refused. */
+function parseEnabledProviders(value: string[] | undefined): ProviderName[] {
+  if (!value?.length) return [...PROVIDER_NAMES];
+  const unknown = value.filter((item) => !isProviderName(item));
+  if (unknown.length)
+    throw new Error(
+      `ENABLED_PROVIDERS names unknown providers: ${unknown.join(", ")} (known: ${PROVIDER_NAMES.join(", ")})`,
+    );
+  return value.filter(isProviderName);
 }

@@ -1,6 +1,8 @@
 import { readFile } from "node:fs/promises";
 import {
   CreateSessionSchema,
+  DEFAULT_PROVIDER,
+  PROVIDER_NAMES,
   SendSessionMessageSchema,
   SessionOptionsSchema,
 } from "@scholaraio-hub/shared";
@@ -17,7 +19,7 @@ import { validate } from "./validate.js";
 
 export function createSessionRoutes(service: SessionService, settings?: ServerSettingsService) {
   const routes = new Hono();
-  const files = new SessionFiles(service.store);
+  const files = new SessionFiles((id) => service.workingDirectory(id));
   routes.get("/", (c) => c.json({ sessions: service.store.list() }));
   routes.post("/", validate("json", CreateSessionSchema.partial({ provider: true })), async (c) => {
     const defaults = settings?.getSettings().newSessionDefaults;
@@ -73,7 +75,7 @@ export function createSessionRoutes(service: SessionService, settings?: ServerSe
   );
   routes.get("/:id/fs/raw", async (c) => {
     const relative = c.req.query("path") ?? "";
-    const bytes = await files.read(c.req.param("id"), relative, true);
+    const { bytes } = await files.read(c.req.param("id"), relative, true);
     c.header("Content-Type", "application/octet-stream");
     c.header("X-Content-Type-Options", "nosniff");
     c.header(
@@ -84,7 +86,7 @@ export function createSessionRoutes(service: SessionService, settings?: ServerSe
   });
   routes.get(
     "/commands",
-    validate("query", z.object({ provider: z.enum(["claude", "codex"]).default("claude") })),
+    validate("query", z.object({ provider: z.enum(PROVIDER_NAMES).default(DEFAULT_PROVIDER) })),
     async (c) =>
       c.json({ commands: await service.commands(undefined, c.req.valid("query").provider) }),
   );

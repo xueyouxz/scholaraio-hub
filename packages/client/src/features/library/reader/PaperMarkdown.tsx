@@ -3,6 +3,7 @@ import { memo, useEffect, useState } from "react";
 import ReactMarkdown from "react-markdown";
 import rehypeKatex from "rehype-katex";
 import rehypeRaw from "rehype-raw";
+import rehypeSanitize, { defaultSchema } from "rehype-sanitize";
 import remarkGfm from "remark-gfm";
 import remarkMath from "remark-math";
 import { paperAssetUrl } from "../paperSummary";
@@ -116,6 +117,19 @@ function classNames(node: SourceNode): string[] {
   return Array.isArray(value) ? value.map(String) : [];
 }
 
+/**
+ * What a paper's HTML may contain. The text comes from parsing arbitrary PDFs,
+ * so embedded HTML (MinerU writes tables as HTML) passes an allowlist: GitHub's
+ * schema, plus the classes remark-math marks formulas with for KaTeX.
+ */
+const PAPER_SCHEMA = {
+  ...defaultSchema,
+  attributes: {
+    ...defaultSchema.attributes,
+    code: [["className", /^language-./, "math-inline", "math-display"]],
+  },
+};
+
 // ─── Main component ───────────────────────────────────────────────────────────
 
 /**
@@ -133,10 +147,10 @@ export const PaperMarkdown = memo(function PaperMarkdown({
   return (
     <div className="paper-prose prose prose-sm max-w-none break-words prose-h1:text-xl prose-h2:text-lg prose-h3:text-base prose-code:before:content-none prose-code:after:content-none">
       <ReactMarkdown
-        disallowedElements={["script", "iframe", "object", "embed", "form", "input", "style"]}
         remarkPlugins={[remarkGfm, remarkMath]}
         rehypePlugins={[
           rehypeRaw,
+          [rehypeSanitize, PAPER_SCHEMA],
           [rehypeKatex, { strict: false, throwOnError: false }],
           [rehypeSourceLines, { highlight: highlightedLine }],
         ]}

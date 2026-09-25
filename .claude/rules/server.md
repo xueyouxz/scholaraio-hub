@@ -47,9 +47,8 @@ Our own session id is the **canonical** user-facing identifier. Provider-native 
 (e.g. the Codex thread id in
 `src/providers/codex/protocol/generated/ThreadId.ts`) may be stored and passed back
 for resume/export/debug, but must **never silently replace** our session id in URLs,
-metadata, payloads, or UI copy. See
-[`../topics/provider-state-machine.md`](../topics/provider-state-machine.md) and
-[`../topics/session-liveness.md`](../topics/session-liveness.md).
+metadata, payloads, or UI copy. Session and process states, and which controls they
+allow: [`../topics/session-state.md`](../topics/session-state.md).
 
 ## Provider Environment Isolation
 

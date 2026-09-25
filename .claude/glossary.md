@@ -9,8 +9,8 @@ commits, and instructions so humans and agents mean the same thing.
 - **Provider** — An upstream coding agent backend integrated under
   `packages/server/src/providers/` (`claude/`, `codex/`; each owns its wire format, CLI and
   usage parsing, and the hub sees only the contract in `providers/types.ts` and
-  `providers/events.ts`). Capabilities differ per provider — see
-  [`topics/provider-state-machine.md`](topics/provider-state-machine.md).
+  `providers/events.ts`). What each offers is its `ProviderCapabilities` descriptor — see
+  [`topics/session-state.md`](topics/session-state.md).
 - **Supervisor** — The server component (`packages/server/src/supervisor/`) that owns the
   provider processes, one per session keyed by our own session id. It is the one place that
   decides whether a live process still matches what a session asks for (provider, native
@@ -26,12 +26,12 @@ commits, and instructions so humans and agents mean the same thing.
   `useSessionChat` and lays each assistant message out with
   `packages/client/src/features/session/lib/` (`turnTree.ts`, `activity.ts`).
 - **Turn** — One request/response cycle within a session. Process state is `in-turn` while
-  a turn is active.
-- **Compaction** — Provider-side context compression. Some controls (e.g. Codex interrupt)
-  are blocked while compacting.
-- **Liveness** — Whether a session is actually making user-visible progress, distinct from
-  mere transport/process aliveness. See
-  [`topics/session-liveness.md`](topics/session-liveness.md).
+  a turn is active; the session is `running` (or `waiting-input`). See
+  [`topics/session-state.md`](topics/session-state.md).
+- **Run** — The server-side record of one turn in `SessionService`: its stream chunks,
+  listeners and how it ended (`idle`, `interrupted`, `error`).
+- **Compaction** — Provider-side context compression; the composer reports when it will
+  happen (`autoCompactThreshold`).
 - **Project / Workspace** — A literature workspace (`LiteratureProject` in
   `packages/shared/src/library.ts`): a set of papers and a directory its sessions run in.
   The sidebar groups sessions by workspace.

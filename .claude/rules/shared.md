@@ -16,8 +16,8 @@ Terms used here are defined in [`../glossary.md`](../glossary.md).
   application port per profile; development serves Vite on it too. Nothing else may
   redefine port defaults.
 - **Schemas / types**: `src/session/StoredSession.ts` (the session contract),
-  `src/library.ts` (library API shapes), `src/types.ts` (providers, permissions),
-  `src/context-window.ts`. Consumers import these rather than re-declaring shapes; a type
+  `src/library.ts` (library API shapes), `src/types.ts` (providers, capabilities,
+  permissions). Consumers import these rather than re-declaring shapes; a type
   no consumer imports is removed, not kept "for later".
 
 A change here is a contract change — update both consumers and their tests in the same

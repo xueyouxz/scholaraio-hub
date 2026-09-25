@@ -81,5 +81,5 @@ Path-scoped rules load automatically when you work in the matching package:
 Read on demand:
 
 - **Domain terms** → `.claude/glossary.md`
-- **Deep dives** → `.claude/topics/` — provider-state-machine, session-liveness,
-  resource-lifecycle, agent-rendering, frontend-skills, ci-and-local-verification
+- **Deep dives** → `.claude/topics/` — session-state, resource-lifecycle, agent-rendering,
+  frontend-skills, ci-and-local-verification

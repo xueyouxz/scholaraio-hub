@@ -13,7 +13,8 @@ timers, retry timers, client-owned heartbeats, and any queued catch-up work.
 ## Ownership rules
 
 - **Client-managed watches** use reference counting with teardown on disconnect.
-- **Provider processes** halt polling when idle, except during bounded recovery.
+- **Provider processes** are released after `IDLE_TIMEOUT` when idle, and reaped by the
+  supervisor when stuck `in-turn` without events.
 - **Background jobs** run at a fixed cadence with bounded per-tick work.
 - **Retry / catch-up** operations coalesce requests; they must not cascade into read
   storms.
@@ -23,8 +24,8 @@ timers, retry timers, client-owned heartbeats, and any queued catch-up work.
 Before merging changes that touch loops, timers, watches, or transport, verify:
 
 1. Every polling, retry, heartbeat, watch, and catch-up mechanism has matching teardown.
-2. Closed WebSocket / EventSource connections remove server-side subscribers and clear
-   their timers.
+2. A closed stream (a session run's response stream, the library's SSE events) removes its
+   server-side listener and clears its timers.
 3. Idle sessions do not schedule per-session server work that lacks an active owner.
 4. Incremental session refreshes reuse cached state or have demonstrably bounded work.
 5. Client reconnect / recovery logic prevents overlapping request storms on the same
@@ -37,3 +38,4 @@ Before merging changes that touch loops, timers, watches, or transport, verify:
 - `packages/scholaraio/scholaraio/hub/watcher.py` — project directory watcher (library service)
 - `packages/server/src/supervisor/` — session supervision / lifecycle
 - Client session stream (`packages/client/src/features/session/hooks/useSessionChat.ts`)
+  and library events (`packages/client/src/core/libraryEvents.ts`)

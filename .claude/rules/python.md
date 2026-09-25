@@ -6,7 +6,7 @@ paths:
 
 # Python Library Service Rules (`scholaraio.hub`, `interfaces/api`)
 
-Layering and names: [`docs/library-workbench.md`](../../docs/library-workbench.md)
+Layering and names: [`docs/architecture.md`](../../docs/architecture.md)
 ("Python 文献服务分层"). `tests/test_hub_layers.py` enforces the import direction.
 
 ## Controllers Stay Thin

@@ -1,13 +1,5 @@
 import { editPatch, patchStats } from "./patch";
-import { type DiffStats, type ToolView, field } from "./types";
-
-/** One file a tool call changed, with its diff when one can be built. */
-export interface FileChange extends DiffStats {
-  path: string;
-  patch?: string;
-}
-
-const EDIT_TOOLS = new Set(["Edit", "MultiEdit"]);
+import { type DiffStats, type FileChange, type ToolView, field } from "./types";
 
 function lines(text: string): string[] {
   const trimmed = text.replace(/\n$/, "");
@@ -23,48 +15,42 @@ function creationPatch(path: string, content: string): string {
 }
 
 /**
- * The files a finished call changed. Edits come as Claude Code's structured
- * patch, Codex's per-file diffs, or only the replaced strings; writes as
- * Claude Code's patch of an existing file or the new file's content.
+ * The files a finished edit changed: Claude Code's structured patch, Codex's
+ * per-file diffs, or only the replaced strings.
  */
-export function fileChanges(view: ToolView): FileChange[] {
-  if (view.status !== "complete") return [];
-  const detail = view.result?.detail;
-  if (EDIT_TOOLS.has(view.name)) {
-    const changes = (view.input as { changes?: unknown } | undefined)?.changes;
-    if (Array.isArray(changes)) {
-      return changes.flatMap((change) => {
-        const path = field(change, "path");
-        const diff = field(change, "diff");
-        if (!path) return [];
-        if (!diff.includes("@@")) return [{ path, added: 0, removed: 0 }];
-        const patch = editPatch({ file_path: path, changes: [change] }, undefined) ?? undefined;
-        return [{ path, patch, ...patchStats(diff) }];
-      });
-    }
-    const path = field(view.input, "file_path");
-    if (!path) return [];
-    const patch = editPatch(view.input, detail);
-    if (patch) return [{ path, patch, ...patchStats(patch) }];
-    return [
-      {
-        path,
-        added: lines(field(view.input, "new_string")).length,
-        removed: lines(field(view.input, "old_string")).length,
-      },
-    ];
+export function editChanges(view: ToolView): FileChange[] {
+  const changes = (view.input as { changes?: unknown } | undefined)?.changes;
+  if (Array.isArray(changes)) {
+    return changes.flatMap((change) => {
+      const path = field(change, "path");
+      const diff = field(change, "diff");
+      if (!path) return [];
+      if (!diff.includes("@@")) return [{ path, added: 0, removed: 0 }];
+      const patch = editPatch({ file_path: path, changes: [change] }, undefined) ?? undefined;
+      return [{ path, patch, ...patchStats(diff) }];
+    });
   }
-  if (view.name === "Write") {
-    const path = field(view.input, "file_path");
-    if (!path) return [];
-    const patch = editPatch(view.input, detail);
-    if (patch) return [{ path, patch, ...patchStats(patch) }];
-    const content = field(view.input, "content");
-    return [
-      { path, patch: creationPatch(path, content), added: lines(content).length, removed: 0 },
-    ];
-  }
-  return [];
+  const path = field(view.input, "file_path");
+  if (!path) return [];
+  const patch = editPatch(view.input, view.result?.detail);
+  if (patch) return [{ path, patch, ...patchStats(patch) }];
+  return [
+    {
+      path,
+      added: lines(field(view.input, "new_string")).length,
+      removed: lines(field(view.input, "old_string")).length,
+    },
+  ];
+}
+
+/** The file a finished write changed: Claude Code's patch of an existing file, or the new file. */
+export function writeChanges(view: ToolView): FileChange[] {
+  const path = field(view.input, "file_path");
+  if (!path) return [];
+  const patch = editPatch(view.input, view.result?.detail);
+  if (patch) return [{ path, patch, ...patchStats(patch) }];
+  const content = field(view.input, "content");
+  return [{ path, patch: creationPatch(path, content), added: lines(content).length, removed: 0 }];
 }
 
 /** Sum of the changes' stats, or undefined when nothing changed. */

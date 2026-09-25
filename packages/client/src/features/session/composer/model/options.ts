@@ -1,5 +1,5 @@
 import type { ModelInfo, ProviderCapabilities } from "@scholaraio-hub/shared";
-import type { SessionOptions } from "../../../../core/library";
+import type { SessionOptions } from "../../../../core/sessions";
 import type { ComposerPreference } from "./preferences";
 
 /** The model a session runs: the one it names, else the provider's default. */

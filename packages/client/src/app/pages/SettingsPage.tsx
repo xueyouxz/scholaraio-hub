@@ -2,7 +2,8 @@ import type { NewSessionDefaults, ProviderInfo, ProviderUsageLimits } from "@sch
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { CheckCircle2, FolderOpen } from "lucide-react";
 import { useEffect, useState } from "react";
-import { libraryApi, settingsApi } from "../../core/library";
+import { libraryApi } from "../../core/library";
+import { appSettingsQuery, providersQuery, settingsApi } from "../../core/settings";
 import { LibrarySettingsForm } from "../../features/library/components/LibrarySettingsForm";
 import { usePageTitle } from "../components/NavigationLayout";
 import { UsageLimitBlock, describeProvider } from "../components/ProviderUsage";
@@ -45,8 +46,7 @@ export function SettingsPage() {
     return () => setTitle("");
   }, [setTitle]);
   const settings = useQuery({
-    queryKey: ["app-settings"],
-    queryFn: ({ signal }) => settingsApi.get(signal),
+    ...appSettingsQuery,
   });
   const library = useQuery({
     queryKey: ["library", "settings"],
@@ -54,9 +54,7 @@ export function SettingsPage() {
   });
   const [remembered] = useState(readRemembered);
   const providers = useQuery({
-    queryKey: ["providers"],
-    queryFn: ({ signal }) => settingsApi.providers(signal),
-    staleTime: 60_000,
+    ...providersQuery,
     placeholderData: remembered.providers ? { providers: remembered.providers } : undefined,
   });
   const usage = useQuery({
@@ -76,7 +74,7 @@ export function SettingsPage() {
   }, [usage.data, usage.isPlaceholderData]);
   const save = useMutation({
     mutationFn: settingsApi.save,
-    onSuccess: (data) => client.setQueryData(["app-settings"], data),
+    onSuccess: (data) => client.setQueryData(appSettingsQuery.queryKey, data),
   });
   const openDirectory = useMutation({ mutationFn: settingsApi.openDirectory });
   const defaults = settings.data?.settings.newSessionDefaults;

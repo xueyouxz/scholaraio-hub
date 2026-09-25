@@ -1,6 +1,7 @@
+import { Suspense, lazy } from "react";
 import { Markdown } from "../../../../shared/components/Markdown";
 import { CodeBlock, FileContent, FilePath, OutputTail } from "./blocks";
-import { fileChanges, totalStats } from "./fileChanges";
+import { editChanges, writeChanges } from "./fileChanges";
 import {
   type ToolRenderer,
   type ToolView,
@@ -31,6 +32,7 @@ function commandOutput(view: ToolView): { stdout: string; stderr: string } {
 export const bashRenderer: ToolRenderer = {
   tool: "Bash",
   verb: { pending: "Running", done: "Ran" },
+  phrase: (views) => `ran ${plural(views.length, "command")}`,
   summary: (view) =>
     field(view.input, "description") || truncate(field(view.input, "command"), 80) || "…",
   resultSummary: (view) => {
@@ -74,6 +76,13 @@ function readFile(view: ToolView): { text: string; startLine?: number; lines: nu
 export const readRenderer: ToolRenderer = {
   tool: "Read",
   verb: { pending: "Reading", done: "Read" },
+  phrase: (views) => {
+    const files = new Set(views.map((view) => field(view.input, "file_path")));
+    const [only] = files;
+    return files.size === 1 && only
+      ? `read ${fileName(only)}`
+      : `read ${plural(files.size, "file")}`;
+  },
   summary: (view) => {
     const path = fileName(field(view.input, "file_path")) || "…";
     const offset = numberField(view.input, "offset");
@@ -102,13 +111,59 @@ export const readRenderer: ToolRenderer = {
   },
 };
 
+const EditDiff = lazy(() => import("./EditDiff"));
+
+/** The files the calls touched, from their input: pending calls count too. */
+function editedPaths(view: ToolView): string[] {
+  const changes = (view.input as { changes?: unknown } | undefined)?.changes;
+  if (Array.isArray(changes)) return changes.map((change) => field(change, "path"));
+  return [field(view.input, "file_path")];
+}
+
+/** Edits and writes read as one phrase: both change files. */
+function edited(views: ToolView[]): string {
+  const files = new Set(views.flatMap(editedPaths));
+  files.delete("");
+  const [only] = files;
+  return files.size === 1 && only
+    ? `edited ${fileName(only)}`
+    : `edited ${plural(files.size, "file")}`;
+}
+
+export const editRenderer: ToolRenderer = {
+  tool: "Edit",
+  verb: { pending: "Editing", done: "Edited" },
+  phrase: edited,
+  summary: (view) => {
+    const path = field(view.input, "file_path");
+    if (path) return fileName(path);
+    const changes = (view.input as { changes?: unknown } | undefined)?.changes;
+    return Array.isArray(changes) ? `${changes.length} files` : "…";
+  },
+  resultSummary: (view) =>
+    view.result?.isError ? truncate(contentText(view.result), 80) : undefined,
+  fileChanges: editChanges,
+  body: (view) => (
+    <>
+      <FilePath path={field(view.input, "file_path")} />
+      <Suspense fallback={<span className="tool-pending-message">加载差异…</span>}>
+        <EditDiff input={view.input} detail={view.result?.detail} />
+      </Suspense>
+      {view.result?.isError ? (
+        <p className="edit-error-message text-error">{contentText(view.result)}</p>
+      ) : null}
+    </>
+  ),
+};
+
 export const writeRenderer: ToolRenderer = {
   tool: "Write",
   verb: { pending: "Writing", done: "Wrote" },
+  phrase: edited,
   summary: (view) => fileName(field(view.input, "file_path")) || "…",
   resultSummary: (view) =>
     view.result?.isError ? truncate(contentText(view.result), 80) : undefined,
-  diffStats: (view) => totalStats(fileChanges(view)),
+  fileChanges: writeChanges,
   body: (view) => (
     <>
       <FilePath path={field(view.input, "file_path")} />
@@ -132,6 +187,7 @@ function searchCounts(view: ToolView): { files?: number; lines?: number; filenam
 export const grepRenderer: ToolRenderer = {
   tool: "Grep",
   verb: { pending: "Searching", done: "Searched" },
+  phrase: (views) => `searched ${plural(views.length, "pattern")}`,
   summary: (view) => {
     const pattern = field(view.input, "pattern");
     const path = field(view.input, "path");
@@ -155,6 +211,7 @@ export const grepRenderer: ToolRenderer = {
 export const globRenderer: ToolRenderer = {
   tool: "Glob",
   verb: { pending: "Finding", done: "Found" },
+  phrase: (views) => `listed ${plural(views.length, "pattern")}`,
   summary: (view) => field(view.input, "pattern") || "…",
   resultSummary: (view) => {
     if (!view.result || view.result.isError) return undefined;
@@ -190,6 +247,7 @@ const TODO_MARK: Record<Todo["status"], string> = {
 export const todoWriteRenderer: ToolRenderer = {
   tool: "TodoWrite",
   verb: { pending: "Updating plan", done: "Updated plan" },
+  phrase: () => "updated the plan",
   summary: (view) => {
     const list = todos(view);
     const done = list.filter((todo) => todo.status === "completed").length;
@@ -215,6 +273,7 @@ export const todoWriteRenderer: ToolRenderer = {
 export const webSearchRenderer: ToolRenderer = {
   tool: "WebSearch",
   verb: { pending: "Searching web", done: "Searched web" },
+  phrase: (views) => `searched the web${views.length > 1 ? ` ${views.length} times` : ""}`,
   summary: (view) => truncate(field(view.input, "query"), 60) || "…",
   resultSummary: (view) => {
     const results = (view.result?.detail as { results?: unknown } | undefined)?.results;
@@ -226,6 +285,7 @@ export const webSearchRenderer: ToolRenderer = {
 export const webFetchRenderer: ToolRenderer = {
   tool: "WebFetch",
   verb: { pending: "Fetching", done: "Fetched" },
+  phrase: (views) => `fetched ${plural(views.length, "page")}`,
   summary: (view) => truncate(field(view.input, "url"), 60) || "…",
   body: (view) => (
     <>
@@ -241,6 +301,7 @@ export const webFetchRenderer: ToolRenderer = {
 export const taskRenderer: ToolRenderer = {
   tool: "Task",
   verb: { pending: "Running agent", done: "Agent" },
+  phrase: (views) => `ran ${plural(views.length, "agent")}`,
   summary: (view) =>
     truncate(field(view.input, "description") || field(view.input, "subagent_type"), 60) || "…",
   body: (view) => (
@@ -266,7 +327,7 @@ export const taskRenderer: ToolRenderer = {
 export const askUserQuestionRenderer: ToolRenderer = {
   tool: "AskUserQuestion",
   verb: { pending: "Asking", done: "Asked" },
-  askedInline: true,
+  asksUser: true,
   summary: (view) => {
     const questions = (view.input as { questions?: unknown } | undefined)?.questions;
     const first = Array.isArray(questions) ? field(questions[0], "question") : "";
@@ -305,7 +366,7 @@ export const askUserQuestionRenderer: ToolRenderer = {
 export const exitPlanModeRenderer: ToolRenderer = {
   tool: "ExitPlanMode",
   verb: { pending: "Proposing plan", done: "Proposed plan" },
-  askedInline: true,
+  asksUser: true,
   summary: (view) => (view.result?.isError ? "not approved" : ""),
   defaultExpanded: () => true,
   body: (view) => (

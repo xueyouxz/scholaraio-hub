@@ -1,9 +1,7 @@
-import { Suspense, lazy } from "react";
-import { FilePath } from "./blocks";
-import { fileChanges, totalStats } from "./fileChanges";
 import {
   askUserQuestionRenderer,
   bashRenderer,
+  editRenderer,
   exitPlanModeRenderer,
   fallbackRenderer,
   globRenderer,
@@ -15,34 +13,7 @@ import {
   webSearchRenderer,
   writeRenderer,
 } from "./tools";
-import { type ToolRenderer, type ToolView, contentText, field, fileName, truncate } from "./types";
-
-const EditDiff = lazy(() => import("./EditDiff"));
-
-const editRenderer: ToolRenderer = {
-  tool: "Edit",
-  verb: { pending: "Editing", done: "Edited" },
-  summary: (view) => {
-    const path = field(view.input, "file_path");
-    if (path) return fileName(path);
-    const changes = (view.input as { changes?: unknown } | undefined)?.changes;
-    return Array.isArray(changes) ? `${changes.length} files` : "…";
-  },
-  resultSummary: (view) =>
-    view.result?.isError ? truncate(contentText(view.result), 80) : undefined,
-  diffStats: (view) => totalStats(fileChanges(view)),
-  body: (view) => (
-    <>
-      <FilePath path={field(view.input, "file_path")} />
-      <Suspense fallback={<span className="tool-pending-message">加载差异…</span>}>
-        <EditDiff input={view.input} detail={view.result?.detail} />
-      </Suspense>
-      {view.result?.isError ? (
-        <p className="edit-error-message text-error">{contentText(view.result)}</p>
-      ) : null}
-    </>
-  ),
-};
+import type { FileChange, ToolRenderer, ToolView } from "./types";
 
 const RENDERERS = new Map<string, ToolRenderer>(
   [
@@ -94,4 +65,10 @@ export function toolSummary(toolName: string, input: unknown): string {
     partial: false,
     inputStreaming: false,
   });
+}
+
+/** The files a call changed, once it has finished; none for tools that change no files. */
+export function fileChanges(view: ToolView): FileChange[] {
+  if (view.status !== "complete") return [];
+  return rendererFor(view.name).fileChanges?.(view) ?? [];
 }

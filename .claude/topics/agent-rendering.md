@@ -57,8 +57,14 @@
   `renderers/activitySummary.ts`), citations are collected once. Calls that ask the user
   something (AskUserQuestion, ExitPlanMode) never fold; a fold holding a pending decision
   opens itself.
-- Diff stats and the turn-end "Edited N files" card come from `renderers/fileChanges.ts`
-  (Claude `structuredPatch`, Codex per-file diffs, Write content).
+- What the transcript knows about a tool lives on its renderer (`renderers/tools.tsx`,
+  looked up through `renderers/registry.tsx`): its label, its phrase in a folded run, the
+  files it changes (`fileChanges`, from `renderers/fileChanges.ts`: Claude
+  `structuredPatch`, Codex per-file diffs, Write content), whether it asks the user
+  (`asksUser`). Diff stats, the turn-end "Edited N files" card and whether an approval can
+  also accept edits all read it from there; don't keep tool-name lists elsewhere.
+- A pending decision is one component, `components/InputRequestPrompt.tsx`: asked inline
+  on its call's row, or floating over the transcript when that row is not on screen.
 - Tool code and output are highlighted by Streamdown itself: `renderers/blocks.tsx` wraps
   them in a fence (`startLine=N` / `noLineNumbers` in the info string) and renders it with
   the shared `Markdown` component.

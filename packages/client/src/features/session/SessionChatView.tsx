@@ -3,8 +3,9 @@ import { ArrowDown } from "lucide-react";
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useNavigationLayout } from "../../app/components/NavigationLayout";
+import { sessionUrl } from "../../core/sessions";
 import { PaperReaderView } from "../library/reader/PaperReaderView";
-import { InputRequestPanel } from "./components/InputRequestPanel";
+import { InputRequestPrompt } from "./components/InputRequestPrompt";
 import { ResizableSessionFilesPanel } from "./components/SessionFilesPanel";
 import { SessionHeader, type SessionPanel } from "./components/SessionHeader";
 import { SessionMessages } from "./components/SessionMessages";
@@ -29,7 +30,7 @@ export function SessionChatView({ initial }: { initial: StoredSession }) {
 
   const pending = snapshot?.pendingInput;
   // Ask on the tool call's own row when it is on screen; otherwise (no call id,
-  // or the paper reader is covering the transcript) fall back to the panel.
+  // or the paper reader is covering the transcript) pin the prompt over it.
   const askedInline =
     !!pending?.toolCallId &&
     !selectedPaper &&
@@ -74,10 +75,11 @@ export function SessionChatView({ initial }: { initial: StoredSession }) {
           onTogglePanel={(next) => setPanel((current) => (current === next ? undefined : next))}
         />
         {pending && !askedInline ? (
-          <InputRequestPanel
+          <InputRequestPrompt
             key={pending.id}
             request={pending}
             sessionId={initial.id}
+            placement="floating"
             onDone={session.refresh}
           />
         ) : null}
@@ -139,7 +141,7 @@ export function SessionChatView({ initial }: { initial: StoredSession }) {
                         },
                         onFork: (message) =>
                           session.fork.mutate(message.id, {
-                            onSuccess: (fork) => navigate(`/sessions/${fork.id}`),
+                            onSuccess: (fork) => navigate(sessionUrl(fork.id)),
                           }),
                       }
                 }

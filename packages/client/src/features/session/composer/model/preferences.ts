@@ -1,5 +1,5 @@
 import type { PermissionMode, ProviderName } from "@scholaraio-hub/shared";
-import type { SessionOptions } from "../../../../core/library";
+import type { SessionOptions } from "../../../../core/sessions";
 
 /** What the composer remembers per agent, so a new chat opens where the last one left off. */
 export interface ComposerPreference {

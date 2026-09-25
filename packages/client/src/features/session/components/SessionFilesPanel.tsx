@@ -11,7 +11,7 @@ import {
   X,
 } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { sessionApi } from "../../../core/library";
+import { sessionApi } from "../../../core/sessions";
 import { Markdown } from "../../../shared/components/Markdown";
 import { ResizableSessionPanel } from "./ResizableSessionPanel";
 

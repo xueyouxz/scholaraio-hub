@@ -2,7 +2,7 @@ import type { LibraryAnalytics, LibraryTopic } from "@scholaraio-hub/shared";
 import { CheckSquare, Loader2, MessageSquare, X } from "lucide-react";
 import { type ReactNode, useEffect, useMemo, useRef, useState } from "react";
 import { Link } from "react-router-dom";
-import { newSessionUrl } from "../../../core/library";
+import { newSessionUrl } from "../../../core/sessions";
 import type { PaperSummary } from "../paperSummary";
 import { SELECTION_CAP, useLibrarySelection } from "../selection";
 import type { TopicColorMap } from "../utils/topicColors";

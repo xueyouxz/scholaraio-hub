@@ -1,7 +1,8 @@
 import { describe, expect, it } from "vitest";
 import { summarizeActivity } from "../activitySummary";
 import { languageOf } from "../blocks";
-import { changesByFile, fileChanges } from "../fileChanges";
+import { changesByFile } from "../fileChanges";
+import { fileChanges } from "../registry";
 import { contentText, hasImageContent } from "../types";
 import type { ToolView } from "../types";
 

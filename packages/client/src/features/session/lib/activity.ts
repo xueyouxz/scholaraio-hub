@@ -8,6 +8,7 @@
  * that render nothing (see `isVisiblePart`) neither show nor end a run.
  */
 
+import { rendererFor } from "../components/renderers/registry";
 import { type Part, type PartOf, type ToolPart, isVisiblePart } from "./parts";
 
 export interface IndexedPart<P = Part> {
@@ -29,15 +30,13 @@ export type Segment =
       images: IndexedPart<PartOf<"file">>[];
     };
 
-/** Calls whose question or plan is asked on their own row; folding would hide it. */
-const INTERACTIVE_TOOLS: ReadonlySet<string> = new Set(["AskUserQuestion", "ExitPlanMode"]);
-
 export function isImagePart(part: Part): part is PartOf<"file"> {
   return part.type === "file" && part.mediaType.startsWith("image/");
 }
 
 function foldable(part: Part): boolean {
-  if (part.type === "dynamic-tool") return !INTERACTIVE_TOOLS.has(part.toolName);
+  // A call that asks the user is asked on its own row; folding would hide it.
+  if (part.type === "dynamic-tool") return !rendererFor(part.toolName).asksUser;
   return part.type === "reasoning" || isImagePart(part);
 }
 

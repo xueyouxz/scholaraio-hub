@@ -1,6 +1,6 @@
 import type { SessionAttachment } from "@scholaraio-hub/shared";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { type AttachmentTarget, sessionApi } from "../../../../core/library";
+import { type AttachmentTarget, sessionApi } from "../../../../core/sessions";
 
 export interface StagedAttachment {
   /** Local key; the server id is `attachment.id` once uploaded. */

@@ -10,7 +10,7 @@ import {
   useRef,
   useState,
 } from "react";
-import { sessionApi } from "../../../../core/library";
+import { sessionApi } from "../../../../core/sessions";
 import { useComposerDraft } from "../hooks/useComposerDraft";
 import { useSlashCommandPicker } from "../hooks/useSlashCommandPicker";
 import { useStagedAttachments } from "../hooks/useStagedAttachments";

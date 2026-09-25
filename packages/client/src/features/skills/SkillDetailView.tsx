@@ -7,8 +7,7 @@ import { Link } from "react-router-dom";
 import rehypeKatex from "rehype-katex";
 import remarkGfm from "remark-gfm";
 import remarkMath from "remark-math";
-import { skillsApi } from "../../core/library";
-import { queryKeys } from "../../core/queryKeys";
+import { skillQuery } from "../../core/settings";
 
 interface Props {
   skillName: string;
@@ -16,9 +15,7 @@ interface Props {
 
 export function SkillDetailView({ skillName }: Props) {
   const detailQuery = useQuery({
-    queryKey: queryKeys.scholaraioSkill(skillName),
-    queryFn: ({ signal }) => skillsApi.get(skillName, signal),
-    staleTime: Number.POSITIVE_INFINITY,
+    ...skillQuery(skillName),
   });
 
   const [copied, setCopied] = useState(false);

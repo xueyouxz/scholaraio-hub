@@ -2,8 +2,8 @@ import { FilePen } from "lucide-react";
 import { Suspense, lazy, useState } from "react";
 import { Chevron } from "./renderers/ToolCallRow";
 import { DiffStatsLabel } from "./renderers/blocks";
-import { type FileChange, changesByFile, totalStats } from "./renderers/fileChanges";
-import { fileName } from "./renderers/types";
+import { changesByFile, totalStats } from "./renderers/fileChanges";
+import { type FileChange, fileName } from "./renderers/types";
 
 const PatchView = lazy(() => import("./renderers/PatchView"));
 

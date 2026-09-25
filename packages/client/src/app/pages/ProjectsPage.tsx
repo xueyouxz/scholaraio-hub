@@ -2,7 +2,8 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Archive, FolderOpen, MessageSquare, Pencil, Plus, RefreshCw, Zap } from "lucide-react";
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
-import { libraryApi, newSessionUrl, sessionApi, workspaceUrl } from "../../core/library";
+import { libraryApi, workspaceUrl } from "../../core/library";
+import { isSessionActive, newSessionUrl, sessionsQuery } from "../../core/sessions";
 import { WorkspaceCreateDialog } from "../../features/library/components/WorkspaceCreateDialog";
 
 import { usePageTitle } from "../components/NavigationLayout";
@@ -25,7 +26,7 @@ export function ProjectsPage() {
     onSuccess: () => {
       setError("");
       queryClient.invalidateQueries({ queryKey: ["library", "projects"] });
-      queryClient.invalidateQueries({ queryKey: ["sessions"] });
+      queryClient.invalidateQueries({ queryKey: sessionsQuery.queryKey });
     },
     onError: (err) => setError(err instanceof Error ? err.message : "重命名失败"),
   });
@@ -35,7 +36,7 @@ export function ProjectsPage() {
     onSuccess: ({ sessions }) => {
       setError(sessions ? `项目已归档，${sessions} 个会话已解除关联。` : "");
       queryClient.invalidateQueries({ queryKey: ["library", "projects"] });
-      queryClient.invalidateQueries({ queryKey: ["sessions"] });
+      queryClient.invalidateQueries({ queryKey: sessionsQuery.queryKey });
     },
     onError: (err) => setError(err instanceof Error ? err.message : "归档失败"),
   });
@@ -45,20 +46,14 @@ export function ProjectsPage() {
     return () => setTitle("");
   }, [setTitle]);
 
-  const sessionsQuery = useQuery({
-    queryKey: ["sessions"],
-    queryFn: ({ signal }) => sessionApi.list(signal),
-    refetchInterval: 5000,
-  });
+  const sessionList = useQuery({ ...sessionsQuery, refetchInterval: 5000 });
   const projects = (projectsQuery.data ?? []).map((project) => {
     const sessions =
-      sessionsQuery.data?.sessions.filter((session) => session.projectId === project.id) ?? [];
+      sessionList.data?.sessions.filter((session) => session.projectId === project.id) ?? [];
     return {
       ...project,
       sessionCount: sessions.length,
-      activeOwnedCount: sessions.filter(
-        (session) => session.state === "running" || session.state === "waiting-input",
-      ).length,
+      activeOwnedCount: sessions.filter((session) => isSessionActive(session.state)).length,
     };
   });
   const loading = projectsQuery.isLoading || projectsQuery.isFetching;

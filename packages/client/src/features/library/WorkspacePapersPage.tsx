@@ -15,7 +15,8 @@ import {
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import { usePageTitle } from "../../app/components/NavigationLayout";
-import { libraryApi, newSessionUrl, readerUrl, workspaceUrl } from "../../core/library";
+import { libraryApi, readerUrl, workspaceUrl } from "../../core/library";
+import { newSessionUrl } from "../../core/sessions";
 import { PaperDetailPanel } from "./components/PaperDetailPanel";
 import { PaperVirtualList } from "./components/PaperVirtualList";
 import type { ViewMode } from "./components/PaperVirtualList";

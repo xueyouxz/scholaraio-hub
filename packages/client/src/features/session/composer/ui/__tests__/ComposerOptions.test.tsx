@@ -2,7 +2,7 @@ import type { ProviderCapabilities, ProviderInfo } from "@scholaraio-hub/shared"
 import { act } from "react";
 import { type Root, createRoot } from "react-dom/client";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import type { SessionOptions } from "../../../../../core/library";
+import type { SessionOptions } from "../../../../../core/sessions";
 import {
   type ComposerControls,
   ComposerLeadingOptions,

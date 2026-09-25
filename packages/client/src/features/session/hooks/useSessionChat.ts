@@ -4,11 +4,15 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { DefaultChatTransport } from "ai";
 import { useCallback, useEffect, useMemo, useRef } from "react";
 import { hubHeaders } from "../../../core/http";
-import { sessionApi } from "../../../core/library";
-
-const ACTIVE_STATES: ReadonlySet<StoredSession["state"]> = new Set(["running", "waiting-input"]);
-const isActive = (state: StoredSession["state"] | undefined) =>
-  state !== undefined && ACTIVE_STATES.has(state);
+import {
+  chatPaths,
+  isSessionActive,
+  ownAttachments,
+  sessionApi,
+  sessionInput,
+  sessionQuery,
+  sessionsQuery,
+} from "../../../core/sessions";
 
 /** How often to re-read the snapshot while a turn runs without our stream. */
 const POLL_MS = 1000;
@@ -37,33 +41,23 @@ export function useSessionChat(initial: StoredSession) {
   const accepted = useRef<{ resolve: () => void; reject: (error: Error) => void } | undefined>(
     undefined,
   );
+  const snapshotKey = sessionQuery(id).queryKey;
   const refresh = useCallback(() => {
-    void client.invalidateQueries({ queryKey: ["session", id] });
-    void client.invalidateQueries({ queryKey: ["sessions"] });
+    void client.invalidateQueries({ queryKey: sessionQuery(id).queryKey });
+    void client.invalidateQueries({ queryKey: sessionsQuery.queryKey });
   }, [client, id]);
 
   const transport = useMemo(
     () =>
       new DefaultChatTransport<SessionMessage>({
-        api: `/api/sessions/${id}/messages`,
+        api: chatPaths(id).messages,
         headers: Object.fromEntries(hubHeaders()),
         // The server keeps history; send only the newest user turn (stable id for idempotency).
         prepareSendMessagesRequest: ({ messages }) => {
           const message = messages.at(-1);
-          return {
-            body: {
-              id: message?.id,
-              attachmentIds: message?.parts
-                .filter((part) => part.type === "file")
-                .map((part) => part.url.split("/").at(-1)),
-              text: message?.parts
-                .filter((part) => part.type === "text")
-                .map((part) => part.text)
-                .join("\n"),
-            },
-          };
+          return { body: message ? sessionInput(id, message) : {} };
         },
-        prepareReconnectToStreamRequest: () => ({ api: `/api/sessions/${id}/stream` }),
+        prepareReconnectToStreamRequest: () => ({ api: chatPaths(id).stream }),
       }),
     [id],
   );
@@ -71,7 +65,7 @@ export function useSessionChat(initial: StoredSession) {
     id,
     messages: initial.messages,
     transport,
-    resume: isActive(initial.state),
+    resume: isSessionActive(initial.state),
     onFinish: refresh,
     onError: (error) => {
       sendError.current = error;
@@ -80,7 +74,7 @@ export function useSessionChat(initial: StoredSession) {
     },
     onData: (part) => {
       if (part.type !== "data-session-state") return;
-      client.setQueryData<StoredSession>(["session", id], (current) =>
+      client.setQueryData(snapshotKey, (current) =>
         current
           ? { ...current, state: part.data.state, pendingInput: part.data.pendingInput }
           : current,
@@ -95,11 +89,10 @@ export function useSessionChat(initial: StoredSession) {
   }, [chat.status]);
 
   const snapshot = useQuery({
-    queryKey: ["session", id],
-    queryFn: ({ signal }) => sessionApi.get(id, signal),
+    ...sessionQuery(id),
     refetchInterval: (query) => {
       if (chat.status === "streaming") return STREAMING_POLL_MS;
-      return streaming || isActive(query.state.data?.state) ? POLL_MS : false;
+      return streaming || isSessionActive(query.state.data?.state) ? POLL_MS : false;
     },
   });
 
@@ -111,7 +104,7 @@ export function useSessionChat(initial: StoredSession) {
   useEffect(() => {
     const current = snapshot.data;
     if (!current || streaming) return;
-    if (isActive(current.state)) {
+    if (isSessionActive(current.state)) {
       const userId = current.messages.filter((message) => message.role === "user").at(-1)?.id;
       if (
         userId &&
@@ -132,7 +125,7 @@ export function useSessionChat(initial: StoredSession) {
     // (204). In that case no onFinish fires: reconcile the settled snapshot.
     synchronizedVersion.current = current.updatedAt;
     chat.setMessages(current.messages);
-    void client.invalidateQueries({ queryKey: ["sessions"] });
+    void client.invalidateQueries({ queryKey: sessionsQuery.queryKey });
   }, [
     snapshot.data,
     streaming,
@@ -149,7 +142,7 @@ export function useSessionChat(initial: StoredSession) {
       const current = await sessionApi.get(id);
       chat.setMessages(current.messages);
       chat.clearError();
-      if (isActive(current.state)) await chat.resumeStream();
+      if (isSessionActive(current.state)) await chat.resumeStream();
       refresh();
     },
   });
@@ -162,7 +155,7 @@ export function useSessionChat(initial: StoredSession) {
     mutationFn: (options: Parameters<typeof sessionApi.options>[1]) =>
       sessionApi.options(id, options),
     onSuccess: () => {
-      void client.invalidateQueries({ queryKey: ["session", id] });
+      void client.invalidateQueries({ queryKey: snapshotKey });
     },
   });
 
@@ -200,24 +193,11 @@ export function useSessionChat(initial: StoredSession) {
    * edit is sent as a new turn. Attachments of this session go along again.
    */
   const edit = async (message: SessionMessage, text: string) => {
-    const own = `/api/sessions/${id}/attachments/`;
-    const attachments: SessionAttachment[] = message.parts.flatMap((part) =>
-      part.type === "file" && part.url.startsWith(own)
-        ? [
-            {
-              id: part.url.slice(own.length),
-              filename: part.filename ?? "",
-              mediaType: part.mediaType,
-              size: 0,
-              url: part.url,
-            },
-          ]
-        : [],
-    );
+    const attachments = ownAttachments(id, message);
     const rewound = await sessionApi.rewind(id, message.id);
     // The snapshot is now the rewound one; do not reconcile back to the old messages.
     synchronizedVersion.current = rewound.updatedAt;
-    client.setQueryData<StoredSession>(["session", id], rewound);
+    client.setQueryData(snapshotKey, rewound);
     chat.setMessages(rewound.messages);
     await send(text, attachments);
   };
@@ -226,7 +206,7 @@ export function useSessionChat(initial: StoredSession) {
   const fork = useMutation({
     mutationFn: (messageId: string) => sessionApi.fork(id, messageId),
     onSuccess: () => {
-      void client.invalidateQueries({ queryKey: ["sessions"] });
+      void client.invalidateQueries({ queryKey: sessionsQuery.queryKey });
     },
   });
 
@@ -243,7 +223,7 @@ export function useSessionChat(initial: StoredSession) {
   };
 
   const state = snapshot.data?.state ?? initial.state;
-  const running = streaming || isActive(state);
+  const running = streaming || isSessionActive(state);
   const connection: ConnectionStatus = chat.error
     ? "disconnected"
     : chat.status === "streaming"

@@ -3,7 +3,8 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Check, CheckCircle2, ChevronDown, Library, Loader2, Search, X } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
-import { libraryApi, newSessionUrl, workspaceUrl } from "../../../core/library";
+import { libraryApi, workspaceUrl } from "../../../core/library";
+import { newSessionUrl, sessionsQuery } from "../../../core/sessions";
 import { Dialog } from "../../../shared/ui/Dialog";
 import { workspaceNameProblem } from "../workspaceName";
 import { ImportProgress } from "./import/ImportProgress";
@@ -36,7 +37,7 @@ export function WorkspaceCreateDialog({ onClose }: { onClose: () => void }) {
     },
     onSuccess: (project) => {
       void client.invalidateQueries({ queryKey: ["library"] });
-      void client.invalidateQueries({ queryKey: ["sessions"] });
+      void client.invalidateQueries({ queryKey: sessionsQuery.queryKey });
       if (!sources.staged.length) {
         onClose();
         navigate(newSessionUrl(project.id));

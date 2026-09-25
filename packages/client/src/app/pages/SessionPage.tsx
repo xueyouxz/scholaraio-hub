@@ -1,17 +1,13 @@
 import { useQuery } from "@tanstack/react-query";
 import { useParams } from "react-router-dom";
-import { sessionApi } from "../../core/library";
+import { sessionQuery } from "../../core/sessions";
 import { NewSessionView } from "../../features/session/NewSessionView";
 import { SessionChatView } from "../../features/session/SessionChatView";
 
 /** `/sessions` starts a new chat; `/sessions/:sessionId` opens an existing one. */
 export function SessionPage() {
   const { sessionId } = useParams();
-  const session = useQuery({
-    queryKey: ["session", sessionId],
-    queryFn: ({ signal }) => sessionApi.get(sessionId ?? "", signal),
-    enabled: !!sessionId,
-  });
+  const session = useQuery({ ...sessionQuery(sessionId ?? ""), enabled: !!sessionId });
   if (!sessionId) return <NewSessionView />;
   if (session.error)
     return (

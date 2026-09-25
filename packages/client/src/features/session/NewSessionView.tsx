@@ -4,15 +4,15 @@ import { X } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { usePageTitle } from "../../app/components/NavigationLayout";
+import { libraryApi } from "../../core/library";
 import {
   type SessionOptions,
-  libraryApi,
   newSessionUrl,
   sessionApi,
-  settingsApi,
-  skillsApi,
-} from "../../core/library";
-import { queryKeys } from "../../core/queryKeys";
+  sessionUrl,
+  sessionsQuery,
+} from "../../core/sessions";
+import { appSettingsQuery, skillsQuery } from "../../core/settings";
 import { WorkspaceSwitcher } from "./components/WorkspaceSwitcher";
 import { useProviders } from "./composer/hooks/useProviders";
 import { initialOptions, optionsForProvider } from "./composer/model/options";
@@ -73,8 +73,7 @@ function NewSessionForm({
   const navigate = useNavigate();
   const { setTitle } = usePageTitle();
   const defaults = useQuery({
-    queryKey: ["app-settings"],
-    queryFn: ({ signal }) => settingsApi.get(signal),
+    ...appSettingsQuery,
   });
   const providers = useProviders();
   const projects = useQuery({
@@ -88,10 +87,8 @@ function NewSessionForm({
     enabled: paperIds.length > 0 || !!projectId,
   });
   const skills = useQuery({
-    queryKey: queryKeys.scholaraioSkills(),
-    queryFn: ({ signal }) => skillsApi.list(signal),
+    ...skillsQuery,
     enabled: !!project,
-    staleTime: Number.POSITIVE_INFINITY,
   });
   const readingSkills = useMemo(
     () => filterReadingContextSkills(skills.data?.skills ?? []),
@@ -199,10 +196,14 @@ function NewSessionForm({
       }
       const { session, messageId } = created.current;
       if (composed || attachmentIds.length) {
-        await sessionApi.sendFirstMessage(session.id, messageId, composed, attachmentIds);
+        await sessionApi.sendFirstMessage(session.id, {
+          id: messageId,
+          text: composed,
+          attachmentIds,
+        });
       }
-      void client.invalidateQueries({ queryKey: ["sessions"] });
-      navigate(`/sessions/${session.id}`);
+      void client.invalidateQueries({ queryKey: sessionsQuery.queryKey });
+      navigate(sessionUrl(session.id));
     } catch (error) {
       setCreateError(error instanceof Error ? error.message : "创建会话失败");
       throw error;

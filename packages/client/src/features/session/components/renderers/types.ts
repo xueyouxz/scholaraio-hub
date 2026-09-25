@@ -43,17 +43,26 @@ export interface ToolRenderer {
   summary(view: ToolView): string;
   /** One-line outcome shown after completion, e.g. "3 files". */
   resultSummary?(view: ToolView): string | undefined;
-  /** Lines added and removed, for calls that change files; shown instead of `resultSummary`. */
-  diffStats?(view: ToolView): DiffStats | undefined;
+  /**
+   * The files a finished call changed, for tools that change files. Their lines
+   * added and removed show instead of `resultSummary`, and approving such a
+   * call can also accept the edits that follow.
+   */
+  fileChanges?(view: ToolView): FileChange[];
+  /**
+   * How this tool's calls read in a folded run ("ran 3 commands"), given every
+   * call of it in the run. Tools sharing one phrase are described together.
+   */
+  phrase?(views: ToolView[]): string;
   /** Shown under the header while collapsed (e.g. the tail of a command's output). */
   preview?(view: ToolView): ReactNode;
   /** Expanded content. */
   body(view: ToolView): ReactNode;
   /**
-   * The pending prompt for this tool already shows its input (questions, a
-   * plan), so hide the body while it is being asked.
+   * The call asks the user something (questions, a plan) on its own row: it is
+   * never folded into a run, and its body hides while the prompt shows it.
    */
-  askedInline?: boolean;
+  asksUser?: boolean;
   /** Start expanded (e.g. edits and plans, which are the point of the call). */
   defaultExpanded?(view: ToolView): boolean;
 }
@@ -61,6 +70,12 @@ export interface ToolRenderer {
 export interface DiffStats {
   added: number;
   removed: number;
+}
+
+/** One file a tool call changed, with its diff when one can be built. */
+export interface FileChange extends DiffStats {
+  path: string;
+  patch?: string;
 }
 
 /** Read a string field from loosely typed tool input or detail. */

@@ -202,9 +202,9 @@ describe("question and plan renderers", () => {
       "",
     );
     expect(rendererFor("AskUserQuestion").summary(view)).toBe("Which package?");
-    expect(rendererFor("AskUserQuestion").askedInline).toBe(true);
-    expect(rendererFor("ExitPlanMode").askedInline).toBe(true);
-    expect(rendererFor("Bash").askedInline).toBeUndefined();
+    expect(rendererFor("AskUserQuestion").asksUser).toBe(true);
+    expect(rendererFor("ExitPlanMode").asksUser).toBe(true);
+    expect(rendererFor("Bash").asksUser).toBeUndefined();
   });
 });
 

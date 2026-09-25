@@ -3,7 +3,8 @@ import { ChevronRight } from "lucide-react";
 import { type ReactNode, memo, useState } from "react";
 import type { ToolPart } from "../../lib/parts";
 import { DiffStatsLabel } from "./blocks";
-import { rendererFor, toolLabel } from "./registry";
+import { totalStats } from "./fileChanges";
+import { fileChanges, rendererFor, toolLabel } from "./registry";
 import type { ToolStatus, ToolView } from "./types";
 
 /** Normalize an AI SDK dynamic-tool part into the provider-neutral view. */
@@ -95,7 +96,7 @@ export const ToolCallRow = memo(function ToolCallRow({
     : undefined;
   const outcome =
     view.status === "pending" ? undefined : (renderer.resultSummary?.(view) ?? toolUses);
-  const stats = view.status === "complete" ? renderer.diffStats?.(view) : undefined;
+  const stats = totalStats(fileChanges(view));
   // While a subagent works, its latest step is the useful preview.
   const preview = expanded ? null : view.status === "pending" && nested?.latest ? (
     <span className="tool-nested-latest">{nested.latest}</span>
@@ -140,7 +141,7 @@ export const ToolCallRow = memo(function ToolCallRow({
       </button>
       {interaction ? <div className="tool-row-interaction">{interaction}</div> : null}
       {preview && !interaction ? <div className="tool-row-preview">{preview}</div> : null}
-      {expanded && !(interaction && renderer.askedInline) ? (
+      {expanded && !(interaction && renderer.asksUser) ? (
         <div className="tool-row-content">
           {nested ? <div className="task-nested-content">{nested.node}</div> : null}
           {renderer.body(view)}

@@ -4,8 +4,7 @@ import { Check, Copy, RefreshCw, Sparkles } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { usePageTitle } from "../../app/components/NavigationLayout";
-import { skillsApi } from "../../core/library";
-import { queryKeys } from "../../core/queryKeys";
+import { skillsApi, skillsQuery } from "../../core/settings";
 import { SkillDetailView } from "./SkillDetailView";
 
 interface GroupedCategory {
@@ -41,16 +40,13 @@ export function SkillsPage() {
   const [collapsed, setCollapsed] = useState<Set<string>>(() => new Set(["__uncategorized__"]));
 
   const listQuery = useQuery({
-    queryKey: queryKeys.scholaraioSkills(),
-    queryFn: ({ signal }) => skillsApi.list(signal),
-    staleTime: Number.POSITIVE_INFINITY,
+    ...skillsQuery,
   });
 
   const refreshMutation = useMutation({
     mutationFn: () => skillsApi.refresh(),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: queryKeys.scholaraioSkills() });
-      queryClient.invalidateQueries({ queryKey: ["scholaraio-skills"] });
+      queryClient.invalidateQueries({ queryKey: skillsQuery.queryKey });
     },
   });
 

@@ -18,7 +18,7 @@ const uploads = vi.hoisted(() => ({
   hold: false,
 }));
 
-vi.mock("../../../../../core/library", () => ({
+vi.mock("../../../../../core/sessions", () => ({
   sessionApi: {
     commands: async (provider: string, sessionId?: string) => {
       commands.calls.push({ provider, sessionId });

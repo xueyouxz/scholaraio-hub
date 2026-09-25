@@ -1,9 +1,11 @@
 import type { InputRequest } from "@scholaraio-hub/shared";
 import { useMutation } from "@tanstack/react-query";
+import { Bell } from "lucide-react";
 import { useState } from "react";
-import { sessionApi } from "../../../../core/library";
-import { Markdown } from "../../../../shared/components/Markdown";
-import { field } from "./types";
+import { sessionApi } from "../../../core/sessions";
+import { Markdown } from "../../../shared/components/Markdown";
+import { rendererFor, toolSummary } from "./renderers/registry";
+import { field } from "./renderers/types";
 
 type Decision = "approve" | "approve_accept_edits" | "deny";
 
@@ -11,6 +13,7 @@ interface Question {
   question: string;
   header?: string;
   options: { label: string; description?: string }[];
+  /** Codex marks answers such as tokens as secret: never shown as typed. */
   secret: boolean;
 }
 
@@ -39,13 +42,45 @@ function questionsOf(request: InputRequest): Question[] {
   });
 }
 
-const EDIT_TOOLS = new Set(["Edit", "Write", "MultiEdit", "NotebookEdit"]);
-
 /**
- * A pending decision asked on the row of the tool call it is about, the way
- * Claude Code asks in the transcript rather than in a detached dialog.
+ * A decision the agent is waiting on: questions to answer, a plan to approve,
+ * or a tool call to allow. `inline` asks on the row of the call it is about,
+ * the way Claude Code asks in the transcript; `floating` pins the same prompt
+ * over the transcript when that row is not on screen.
  */
-export function InlineInputRequest({
+export function InputRequestPrompt({
+  request,
+  sessionId,
+  placement,
+  onDone,
+}: {
+  request: InputRequest;
+  sessionId: string;
+  placement: "inline" | "floating";
+  onDone: () => void;
+}) {
+  const form = <DecisionForm request={request} sessionId={sessionId} onDone={onDone} />;
+  if (placement === "inline") return form;
+  // Away from its row, say which call this is about.
+  const title = request.toolName
+    ? `${request.toolName} ${toolSummary(request.toolName, request.toolInput)}`.trim()
+    : request.prompt;
+  return (
+    <div className="tool-approval-fixed" role="presentation">
+      <div className="tool-approval-panel" role="alert" aria-live="assertive">
+        <div className="tool-approval-header">
+          <Bell className="tool-approval-icon" aria-hidden="true" />
+          <span className="tool-approval-question" title={title}>
+            {title}
+          </span>
+        </div>
+        {form}
+      </div>
+    </div>
+  );
+}
+
+function DecisionForm({
   request,
   sessionId,
   onDone,
@@ -70,9 +105,16 @@ export function InlineInputRequest({
       {label}
     </button>
   );
+  const failure = decide.error ? (
+    <p role="alert" className="text-error text-xs">
+      {decide.error.message}
+    </p>
+  ) : null;
 
-  if (request.toolName === "AskUserQuestion") {
-    const questions = questionsOf(request);
+  const questions = questionsOf(request);
+  if (questions.length) {
+    const answer = (question: string, value: string) =>
+      setAnswers((current) => ({ ...current, [question]: value }));
     const complete = questions.every((question) => answers[question.question]?.trim());
     return (
       <fieldset className="inline-input" aria-label="Agent question">
@@ -84,7 +126,8 @@ export function InlineInputRequest({
               ) : null}
               {question.question}
             </legend>
-            {question.options.length ? (
+            {/* Choices shown next to a masked field would give the secret away. */}
+            {question.options.length && !question.secret ? (
               <div className="inline-question-options">
                 {question.options.map((option) => (
                   <button
@@ -93,9 +136,7 @@ export function InlineInputRequest({
                     className="inline-option"
                     aria-pressed={answers[question.question] === option.label}
                     title={option.description || undefined}
-                    onClick={() =>
-                      setAnswers((current) => ({ ...current, [question.question]: option.label }))
-                    }
+                    onClick={() => answer(question.question, option.label)}
                   >
                     {option.label}
                   </button>
@@ -107,11 +148,11 @@ export function InlineInputRequest({
               type={question.secret ? "password" : "text"}
               autoComplete={question.secret ? "off" : undefined}
               aria-label={question.question}
-              placeholder={question.options.length ? "Or type an answer" : "Type an answer"}
-              value={answers[question.question] ?? ""}
-              onChange={(event) =>
-                setAnswers((current) => ({ ...current, [question.question]: event.target.value }))
+              placeholder={
+                question.options.length && !question.secret ? "Or type an answer" : "Type an answer"
               }
+              value={answers[question.question] ?? ""}
+              onChange={(event) => answer(question.question, event.target.value)}
             />
           </fieldset>
         ))}
@@ -126,7 +167,7 @@ export function InlineInputRequest({
           </button>
           {button("deny", "Skip")}
         </div>
-        {decide.error ? <p className="text-error text-xs">{decide.error.message}</p> : null}
+        {failure}
       </fieldset>
     );
   }
@@ -143,22 +184,22 @@ export function InlineInputRequest({
           {button("approve", "Yes, approve each edit")}
           {button("deny", "No, keep planning")}
         </div>
-        {decide.error ? <p className="text-error text-xs">{decide.error.message}</p> : null}
+        {failure}
       </fieldset>
     );
   }
 
+  // Accepting edits from here on only means something for a call that edits files.
+  const editsFiles = !!request.toolName && !!rendererFor(request.toolName).fileChanges;
   return (
     <fieldset className="inline-input" aria-label="Permission request">
       <p className="inline-input-prompt">Allow this {request.toolName ?? "action"}?</p>
       <div className="inline-decisions">
         {button("approve", "Allow", true)}
-        {request.toolName && EDIT_TOOLS.has(request.toolName)
-          ? button("approve_accept_edits", "Allow and accept edits")
-          : null}
+        {editsFiles ? button("approve_accept_edits", "Allow and accept edits") : null}
         {button("deny", "Deny")}
       </div>
-      {decide.error ? <p className="text-error text-xs">{decide.error.message}</p> : null}
+      {failure}
     </fieldset>
   );
 }

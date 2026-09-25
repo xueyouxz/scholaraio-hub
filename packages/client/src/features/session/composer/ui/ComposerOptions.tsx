@@ -1,6 +1,6 @@
 import type { ProviderInfo, ProviderName, SessionContextUsage } from "@scholaraio-hub/shared";
 import { Brain, ShieldCheck } from "lucide-react";
-import type { SessionOptions } from "../../../../core/library";
+import type { SessionOptions } from "../../../../core/sessions";
 import { effortApplies, modelChange, resolveModel } from "../model/options";
 import { ContextMeter } from "./controls/ContextMeter";
 import { MenuButton, type MenuSection } from "./controls/Menu";

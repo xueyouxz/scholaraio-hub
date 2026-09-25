@@ -22,7 +22,15 @@ import {
   useParams,
   useSearchParams,
 } from "react-router-dom";
-import { libraryApi, newSessionUrl, sessionApi, workspaceUrl } from "../../core/library";
+import { libraryApi, workspaceUrl } from "../../core/library";
+import {
+  isSessionActive,
+  newSessionUrl,
+  sessionApi,
+  sessionQuery,
+  sessionUrl,
+  sessionsQuery,
+} from "../../core/sessions";
 import { LibraryActivityTray } from "../../features/library/components/LibraryActivityTray";
 import { WorkspaceCreateDialog } from "../../features/library/components/WorkspaceCreateDialog";
 import { SessionContextMenu } from "./SessionContextMenu";
@@ -100,10 +108,7 @@ export function Sidebar({
   onToggle,
   onClose,
 }: SidebarProps) {
-  const sessions = useQuery({
-    queryKey: ["sessions"],
-    queryFn: ({ signal }) => sessionApi.list(signal),
-  });
+  const sessions = useQuery(sessionsQuery);
   const projects = useQuery({
     queryKey: ["library", "projects"],
     queryFn: ({ signal }) => libraryApi.projects(signal),
@@ -146,8 +151,8 @@ export function Sidebar({
     if (renaming) renameInput.current?.focus();
   }, [renaming]);
   const settled = (id: string) => {
-    void client.invalidateQueries({ queryKey: ["sessions"] });
-    void client.invalidateQueries({ queryKey: ["session", id] });
+    void client.invalidateQueries({ queryKey: sessionsQuery.queryKey });
+    void client.invalidateQueries({ queryKey: sessionQuery(id).queryKey });
   };
   const rename = useMutation({
     mutationFn: ({ id, title }: { id: string; title: string }) => sessionApi.rename(id, title),
@@ -156,16 +161,16 @@ export function Sidebar({
   const fork = useMutation({
     mutationFn: (id: string) => sessionApi.fork(id),
     onSuccess: (created) => {
-      void client.invalidateQueries({ queryKey: ["sessions"] });
+      void client.invalidateQueries({ queryKey: sessionsQuery.queryKey });
       close?.();
-      navigate(`/sessions/${created.id}`);
+      navigate(sessionUrl(created.id));
     },
   });
   const remove = useMutation({
     mutationFn: (id: string) => sessionApi.remove(id),
     onSuccess: (_data, id) => {
-      client.removeQueries({ queryKey: ["session", id] });
-      void client.invalidateQueries({ queryKey: ["sessions"] });
+      client.removeQueries({ queryKey: sessionQuery(id).queryKey });
+      void client.invalidateQueries({ queryKey: sessionsQuery.queryKey });
       if (sessionId === id) navigate("/sessions");
     },
   });
@@ -228,7 +233,7 @@ export function Sidebar({
       ) : (
         <NavLink
           key={session.id}
-          to={`/sessions/${session.id}`}
+          to={sessionUrl(session.id)}
           onClick={close}
           className={({ isActive }) =>
             `group flex items-center justify-between w-full rounded-lg px-2.5 py-1.5 text-left transition-colors ${isActive ? "bg-surface-container-high text-primary" : "text-on-surface hover:bg-surface-container"}`
@@ -241,7 +246,7 @@ export function Sidebar({
         >
           <span className="line-clamp-1 text-[12px] min-w-0 flex-1">{session.title}</span>
           <span className="flex items-center gap-1.5 shrink-0 ml-2">
-            {session.state === "running" || session.state === "waiting-input" ? (
+            {isSessionActive(session.state) ? (
               <span
                 aria-label="进行中"
                 className="w-1.5 h-1.5 rounded-full bg-primary animate-pulse"
@@ -526,11 +531,7 @@ export function Sidebar({
           y={menu.y}
           onClose={() => setMenu(null)}
           onRename={() => setRenaming(menu.session.id)}
-          forkDisabled={
-            menu.session.state === "running" ||
-            menu.session.state === "waiting-input" ||
-            menu.session.readOnly
-          }
+          forkDisabled={isSessionActive(menu.session.state) || menu.session.readOnly}
           onFork={() => fork.mutate(menu.session.id)}
           onDelete={() => {
             // Irreversible: the conversation and its private files go.

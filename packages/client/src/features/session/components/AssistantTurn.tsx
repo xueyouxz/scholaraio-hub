@@ -6,11 +6,11 @@ import type { Part, ToolPart } from "../lib/parts";
 import { buildTurnTree } from "../lib/turnTree";
 import { CopyButton } from "./CopyButton";
 import { FileChangesCard } from "./FileChangesCard";
+import { InputRequestPrompt } from "./InputRequestPrompt";
 import { CitationList, type PartContext, renderPart } from "./parts/registry";
 import { ActivityGroup } from "./renderers/ActivityGroup";
-import { InlineInputRequest } from "./renderers/InlineInputRequest";
 import { ToolCallRow, describeToolCall, toolView } from "./renderers/ToolCallRow";
-import { fileChanges } from "./renderers/fileChanges";
+import { fileChanges } from "./renderers/registry";
 
 /**
  * One assistant message as a timeline. Finished turns keep their message
@@ -52,10 +52,11 @@ export const AssistantTurn = memo(function AssistantTurn({
         }
         interaction={
           pendingInput && sessionId && pendingInput.toolCallId === part.toolCallId ? (
-            <InlineInputRequest
+            <InputRequestPrompt
               key={pendingInput.id}
               request={pendingInput}
               sessionId={sessionId}
+              placement="inline"
               onDone={onInputDone ?? (() => {})}
             />
           ) : undefined

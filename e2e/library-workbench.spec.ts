@@ -63,8 +63,8 @@ test("refresh during a run keeps approval and stop attached to the same session"
   await page.getByRole("textbox", { name: "Message" }).fill("approval slow");
   await page.getByRole("button", { name: "Send", exact: true }).click();
   await expect(page).toHaveURL(/\/sessions\/[^/?]+$/);
-  await expect(page.getByRole("button", { name: "Approve", exact: true })).toBeVisible();
-  await expect(page.getByRole("button", { name: "Approve + Accept Edits" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Allow", exact: true })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Allow and accept edits" })).toBeVisible();
   const url = page.url();
   await page.reload();
   await page.getByRole("button", { name: "Deny", exact: true }).click();

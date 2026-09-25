@@ -32,9 +32,15 @@ Do not rely on a builtin `KeyError` becoming a 404.
 ## Wire Format
 
 Request models extend `CamelModel` (snake_case attributes, camelCase JSON); query
-parameters use `Query(alias=...)`. Changing a path, field name or status code is a
-contract change: update `packages/server/src/services/LibraryService.ts` callers and the
-client in the same change.
+parameters use `Query(alias=...)`. Every JSON route declares a `response_model` from
+`interfaces/api/responses.py`; one whose model has defaults also sets
+`response_model_exclude_unset=True`, so a field the service left out stays out.
+
+The TypeScript types for these shapes are generated from the OpenAPI document, never
+written by hand: after changing a route or model run `pnpm gen:library-types` and commit
+`packages/shared/src/generated/` with it (`tests/test_hub_openapi.py` and `pnpm lint`
+fail otherwise). Changing a path, field name or status code is a contract change: update
+the server and client callers in the same change.
 
 ## Tests
 

@@ -15,7 +15,10 @@ import { fileURLToPath } from "node:url";
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const CODE = /\.(ts|tsx|js|jsx|mjs|cjs)$/;
-const GENERATED = "packages/server/src/providers/codex/protocol/generated/";
+const GENERATED = [
+  "packages/server/src/providers/codex/protocol/generated/",
+  "packages/shared/src/generated/",
+];
 // Written so that this file does not match its own patterns.
 const SUPPRESSION = /@ts-(ignore|nocheck)|biome-(ignore)|eslint-(disable)/;
 const EMPTY_CATCH = /\.catch\(\s*\([^)]*\)\s*=>\s*\{\s*\}/;
@@ -37,7 +40,7 @@ function problems(file) {
   const found = [];
   const location = testLocationProblem(file);
   if (location) found.push(`${file}: ${location}`);
-  if (!CODE.test(file) || file.startsWith(GENERATED)) return found;
+  if (!CODE.test(file) || GENERATED.some((prefix) => file.startsWith(prefix))) return found;
   const absolute = path.join(repoRoot, file);
   if (!existsSync(absolute)) return found;
   const lines = readFileSync(absolute, "utf8").split("\n");

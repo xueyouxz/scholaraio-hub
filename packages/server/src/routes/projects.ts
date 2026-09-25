@@ -1,4 +1,4 @@
-import type { LiteratureProject } from "@scholaraio-hub/shared";
+import type { ArchivedProject, LiteratureProject } from "@scholaraio-hub/shared";
 import { Hono } from "hono";
 import { z } from "zod";
 import type { LibraryService } from "../services/LibraryService.js";
@@ -34,10 +34,9 @@ export function createProjectRoutes(service: LibraryService, store: SessionStore
 
   routes.delete("/:id", async (c) => {
     const id = c.req.param("id");
-    const archived = await service.json<{ id: string; archivedAt: string }>(
-      `/projects/${encodeURIComponent(id)}`,
-      { method: "DELETE" },
-    );
+    const archived = await service.json<ArchivedProject>(`/projects/${encodeURIComponent(id)}`, {
+      method: "DELETE",
+    });
     // The sessions survive; without a project they continue in their own
     // directory rather than following a project that is no longer there.
     const sessions = await store.retargetProject(id, undefined);

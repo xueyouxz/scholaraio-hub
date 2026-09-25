@@ -22,7 +22,7 @@ def create_app(root: Path, token: str) -> FastAPI:
         finally:
             library.close()
 
-    app = FastAPI(lifespan=lifespan)
+    app = FastAPI(title="ScholarAIO library", lifespan=lifespan)
     require_token(app, token)
     install_error_handlers(app)
     for router in ROUTERS:

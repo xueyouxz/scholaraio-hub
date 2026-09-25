@@ -1,6 +1,6 @@
 import path from "node:path";
 import type { HttpBindings } from "@hono/node-server";
-import { resolveProfileName } from "@scholaraio-hub/shared";
+import { type LibrarySettings, resolveProfileName } from "@scholaraio-hub/shared";
 import { Hono } from "hono";
 import { HTTPException } from "hono/http-exception";
 import type { ContentfulStatusCode } from "hono/utils/http-status";
@@ -132,9 +132,7 @@ export function createApp(options: AppOptions) {
       try {
         let directory = dataDir;
         if (target !== "data") {
-          const settings = await library.json<{ papersDir: string; workspaceDir: string }>(
-            "/settings",
-          );
+          const settings = await library.json<LibrarySettings>("/settings");
           directory = path.resolve(
             target === "papers" ? settings.papersDir : settings.workspaceDir,
           );

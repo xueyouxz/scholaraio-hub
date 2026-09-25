@@ -25,4 +25,6 @@ Upstream's own agent setup, skills and documentation are not part of this packag
 
 `pnpm test:python` from the repository root runs the test files listed in
 `scripts/test-python.mjs`, which is what CI runs; add new test files there.
-`tests/test_hub_layers.py` checks the import direction between the layers.
+`tests/test_hub_layers.py` checks the import direction between the layers;
+`tests/test_hub_openapi.py` checks that the OpenAPI document the Hub's TypeScript types
+are generated from (`pnpm gen:library-types`) is current.

@@ -26,6 +26,7 @@ index; the rules it points to live in `.claude/` and apply to every agent.
   skills; any command takes `--production` or `--profile <name>`
 - `pnpm lint` / `pnpm lint:fix` — Biome plus `scripts/check-conventions.mjs` / Biome autofix
 - `pnpm typecheck` — TypeScript across all packages
+- `pnpm gen:library-types` — regenerate the library API's OpenAPI document and TS types
 - `pnpm test` — `shared` + `server` + `client` Vitest suites; `pnpm test:python` — Python
 - `pnpm test:e2e` — build client + run Playwright (`e2e/`)
 - `pnpm ci:local` — the full CI gate locally (mirrors `.github/workflows/ci.yml`)
@@ -51,7 +52,9 @@ repeating numbers.
 - **Resource release**: anything that acquires a resource (timer, listener, subscription,
   watcher, handle) declares its release path at the point of creation. Details:
   `.claude/topics/resource-lifecycle.md`.
-- **Generated code**: never hand-edit `packages/server/src/providers/codex/protocol/generated/`.
+- **Generated code**: never hand-edit `packages/server/src/providers/codex/protocol/generated/`
+  or `packages/shared/src/generated/` (the library API types; regenerate them with
+  `pnpm gen:library-types` after changing the Python response models).
 - **pnpm only**: never run mutating `npm` or `yarn` commands.
 - **Verify locally, don't push-and-pray**: run `pnpm ci:local` before pushing. Remote CI
   is a safety net, not your edit-test loop. See `.claude/topics/ci-and-local-verification.md`.

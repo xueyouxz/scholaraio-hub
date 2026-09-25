@@ -1,38 +1,9 @@
 import { spawnSync } from "node:child_process";
-import { mkdtempSync, rmSync } from "node:fs";
-import { tmpdir } from "node:os";
-import path from "node:path";
-import { fileURLToPath } from "node:url";
+import { libraryProject, withLibraryPython } from "./python-env.mjs";
 
-const project = fileURLToPath(new URL("../packages/scholaraio/", import.meta.url));
-const root = mkdtempSync(path.join(tmpdir(), "hub-python-tests-"));
-try {
-  const environment = path.join(root, "python");
-  const setup = spawnSync(
-    process.env.SCHOLARAIO_HUB_UV ?? "uv",
-    [
-      "sync",
-      "--project",
-      project,
-      "--locked",
-      "--extra",
-      "hub",
-      "--extra",
-      "hub-test",
-      "--no-default-groups",
-    ],
-    {
-      stdio: "inherit",
-      env: {
-        ...process.env,
-        UV_PROJECT_ENVIRONMENT: environment,
-        UV_CACHE_DIR: process.env.UV_CACHE_DIR ?? path.join(tmpdir(), "hub-test-uv-cache"),
-      },
-    },
-  );
-  if (setup.status !== 0) throw setup.error ?? new Error("Install uv before running Python tests");
+process.exitCode = withLibraryPython(["hub", "hub-test"], (python) => {
   const result = spawnSync(
-    path.join(environment, process.platform === "win32" ? "Scripts/python.exe" : "bin/python"),
+    python,
     [
       "-m",
       "pytest",
@@ -48,6 +19,7 @@ try {
       "tests/test_hub_export.py",
       "tests/test_hub_events.py",
       "tests/test_hub_api_contract.py",
+      "tests/test_hub_openapi.py",
       "tests/test_hub_layers.py",
       "tests/test_ingest_pipeline.py",
       "tests/test_chunks.py",
@@ -55,9 +27,7 @@ try {
       "tests/test_index.py",
       "-q",
     ],
-    { cwd: project, stdio: "inherit" },
+    { cwd: libraryProject, stdio: "inherit" },
   );
-  process.exitCode = result.status ?? 1;
-} finally {
-  rmSync(root, { recursive: true, force: true });
-}
+  return result.status ?? 1;
+});

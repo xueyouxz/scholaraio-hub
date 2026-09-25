@@ -37,16 +37,16 @@ export const libraryApi = {
       method: "POST",
       body: JSON.stringify({ name }),
     }),
+  /** The project keeps its id, so the sessions that refer to it follow. */
   renameProject: (id: string, name: string) =>
-    requestJson<{ project: LiteratureProject; sessions: number }>(
-      `/api/library/projects/${pathSegment(id)}/rename`,
-      { method: "POST", body: JSON.stringify({ name }) },
-    ),
+    requestJson<LiteratureProject>(`/api/library/projects/${pathSegment(id)}/rename`, {
+      method: "POST",
+      body: JSON.stringify({ name }),
+    }),
   archiveProject: (id: string) =>
-    requestJson<{ archived: ArchivedProject; sessions: number }>(
-      `/api/library/projects/${pathSegment(id)}`,
-      { method: "DELETE" },
-    ),
+    requestJson<ArchivedProject>(`/api/library/projects/${pathSegment(id)}`, {
+      method: "DELETE",
+    }),
   projectPapers: (id: string, paperIds: string[], action: "add" | "remove") =>
     requestJson<LiteratureProject>(`/api/library/projects/${pathSegment(id)}/papers`, {
       method: "POST",

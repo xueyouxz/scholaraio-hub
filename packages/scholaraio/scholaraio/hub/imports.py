@@ -101,8 +101,9 @@ class ImportQueue:
         """
         with self.runtime.lock:
             if project_id:
-                # Refuse before anything runs, not after the papers are in.
-                self.projects.directory(project_id)
+                # Refuse before anything runs, not after the papers are in; the job
+                # keeps the project's id, which a rename in the meantime does not change.
+                project_id = self.projects.get(project_id)["id"]
             pending = {
                 item["source"]
                 for job in self.jobs.values()
@@ -189,7 +190,7 @@ class ImportQueue:
         except (InvalidRequest, NotFound) as error:
             item["projectError"] = str(error)
             return
-        self.runtime.events.publish("projects", projects=[project_id])
+        self.runtime.events.publish("projects")
 
     def record_step(self, job, item, step: str) -> None:
         with self.runtime.lock:

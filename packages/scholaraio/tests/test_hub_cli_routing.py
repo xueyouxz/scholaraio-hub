@@ -97,7 +97,7 @@ def test_renaming_a_workspace_goes_through_the_hub(tmp_path, hub_session, monkey
         "request",
         lambda method, path, payload=None: (
             calls.append((method, path, payload)),
-            {"project": {"id": "survey", "name": "survey"}, "sessions": 2},
+            {"id": "3f2b7c1e-0000-4000-8000-000000000000", "name": "survey"},
         )[1],
     )
 

@@ -720,6 +720,8 @@ describe("workbench project and settings contract", () => {
         calls.push({ resource, input });
         if (input.projectId === "outside")
           return Response.json({ error: "invalid project" }, { status: 400 });
+        if (resource.startsWith("/projects/"))
+          return Response.json({ id: "内部项目", name: "内部项目", path: root, paperIds: [] });
         return Response.json(
           resource === "/scope" ? { paperIds: [] } : { citations: [], truncated: false },
         );

@@ -112,6 +112,13 @@ try {
   });
   if (devFrontend) await devFrontend.attach(server as Server);
   log.info(`ScholarAIO Hub: ${origin}`);
+  // Sessions follow projects the library renamed or archived while the server was down.
+  application.sessions.reconcileProjects().then(
+    (changed) => {
+      if (changed) log.info({ changed }, "Sessions brought up to the library's projects");
+    },
+    (error) => log.warn({ err: error }, "Could not match sessions to the library's projects"),
+  );
 } catch (error) {
   log.fatal({ err: error }, "Startup failed");
   await stop();

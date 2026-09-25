@@ -829,6 +829,7 @@ export interface components {
             name: string;
         };
         LiteratureProject: {
+            /** @description Stable across renames; every route also accepts the name. */
             id: string;
             name: string;
             /** @description Directory the agent works in. */

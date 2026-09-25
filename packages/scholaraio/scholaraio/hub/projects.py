@@ -1,15 +1,33 @@
-"""Managed literature projects backed by the existing workspace paper index."""
+"""Managed literature projects backed by the existing workspace paper index.
+
+A project is a directory under the workspace root, named by the user. Its id is
+a UUID kept in a marker file inside that directory, so it stays the same when
+the project is renamed: sessions and the browser refer to a project by id.
+Every method also accepts the project's name, which agents and older records use.
+"""
 from __future__ import annotations
 
+import json
 import shutil
+import uuid
 from datetime import datetime, timezone
 from pathlib import Path
 
 from scholaraio.hub.errors import InvalidRequest, NotFound
 from scholaraio.hub.runtime import LibraryRuntime
+from scholaraio.hub.storage import atomic_json
 from scholaraio.projects import workspace
 
 NAME_LIMIT = 120
+# Inside the project directory, so it moves with a rename and goes with an archive.
+ID_FILE = ".scholaraio-project.json"
+
+
+def is_project_id(value: str) -> bool:
+    try:
+        return str(uuid.UUID(value)) == value
+    except ValueError:
+        return False
 
 AGENTS_GUIDE = """\
 # 文献项目 {name}
@@ -56,9 +74,43 @@ class ProjectService:
         if not self.root.is_relative_to(runtime.root):
             raise InvalidRequest("文献项目目录必须位于应用数据目录内")
 
-    def directory(self, project_id: str, *, existing: bool = True) -> Path:
+    def resolve(self, project: str) -> Path:
+        """The directory of a project named by its id, or by its name."""
+        if not is_project_id(project):
+            return self.directory(project)
+        for directory in self.directories():
+            if self.identity(directory) == project:
+                return directory
+        raise NotFound(f"文献项目不存在：{project}")
+
+    def directories(self) -> list[Path]:
+        if not self.root.exists():
+            return []
+        return [d for d in sorted(self.root.iterdir())
+                if d.is_dir() and not d.name.startswith(".")
+                and (workspace.has_paper_index(d) or workspace.has_legacy_paper_index(d))]
+
+    def identity(self, directory: Path) -> str:
+        """The project's id; a project from before ids existed is given one now."""
+        marker = directory / ID_FILE
+        try:
+            value = json.loads(marker.read_text(encoding="utf-8"))["id"]
+        except FileNotFoundError:
+            value = str(uuid.uuid4())
+            atomic_json(marker, {"id": value})
+            return value
+        except (OSError, ValueError, KeyError, TypeError) as error:
+            raise RuntimeError(f"项目标识文件无法读取：{marker}") from error
+        if not isinstance(value, str) or not is_project_id(value):
+            raise RuntimeError(f"项目标识文件内容无效：{marker}")
+        return value
+
+    def directory(self, name: str, *, existing: bool = True) -> Path:
+        """The directory a project name stands for, checked to stay inside the workspace root."""
+        project_id = name
         if (not workspace.validate_workspace_name(project_id) or project_id.startswith(".")
-                or len(project_id) > NAME_LIMIT or any(ord(c) < 32 for c in project_id)):
+                or len(project_id) > NAME_LIMIT or any(ord(c) < 32 for c in project_id)
+                or is_project_id(project_id)):
             raise InvalidRequest("项目名称无效：请使用不含路径分隔符的名称")
         directory = self.root / project_id
         if not directory.resolve().is_relative_to(self.root):
@@ -72,13 +124,16 @@ class ProjectService:
             raise NotFound(f"文献项目不存在：{project_id}")
         return directory
 
-    def get(self, project_id: str) -> dict:
+    def get(self, project: str) -> dict:
         with self.runtime.lock:
-            directory = self.directory(project_id)
+            return self.describe(self.resolve(project))
+
+    def describe(self, directory: Path) -> dict:
+        with self.runtime.lock:
             ids = sorted(workspace.read_paper_ids(directory))
             return {
-                "id": project_id,
-                "name": project_id,
+                "id": self.identity(directory),
+                "name": directory.name,
                 # The agent works in this directory; only this module resolves it.
                 "path": str(directory),
                 "paperIds": ids,
@@ -87,11 +142,7 @@ class ProjectService:
 
     def list(self) -> list[dict]:
         with self.runtime.lock:
-            if not self.root.exists():
-                return []
-            return [self.get(d.name) for d in sorted(self.root.iterdir())
-                    if d.is_dir() and not d.name.startswith(".")
-                    and (workspace.has_paper_index(d) or workspace.has_legacy_paper_index(d))]
+            return [self.describe(self.directory(d.name)) for d in self.directories()]
 
     def create(self, name: str) -> dict:
         with self.runtime.lock:
@@ -100,7 +151,7 @@ class ProjectService:
                 raise InvalidRequest("项目或同名目录已存在")
             workspace.create(directory)
             self.scaffold(directory, name)
-            return self.get(name)
+            return self.describe(directory)
 
     def scaffold(self, directory: Path, name: str) -> None:
         """Tell an agent working here what this directory is.
@@ -114,28 +165,30 @@ class ProjectService:
             return
         guide.write_text(AGENTS_GUIDE.format(name=name), encoding="utf-8")
 
-    def rename(self, project_id: str, name: str) -> dict:
+    def rename(self, project: str, name: str) -> dict:
+        """Rename the project's directory; its id, and so every reference to it, stays."""
         with self.runtime.lock:
-            self.directory(project_id)
+            directory = self.resolve(project)
+            self.identity(directory)
             target = self.directory(name, existing=False)
             if target.exists():
                 raise InvalidRequest("目标项目名称已被占用")
-            workspace.rename(self.root, project_id, name)
-            return self.get(name)
+            return self.describe(workspace.rename(self.root, directory.name, name))
 
-    def delete(self, project_id: str) -> dict:
+    def delete(self, project: str) -> dict:
         """Move a project aside instead of deleting the agent's work outright."""
         with self.runtime.lock:
-            directory = self.directory(project_id)
+            directory = self.resolve(project)
+            project_id = self.identity(directory)
             stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
-            trash = self.root / ".trash" / f"{project_id}-{stamp}"
+            trash = self.root / ".trash" / f"{directory.name}-{stamp}"
             trash.parent.mkdir(parents=True, exist_ok=True)
             shutil.move(str(directory), str(trash))
             return {"id": project_id, "archivedAt": stamp, "path": str(trash)}
 
-    def update_papers(self, project_id: str, paper_ids: list[str], action: str) -> dict:
+    def update_papers(self, project: str, paper_ids: list[str], action: str) -> dict:
         with self.runtime.lock:
-            directory = self.directory(project_id)
+            directory = self.resolve(project)
             if action == "add":
                 resolved = [
                     {"id": pid, "dir_name": self.runtime.papers.find(pid).directory.name}
@@ -146,7 +199,7 @@ class ProjectService:
                 workspace.remove(directory, paper_ids, self.runtime.cfg.index_db)
             else:
                 raise InvalidRequest(f"未知的项目文献操作：{action}")
-            return self.get(project_id)
+            return self.describe(directory)
 
     def scope(self, project_id: str | None, paper_ids: list[str]) -> list[str] | None:
         """Resolve a selection to paper ids.

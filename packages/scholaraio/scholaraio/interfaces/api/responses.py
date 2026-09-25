@@ -191,7 +191,7 @@ class ExportFile(CamelModel):
 
 
 class LiteratureProject(CamelModel):
-    id: str
+    id: str = Field(description="Stable across renames; every route also accepts the name.")
     name: str
     path: str = Field(description="Directory the agent works in.")
     paper_ids: list[str]

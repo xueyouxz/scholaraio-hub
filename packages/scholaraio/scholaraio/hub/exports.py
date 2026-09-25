@@ -60,7 +60,7 @@ class ExportService:
         suffix, content_type = FORMATS[fmt]
         stamp = datetime.now(timezone.utc).strftime("%Y%m%d")
         return {
-            "filename": f"{project_id or 'library'}-{stamp}{suffix}",
+            "filename": f"{self.projects.get(project_id)['name'] if project_id else 'library'}-{stamp}{suffix}",
             "contentType": content_type,
             "content": content,
         }

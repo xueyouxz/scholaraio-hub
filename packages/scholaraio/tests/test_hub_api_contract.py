@@ -106,15 +106,12 @@ def test_settings_check_names_what_it_checked(client):
     assert client.post("/settings/check", json={"target": "disk"}).status_code == 422
 
 
-# The Node server calls these itself rather than proxying them: startup health,
-# session scope and context, and project rename/archive (which also move the
-# project's sessions; see server/src/routes/projects.ts).
+# The Node server and the launcher call these themselves rather than proxying
+# them: health, and session scope and context.
 SERVER_ONLY = {
     ("GET", "/health"),
     ("POST", "/scope"),
     ("POST", "/context"),
-    ("POST", "/projects/{}/rename"),
-    ("DELETE", "/projects/{}"),
 }
 PROXY = Path(__file__).resolve().parents[2] / "server" / "src" / "routes" / "library.ts"
 

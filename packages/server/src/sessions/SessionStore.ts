@@ -142,19 +142,6 @@ export class SessionStore {
   }
 
   /**
-   * Point every session at a renamed project, or detach them from a removed
-   * one. Returns how many sessions changed.
-   */
-  async retargetProject(projectId: string, replacement?: string): Promise<number> {
-    const affected = [...this.records.values()].filter((record) => record.projectId === projectId);
-    for (const record of affected) {
-      record.projectId = replacement;
-      await this.save(record);
-    }
-    return affected.length;
-  }
-
-  /**
    * Write the record atomically. Writes of one session go out in order; each
    * caller hears how its own write went, and a failed write does not stop the
    * ones queued behind it.

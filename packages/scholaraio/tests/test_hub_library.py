@@ -270,17 +270,22 @@ def test_projects_can_be_renamed_and_archived(tmp_path):
     with hub_client(root) as client:
         library = client.app.state.library
         pid = ingest(library, source, "Paper.pdf")["paperId"]
-        client.post("/projects", json={"name": "review"})
+        project = client.post("/projects", json={"name": "review"}).json()
         client.post("/projects/review/papers", json={"paperIds": [pid], "action": "add"})
 
-        renamed = client.post("/projects/review/rename", json={"name": "survey"})
+        renamed = client.post(f"/projects/{project['id']}/rename", json={"name": "survey"})
         assert renamed.status_code == 200
+        # A rename keeps the id: everything that refers to the project still does.
+        assert renamed.json()["id"] == project["id"]
         assert renamed.json()["paperIds"] == [pid]
         assert client.get("/projects/review").status_code == 404
-        assert [p["id"] for p in client.get("/projects").json()["projects"]] == ["survey"]
+        assert client.get(f"/projects/{project['id']}").json()["name"] == "survey"
+        assert [p["name"] for p in client.get("/projects").json()["projects"]] == ["survey"]
 
-        archived = client.delete("/projects/survey")
+        archived = client.delete(f"/projects/{project['id']}")
         assert archived.status_code == 200
+        assert archived.json()["id"] == project["id"]
+        assert client.get(f"/projects/{project['id']}").status_code == 404
         assert client.get("/projects").json()["projects"] == []
         # Archived, not deleted: the agent's work is still on disk.
         assert Path(archived.json()["path"]).is_dir()
@@ -393,3 +398,24 @@ def test_a_paper_without_a_doi_cannot_be_refetched(tmp_path):
         response = client.post(f"/papers/{pid}/refetch")
         assert response.status_code == 400
         assert "DOI" in response.json()["error"]
+
+
+def test_a_project_from_before_ids_is_given_one_that_lasts(tmp_path):
+    from scholaraio.projects.workspace import create
+
+    root = tmp_path / "app"
+    with hub_client(root) as client:
+        # A project an older Hub made: a directory with a paper index and no id.
+        create(client.app.state.library.projects.root / "legacy")
+        listed = client.get("/projects").json()["projects"]
+        assert [p["name"] for p in listed] == ["legacy"]
+        project_id = listed[0]["id"]
+        assert client.get("/projects/legacy").json()["id"] == project_id
+    with hub_client(root) as client:
+        assert client.get(f"/projects/{project_id}").json()["name"] == "legacy"
+
+
+def test_a_project_cannot_be_named_like_an_id(tmp_path):
+    with hub_client(tmp_path / "app") as client:
+        response = client.post("/projects", json={"name": "3f2b7c1e-0000-4000-8000-000000000000"})
+        assert response.status_code == 400

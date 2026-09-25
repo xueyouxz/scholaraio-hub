@@ -458,12 +458,60 @@ export class SessionService {
    */
   async workingDirectory(session: string | SessionRecord): Promise<string> {
     const record = typeof session === "string" ? this.store.get(session) : session;
-    if (!record.projectId) return this.store.workspace(record);
-    const project = await this.library.json<LiteratureProject>(
-      `/projects/${encodeURIComponent(record.projectId)}`,
-    );
+    const project = record.projectId ? await this.project(record) : undefined;
+    if (!project) return this.store.workspace(record);
     if (!project.path) throw new Error("文献项目缺少目录信息，请更新文献服务。");
     return project.path;
+  }
+
+  /**
+   * The session's project as the library knows it now. The library renames and
+   * archives projects on its own; the session follows. A session that names its
+   * project by name (as sessions did before projects had ids) moves to the id,
+   * and one whose project is gone continues in its own workspace, like a session
+   * started without a project.
+   */
+  private async project(record: SessionRecord): Promise<LiteratureProject | undefined> {
+    const reference = record.projectId;
+    if (!reference) return undefined;
+    let project: LiteratureProject;
+    try {
+      project = await this.library.json<LiteratureProject>(
+        `/projects/${encodeURIComponent(reference)}`,
+      );
+    } catch (error) {
+      if (!(error instanceof LibraryRequestError && error.status === 404)) throw error;
+      log().info({ sessionId: record.id, projectId: reference }, "Project gone; session detached");
+      record.projectId = undefined;
+      await this.store.save(record);
+      return undefined;
+    }
+    if (project.id !== reference) {
+      record.projectId = project.id;
+      await this.store.save(record);
+    }
+    return project;
+  }
+
+  /**
+   * Bring every session up to the library's projects at once: sessions that
+   * name a project by name move to its id, those whose project is gone are
+   * detached. The server runs this once the library answers; `project` does
+   * the same for one session whenever it is used. Returns how many changed.
+   */
+  async reconcileProjects(): Promise<number> {
+    const { projects } = await this.library.json<{ projects: LiteratureProject[] }>("/projects");
+    const ids = new Set(projects.map((project) => project.id));
+    const byName = new Map(projects.map((project) => [project.name, project.id]));
+    let changed = 0;
+    for (const { id } of this.store.list()) {
+      const record = this.store.get(id);
+      if (!record.projectId || ids.has(record.projectId)) continue;
+      record.projectId = byName.get(record.projectId);
+      await this.store.save(record);
+      changed += 1;
+    }
+    return changed;
   }
 
   /**

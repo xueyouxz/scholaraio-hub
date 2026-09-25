@@ -2688,7 +2688,8 @@
       "LiteratureProject": {
         "properties": {
           "id": {
-            "type": "string"
+            "type": "string",
+            "description": "Stable across renames; every route also accepts the name."
           },
           "name": {
             "type": "string"

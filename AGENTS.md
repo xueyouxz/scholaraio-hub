@@ -14,7 +14,7 @@ index; the rules it points to live in `.claude/` and apply to every agent.
   `pnpm hub` (`src/cli/`).
 - `packages/shared` — types, Zod schemas, profile/port rules consumed by both apps.
 - `packages/scholaraio` — the Python library service the server runs as a sidecar
-  (`scholaraio/hub/`, `interfaces/api/`); the rest is upstream code (`UPSTREAM.md`).
+  (`scholaraio/hub/`, `interfaces/api/`); the rest is upstream code (see its `README.md`).
 - `e2e/` — Playwright tests · `scripts/` — the `hub.mjs` entry, CI and convention checks ·
   `docs/architecture.md` — architecture for humans · `.design/DESIGN.md` — UI source of truth.
 

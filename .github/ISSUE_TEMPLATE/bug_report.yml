@@ -49,8 +49,8 @@ body:
     attributes:
       label: Installation method
       options:
-        - Built from source (pnpm build + start)
-        - Built from source (pnpm dev)
+        - Production (pnpm build + pnpm start)
+        - Development (pnpm dev)
     validations:
       required: true
 
@@ -72,6 +72,13 @@ body:
   - type: input
     id: hub-version
     attributes:
-      label: scholaraio-hub version
-      description: Shown in the bottom-left of the UI or via `npx scholaraio-hub --version`
-      placeholder: "e.g. 0.1.0+abc1234"
+      label: scholaraio-hub commit
+      description: Run `git rev-parse --short HEAD` in your checkout
+      placeholder: "e.g. 8f27a33"
+
+  - type: textarea
+    id: doctor
+    attributes:
+      label: Environment check
+      description: Output of `pnpm hub doctor` (add `--production` for a production install)
+      render: text

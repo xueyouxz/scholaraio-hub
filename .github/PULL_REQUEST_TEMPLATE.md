@@ -9,11 +9,9 @@
 
 <!-- How did you verify this works? Check all that apply. -->
 
-- [ ] `pnpm lint` passes
-- [ ] `pnpm typecheck` passes
-- [ ] `pnpm test` passes
-- [ ] `pnpm test:e2e` passes (or N/A — explain why)
-- [ ] Tested manually in the browser
+- [ ] `pnpm ci:local` passes (lint, typecheck, Python, unit, server e2e, browser e2e)
+- [ ] Tested manually in the browser (or N/A — explain why)
+- [ ] New or changed `PORT` / `SCHOLARAIO_HUB_*` / other env vars are listed under Notes and in `.env.example`
 
 ## Screenshots
 

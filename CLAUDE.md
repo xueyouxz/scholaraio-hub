@@ -14,7 +14,7 @@ path-scoped rules live in `.claude/`.
 - `packages/scholaraio` — the Python library service the server runs as a sidecar
   (`scholaraio/hub/`, `interfaces/api/`); the rest is upstream code (`UPSTREAM.md`).
 - `e2e/` — Playwright tests · `scripts/` — the `hub.mjs` entry and CI helpers · `docs/` —
-  human technical docs · `plans/` — refactor plans with progress · `.design/DESIGN.md` —
+  human technical docs · `.design/DESIGN.md` —
   UI source of truth.
 
 ## Commands (run from repo root)

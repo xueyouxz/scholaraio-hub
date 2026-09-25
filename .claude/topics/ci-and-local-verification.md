@@ -18,7 +18,8 @@
 There is **no release/publish workflow**. The app is run from a source checkout
 (`pnpm build && pnpm start`); the server serves both the API and the built client from one
 process. No npm package (the server package is private), no container image. Every entry
-goes through `scripts/hub.mjs`; see [`plans/runtime-entry-consolidation.md`](../../plans/runtime-entry-consolidation.md).
+goes through `scripts/hub.mjs`; profiles and entries are described in the root
+[`README.md`](../../README.md).
 
 ## Working rule: verify locally, don't push-and-pray
 

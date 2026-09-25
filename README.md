@@ -66,9 +66,8 @@ Python 依赖由 `packages/scholaraio/uv.lock` 锁定。更新依赖后重新执
 3. 用关键词检索元数据和全文，点击结果阅读。PDF 支持页码跳转，全文支持片段定位，阅读位置自动保存。
 4. 从阅读器选择“询问本文”，或在文献库多选后提问；直接新建会话则检索全库。有效引用跳转至 Markdown 行号，不推断 PDF 坐标。
 5. 浏览器断开不会结束任务；刷新可恢复显示。停止按钮会中断服务端 CLI。切换 AI 工具需新建会话。
-6. 在新会话页可选择 Claude / Codex JSONL 历史文件导入；导入记录只读。
 
-默认以关键词检索提供上下文。保留的 ScholarAIO 向量检索源码可供后续增强，当前主流程不加载向量模型。标签笔记、回收站、引文插件、云同步和多人协作不在本轮范围内。
+默认以关键词检索提供上下文。语义检索是可选能力：在设置中安装运行时并为文献生成向量后启用。暂不支持标签笔记、回收站、引文插件、云同步和多人协作。
 
 ## 迁移旧文献
 
@@ -93,7 +92,7 @@ pnpm build
 REAL_HUB_TESTS=true REAL_HUB_PROVIDER=codex pnpm --filter @scholaraio-hub/server exec vitest run test/e2e/workbench-real.test.ts
 ```
 
-浏览器测试首次需 `pnpm exec playwright install chromium`。架构与兼容说明见 [docs/library-workbench.md](docs/library-workbench.md)，实施验收记录见 [plans/library-workbench-implementation.md](plans/library-workbench-implementation.md)。
+浏览器测试首次需 `pnpm exec playwright install chromium`。
 
 ## 来源与许可
 

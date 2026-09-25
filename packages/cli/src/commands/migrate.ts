@@ -1,6 +1,6 @@
 import { spawnSync } from "node:child_process";
-import { currentProfile } from "../runtime/profile.js";
-import { pythonRuntime, scholaraioSourceDir } from "../runtime/python.js";
+import { currentProfile } from "../profile.js";
+import { pythonRuntime, scholaraioSourceDir } from "../python.js";
 
 /** Move an old ScholarAIO library into this data directory: plan, apply or rollback. */
 export async function migrate(args: string[]): Promise<number> {

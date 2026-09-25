@@ -3,11 +3,14 @@ import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { serve } from "@hono/node-server";
+import { resolveLibraryPort } from "@scholaraio-hub/shared";
+// The launcher's own pieces: this fixture stands in for `pnpm start` with fake agents.
+import { uvSyncCommand } from "../../../cli/src/install.js";
+import { LibraryProcess } from "../../../cli/src/library-process.js";
+import { pythonRuntime } from "../../../cli/src/python.js";
 import { createApp } from "../../src/app.js";
+import { LibraryClient } from "../../src/lib/LibraryClient.js";
 import { claudeProvider, codexProvider } from "../../src/providers/index.js";
-import { uvSyncCommand } from "../../src/runtime/install.js";
-import { pythonRuntime } from "../../src/runtime/python.js";
-import { LibraryService } from "../../src/services/LibraryService.js";
 import { ServerSettingsService } from "../../src/services/ServerSettingsService.js";
 import { WorkbenchProvider } from "../helpers/WorkbenchProvider.js";
 
@@ -23,7 +26,13 @@ const dataDir = await mkdtemp(path.join(tmpdir(), "hub-browser-test-"));
 // Browser tests must not depend on Crossref, Semantic Scholar or OpenAlex:
 // imports keep what the file itself states and mark the identifiers as missing.
 process.env.SCHOLARAIO_HUB_NO_API = "1";
-const library = new LibraryService(dataDir);
+const port = Number(process.env.PORT);
+const library = new LibraryProcess({
+  dataDir,
+  host: "127.0.0.1",
+  port: resolveLibraryPort({ PORT: String(port) }),
+  hubPort: port,
+});
 let application: ReturnType<typeof createApp> | undefined;
 let server: ReturnType<typeof serve> | undefined;
 let closing = false;
@@ -32,7 +41,7 @@ async function close() {
   closing = true;
   server?.close();
   await application?.close();
-  await library.close();
+  await library.stop();
   await rm(dataDir, { recursive: true, force: true });
 }
 for (const signal of ["SIGINT", "SIGTERM"] as const)
@@ -62,14 +71,14 @@ try {
     scholaraioSkillsDir: skillsDir,
     serverSettingsService: settings,
     dataDir,
-    libraryService: library,
+    library: new LibraryClient(library.url),
     provider: new WorkbenchProvider(),
     frontendDistPath: path.resolve("../client/dist"),
   });
   await application.ready;
   server = serve({
     fetch: application.app.fetch,
-    port: Number(process.env.PORT),
+    port,
     hostname: "127.0.0.1",
   });
 } catch (error) {

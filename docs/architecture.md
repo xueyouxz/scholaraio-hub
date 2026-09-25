@@ -5,12 +5,15 @@
 
 ## 职责
 
-`packages/client` / `server` / `shared` 三个 TypeScript 包，加同仓库的 Python 包 `packages/scholaraio`。
+`packages/client` / `server` / `cli` / `shared` 四个 TypeScript 包，加同仓库的 Python 包 `packages/scholaraio`。
 
 - **client**：`app/` 是文献库、阅读器、会话、设置的导航外壳；`features/library` 负责导入、检索和阅读，
   `features/session` 负责会话显示与输入；`shared/components/Markdown.tsx` 统一 Streamdown 渲染。
 - **server/routes**：校验、响应、二进制文件流和订阅连接。只挂载 `/api/library`、`/api/sessions` 等应用接口。
-- **LibraryService**：启动 Python、就绪检查、内部令牌、HTTP 代理、关闭子进程。浏览器不能直接配置或访问 Python。
+- **启动器**（`packages/cli`）：解析 profile，先启动 Python 文献服务并等它就绪，再启动 server；负责两者的
+  重启与关闭。server 不启动、不重启、不配置 Python。
+- **LibraryClient**（`server/src/lib/`）：server 调用文献服务 API 的客户端（会话范围、上下文、项目目录），
+  地址来自启动器传入的 `LIBRARY_URL`。
 - **Python HubLibrary**（`scholaraio/hub/`）：文件、元数据、哈希去重、解析任务、索引和检索，复用上游
   stores 与 chunks/index 服务。业务代码与运行数据完全分离。分层见下节。
 - **SessionStore**：应用自己的会话 ID、关联文献、显示消息和私有的原生 ID，每个会话一个 JSON，原子写入。
@@ -68,12 +71,18 @@ PDF 原件先入库，再提取和索引。任务、逐项错误和重试信息�
 入口按 profile 解析数据根目录并注入各服务（规则见 README「入口与 profile」）。CLI 凭据和原生历史由各
 CLI 自己管理，不参与应用数据迁移。
 
-Node 管理数据根目录下 `runtime/python` 中的 uv 环境，只安装锁定的 hub 依赖；语义检索运行时按需另装。
-Python 绑定 loopback 动态端口，使用每次启动生成的内部令牌。setup、doctor、migrate 与启动共用同一配置模块。
+`pnpm hub setup` 在数据根目录下的 `runtime/python` 中建 uv 环境，只安装锁定的 hub 依赖；语义检索运行时
+由文献服务按需装进自己的环境（`POST /runtime/semantic`），装完以退出码 75 退出，启动器随即重启它。
+各能力对应的 extras 记在 `packages/scholaraio/runtime-capabilities.json`，setup 与文献服务共用。
+
+文献服务监听 profile 给定的端口（`LIBRARY_PORT`，默认 Hub 端口 + 1），与 Hub 同一套访问规则：Host 白名单、
+修改请求必带 `ScholarAIO-Hub` 头、CORS 只放行 Hub 页面的来源；不再有内部令牌。它自己写日志
+（生产环境另写 `<数据目录>/logs/library.log`）。setup、doctor、migrate 与启动共用启动器的 profile 模块。
 开发时使用专用的 `scholaraio-source` 导出条件，避免通用 `source` 条件误选第三方依赖的未编译源码。
 
-Node 给 Python 保留一条专用 stdin 管道并传入 `--watch-stdin`。热重载、进程退出或崩溃导致管道 EOF 时，
-Python 主动关闭；清理超时则强制退出，未完成的导入在下次启动时标记为可重试。单独启动 Python 时默认不监听 stdin。
+启动器给 Python 保留一条专用 stdin 管道并传入 `--watch-stdin`。启动器退出或被杀导致管道 EOF 时，
+Python 主动关闭；清理超时则强制退出，未完成的导入在下次启动时标记为可重试。server 热重载不影响 Python。
+Python 意外退出时启动器重启它（5 分钟内至多 3 次）。单独启动 Python 时默认不监听 stdin。
 
 ## CLI 集成要点
 

@@ -63,8 +63,15 @@ hand-edit. When the generated protocol changes (or the expected Codex CLI versio
 audit the dependent provider code (`src/providers/codex/`) and its
 tests in the same change.
 
+## The Library Service Is Not the Server's
+
+The launcher (`packages/cli`) starts, restarts and stops the Python library service; the
+server only calls its API through `src/lib/LibraryClient.ts` at `LIBRARY_URL`. Do not add
+code here that spawns Python, reads its runtime layout or restarts it.
+
 ## Configuration
 
 Before adding a new environment variable, review `src/config.ts` and `src/env.ts`, and
-surface user-facing vars in `.env.example`. The profile decides the port
+surface user-facing vars in `.env.example`. The launcher sets the instance's variables
+(data directory, ports, `LIBRARY_URL`); `loadConfig` refuses to start without them. The profile decides the port
 (`packages/shared/src/ports.ts`, `PORT` overrides) — do not hardcode port numbers.

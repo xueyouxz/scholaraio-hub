@@ -1,10 +1,15 @@
 import type { HttpBindings } from "@hono/node-server";
-import { type ProviderName, resolveProfileName } from "@scholaraio-hub/shared";
+import type { ProviderName } from "@scholaraio-hub/shared";
 import { Hono } from "hono";
 import { HTTPException } from "hono/http-exception";
 import type { ContentfulStatusCode } from "hono/utils/http-status";
 import { z } from "zod";
 import { createStaticRoutes } from "./frontend/static.js";
+import {
+  type LibraryClient,
+  LibraryRequestError,
+  LibraryUnavailableError,
+} from "./lib/LibraryClient.js";
 import { loggerFor } from "./logging/logger.js";
 import { hostCheck, parseAllowedHosts, requireCsrfHeader } from "./middleware/security.js";
 import { claudeProvider } from "./providers/claude/ClaudeProvider.js";
@@ -15,7 +20,6 @@ import { createProvidersRoutes } from "./routes/providers.js";
 import { createSessionRoutes } from "./routes/sessions.js";
 import { createSettingsRoutes } from "./routes/settings.js";
 import { createSkillsRoutes } from "./routes/skills.js";
-import { LibraryRequestError, LibraryService } from "./services/LibraryService.js";
 import { ProviderUsageLimitService } from "./services/ProviderUsageLimitService.js";
 import type { ServerSettingsService } from "./services/ServerSettingsService.js";
 import { SessionService } from "./sessions/SessionService.js";
@@ -31,8 +35,8 @@ export interface AppOptions {
   dataDir: string;
   /** Agent provider used when a session does not name one (defaults to Claude) */
   provider?: AgentProvider;
-  /** The caller's library service, which the caller also closes; otherwise the app runs its own. */
-  libraryService?: LibraryService;
+  /** The library service's client; the launcher runs the service itself. */
+  library: LibraryClient;
   idleTimeoutMs?: number;
   serverSettingsService?: ServerSettingsService;
   enabledProviders?: ProviderName[];
@@ -40,7 +44,7 @@ export interface AppOptions {
   scholaraioSkillsDir?: string;
   /** `ALLOWED_HOSTS`: extra hostnames the API answers besides loopback, or "*". */
   allowedHosts?: string;
-  /** The profile the server was started with; see `resolveProfile`. */
+  /** The profile the launcher started this server with. */
   profile?: string;
 }
 
@@ -67,6 +71,7 @@ function statusFor(error: Error): ContentfulStatusCode {
   // The library's own client errors pass through; its failures are a bad gateway.
   if (error instanceof LibraryRequestError)
     return (error.status < 500 ? error.status : 502) as ContentfulStatusCode;
+  if (error instanceof LibraryUnavailableError) return 503;
   return 500;
 }
 
@@ -74,7 +79,7 @@ export function createApp(options: AppOptions) {
   const app = new Hono<{ Bindings: HttpBindings }>();
   const { dataDir } = options;
   const store = new SessionStore(dataDir);
-  const library = options.libraryService ?? new LibraryService(dataDir);
+  const { library } = options;
   const usage = new ProviderUsageLimitService();
   const skillsDir = options.scholaraioSkillsDir ?? skillsDirectory(dataDir);
   const sessions = new SessionService(store, library, {
@@ -102,12 +107,8 @@ export function createApp(options: AppOptions) {
       enabledProviders: options.enabledProviders,
     }),
   );
-  app.get("/api/status", (c) =>
-    c.json({
-      dataDir,
-      profile: options.profile ?? resolveProfileName(process.env),
-      library: library.available,
-    }),
+  app.get("/api/status", async (c) =>
+    c.json({ dataDir, profile: options.profile, library: await library.available() }),
   );
   if (options.serverSettingsService)
     app.route(
@@ -131,7 +132,6 @@ export function createApp(options: AppOptions) {
     app.route("/", createStaticRoutes({ distPath: options.frontendDistPath }));
   const close = async () => {
     await sessions.close();
-    if (!options.libraryService) await library.close();
   };
   return { app, sessions, ready, close };
 }

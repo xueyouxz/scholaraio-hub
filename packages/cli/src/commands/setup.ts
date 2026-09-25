@@ -1,7 +1,7 @@
 import { spawnSync } from "node:child_process";
 import { mkdirSync } from "node:fs";
-import { UV_MISSING_HINT, planRuntimeSync } from "../runtime/install.js";
-import { currentProfile } from "../runtime/profile.js";
+import { UV_MISSING_HINT, planRuntimeSync } from "../install.js";
+import { currentProfile } from "../profile.js";
 
 /** Install or update the data directory's Python runtime, keeping its capabilities. */
 export async function setup(): Promise<number> {

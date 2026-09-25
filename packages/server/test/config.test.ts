@@ -1,48 +1,41 @@
-import * as os from "node:os";
-import * as path from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { loadConfig } from "../src/config.js";
 
-describe("application data configuration", () => {
-  it("isolates tests from profile and home data", async () => {
-    vi.stubEnv("NODE_ENV", "test");
-    vi.stubEnv("SCHOLARAIO_HUB_PROFILE", "production");
-    const { currentProfile } = await import("../src/runtime/profile.js");
-    expect(currentProfile().dataDir).toContain("scholaraio-hub-test-");
-    expect(currentProfile().dataDir).not.toContain(os.homedir());
-  });
-  afterEach(() => {
-    vi.unstubAllEnvs();
-    vi.resetModules();
+/** What the launcher sets for every server it starts. */
+function launched(): void {
+  vi.stubEnv("SCHOLARAIO_HUB_DATA_DIR", "/srv/hub");
+  vi.stubEnv("PORT", "4100");
+  vi.stubEnv("LIBRARY_URL", "http://127.0.0.1:4101");
+}
+
+describe("loadConfig", () => {
+  afterEach(() => vi.unstubAllEnvs());
+
+  it("takes the instance from what the launcher set", () => {
+    launched();
+    vi.stubEnv("SCHOLARAIO_HUB_PROFILE", "demo");
+    vi.stubEnv("SCHOLARAIO_CONFIG", "/srv/hub/config.yaml");
+    const config = loadConfig();
+    expect(config).toMatchObject({
+      profile: "demo",
+      dataDir: "/srv/hub",
+      port: 4100,
+      libraryUrl: "http://127.0.0.1:4101",
+      skillsDir: "/srv/hub/skills",
+      agentLibrary: { configFile: "/srv/hub/config.yaml" },
+    });
+    expect(Object.isFrozen(config)).toBe(true);
   });
 
-  it("keeps CLI directories out of application configuration", async () => {
-    const { loadConfig } = await import("../src/config.js");
+  it("refuses to start without the launcher's variables", () => {
+    launched();
+    vi.stubEnv("LIBRARY_URL", undefined);
+    expect(() => loadConfig()).toThrow("LIBRARY_URL");
+  });
+
+  it("keeps CLI directories out of application configuration", () => {
+    launched();
     expect(loadConfig()).not.toHaveProperty("codexSessionsDir");
     expect(loadConfig()).not.toHaveProperty("claudeProjectsDir");
-  });
-
-  it("uses ~/.scholaraio-hub-dev outside production by default", async () => {
-    vi.stubEnv("NODE_ENV", "development");
-
-    const { currentProfile } = await import("../src/runtime/profile.js");
-
-    expect(currentProfile().dataDir).toBe(path.join(os.homedir(), ".scholaraio-hub-dev"));
-  });
-
-  it("uses ~/.scholaraio-hub in production", async () => {
-    vi.stubEnv("NODE_ENV", "production");
-
-    const { currentProfile } = await import("../src/runtime/profile.js");
-
-    expect(currentProfile().dataDir).toBe(path.join(os.homedir(), ".scholaraio-hub"));
-  });
-
-  it("uses profile-specific data directories when SCHOLARAIO_HUB_PROFILE is set", async () => {
-    vi.stubEnv("NODE_ENV", "development");
-    vi.stubEnv("SCHOLARAIO_HUB_PROFILE", "staging");
-
-    const { currentProfile } = await import("../src/runtime/profile.js");
-
-    expect(currentProfile().dataDir).toBe(path.join(os.homedir(), ".scholaraio-hub-staging"));
   });
 });

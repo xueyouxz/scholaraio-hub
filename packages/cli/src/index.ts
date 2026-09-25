@@ -1,21 +1,19 @@
 /**
  * The Hub's command line. `scripts/hub.mjs` runs it and chooses the profile:
  *
- *   pnpm dev
+ *   pnpm dev | pnpm start
  *   pnpm hub setup | doctor | migrate <plan|apply|rollback> ... | skills-sync
  *     [--production | --profile <name>]
- *
- * `pnpm start` runs the built server directly and does not come through here.
  */
 type Command = (args: string[]) => Promise<number>;
 
-// Loaded on demand: doctor pulls in the provider modules, dev needs none of them.
 const commands: Record<string, () => Promise<Command>> = {
-  dev: async () => (await import("./dev.js")).dev,
-  setup: async () => (await import("./setup.js")).setup,
-  doctor: async () => (await import("./doctor.js")).doctor,
-  migrate: async () => (await import("./migrate.js")).migrate,
-  "skills-sync": async () => (await import("./skills-sync.js")).skillsSync,
+  dev: async () => (await import("./commands/dev.js")).dev,
+  start: async () => (await import("./commands/start.js")).start,
+  setup: async () => (await import("./commands/setup.js")).setup,
+  doctor: async () => (await import("./commands/doctor.js")).doctor,
+  migrate: async () => (await import("./commands/migrate.js")).migrate,
+  "skills-sync": async () => (await import("./commands/skills-sync.js")).skillsSync,
 };
 
 const [name, ...args] = process.argv.slice(2);

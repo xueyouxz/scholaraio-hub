@@ -3,11 +3,12 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { createApp } from "../../src/app.js";
-import { LibraryService } from "../../src/services/LibraryService.js";
+import { LibraryClient } from "../../src/lib/LibraryClient.js";
 import { SessionStore } from "../../src/sessions/SessionStore.js";
 import { WorkbenchProvider } from "../helpers/WorkbenchProvider.js";
+import { TEST_LIBRARY_URL } from "../helpers/library.js";
 
-class TestLibrary extends LibraryService {
+class TestLibrary extends LibraryClient {
   override async request() {
     return Response.json({
       citations: [
@@ -42,7 +43,7 @@ describe.each(["claude", "codex"] as const)("%s application sessions", (name) =>
     server = createApp({
       dataDir: root,
       provider,
-      libraryService: new TestLibrary(root),
+      library: new TestLibrary(TEST_LIBRARY_URL),
       scholaraioSkillsDir: join(root, "skills"),
     });
     await server.ready;
@@ -103,7 +104,7 @@ describe.each(["claude", "codex"] as const)("%s application sessions", (name) =>
     server = createApp({
       dataDir: root,
       provider,
-      libraryService: new TestLibrary(root),
+      library: new TestLibrary(TEST_LIBRARY_URL),
       scholaraioSkillsDir: join(root, "skills"),
     });
     await server.ready;
@@ -157,7 +158,7 @@ describe.each(["claude", "codex"] as const)("%s application sessions", (name) =>
     server = createApp({
       dataDir: root,
       provider,
-      libraryService: new TestLibrary(root),
+      library: new TestLibrary(TEST_LIBRARY_URL),
       scholaraioSkillsDir: join(root, "skills"),
     });
     await server.ready;
@@ -429,7 +430,7 @@ describe.each(["claude", "codex"] as const)("%s application sessions", (name) =>
     server = createApp({
       dataDir: root,
       provider,
-      libraryService: new TestLibrary(root),
+      library: new TestLibrary(TEST_LIBRARY_URL),
       scholaraioSkillsDir: join(root, "skills"),
     });
     await server.ready;
@@ -460,7 +461,7 @@ describe.each(["claude", "codex"] as const)("%s application sessions", (name) =>
     server = createApp({
       dataDir: root,
       provider,
-      libraryService: new TestLibrary(root),
+      library: new TestLibrary(TEST_LIBRARY_URL),
       scholaraioSkillsDir: join(root, "skills"),
     });
     await server.ready;
@@ -564,7 +565,7 @@ describe.each(["claude", "codex"] as const)("%s application sessions", (name) =>
     server = createApp({
       dataDir: root,
       provider,
-      libraryService: new TestLibrary(root),
+      library: new TestLibrary(TEST_LIBRARY_URL),
       scholaraioSkillsDir: join(root, "skills"),
     });
     await server.ready;
@@ -677,7 +678,7 @@ describe("workbench project and settings contract", () => {
     const projectDir = join(root, "projects", "p1");
     await mkdir(projectDir, { recursive: true });
     await writeFile(join(projectDir, "notes.md"), "# 项目笔记");
-    class ProjectLibrary extends LibraryService {
+    class ProjectLibrary extends LibraryClient {
       override async request(resource: string) {
         if (resource === "/projects/p1")
           return Response.json({ id: "p1", name: "P1", path: projectDir, paperIds: [] });
@@ -687,7 +688,7 @@ describe("workbench project and settings contract", () => {
     const server = createApp({
       dataDir: root,
       provider: new WorkbenchProvider("claude"),
-      libraryService: new ProjectLibrary(root),
+      library: new ProjectLibrary(TEST_LIBRARY_URL),
     });
     try {
       await server.ready;
@@ -713,7 +714,7 @@ describe("workbench project and settings contract", () => {
     const { ServerSettingsService } = await import("../../src/services/ServerSettingsService.js");
     const root = await mkdtemp(join(tmpdir(), "hub-project-contract-"));
     const calls: { resource: string; input: Record<string, unknown> }[] = [];
-    class ScopedLibrary extends LibraryService {
+    class ScopedLibrary extends LibraryClient {
       override async request(resource: string, init?: RequestInit) {
         const input = JSON.parse(String(init?.body ?? "{}"));
         calls.push({ resource, input });
@@ -732,7 +733,7 @@ describe("workbench project and settings contract", () => {
     const server = createApp({
       dataDir: root,
       provider: new WorkbenchProvider("codex"),
-      libraryService: new ScopedLibrary(root),
+      library: new ScopedLibrary(TEST_LIBRARY_URL),
       serverSettingsService: settings,
     });
     try {

@@ -2,7 +2,7 @@ import { mkdtempSync } from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 import { resolveLibraryPort, resolvePort, resolveProfileName } from "@scholaraio-hub/shared";
-import { loadRuntimeEnv } from "../env.js";
+import { loadEnvFiles } from "./env-files.js";
 
 type Env = Record<string, string | undefined>;
 
@@ -48,8 +48,8 @@ export function resolveProfile(env: Env): Profile {
   };
 }
 
-/** The profile of this process, once the env files have filled `process.env`. */
+/** The profile of this process, after the env files have filled `process.env`. */
 export function currentProfile(): Profile {
-  loadRuntimeEnv();
+  loadEnvFiles();
   return resolveProfile(process.env);
 }

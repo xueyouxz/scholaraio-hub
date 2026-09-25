@@ -3,6 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { createApp } from "../src/app.js";
+import { offlineLibrary } from "./helpers/library.js";
 import { createScriptedProvider } from "./helpers/scriptedProvider.js";
 
 describe("App frontend integration", () => {
@@ -32,6 +33,7 @@ describe("App frontend integration", () => {
       dataDir: distDir,
       frontendDistPath: distDir,
       provider: createScriptedProvider(),
+      library: offlineLibrary(),
     });
 
     apps.push(server);
@@ -52,6 +54,7 @@ describe("App frontend integration", () => {
       dataDir: distDir,
       frontendDistPath: distDir,
       provider: createScriptedProvider(),
+      library: offlineLibrary(),
     });
     apps.push(server);
 

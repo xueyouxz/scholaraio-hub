@@ -4,11 +4,12 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { createApp } from "../../src/app.js";
+import { LibraryClient } from "../../src/lib/LibraryClient.js";
 import { ClaudeProvider } from "../../src/providers/claude/ClaudeProvider.js";
 import { CodexProvider } from "../../src/providers/codex/CodexProvider.js";
-import { LibraryService } from "../../src/services/LibraryService.js";
+import { TEST_LIBRARY_URL } from "../helpers/library.js";
 
-class EmptyLibrary extends LibraryService {
+class EmptyLibrary extends LibraryClient {
   override async request() {
     return Response.json({ citations: [], truncated: false });
   }
@@ -21,7 +22,11 @@ describe.skipIf(!enabled)("real application sessions", () => {
       async () => {
         const root = await mkdtemp(join(tmpdir(), "hub-real-cli-"));
         const provider = name === "claude" ? new ClaudeProvider() : new CodexProvider();
-        let server = createApp({ dataDir: root, provider, libraryService: new EmptyLibrary(root) });
+        let server = createApp({
+          dataDir: root,
+          provider,
+          library: new EmptyLibrary(TEST_LIBRARY_URL),
+        });
         const token = `hub-${randomUUID().slice(0, 8)}`;
         try {
           await server.ready;
@@ -52,7 +57,11 @@ describe.skipIf(!enabled)("real application sessions", () => {
             token,
           );
           await server.close();
-          server = createApp({ dataDir: root, provider, libraryService: new EmptyLibrary(root) });
+          server = createApp({
+            dataDir: root,
+            provider,
+            library: new EmptyLibrary(TEST_LIBRARY_URL),
+          });
           await server.ready;
           expect(await turn("不要调用工具，只回复上一轮我要求记住的口令。")).toContain(token);
           expect(server.sessions.detail(record.id).messages).toHaveLength(4);

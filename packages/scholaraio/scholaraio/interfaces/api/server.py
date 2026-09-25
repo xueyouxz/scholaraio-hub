@@ -119,6 +119,10 @@ def main(argv: list[str] | None = None) -> None:
     _log.info("Library service on http://%s:%d", args.host, args.port)
     try:
         server.run(sockets=[sock])
+    except KeyboardInterrupt:
+        # Ctrl+C reaches the whole terminal group: uvicorn has already shut down
+        # gracefully and only re-raises the signal. That is a normal stop.
+        pass
     finally:
         stopped.set()
         sock.close()

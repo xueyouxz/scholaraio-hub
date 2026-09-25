@@ -1,6 +1,6 @@
 import { Hono } from "hono";
+import type { LibraryClient } from "../lib/LibraryClient.js";
 import { loggerFor } from "../logging/logger.js";
-import type { LibraryService } from "../services/LibraryService.js";
 
 /**
  * The upstream body, except that a browser leaving mid-stream (a page change
@@ -31,7 +31,7 @@ function endsQuietly(body: ReadableStream<Uint8Array>, signal: AbortSignal) {
  * Only what the client requests is listed. Renaming and archiving a project go
  * through routes/projects.ts, which also moves the project's sessions.
  */
-export function createLibraryRoutes(service: LibraryService) {
+export function createLibraryRoutes(service: LibraryClient) {
   const routes = new Hono();
   const resources: ReadonlyArray<readonly ["GET" | "POST" | "PATCH" | "PUT" | "DELETE", string]> = [
     ["GET", "/analytics"],

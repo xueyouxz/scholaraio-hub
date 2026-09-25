@@ -1,0 +1,19 @@
+{
+  "name": "@scholaraio-hub/cli",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "The Hub's launcher and commands: starts the library service and the server, sets up the Python runtime.",
+  "scripts": {
+    "typecheck": "tsc -p tsconfig.json --pretty false",
+    "test": "vitest run --config vitest.config.ts"
+  },
+  "dependencies": {
+    "@scholaraio-hub/shared": "workspace:*",
+    "tsx": "^4.19.2"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.2",
+    "vitest": "^2.1.8"
+  }
+}

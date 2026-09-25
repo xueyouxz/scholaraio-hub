@@ -3,18 +3,16 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { createApp } from "../../src/app.js";
-import { LibraryService } from "../../src/services/LibraryService.js";
+import { LibraryClient } from "../../src/lib/LibraryClient.js";
 import { WorkbenchProvider } from "../helpers/WorkbenchProvider.js";
+import { TEST_LIBRARY_URL } from "../helpers/library.js";
 
 const headers = { "Content-Type": "application/json", "ScholarAIO-Hub": "true" };
 
 /** A library whose project "review" is a real directory on disk. */
-class ProjectLibrary extends LibraryService {
-  constructor(
-    dataDir: string,
-    readonly projectPath: string,
-  ) {
-    super(dataDir);
+class ProjectLibrary extends LibraryClient {
+  constructor(readonly projectPath: string) {
+    super(TEST_LIBRARY_URL);
   }
   override async request(resource: string) {
     if (resource.startsWith("/projects/"))
@@ -44,7 +42,7 @@ describe("sessions in a literature project", () => {
     server = createApp({
       dataDir: root,
       provider,
-      libraryService: new ProjectLibrary(root, projectPath),
+      library: new ProjectLibrary(projectPath),
     });
     await server.ready;
   });

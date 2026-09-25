@@ -1,7 +1,7 @@
 import * as os from "node:os";
 import * as path from "node:path";
-import { describe, expect, it } from "vitest";
-import { resolveProfile } from "../../src/runtime/profile.js";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { currentProfile, resolveProfile } from "../src/profile.js";
 
 describe("resolveProfile", () => {
   it("runs development against the dev data directory and port", () => {
@@ -41,5 +41,23 @@ describe("resolveProfile", () => {
     expect(
       resolveProfile({ SCHOLARAIO_HUB_DATA_DIR: "/srv/hub", PORT: "4100", NODE_ENV: "production" }),
     ).toMatchObject({ dataDir: "/srv/hub", port: 4100 });
+  });
+});
+
+describe("currentProfile", () => {
+  afterEach(() => vi.unstubAllEnvs());
+
+  it("isolates tests from profile and home data", () => {
+    vi.stubEnv("NODE_ENV", "test");
+    vi.stubEnv("SCHOLARAIO_HUB_PROFILE", "production");
+    expect(currentProfile().dataDir).toContain("scholaraio-hub-test-");
+    expect(currentProfile().dataDir).not.toContain(os.homedir());
+  });
+
+  it("uses a profile-specific data directory when SCHOLARAIO_HUB_PROFILE is set", () => {
+    vi.stubEnv("NODE_ENV", "development");
+    vi.stubEnv("SCHOLARAIO_HUB_PROFILE", "staging");
+    vi.stubEnv("SCHOLARAIO_HUB_DATA_DIR", "");
+    expect(currentProfile().dataDir).toBe(path.join(os.homedir(), ".scholaraio-hub-staging"));
   });
 });

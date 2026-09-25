@@ -1,7 +1,7 @@
 import type { ArchivedProject, LiteratureProject } from "@scholaraio-hub/shared";
 import { Hono } from "hono";
 import { z } from "zod";
-import type { LibraryService } from "../services/LibraryService.js";
+import type { LibraryClient } from "../lib/LibraryClient.js";
 import type { SessionStore } from "../sessions/SessionStore.js";
 import { validate } from "./validate.js";
 
@@ -14,7 +14,7 @@ const RenameSchema = z.object({
  * project also decides where its sessions run next, and sessions belong to this
  * server.
  */
-export function createProjectRoutes(service: LibraryService, store: SessionStore) {
+export function createProjectRoutes(service: LibraryClient, store: SessionStore) {
   const routes = new Hono();
 
   routes.post("/:id/rename", validate("json", RenameSchema), async (c) => {

@@ -3,14 +3,18 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { createApp } from "../../src/app.js";
-import { LibraryService } from "../../src/services/LibraryService.js";
+import { LibraryClient } from "../../src/lib/LibraryClient.js";
 import { WorkbenchProvider } from "../helpers/WorkbenchProvider.js";
+import { TEST_LIBRARY_URL } from "../helpers/library.js";
 
 const headers = { "Content-Type": "application/json", "ScholarAIO-Hub": "true" };
 
 /** Records what the library service was asked to do. */
-class RecordingLibrary extends LibraryService {
+class RecordingLibrary extends LibraryClient {
   readonly calls: string[] = [];
+  constructor(readonly dataDir: string) {
+    super(TEST_LIBRARY_URL);
+  }
   override async request(resource: string, init: RequestInit = {}) {
     this.calls.push(`${init.method ?? "GET"} ${resource}`);
     if (resource.includes("/rename"))
@@ -39,7 +43,7 @@ describe("project routes", () => {
     server = createApp({
       dataDir: root,
       provider: new WorkbenchProvider(),
-      libraryService: library,
+      library: library,
     });
     await server.ready;
   });

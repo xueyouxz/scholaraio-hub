@@ -21,10 +21,10 @@ import {
 } from "@scholaraio-hub/shared";
 import { type UIMessageChunk, readUIMessageStream } from "ai";
 import type { z } from "zod";
+import { type LibraryClient, LibraryRequestError } from "../lib/LibraryClient.js";
 import { loggerFor } from "../logging/logger.js";
 import type { AgentProvider } from "../providers/types.js";
 import type { PermissionMode } from "../providers/types.js";
-import { LibraryRequestError, type LibraryService } from "../services/LibraryService.js";
 import { researchSlashCommands } from "../skills/scholaraioSkills.js";
 import { Supervisor } from "../supervisor/Supervisor.js";
 import type { ProcessEvent } from "../supervisor/types.js";
@@ -108,7 +108,7 @@ export class SessionService {
   readonly attachments: SessionAttachments;
   constructor(
     readonly store: SessionStore,
-    private library: LibraryService,
+    private library: LibraryClient,
     options: SessionServiceOptions,
   ) {
     this.attachments = new SessionAttachments(store);

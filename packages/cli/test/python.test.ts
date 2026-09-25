@@ -1,6 +1,6 @@
 import path from "node:path";
 import { describe, expect, it } from "vitest";
-import { pythonRuntime } from "../../src/runtime/python.js";
+import { pythonRuntime } from "../src/python.js";
 
 describe("pythonRuntime", () => {
   it("keeps the environment under the data directory", () => {

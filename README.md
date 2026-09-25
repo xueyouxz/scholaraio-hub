@@ -15,7 +15,7 @@ pnpm build
 pnpm start
 ```
 
-打开 http://localhost:3400 。Node 同时提供页面和 API，并在后台管理只监听本机的 Python 文献服务；停止 Node 时它会一起关闭。
+打开 http://localhost:3400 。启动器同时启动 Node 服务（页面和 API）与只监听本机的 Python 文献服务；Ctrl+C 时两者一起关闭。
 
 检查运行环境（数据目录、端口、Python 依赖、CLI 是否可用及登录状态）：
 
@@ -39,14 +39,14 @@ pnpm hub doctor --production
 
 ## 数据与配置
 
-| profile | 数据目录 | 默认端口 | 用于 |
+| profile | 数据目录 | 默认端口（Hub / 文献服务） | 用于 |
 |---|---|---|---|
-| `production` | `~/.scholaraio-hub` | 3400 | `pnpm start` |
-| `dev` | `~/.scholaraio-hub-dev` | 3500 | `pnpm dev`、`pnpm hub …` |
-| `test` | 临时目录 | 3600 | 单元与浏览器测试 |
-| 其他名字 | `~/.scholaraio-hub-<名字>` | 3500 | 显式指定 |
+| `production` | `~/.scholaraio-hub` | 3400 / 3401 | `pnpm start` |
+| `dev` | `~/.scholaraio-hub-dev` | 3500 / 3501 | `pnpm dev`、`pnpm hub …` |
+| `test` | 临时目录 | 3600 / 3601 | 单元与浏览器测试 |
+| 其他名字 | `~/.scholaraio-hub-<名字>` | 3500 / 3501 | 显式指定 |
 
-任一命令加 `--production` 或 `--profile <名字>` 切换 profile，也可以设 `SCHOLARAIO_HUB_PROFILE`。`PORT` 和 `SCHOLARAIO_HUB_DATA_DIR` 覆盖默认值。其余配置项见 [.env.example](.env.example)。
+任一命令加 `--production` 或 `--profile <名字>` 切换 profile，也可以设 `SCHOLARAIO_HUB_PROFILE`。`PORT`、`LIBRARY_PORT`（默认 `PORT` + 1）和 `SCHOLARAIO_HUB_DATA_DIR` 覆盖默认值。其余配置项见 [.env.example](.env.example)。
 
 数据目录里有：`data/`（文献与索引）、`workspace/`、`sessions/`（会话）、设置、日志、`backups/`（迁移备份）和 `runtime/`（Python 环境及已装能力清单）。CLI 的登录凭据和原生会话记录仍在各 CLI 自己的目录，应用不会扫描它们。
 

@@ -2,8 +2,8 @@ import { chmodSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { planRuntimeSync, runtimeCapabilities, uvSyncCommand } from "../../src/runtime/install.js";
-import { pythonRuntime } from "../../src/runtime/python.js";
+import { planRuntimeSync, runtimeCapabilities, uvSyncCommand } from "../src/install.js";
+import { pythonRuntime } from "../src/python.js";
 
 function dataDir(manifest?: string): string {
   const root = mkdtempSync(path.join(tmpdir(), "hub-runtime-install-"));

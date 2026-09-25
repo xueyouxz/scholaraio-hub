@@ -1,8 +1,10 @@
 # scholaraio (ScholarAIO Hub library service)
 
-The Python library service that ScholarAIO Hub runs as a sidecar. The Hub's Node server
-installs it into the data directory's `runtime/python` with uv, starts it on a loopback
-port with a per-launch token, and proxies `/api/library` to it; nothing else talks to it.
+The Python library service of ScholarAIO Hub. `pnpm hub setup` installs it into the data
+directory's `runtime/python` with uv; the Hub's launcher (`packages/cli`) starts it beside
+the Node server on the profile's library port (`LIBRARY_PORT`, the Hub's port + 1). It
+admits only this machine's host names, the Hub's page (CORS) and mutating requests that
+carry the `ScholarAIO-Hub` header.
 How to install and run the Hub: the [root README](../../README.md).
 
 ## What is ours and what is upstream

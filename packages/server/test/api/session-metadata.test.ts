@@ -3,12 +3,13 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { createApp } from "../../src/app.js";
+import { LibraryClient } from "../../src/lib/LibraryClient.js";
 import { MessageQueue } from "../../src/providers/MessageQueue.js";
 import type { AgentEvent } from "../../src/providers/events.js";
-import { LibraryService } from "../../src/services/LibraryService.js";
+import { TEST_LIBRARY_URL } from "../helpers/library.js";
 import { providerFromSessionFactory } from "../helpers/scriptedProvider.js";
 
-class NoLibrary extends LibraryService {
+class NoLibrary extends LibraryClient {
   override async request() {
     return Response.json({ citations: [], truncated: false });
   }
@@ -39,7 +40,7 @@ describe("assistant turn metadata", () => {
       }
       return { events: events(), queue, abort: () => queue.close() };
     });
-    server = createApp({ dataDir: root, provider, libraryService: new NoLibrary(root) });
+    server = createApp({ dataDir: root, provider, library: new NoLibrary(TEST_LIBRARY_URL) });
     await server.ready;
   });
 

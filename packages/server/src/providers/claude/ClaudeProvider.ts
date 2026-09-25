@@ -22,6 +22,7 @@ import {
   type SessionContextUsage,
   type SlashCommand,
 } from "@scholaraio-hub/shared";
+import { loggerFor } from "../../logging/logger.js";
 import { outboundFetch } from "../../utils/outboundFetch.js";
 import { withTimeout } from "../../utils/timeout.js";
 import { MessageQueue, describeAttachments, isInlineImage } from "../MessageQueue.js";
@@ -43,6 +44,7 @@ import { ClaudeEventAdapter } from "./ClaudeEventAdapter.js";
 import type { SDKMessage } from "./sdk-message.js";
 
 const execFileAsync = promisify(execFile);
+const log = () => loggerFor("claude-provider");
 
 /** A user message as Claude Code sends one: text naming every file by path, images also inline. */
 export async function toClaudeUserMessage(message: UserMessage): Promise<SDKUserMessage> {
@@ -60,7 +62,10 @@ export async function toClaudeUserMessage(message: UserMessage): Promise<SDKUser
   return {
     type: "user",
     uuid: message.uuid, // The SDK keeps the id we recorded the message under.
-    message: { role: "user", content: images.length ? [{ type: "text", text }, ...images] : text },
+    message: {
+      role: "user",
+      content: images.length ? [{ type: "text", text }, ...images] : text,
+    },
   } as SDKUserMessage;
 }
 
@@ -225,11 +230,12 @@ function isUserPrompt(message: { type: string; message: unknown }): boolean {
 }
 const commandCache = new Map<string, { commands: SlashCommand[]; expiresAt: number }>();
 
-/** Cached models from SDK probe */
-let cachedModels: ModelInfo[] | null = null;
-
-/** Promise for in-flight probe (to avoid duplicate probes) */
-let probePromise: Promise<ModelInfo[]> | null = null;
+/** How long a login check stands: each one runs the CLI twice. */
+const AUTH_STATUS_TTL_MS = 30_000;
+/** How long the probed model list stands; a CLI update or new login can change it. */
+const MODEL_CACHE_TTL_MS = 60 * 60 * 1000;
+/** After a failed probe, how long to offer no models before probing again (each costs up to 15s). */
+const PROBE_RETRY_MS = 60_000;
 
 /**
  * Claude provider implementation using @anthropic-ai/claude-agent-sdk.
@@ -240,6 +246,12 @@ let probePromise: Promise<ModelInfo[]> | null = null;
  * - Tool approval callbacks
  */
 export class ClaudeProvider implements AgentProvider {
+  private authStatus?: { value: Promise<AuthStatus>; expiresAt: number };
+  private models?: { value: ModelInfo[]; expiresAt: number };
+  /** The probe in flight, shared by concurrent callers. */
+  private probing?: Promise<ModelInfo[]>;
+  private probeRetryAt = 0;
+
   readonly name: ProviderName = "claude";
   readonly displayName: string = "Claude";
   readonly capabilities: ProviderCapabilities = {
@@ -273,7 +285,19 @@ export class ClaudeProvider implements AgentProvider {
    *   2. `claude auth status` (authoritative; short 5s timeout so it can't block).
    *   3. Stored OAuth credentials (macOS Keychain, else `~/.claude/.credentials.json`).
    */
-  async getAuthStatus(): Promise<AuthStatus> {
+  getAuthStatus(): Promise<AuthStatus> {
+    const now = Date.now();
+    if (this.authStatus && this.authStatus.expiresAt > now) return this.authStatus.value;
+    const value = this.readAuthStatus();
+    this.authStatus = { value, expiresAt: now + AUTH_STATUS_TTL_MS };
+    // A check that failed is not an answer to keep.
+    value.catch(() => {
+      if (this.authStatus?.value === value) this.authStatus = undefined;
+    });
+    return value;
+  }
+
+  private async readAuthStatus(): Promise<AuthStatus> {
     const installed = await this.isClaudeCliInstalled();
     if (!installed) {
       return { installed: false, authenticated: false, enabled: false };
@@ -338,7 +362,7 @@ export class ClaudeProvider implements AgentProvider {
         plan: parsed.subscriptionType || undefined,
       };
     } catch (error) {
-      console.debug("[Claude] `claude auth status` unavailable, falling back:", error);
+      log().debug({ err: error }, "`claude auth status` unavailable, falling back");
       return null;
     }
   }
@@ -382,7 +406,7 @@ export class ClaudeProvider implements AgentProvider {
       };
       return parsed.claudeAiOauth ?? null;
     } catch (error) {
-      console.debug("[Claude] No readable OAuth credentials:", error);
+      log().debug({ err: error }, "No readable OAuth credentials");
       return null;
     }
   }
@@ -395,49 +419,40 @@ export class ClaudeProvider implements AgentProvider {
     const executable = resolveLocalClaudeCodeExecutable();
     if (!executable) return false;
     try {
-      await execFileAsync(executable, ["--version"], { encoding: "utf8", timeout: 10000 });
+      await execFileAsync(executable, ["--version"], {
+        encoding: "utf8",
+        timeout: 10000,
+      });
       return true;
     } catch (error) {
-      console.warn(
-        "[Claude] CLI cannot run:",
-        error instanceof Error ? error.message : String(error),
-      );
+      log().warn({ err: error }, "Claude CLI cannot run");
       return false;
     }
   }
 
   /**
-   * Get available Claude models.
-   * Fetches dynamically from SDK via a probe session, with caching.
-   * Falls back to static list if probe fails or user is not authenticated.
+   * The models the CLI offers, from a probe session. Cached for a while; after
+   * a failed probe none are offered until the next retry, so a broken CLI does
+   * not stall every caller for the probe timeout.
    */
   async getAvailableModels(): Promise<ModelInfo[]> {
-    // Return cached models if available
-    if (cachedModels) {
-      return cachedModels;
-    }
-
+    const now = Date.now();
+    if (this.models && this.models.expiresAt > now) return this.models.value;
     // An unauthenticated CLI never finishes its handshake; it has no models to offer.
-    const authStatus = await this.getAuthStatus();
-    if (!authStatus.authenticated) {
-      return [];
-    }
-
-    // If probe is already in progress, wait for it
-    if (probePromise) {
-      return probePromise;
-    }
-
-    // Start a new probe
-    probePromise = this.probeModels();
+    if (!(await this.getAuthStatus()).authenticated) return [];
+    if (this.probing) return this.probing;
+    if (now < this.probeRetryAt) return [];
+    this.probing = this.probeModels();
     try {
-      cachedModels = await probePromise;
-      return cachedModels;
+      const value = await this.probing;
+      this.models = { value, expiresAt: Date.now() + MODEL_CACHE_TTL_MS };
+      return value;
     } catch (error) {
-      console.warn("[Claude] Failed to probe models; none offered until the CLI answers:", error);
+      this.probeRetryAt = Date.now() + PROBE_RETRY_MS;
+      log().warn({ err: error }, "Failed to probe models; none offered until the next retry");
       return [];
     } finally {
-      probePromise = null;
+      this.probing = undefined;
     }
   }
 
@@ -518,10 +533,7 @@ export class ClaudeProvider implements AgentProvider {
     }
   }
 
-  /**
-   * Get filtered environment variables for child processes.
-   * Subclasses can override to inject custom env vars (e.g., ANTHROPIC_BASE_URL).
-   */
+  /** The environment an agent's CLI starts with (see agent-env.ts). */
   private getEnv(): Record<string, string | undefined> {
     return agentEnv();
   }
@@ -593,7 +605,10 @@ export class ClaudeProvider implements AgentProvider {
     const commands = (
       await this.probe(cwd, (sdkQuery) => sdkQuery.supportedCommands(), "Command")
     ).map(toClaudeCommand);
-    commandCache.set(cwd, { commands, expiresAt: Date.now() + COMMAND_CACHE_TTL_MS });
+    commandCache.set(cwd, {
+      commands,
+      expiresAt: Date.now() + COMMAND_CACHE_TTL_MS,
+    });
     return commands;
   }
 
@@ -632,9 +647,8 @@ export class ClaudeProvider implements AgentProvider {
     const onToolApproval = options.onToolApproval;
     const canUseTool: SDKCanUseTool | undefined = onToolApproval
       ? async (toolName, input, opts) => {
-          console.log(`[canUseTool] Called for tool: ${toolName}`);
           const result = await onToolApproval(toolName, input, opts);
-          console.log(`[canUseTool] Result for ${toolName}: ${result.behavior}`);
+          log().debug({ toolName, behavior: result.behavior }, "Tool approval");
           // Convert our result to SDK's PermissionResult format
           if (result.behavior === "allow") {
             return {
@@ -709,11 +723,11 @@ export class ClaudeProvider implements AgentProvider {
       if (error instanceof Error) {
         if (error.message.includes("Claude Code executable not found")) {
           throw new Error(
-            "Claude CLI not installed. Run: curl -fsSL https://claude.ai/install.sh | bash",
+            "未找到 Claude CLI，请先安装：curl -fsSL https://claude.ai/install.sh | bash",
           );
         }
         if (error.message.includes("SPAWN") || error.message.includes("spawn")) {
-          throw new Error(`Failed to spawn Claude CLI process: ${error.message}`);
+          throw new Error(`无法启动 Claude CLI：${error.message}`);
         }
       }
       throw error;
@@ -796,7 +810,7 @@ export async function readClaudeContextUsage(
         : {}),
     };
   } catch (error) {
-    console.warn("[Claude] Context usage unavailable:", error);
+    log().warn({ err: error }, "Context usage unavailable");
     return undefined;
   }
 }

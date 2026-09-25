@@ -10,6 +10,7 @@ from scholaraio.hub.errors import InvalidRequest, TooLarge
 from scholaraio.hub.imports import ImportQueue
 from scholaraio.hub.projects import NAME_LIMIT
 from scholaraio.interfaces.api.dependencies import Acquire, Imports
+from scholaraio.interfaces.api.responses import FetchedImportJob, ImportJob, ImportJobList
 from scholaraio.interfaces.api.schemas import AcquireInput
 
 MAX_FILES = 500
@@ -19,12 +20,12 @@ BLOCK_BYTES = 1024 * 1024
 router = APIRouter(prefix="/imports", tags=["imports"])
 
 
-@router.get("")
+@router.get("", response_model=ImportJobList, response_model_exclude_unset=True)
 def list_jobs(imports: Imports):
     return {"jobs": imports.list()}
 
 
-@router.post("", status_code=202)
+@router.post("", status_code=202, response_model=ImportJob, response_model_exclude_unset=True)
 async def upload(
     imports: Imports,
     files: Annotated[list[UploadFile], File()],
@@ -71,11 +72,11 @@ def discard(staged: list[tuple[Path, str]]) -> None:
         destination.unlink(missing_ok=True)
 
 
-@router.post("/fetch", status_code=202)
+@router.post("/fetch", status_code=202, response_model=FetchedImportJob, response_model_exclude_unset=True)
 def fetch(body: AcquireInput, acquire: Acquire):
     return acquire.fetch(body.locator, body.project_id, body.title)
 
 
-@router.post("/{job_id}/retry", status_code=202)
+@router.post("/{job_id}/retry", status_code=202, response_model=ImportJob, response_model_exclude_unset=True)
 def retry(job_id: str, imports: Imports):
     return imports.retry(job_id)

@@ -6,10 +6,13 @@ import {
   type SessionAttachment,
   type UploadedFile,
 } from "@scholaraio-hub/shared";
+import { loggerFor } from "../logging/logger.js";
 import type { SessionStore } from "./SessionStore.js";
 import { SessionInputError } from "./errors.js";
 
 export const MAX_ATTACHMENT_BYTES = ATTACHMENT_LIMITS.maxBytes;
+/** The size limit as the user reads it, e.g. "25 MB". */
+export const MAX_ATTACHMENT_LABEL = `${Math.round(MAX_ATTACHMENT_BYTES / 1024 / 1024)} MB`;
 /** Drafts never claimed by a new session are removed after this long. */
 export const DRAFT_ATTACHMENT_TTL_MS = 24 * 60 * 60 * 1000;
 
@@ -61,7 +64,7 @@ export class SessionAttachments {
 
   private async write(area: Area, file: File): Promise<SessionAttachment> {
     if (!file.size || file.size > MAX_ATTACHMENT_BYTES)
-      throw new SessionInputError("附件不能为空，且单个文件不能超过 25 MB");
+      throw new SessionInputError(`附件不能为空，且单个文件不能超过 ${MAX_ATTACHMENT_LABEL}`);
     const id = randomUUID();
     const filename =
       path
@@ -216,7 +219,10 @@ export class SessionAttachments {
         const { filePath } = await this.read(area, id);
         await rm(filePath, { force: true });
       } catch (error) {
-        console.warn("[Attachments] Removing unreadable draft", id, error);
+        loggerFor("attachments").warn(
+          { err: error, attachmentId: id },
+          "Removing unreadable draft",
+        );
       }
       await rm(manifest, { force: true });
     }

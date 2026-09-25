@@ -672,6 +672,43 @@ describe.each(["claude", "codex"] as const)("%s application sessions", (name) =>
 });
 
 describe("workbench project and settings contract", () => {
+  it("browses the project directory the agent works in, not the private workspace", async () => {
+    const root = await mkdtemp(join(tmpdir(), "hub-project-files-"));
+    const projectDir = join(root, "projects", "p1");
+    await mkdir(projectDir, { recursive: true });
+    await writeFile(join(projectDir, "notes.md"), "# 项目笔记");
+    class ProjectLibrary extends LibraryService {
+      override async request(resource: string) {
+        if (resource === "/projects/p1")
+          return Response.json({ id: "p1", name: "P1", path: projectDir, paperIds: [] });
+        return Response.json({ paperIds: [] });
+      }
+    }
+    const server = createApp({
+      dataDir: root,
+      provider: new WorkbenchProvider("claude"),
+      libraryService: new ProjectLibrary(root),
+    });
+    try {
+      await server.ready;
+      const created = await server.app.request("/api/sessions", {
+        method: "POST",
+        headers,
+        body: JSON.stringify({ provider: "claude", projectId: "p1" }),
+      });
+      const { id } = await created.json();
+      const tree = await server.app.request(`/api/sessions/${id}/fs/browse`);
+      expect((await tree.json()).entries.map((entry: { name: string }) => entry.name)).toEqual([
+        "notes.md",
+      ]);
+      const preview = await server.app.request(`/api/sessions/${id}/fs/file?path=notes.md`);
+      expect(await preview.json()).toMatchObject({ content: "# 项目笔记", truncated: false });
+    } finally {
+      await server.close();
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
   it("persists project identity, enforces scope, and applies provider-specific defaults", async () => {
     const { ServerSettingsService } = await import("../../src/services/ServerSettingsService.js");
     const root = await mkdtemp(join(tmpdir(), "hub-project-contract-"));

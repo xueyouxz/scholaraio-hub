@@ -5,10 +5,10 @@
 
 import type { ChildProcess } from "node:child_process";
 import { spawn } from "node:child_process";
-import { getLogger } from "../../logging/logger.js";
+import { loggerFor } from "../../logging/logger.js";
 import { AsyncQueue } from "../AsyncQueue.js";
 
-const log = getLogger().child({ component: "codex-app-server" });
+const log = () => loggerFor("codex-app-server");
 
 /** How long a terminating app-server gets before SIGKILL. */
 const APP_SERVER_SHUTDOWN_GRACE_MS = 1500;
@@ -145,7 +145,7 @@ export class CodexAppServerClient {
     child.stderr?.on("data", (chunk: Buffer) => {
       const stderr = chunk.toString("utf-8").trim();
       if (stderr) {
-        log.debug({ stderr }, "codex app-server stderr");
+        log().debug({ stderr }, "codex app-server stderr");
       }
     });
 
@@ -178,7 +178,7 @@ export class CodexAppServerClient {
     try {
       message = JSON.parse(line) as Record<string, unknown>;
     } catch {
-      log.debug({ line }, "Ignoring non-JSON app-server line");
+      log().debug({ line }, "Ignoring non-JSON app-server line");
       return;
     }
 

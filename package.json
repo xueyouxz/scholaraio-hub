@@ -5,7 +5,7 @@
   "type": "module",
   "packageManager": "pnpm@10.27.0",
   "engines": {
-    "node": ">=20.0.0",
+    "node": ">=20.12.0",
     "pnpm": ">=10.27.0"
   },
   "scripts": {
@@ -14,7 +14,7 @@
     "hub": "node scripts/hub.mjs",
     "build": "pnpm --filter @scholaraio-hub/shared build && pnpm --filter @scholaraio-hub/server build && pnpm --filter @scholaraio-hub/client build",
     "clean": "node scripts/clean.mjs",
-    "lint": "biome check .",
+    "lint": "biome check . && node scripts/check-conventions.mjs && node scripts/generate-library-types.mjs --check",
     "lint:fix": "biome check --write .",
     "typecheck": "pnpm --filter @scholaraio-hub/shared build && pnpm --filter @scholaraio-hub/server typecheck && pnpm --filter @scholaraio-hub/client typecheck",
     "test": "pnpm --filter @scholaraio-hub/shared test && pnpm --filter @scholaraio-hub/server test && pnpm --filter @scholaraio-hub/client test",
@@ -22,7 +22,8 @@
     "audit:prod": "pnpm audit --prod",
     "ci:local": "node scripts/ci-local.mjs",
     "prepare": "husky",
-    "test:python": "node scripts/test-python.mjs"
+    "test:python": "node scripts/test-python.mjs",
+    "gen:library-types": "node scripts/generate-library-types.mjs"
   },
   "devDependencies": {
     "@biomejs/biome": "^1.9.4",
@@ -31,6 +32,7 @@
     "@vitejs/plugin-react": "^4.3.4",
     "husky": "^9.1.7",
     "lint-staged": "^15.4.3",
+    "openapi-typescript": "^7.13.0",
     "tailwindcss": "^4.1.14",
     "typescript": "5.9.3",
     "vite": "^5.4.21"

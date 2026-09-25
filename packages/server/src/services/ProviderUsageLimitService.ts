@@ -4,6 +4,7 @@ import type {
   ProviderUsageLimitWindowName,
   ProviderUsageLimits,
 } from "@scholaraio-hub/shared";
+import { loggerFor } from "../logging/logger.js";
 import type { AgentProvider } from "../providers/types.js";
 
 function mergeLimits(
@@ -95,6 +96,7 @@ export class ProviderUsageLimitService {
       this.fetchedAt.set(provider.name, Date.now());
       return limits;
     } catch (error) {
+      loggerFor("usage-limits").warn({ err: error, provider: provider.name }, "Usage fetch failed");
       // A throttled or failed poll is not evidence that the last answer was
       // wrong, so keep showing it rather than blanking the card.
       const cached = this.cache.get(provider.name);

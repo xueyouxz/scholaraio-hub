@@ -30,30 +30,12 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null;
 }
 
+/** The server answers every failure as `{ error: message }` (the library service too). */
 function getErrorMessage(payload: unknown, fallback: string): string {
-  if (isRecord(payload)) {
-    const error = payload.error;
-    if (typeof error === "string" && error.trim()) return error;
-
-    const message = payload.message;
-    if (typeof message === "string" && message.trim()) return message;
-
-    const detail = payload.detail;
-    if (typeof detail === "string" && detail.trim()) return detail;
-    if (Array.isArray(detail)) {
-      const messages = detail
-        .map((item) => {
-          if (isRecord(item) && typeof item.msg === "string") return item.msg;
-          if (typeof item === "string") return item;
-          return null;
-        })
-        .filter((item): item is string => !!item);
-      if (messages.length > 0) return messages.join("; ");
-    }
-  }
-
+  if (isRecord(payload) && typeof payload.error === "string" && payload.error.trim())
+    return payload.error;
   if (typeof payload === "string" && payload.trim()) return payload;
-  return fallback || "Request failed";
+  return fallback || "请求失败";
 }
 
 async function parseResponsePayload(response: Response): Promise<unknown> {

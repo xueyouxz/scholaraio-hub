@@ -1,7 +1,13 @@
 import type { UIMessage } from "ai";
 import { z } from "zod";
 import type { LibraryCitation } from "../library.js";
-import { ATTACHMENT_LIMITS, type PermissionMode, type ThinkingMode } from "../types.js";
+import {
+  ATTACHMENT_LIMITS,
+  PROVIDER_NAMES,
+  type PermissionMode,
+  type ProviderName,
+  type ThinkingMode,
+} from "../types.js";
 
 /**
  * A question the agent is waiting on: a tool approval, or a question for the user.
@@ -121,7 +127,7 @@ export interface SessionContextUsage {
 export interface StoredSession {
   id: string;
   title: string;
-  provider: "claude" | "codex";
+  provider: ProviderName;
   model?: string;
   permissionMode?: PermissionMode;
   thinking?: ThinkingMode;
@@ -143,6 +149,9 @@ export interface StoredSession {
   queuedMessages?: SessionInput[];
   queuePaused?: boolean;
 }
+/** The title a session has until its first message names it. */
+export const UNTITLED_SESSION_TITLE = "新会话";
+
 export const SessionOptionsSchema = z.object({
   model: z.string().max(200).optional(),
   permissionMode: z.enum(["default", "acceptEdits", "plan", "bypassPermissions"]).optional(),
@@ -154,11 +163,11 @@ export const SessionOptionsSchema = z.object({
     .optional(),
 });
 export const CreateSessionSchema = SessionOptionsSchema.extend({
-  provider: z.enum(["claude", "codex"]),
+  provider: z.enum(PROVIDER_NAMES),
   model: z.string().max(200).optional(),
   paperIds: z.array(z.string().min(1).max(200)).max(100).default([]),
   projectId: z.string().min(1).max(120).optional(),
-  title: z.string().trim().min(1).max(200).default("新会话"),
+  title: z.string().trim().min(1).max(200).default(UNTITLED_SESSION_TITLE),
   /** Draft uploads the new session takes over (see draft attachments). */
   attachmentIds: z.array(z.string().uuid()).max(ATTACHMENT_LIMITS.maxCount).default([]),
 });

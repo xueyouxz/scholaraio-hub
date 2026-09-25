@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import copy
 import json
+import logging
 import os
 import shutil
 import uuid
@@ -26,6 +27,8 @@ from scholaraio.services.ingest import identifiers
 from scholaraio.services.ingest.inbox_orchestration import run_file_steps
 from scholaraio.services.ingest.types import InboxCtx
 from scholaraio.stores.papers import read_meta, write_meta
+
+_log = logging.getLogger("scholaraio.hub.imports")
 
 STEPS = ["mineru", "extract", "dedup", "ingest"]
 # Split so the queue can fill gaps the browser can live with (a missing title)
@@ -158,6 +161,7 @@ class ImportQueue:
                     on_step=lambda step, item=item: self.record_step(job, item, step),
                 )
             except Exception as exc:  # a failed item must not stop the batch
+                _log.exception("Import of %s failed", item["name"])
                 result = {"status": "failed", "error": str(exc)}
             with self.runtime.lock:
                 item.update(step=None, **result)

@@ -1,5 +1,8 @@
 import type {
+  ArchivedProject,
   DiscoverResponse,
+  ExportFile,
+  FetchedImportJob,
   ImportJob,
   LibraryAnalytics,
   LibraryCapabilities,
@@ -40,7 +43,7 @@ export const libraryApi = {
       { method: "POST", body: JSON.stringify({ name }) },
     ),
   archiveProject: (id: string) =>
-    requestJson<{ archived: { id: string; archivedAt: string }; sessions: number }>(
+    requestJson<{ archived: ArchivedProject; sessions: number }>(
       `/api/library/projects/${pathSegment(id)}`,
       { method: "DELETE" },
     ),
@@ -101,12 +104,12 @@ export const libraryApi = {
       signal,
     }),
   exportReferences: (body: { paperIds: string[]; format: ReferenceFormat }) =>
-    requestJson<{ filename: string; contentType: string; content: string }>(
-      "/api/library/citations/export",
-      { method: "POST", body: JSON.stringify(body) },
-    ),
+    requestJson<ExportFile>("/api/library/citations/export", {
+      method: "POST",
+      body: JSON.stringify(body),
+    }),
   fetchPaper: (locator: string, projectId?: string, title?: string) =>
-    requestJson<ImportJob & { source: string }>("/api/library/imports/fetch", {
+    requestJson<FetchedImportJob>("/api/library/imports/fetch", {
       method: "POST",
       body: JSON.stringify({ locator, projectId, title }),
     }),

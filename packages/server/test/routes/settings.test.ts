@@ -66,7 +66,31 @@ describe("Settings Routes", () => {
 
       expect(response.status).toBe(400);
       const json = await response.json();
-      expect(json.error).toBe("Invalid newSessionDefaults setting");
+      expect(json.error).toBe("新会话默认设置无效");
+    });
+
+    it("treats blank fields as absent and clears the defaults when none are left", async () => {
+      const routes = createSettingsRoutes({
+        serverSettingsService: mockServerSettingsService,
+      });
+      const put = (body: unknown) =>
+        routes.request("/", {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(body),
+        });
+
+      expect((await put({ newSessionDefaults: { provider: "", model: "m" } })).status).toBe(200);
+      expect(mockServerSettingsService.updateSettings).toHaveBeenLastCalledWith({
+        newSessionDefaults: { model: "m" },
+      });
+      for (const newSessionDefaults of [null, "", { provider: null, model: "" }]) {
+        expect((await put({ newSessionDefaults })).status).toBe(200);
+        expect(settings.newSessionDefaults).toBeUndefined();
+      }
+      const missing = await put({});
+      expect(missing.status).toBe(400);
+      expect((await missing.json()).error).toBe("请至少提供一项设置");
     });
   });
 });

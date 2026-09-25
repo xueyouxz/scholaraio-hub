@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # PostToolUse (Edit|Write|MultiEdit): auto-format the edited file with Biome.
-# Enforces CLAUDE.md formatting (2-space, double quotes, semicolons, 100 cols) at edit time.
+# Enforces the AGENTS.md formatting rule (2-space, double quotes, semicolons, 100 cols) at edit time.
 # Never blocks — formatting only; linting stays with husky/CI.
 set -euo pipefail
 

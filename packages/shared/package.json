@@ -13,7 +13,7 @@
     }
   },
   "scripts": {
-    "build": "tsc -p tsconfig.build.json",
+    "build": "node ../../scripts/clean.mjs shared && tsc -p tsconfig.build.json",
     "typecheck": "tsc -p tsconfig.json --pretty false",
     "test": "vitest run --config vitest.config.ts"
   },

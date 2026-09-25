@@ -1,4 +1,4 @@
-import { getLogger } from "../../logging/logger.js";
+import { loggerFor } from "../../logging/logger.js";
 import { MessageQueue, describeAttachments } from "../MessageQueue.js";
 import type { AgentEvent } from "../events.js";
 import { traceProviderMessage } from "../trace.js";
@@ -30,7 +30,7 @@ import type {
 } from "./protocol/index.js";
 import { withSkillMentions } from "./skills.js";
 
-const log = getLogger().child({ component: "codex-session" });
+const log = () => loggerFor("codex-session");
 
 /**
  * The Codex thread policy for a Hub permission mode. `approvalPolicy` stays
@@ -122,7 +122,7 @@ export class CodexSession implements AgentSession {
       });
       return true;
     } catch (error) {
-      log.warn(
+      log().warn(
         {
           threadId: this.threadId,
           turnId,
@@ -170,7 +170,7 @@ export class CodexSession implements AgentSession {
       }
       const threadId = thread.thread.id;
       this.threadId = threadId;
-      log.info(
+      log().info(
         {
           threadId,
           permissionMode: options.permissionMode ?? "default",
@@ -190,7 +190,7 @@ export class CodexSession implements AgentSession {
         };
         const { turn } = await client.request<TurnStartResponse>("turn/start", params);
         adapter.beginTurn(turn.id);
-        log.info({ threadId, turnId: turn.id, turnStatus: turn.status }, "Started Codex turn");
+        log().info({ threadId, turnId: turn.id, turnStatus: turn.status }, "Started Codex turn");
         // The adapter closes the turn on its terminal notification.
         if (turn.status === "inProgress") {
           while (adapter.activeTurn && !signal.aborted) {
@@ -206,7 +206,7 @@ export class CodexSession implements AgentSession {
         );
       }
     } catch (error) {
-      log.error({ error }, "Error in codex app-server session");
+      log().error({ err: error }, "Error in codex app-server session");
       if (!signal.aborted) {
         yield* adapter.fail(error instanceof Error ? error.message : String(error));
       }
@@ -226,12 +226,12 @@ export async function handleCodexServerRequest(
   onToolApproval: CanUseTool | undefined,
   signal: AbortSignal,
 ): Promise<unknown> {
-  log.info({ method: request.method, requestId: request.id }, "Codex app-server request");
+  log().info({ method: request.method, requestId: request.id }, "Codex app-server request");
   switch (request.method) {
     case "item/commandExecution/requestApproval": {
       const params = asCommandExecutionRequestApprovalParams(request.params);
       if (!params) {
-        log.warn({ requestId: request.id }, "Codex command approval params invalid; declining");
+        log().warn({ requestId: request.id }, "Codex command approval params invalid; declining");
         return { decision: "decline" };
       }
       const input = {
@@ -245,7 +245,7 @@ export async function handleCodexServerRequest(
         itemId: params.itemId,
       };
       const decision = await approve(onToolApproval, "Bash", input, signal, params.itemId);
-      log.info(
+      log().info(
         { requestId: request.id, itemId: params.itemId, decision },
         "Codex command approval",
       );
@@ -255,7 +255,10 @@ export async function handleCodexServerRequest(
     case "item/fileChange/requestApproval": {
       const params = asFileChangeRequestApprovalParams(request.params);
       if (!params) {
-        log.warn({ requestId: request.id }, "Codex file-change approval params invalid; declining");
+        log().warn(
+          { requestId: request.id },
+          "Codex file-change approval params invalid; declining",
+        );
         return { decision: "decline" };
       }
       const grantRoot = params.grantRoot ?? null;
@@ -268,7 +271,7 @@ export async function handleCodexServerRequest(
         itemId: params.itemId,
       };
       const decision = await approve(onToolApproval, "Edit", input, signal, params.itemId);
-      log.info(
+      log().info(
         { requestId: request.id, itemId: params.itemId, decision },
         "Codex file-change approval",
       );
@@ -309,8 +312,8 @@ export async function handleCodexServerRequest(
           ?.answers;
         return respond(answers ?? {});
       } catch (error) {
-        log.warn(
-          { requestId: request.id, error },
+        log().warn(
+          { requestId: request.id, err: error },
           "Codex user-input prompt failed; answering empty",
         );
         return respond({});
@@ -318,7 +321,10 @@ export async function handleCodexServerRequest(
     }
 
     default:
-      log.warn({ method: request.method, requestId: request.id }, "Unhandled codex server request");
+      log().warn(
+        { method: request.method, requestId: request.id },
+        "Unhandled codex server request",
+      );
       return {};
   }
 }
@@ -333,14 +339,17 @@ async function approve(
   toolUseID: string,
 ): Promise<"accept" | "decline"> {
   if (!onToolApproval) {
-    log.warn({ toolName }, "No approval handler; declining Codex approval request");
+    log().warn({ toolName }, "No approval handler; declining Codex approval request");
     return "decline";
   }
   try {
     const result = await onToolApproval(toolName, input, { signal, toolUseID });
     return result.behavior === "allow" ? "accept" : "decline";
   } catch (error) {
-    log.warn({ toolName, error }, "Approval handler threw; declining Codex approval request");
+    log().warn(
+      { toolName, err: error },
+      "Approval handler threw; declining Codex approval request",
+    );
     return "decline";
   }
 }

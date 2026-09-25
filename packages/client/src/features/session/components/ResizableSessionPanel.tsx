@@ -1,4 +1,5 @@
 import { type ReactNode, useEffect, useRef, useState } from "react";
+import { readStoredNumber, writeStored } from "../../../core/browserStorage";
 
 /** Shared resize behavior for the original file and literature side panels. */
 export function ResizableSessionPanel({
@@ -15,13 +16,8 @@ export function ResizableSessionPanel({
   children: ReactNode;
 }) {
   const [width, setWidth] = useState(() => {
-    try {
-      const saved = Number(localStorage.getItem(storageKey));
-      return Number.isFinite(saved) && saved >= 220 ? Math.min(600, saved) : 320;
-    } catch (error) {
-      console.warn("无法读取侧栏宽度", error);
-      return 320;
-    }
+    const saved = readStoredNumber(storageKey);
+    return saved !== undefined && saved >= 220 ? Math.min(600, saved) : 320;
   });
   const [hasOpened, setHasOpened] = useState(open);
   const drag = useRef<{ x: number; width: number } | null>(null);
@@ -30,13 +26,7 @@ export function ResizableSessionPanel({
     if (open) setHasOpened(true);
   }, [open]);
   const resize = (next: number) => setWidth(Math.max(220, Math.min(window.innerWidth * 0.5, next)));
-  const save = () => {
-    try {
-      localStorage.setItem(storageKey, String(width));
-    } catch (error) {
-      console.warn("无法保存侧栏宽度", error);
-    }
-  };
+  const save = () => writeStored(storageKey, String(width));
   return (
     <aside
       aria-label={title}

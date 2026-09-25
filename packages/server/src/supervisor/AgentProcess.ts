@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import type { ProviderName, ThinkingConfig } from "@scholaraio-hub/shared";
 import type { InputRequest } from "@scholaraio-hub/shared";
-import { getLogger } from "../logging/logger.js";
+import { loggerFor } from "../logging/logger.js";
 import type { AgentSession } from "../providers/types.js";
 import type { PermissionMode, ToolApprovalResult, UserMessage } from "../providers/types.js";
 import { ApprovalQueue } from "./ApprovalQueue.js";
@@ -138,7 +138,7 @@ export class AgentProcess {
   async changeThinking(thinking: ThinkingConfig | undefined): Promise<boolean> {
     if (!this.session.setMaxThinkingTokens) return false;
     const enabled = thinking?.type !== "disabled";
-    getLogger().info(
+    loggerFor("agent-process").info(
       {
         event: "thinking_mode_change",
         sessionId: this.sessionId,
@@ -160,7 +160,7 @@ export class AgentProcess {
    */
   async interrupt(): Promise<boolean> {
     if (!this.session.interrupt) return false;
-    getLogger().info(
+    loggerFor("agent-process").info(
       { event: "process_interrupt", sessionId: this.sessionId, processId: this.id },
       `Interrupting process: ${this.sessionId}`,
     );
@@ -187,7 +187,7 @@ export class AgentProcess {
           if (!steered) this.session.queue.push(withUuid);
         })
         .catch((error) => {
-          getLogger().warn(
+          loggerFor("agent-process").warn(
             {
               event: "process_steer_failed",
               sessionId: this.sessionId,
@@ -274,12 +274,13 @@ export class AgentProcess {
   /**
    * End the process: kill the provider's CLI and report the ending once. Its
    * event stream winds down on its own; nothing it says afterwards is relayed.
-   * Safe to call more than once.
+   * `error` tells the session why, when the user should know. Safe to call more
+   * than once.
    */
-  stop(reason: string): void {
+  stop(reason: string, error?: Error): void {
     if (this.isTerminated) return;
     this.session.abort();
-    this.markTerminated(reason);
+    this.markTerminated(reason, error);
     this.listeners.clear();
   }
 
@@ -298,7 +299,7 @@ export class AgentProcess {
       }
     } catch (error) {
       failure = error instanceof Error ? error : new Error(String(error));
-      getLogger().error(
+      loggerFor("agent-process").error(
         {
           event: "process_error",
           sessionId: this.sessionId,
@@ -316,7 +317,7 @@ export class AgentProcess {
 
   private markTerminated(reason: string, error?: Error): void {
     if (this.isTerminated) return;
-    getLogger().warn(
+    loggerFor("agent-process").warn(
       {
         event: "process_terminated",
         sessionId: this.sessionId,
@@ -364,8 +365,8 @@ export class AgentProcess {
         listener(event);
       } catch (error) {
         // One failing subscriber must not starve the others of the event.
-        getLogger().error(
-          { sessionId: this.sessionId, eventType: event.type, error },
+        loggerFor("agent-process").error(
+          { sessionId: this.sessionId, eventType: event.type, err: error },
           "Process event listener failed",
         );
       }

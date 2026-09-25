@@ -1,7 +1,14 @@
-import type { NewSessionDefaults, ProviderInfo, ProviderUsageLimits } from "@scholaraio-hub/shared";
+import {
+  DEFAULT_PROVIDER,
+  type NewSessionDefaults,
+  PROVIDER_NAMES,
+  type ProviderInfo,
+  type ProviderUsageLimits,
+} from "@scholaraio-hub/shared";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { CheckCircle2, FolderOpen } from "lucide-react";
 import { useEffect, useState } from "react";
+import { readStoredJson, writeStoredJson } from "../../core/browserStorage";
 import { libraryApi } from "../../core/library";
 import { appSettingsQuery, providersQuery, settingsApi } from "../../core/settings";
 import { LibrarySettingsForm } from "../../features/library/components/LibrarySettingsForm";
@@ -21,21 +28,11 @@ interface RememberedStatus {
 }
 
 function readRemembered(): RememberedStatus {
-  try {
-    const stored = localStorage.getItem(REMEMBERED_KEY);
-    return stored ? (JSON.parse(stored) as RememberedStatus) : {};
-  } catch (error) {
-    console.warn("Could not read the remembered agent status", error);
-    return {};
-  }
+  return readStoredJson<RememberedStatus>(REMEMBERED_KEY, {});
 }
 
 function remember(patch: RememberedStatus) {
-  try {
-    localStorage.setItem(REMEMBERED_KEY, JSON.stringify({ ...readRemembered(), ...patch }));
-  } catch (error) {
-    console.warn("Could not remember the agent status", error);
-  }
+  writeStoredJson(REMEMBERED_KEY, { ...readRemembered(), ...patch });
 }
 
 export function SettingsPage() {
@@ -78,7 +75,7 @@ export function SettingsPage() {
   });
   const openDirectory = useMutation({ mutationFn: settingsApi.openDirectory });
   const defaults = settings.data?.settings.newSessionDefaults;
-  const providerName = defaults?.provider === "codex" ? "codex" : "claude";
+  const providerName = defaults?.provider ?? DEFAULT_PROVIDER;
   const update = (value: NewSessionDefaults) => {
     save.mutate({ ...defaults, ...value });
   };
@@ -96,7 +93,7 @@ export function SettingsPage() {
           {save.isSuccess ? <output className="text-[11px] text-primary">设置已保存</output> : null}
         </div>
         <fieldset className="grid md:grid-cols-2 gap-3" aria-label="默认 AI 工具">
-          {(["claude", "codex"] as const).map((name) => {
+          {PROVIDER_NAMES.map((name) => {
             const item = providers.data?.providers.find((p) => p.name === name);
             return (
               <button

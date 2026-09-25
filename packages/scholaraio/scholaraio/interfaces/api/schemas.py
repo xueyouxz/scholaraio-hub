@@ -85,7 +85,7 @@ class SettingsCheckInput(CamelModel):
     target: Literal["mineru", "llm", "embed"]
 
 
-class ReadingPosition(CamelModel):
+class ReadingPositionInput(CamelModel):
     page: int = Field(default=1, ge=1)
     line: int = Field(default=1, ge=1)
     mode: Literal["pdf", "markdown"] = "pdf"

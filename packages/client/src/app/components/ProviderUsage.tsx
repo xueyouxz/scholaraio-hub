@@ -38,6 +38,7 @@ export function isSubscribed(provider: ProviderInfo | undefined) {
 /** Login and plan, in one line: what the card says under the tool's name. */
 export function describeProvider(provider: ProviderInfo | undefined, loading: boolean) {
   if (!provider) return loading ? "检测中…" : "当前环境未启用";
+  if (provider.error) return `状态读取失败：${provider.error}`;
   if (!provider.installed) return "未找到可用的 CLI";
   if (!provider.authenticated) return "已安装，尚未登录";
   const plan = provider.plan ? `${formatPlan(provider.plan)} 订阅` : "未订阅";

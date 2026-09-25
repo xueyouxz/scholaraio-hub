@@ -1,6 +1,7 @@
 import { cp, mkdir, readdir } from "node:fs/promises";
 import { homedir } from "node:os";
 import path from "node:path";
+import { loggerFor } from "../logging/logger.js";
 
 /**
  * Research skills are user-owned data, not application code: they live in the
@@ -41,6 +42,9 @@ export async function ensureSkillsDirectory(
     return directory;
   }
   await cp(legacy, directory, { recursive: true, dereference: true, errorOnExist: true });
-  console.log(`[Skills] 已从 ${legacy} 导入科研技能到 ${directory}，之后以数据目录为准。`);
+  loggerFor("skills").info(
+    { from: legacy, to: directory },
+    "Imported research skills into the data directory",
+  );
   return directory;
 }

@@ -10,6 +10,7 @@ from fastapi.responses import StreamingResponse
 
 from scholaraio.hub.events import EventBus
 from scholaraio.interfaces.api.dependencies import Events
+from scholaraio.interfaces.api.responses import Health
 
 # Idle gap after which an open event stream sends a comment to stay alive.
 HEARTBEAT_SECONDS = 15.0
@@ -17,7 +18,7 @@ HEARTBEAT_SECONDS = 15.0
 router = APIRouter()
 
 
-@router.get("/health")
+@router.get("/health", response_model=Health)
 def health():
     return {"status": "ok"}
 

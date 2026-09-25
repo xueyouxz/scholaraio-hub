@@ -1,73 +1,44 @@
-/**
- * Server settings API routes
- *
- * Phase 4 MVP trim: keep only new session defaults and global instructions.
- */
+/** Server settings API routes: the new-session form's defaults. */
 
+import { zValidator } from "@hono/zod-validator";
 import {
   ALL_PERMISSION_MODES,
   type NewSessionDefaults,
-  type PermissionMode,
+  PROVIDER_NAMES,
 } from "@scholaraio-hub/shared";
 import { Hono } from "hono";
-import type { ServerSettings, ServerSettingsService } from "../services/ServerSettingsService.js";
+import { z } from "zod";
+import type { ServerSettingsService } from "../services/ServerSettingsService.js";
 
 export interface SettingsRoutesDeps {
   serverSettingsService: ServerSettingsService;
 }
 
-function parseNewSessionDefaults(raw: unknown): NewSessionDefaults | undefined | null {
-  if (raw === undefined) return null;
-  if (raw === null || raw === "") return undefined;
-  if (typeof raw !== "object") return null;
+/** A blank field (null or "") means the same as an absent one. */
+const blank = (value: unknown) => (value === null || value === "" ? undefined : value);
 
-  const input = raw as Record<string, unknown>;
-  const parsed: NewSessionDefaults = {};
+const SettingsUpdateSchema = z.object({
+  // null or "" clears the saved defaults.
+  newSessionDefaults: z
+    .union([
+      z.null(),
+      z.literal(""),
+      z.object({
+        provider: z.preprocess(blank, z.enum(PROVIDER_NAMES).optional()),
+        model: z.preprocess(blank, z.string().optional()),
+        permissionMode: z.preprocess(blank, z.enum(ALL_PERMISSION_MODES).optional()),
+      }),
+    ])
+    .optional(),
+});
 
-  if ("provider" in input) {
-    if (
-      input.provider !== undefined &&
-      input.provider !== null &&
-      input.provider !== "" &&
-      input.provider !== "claude" &&
-      input.provider !== "codex"
-    ) {
-      return null;
-    }
-    if (typeof input.provider === "string" && input.provider.length > 0) {
-      parsed.provider = input.provider as "claude" | "codex";
-    }
-  }
-
-  if ("model" in input) {
-    if (
-      input.model !== undefined &&
-      input.model !== null &&
-      input.model !== "" &&
-      typeof input.model !== "string"
-    ) {
-      return null;
-    }
-    if (typeof input.model === "string" && input.model.length > 0) {
-      parsed.model = input.model;
-    }
-  }
-
-  if ("permissionMode" in input) {
-    if (
-      input.permissionMode !== undefined &&
-      input.permissionMode !== null &&
-      input.permissionMode !== "" &&
-      !ALL_PERMISSION_MODES.includes(input.permissionMode as PermissionMode)
-    ) {
-      return null;
-    }
-    if (typeof input.permissionMode === "string" && input.permissionMode.length > 0) {
-      parsed.permissionMode = input.permissionMode as PermissionMode;
-    }
-  }
-
-  return Object.keys(parsed).length > 0 ? parsed : undefined;
+/** The fields actually set, or undefined when none are. */
+function savedDefaults(input: NewSessionDefaults | null | ""): NewSessionDefaults | undefined {
+  if (!input) return undefined;
+  const defaults = Object.fromEntries(
+    Object.entries(input).filter(([, value]) => value !== undefined),
+  );
+  return Object.keys(defaults).length > 0 ? defaults : undefined;
 }
 
 export function createSettingsRoutes(deps: SettingsRoutesDeps): Hono {
@@ -79,25 +50,20 @@ export function createSettingsRoutes(deps: SettingsRoutesDeps): Hono {
     return c.json({ settings });
   });
 
-  app.put("/", async (c) => {
-    const body = await c.req.json<Partial<ServerSettings>>();
-    const updates: Partial<ServerSettings> = {};
-
-    if ("newSessionDefaults" in body) {
-      const parsedDefaults = parseNewSessionDefaults(body.newSessionDefaults);
-      if (parsedDefaults === null) {
-        return c.json({ error: "Invalid newSessionDefaults setting" }, 400);
-      }
-      updates.newSessionDefaults = parsedDefaults;
-    }
-
-    if (Object.keys(updates).length === 0) {
-      return c.json({ error: "At least one valid setting is required" }, 400);
-    }
-
-    const settings = await serverSettingsService.updateSettings(updates);
-    return c.json({ settings });
-  });
+  app.put(
+    "/",
+    zValidator("json", SettingsUpdateSchema, (result, c) => {
+      if (!result.success) return c.json({ error: "新会话默认设置无效" }, 400);
+    }),
+    async (c) => {
+      const { newSessionDefaults } = c.req.valid("json");
+      if (newSessionDefaults === undefined) return c.json({ error: "请至少提供一项设置" }, 400);
+      const settings = await serverSettingsService.updateSettings({
+        newSessionDefaults: savedDefaults(newSessionDefaults),
+      });
+      return c.json({ settings });
+    },
+  );
 
   return app;
 }

@@ -1,9 +1,15 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
 import { Outlet, useLocation, useOutletContext } from "react-router-dom";
+import { readStoredNumber, writeStored } from "../../core/browserStorage";
 import { SIDEBAR_WIDTH_COLLAPSED, Sidebar } from "./Sidebar";
 
 const DESKTOP_BREAKPOINT = 1100;
 const SIDEBAR_WIDTH_EXPANDED_DEFAULT = 248;
+const SIDEBAR_WIDTH_KEY = "sidebarExpandedWidth";
+
+function clampSidebarWidth(width: number): number {
+  return Math.max(220, Math.min(420, width));
+}
 
 // ─── PageTitle context ────────────────────────────────────────────────────────
 
@@ -37,24 +43,15 @@ export function NavigationLayout() {
   const [isMobileSidebarOpen, setIsMobileSidebarOpen] = useState(false);
   const [pageTitle, setPageTitle] = useState("");
   const [expandedWidth, setExpandedWidth] = useState(() => {
-    try {
-      const saved = Number(localStorage.getItem("sidebarExpandedWidth"));
-      return saved ? Math.max(220, Math.min(420, saved)) : SIDEBAR_WIDTH_EXPANDED_DEFAULT;
-    } catch {
-      return SIDEBAR_WIDTH_EXPANDED_DEFAULT;
-    }
+    const saved = readStoredNumber(SIDEBAR_WIDTH_KEY);
+    return saved ? clampSidebarWidth(saved) : SIDEBAR_WIDTH_EXPANDED_DEFAULT;
   });
   // While the user drags the edge, the column follows the pointer with no easing.
   const [resizing, setResizing] = useState(false);
   const resizeSidebar = useCallback((width: number, persist = true) => {
-    const next = Math.max(220, Math.min(420, Math.round(width)));
+    const next = clampSidebarWidth(Math.round(width));
     setExpandedWidth(next);
-    if (!persist) return;
-    try {
-      localStorage.setItem("sidebarExpandedWidth", String(next));
-    } catch (error) {
-      console.warn("无法保存侧栏宽度", error);
-    }
+    if (persist) writeStored(SIDEBAR_WIDTH_KEY, String(next));
   }, []);
 
   useEffect(() => {

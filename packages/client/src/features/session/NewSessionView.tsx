@@ -1,4 +1,9 @@
-import type { ProviderName, SessionAttachment, StoredSession } from "@scholaraio-hub/shared";
+import {
+  DEFAULT_PROVIDER,
+  type ProviderName,
+  type SessionAttachment,
+  type StoredSession,
+} from "@scholaraio-hub/shared";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { X } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
@@ -101,8 +106,7 @@ function NewSessionForm({
   const newSessionDefaults = defaults.data?.settings.newSessionDefaults;
   const [providerChoice, setProviderChoice] = useState<ProviderName>();
   const [choices, setChoices] = useState<SessionOptions>({});
-  const provider: ProviderName =
-    providerChoice ?? (newSessionDefaults?.provider === "codex" ? "codex" : "claude");
+  const provider: ProviderName = providerChoice ?? newSessionDefaults?.provider ?? DEFAULT_PROVIDER;
   const info = providers.find(provider);
   // Until the user picks, a new chat opens on its last choices for this agent
   // (the server settings' model counts as one), else the provider's own defaults.

@@ -96,6 +96,7 @@ describe("project routes", () => {
     });
 
     expect(response.status).toBe(400);
+    expect((await response.json()).error).toBe("name: 项目名称不能为空");
     expect(library.calls.filter((call) => call.includes("/rename"))).toEqual([]);
   });
 });

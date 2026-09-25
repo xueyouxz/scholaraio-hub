@@ -2,15 +2,21 @@ import { constants } from "node:fs";
 import { open, readdir, realpath } from "node:fs/promises";
 import path from "node:path";
 import type { SessionDirectoryListing, SessionFileContent } from "@scholaraio-hub/shared";
-import { MAX_ATTACHMENT_BYTES } from "./SessionAttachments.js";
-import type { SessionStore } from "./SessionStore.js";
+import { MAX_ATTACHMENT_BYTES, MAX_ATTACHMENT_LABEL } from "./SessionAttachments.js";
 import { SessionInputError } from "./errors.js";
 
+/** Largest part of a file the preview returns. */
+const PREVIEW_BYTES = 1024 * 1024;
+
+/**
+ * Read-only access to the directory a session's agent works in: its project's
+ * directory, or its private workspace when it has no project.
+ */
 export class SessionFiles {
-  constructor(private store: SessionStore) {}
+  constructor(private workingDirectory: (id: string) => Promise<string>) {}
 
   private async resolve(id: string, relative: string) {
-    const base = await realpath(this.store.workspace(this.store.get(id)));
+    const base = await realpath(await this.workingDirectory(id));
     const candidate = path.resolve(base, relative);
     if (
       relative.includes("\0") ||
@@ -36,27 +42,27 @@ export class SessionFiles {
     return { path: relative, entries };
   }
 
-  async read(id: string, relative: string, raw = false): Promise<Buffer> {
+  async read(id: string, relative: string, raw = false): Promise<{ bytes: Buffer; size: number }> {
     const target = await this.resolve(id, relative);
     const handle = await open(target, constants.O_RDONLY | constants.O_NOFOLLOW);
     try {
       const info = await handle.stat();
       if (!info.isFile()) throw new SessionInputError("请选择文件");
       if (raw && info.size > MAX_ATTACHMENT_BYTES)
-        throw new SessionInputError("下载文件不能超过 25 MB");
-      const buffer = Buffer.alloc(Math.min(info.size, raw ? MAX_ATTACHMENT_BYTES : 1024 * 1024));
+        throw new SessionInputError(`下载文件不能超过 ${MAX_ATTACHMENT_LABEL}`);
+      const buffer = Buffer.alloc(Math.min(info.size, raw ? MAX_ATTACHMENT_BYTES : PREVIEW_BYTES));
       const { bytesRead } = await handle.read(buffer, 0, buffer.length, 0);
-      return buffer.subarray(0, bytesRead);
+      return { bytes: buffer.subarray(0, bytesRead), size: info.size };
     } finally {
       await handle.close();
     }
   }
 
   async preview(id: string, relative: string): Promise<SessionFileContent> {
-    const buffer = await this.read(id, relative);
+    const { bytes, size } = await this.read(id, relative);
     return {
-      content: buffer.includes(0) ? undefined : buffer.toString("utf8"),
-      truncated: buffer.length === 1024 * 1024,
+      content: bytes.includes(0) ? undefined : bytes.toString("utf8"),
+      truncated: size > bytes.length,
       rawUrl: `/api/sessions/${id}/fs/raw?path=${encodeURIComponent(relative)}`,
     };
   }

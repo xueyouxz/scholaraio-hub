@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import type { ProviderName, ThinkingConfig } from "@scholaraio-hub/shared";
-import { getLogger } from "../logging/logger.js";
+import { loggerFor } from "../logging/logger.js";
 import { getProvider } from "../providers/index.js";
 import type { AgentProvider } from "../providers/types.js";
 import type { PermissionMode, UserMessage } from "../providers/types.js";
@@ -14,6 +14,11 @@ const STALE_CHECK_INTERVAL_MS = 60 * 1000;
 const DEFAULT_STALE_IN_TURN_THRESHOLD_MS = 5 * 60 * 1000;
 /** Codex sessions can be silent for long periods during backend retries/reconnects. */
 const CODEX_STALE_IN_TURN_THRESHOLD_MS = 60 * 60 * 1000;
+/**
+ * How long a process may wait on an approval or question nobody answers. The
+ * session keeps its native id, so the next message resumes where it stopped.
+ */
+const DEFAULT_UNANSWERED_INPUT_TIMEOUT_MS = 30 * 60 * 1000;
 
 function getStaleInTurnThresholdMs(provider: ProviderName): number {
   return provider === "codex"
@@ -49,6 +54,8 @@ export interface SupervisorOptions {
   /** Agent provider used when a request does not name one */
   provider: AgentProvider;
   idleTimeoutMs?: number;
+  /** How long a pending approval or question may go unanswered before the process stops. */
+  unansweredInputTimeoutMs?: number;
   /**
    * Every event of every live process, with the session it serves. A process
    * that was released (replaced or deleted) reports nothing more.
@@ -66,12 +73,15 @@ export class Supervisor {
   private readonly processes = new Map<string, AgentProcess>();
   private readonly provider: AgentProvider;
   private readonly idleTimeoutMs?: number;
+  private readonly unansweredInputTimeoutMs: number;
   private readonly onEvent: SupervisorOptions["onEvent"];
   private readonly staleCheckTimer: ReturnType<typeof setInterval>;
 
   constructor(options: SupervisorOptions) {
     this.provider = options.provider;
     this.idleTimeoutMs = options.idleTimeoutMs;
+    this.unansweredInputTimeoutMs =
+      options.unansweredInputTimeoutMs ?? DEFAULT_UNANSWERED_INPUT_TIMEOUT_MS;
     this.onEvent = options.onEvent;
     this.staleCheckTimer = setInterval(
       () => this.terminateStaleProcesses(),
@@ -132,28 +142,36 @@ export class Supervisor {
    * in place; any other difference releases the process and returns false.
    */
   private async adopt(process: AgentProcess, request: SessionMessageRequest): Promise<boolean> {
-    const settings = request.settings ?? {};
-    const reason = process.isTerminated
-      ? "Process already ended"
-      : this.providerFor(settings.providerName).name !== process.provider
-        ? "Provider changed"
-        : request.nativeSessionId !== process.nativeSessionId
-          ? "Session continues a different conversation"
-          : settings.model !== process.model
-            ? "Model changed"
-            : settings.effort !== process.effort
-              ? "Effort changed"
-              : process.thinking?.type !== settings.thinking?.type &&
-                  !(await process.changeThinking(settings.thinking))
-                ? "Thinking changed"
-                : undefined;
+    const reason = await this.mismatch(process, request.nativeSessionId, request.settings ?? {});
     if (!reason) return true;
-    getLogger().info(
+    loggerFor("supervisor").info(
       { event: "process_replaced", sessionId: request.sessionId, processId: process.id, reason },
       `Replacing process for ${request.sessionId}: ${reason}`,
     );
     this.release(request.sessionId, reason);
     return false;
+  }
+
+  /** Why the live process cannot serve the request, or undefined when it can. */
+  private async mismatch(
+    process: AgentProcess,
+    nativeSessionId: string | undefined,
+    settings: LaunchSettings,
+  ): Promise<string | undefined> {
+    if (process.isTerminated) return "Process already ended";
+    if (this.providerFor(settings.providerName).name !== process.provider)
+      return "Provider changed";
+    if (nativeSessionId !== process.nativeSessionId)
+      return "Session continues a different conversation";
+    if (settings.model !== process.model) return "Model changed";
+    if (settings.effort !== process.effort) return "Effort changed";
+    // Thinking alone can switch in place, when the provider allows it.
+    if (
+      process.thinking?.type !== settings.thinking?.type &&
+      !(await process.changeThinking(settings.thinking))
+    )
+      return "Thinking changed";
+    return undefined;
   }
 
   private async launch(request: SessionMessageRequest): Promise<AgentProcess> {
@@ -195,7 +213,7 @@ export class Supervisor {
 
   private register(process: AgentProcess): void {
     const { sessionId } = process;
-    getLogger().info(
+    loggerFor("supervisor").info(
       { event: "process_registered", sessionId, processId: process.id },
       `Process registered for session ${sessionId}`,
     );
@@ -205,7 +223,7 @@ export class Supervisor {
       if (this.processes.get(sessionId) !== process) return;
       if (event.type === "terminated") {
         this.processes.delete(sessionId);
-        getLogger().info(
+        loggerFor("supervisor").info(
           {
             event: "process_unregistered",
             sessionId,
@@ -224,18 +242,38 @@ export class Supervisor {
    * Terminate processes stuck in "in-turn" with no provider events for too
    * long: the CLI died without its event stream ending or throwing. When the
    * provider can report liveness, only a dead process is stopped — a live but
-   * silent one is most likely in a long tool call.
+   * silent one is most likely in a long tool call. A process waiting on input
+   * nobody answers is stopped too, so a closed tab does not keep its CLI alive.
    */
   private terminateStaleProcesses(): void {
     const now = Date.now();
     for (const process of this.processes.values()) {
+      if (process.state.type === "waiting-input") {
+        const waitingMs = now - Date.parse(process.state.request.timestamp);
+        if (waitingMs < this.unansweredInputTimeoutMs) continue;
+        loggerFor("supervisor").warn(
+          {
+            event: "input_unanswered",
+            sessionId: process.sessionId,
+            processId: process.id,
+            waitingMs,
+          },
+          `Stopping process for ${process.sessionId}: input unanswered`,
+        );
+        const minutes = Math.round(waitingMs / 60_000);
+        process.stop(
+          `input unanswered for ${minutes} min`,
+          new Error(`等待确认超过 ${minutes} 分钟无人回应，已停止本轮；发送新消息可继续。`),
+        );
+        continue;
+      }
       if (process.state.type !== "in-turn") continue;
       const staleThresholdMs = getStaleInTurnThresholdMs(process.provider);
       const silentMs = now - process.lastMessageTime.getTime();
       if (silentMs < staleThresholdMs) continue;
       const alive = process.isProcessAlive;
       if (alive === true) continue;
-      getLogger().warn(
+      loggerFor("supervisor").warn(
         {
           event: alive === undefined ? "stale_process_detected" : "stale_process_dead",
           sessionId: process.sessionId,

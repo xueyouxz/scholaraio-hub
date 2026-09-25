@@ -37,7 +37,7 @@ jobs:
       - run: python -m pip install uv==0.12.17
       - run: pnpm test:python
       - run: pnpm test
-      # Second e2e layer (server contract / Vitest), per CLAUDE.md.
+      # Second e2e layer (server contract / Vitest), per AGENTS.md.
       - run: pnpm --filter @scholaraio-hub/server test:e2e
 
   e2e:

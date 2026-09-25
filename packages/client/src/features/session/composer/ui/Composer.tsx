@@ -1,4 +1,4 @@
-import type { SessionAttachment, SlashCommand } from "@scholaraio-hub/shared";
+import type { ProviderName, SessionAttachment, SlashCommand } from "@scholaraio-hub/shared";
 import { useQuery } from "@tanstack/react-query";
 import { Paperclip } from "lucide-react";
 import {
@@ -66,7 +66,7 @@ export function Composer({
   onTextChange,
 }: {
   draftKey: string;
-  provider: "claude" | "codex";
+  provider: ProviderName;
   sessionId?: string;
   /** Receives the uploaded attachments; files upload as soon as they are added. */
   onQueue?: (text: string, attachments: SessionAttachment[]) => Promise<void>;

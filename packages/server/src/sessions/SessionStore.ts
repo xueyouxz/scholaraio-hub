@@ -1,8 +1,12 @@
 import { randomUUID } from "node:crypto";
-import { mkdir, readFile, readdir, rename, rm, writeFile } from "node:fs/promises";
+import { mkdir, readFile, readdir, rename, rm } from "node:fs/promises";
 import path from "node:path";
-import { type StoredSession, readLegacyThinking } from "@scholaraio-hub/shared";
+import { type StoredSession, isProviderName, readLegacyThinking } from "@scholaraio-hub/shared";
+import { loggerFor } from "../logging/logger.js";
+import { writeFileAtomic } from "../utils/write-file-atomic.js";
 import { SessionNotFoundError } from "./errors.js";
+
+const log = () => loggerFor("session-store");
 
 export interface SessionRecord extends StoredSession {
   nativeSessionId?: string;
@@ -35,22 +39,8 @@ export class SessionStore {
     await mkdir(base, { recursive: true });
     for (const entry of await readdir(base, { withFileTypes: true })) {
       if (!entry.isDirectory()) continue;
-      const file = path.join(base, entry.name, "session.json");
-      let content: string;
-      try {
-        content = await readFile(file, "utf8");
-      } catch (error) {
-        // A deleted session whose workspace its forks still use keeps only its directory.
-        if ((error as NodeJS.ErrnoException).code === "ENOENT") continue;
-        throw error;
-      }
-      const data = JSON.parse(content) as SessionRecord;
-      if (
-        data.id !== entry.name ||
-        !Array.isArray(data.messages) ||
-        !["claude", "codex"].includes(data.provider)
-      )
-        throw new Error(`Invalid session record: ${entry.name}`);
+      const data = await this.load(base, entry.name);
+      if (!data) continue;
       this.records.set(data.id, data);
       if (data.thinking && data.thinking !== "off" && data.thinking !== "adaptive") {
         Object.assign(data, readLegacyThinking(data.thinking));
@@ -66,6 +56,34 @@ export class SessionStore {
         data.error = "服务重启中断了上一轮，可发送新消息继续。";
         await this.save(data);
       }
+    }
+  }
+
+  /**
+   * One stored session, or undefined when the directory holds none. A record
+   * that cannot be read is set aside (renamed, never deleted) so one damaged
+   * file does not keep every other session from loading.
+   */
+  private async load(base: string, name: string): Promise<SessionRecord | undefined> {
+    const file = path.join(base, name, "session.json");
+    let content: string;
+    try {
+      content = await readFile(file, "utf8");
+    } catch (error) {
+      // A deleted session whose workspace its forks still use keeps only its directory.
+      if ((error as NodeJS.ErrnoException).code === "ENOENT") return undefined;
+      throw error;
+    }
+    try {
+      const data = JSON.parse(content) as SessionRecord;
+      if (data.id !== name || !Array.isArray(data.messages) || !isProviderName(data.provider))
+        throw new Error("the record does not describe this session");
+      return data;
+    } catch (error) {
+      const aside = `${file}.corrupt-${Date.now()}`;
+      await rename(file, aside);
+      log().error({ err: error, sessionId: name, movedTo: aside }, "Unreadable session set aside");
+      return undefined;
     }
   }
 
@@ -136,24 +154,26 @@ export class SessionStore {
     return affected.length;
   }
 
+  /**
+   * Write the record atomically. Writes of one session go out in order; each
+   * caller hears how its own write went, and a failed write does not stop the
+   * ones queued behind it.
+   */
   save(record: SessionRecord): Promise<void> {
     record.updatedAt = new Date().toISOString();
     const content = JSON.stringify(record);
     const file = path.join(this.directory(record.id), "session.json");
     const previous = this.writes.get(record.id) ?? Promise.resolve();
-    const next = previous
-      .catch((error) => console.error("[SessionStore] previous write failed", error))
-      .then(async () => {
-        const temporary = `${file}.${randomUUID()}.tmp`;
-        await writeFile(temporary, content, { mode: 0o600 });
-        await rename(temporary, file);
-      });
-    this.writes.set(record.id, next);
-    void next
-      .finally(() => {
-        if (this.writes.get(record.id) === next) this.writes.delete(record.id);
-      })
-      .catch((error) => console.error("[SessionStore] save failed", error));
+    const next = previous.then(() => writeFileAtomic(file, content));
+    // What later writes wait on: settled either way, since `next`'s caller has its failure.
+    const settled = next.then(
+      () => undefined,
+      () => undefined,
+    );
+    this.writes.set(record.id, settled);
+    void settled.then(() => {
+      if (this.writes.get(record.id) === settled) this.writes.delete(record.id);
+    });
     return next;
   }
 
@@ -164,8 +184,8 @@ export class SessionStore {
    */
   async remove(id: string): Promise<void> {
     this.get(id);
-    // Only wait for a pending write to settle: save() has already logged one that failed.
-    await this.writes.get(id)?.catch(() => undefined);
+    // Only wait for a pending write to settle; its caller has its outcome.
+    await this.writes.get(id);
     this.records.delete(id);
     const shared = [...this.records.values()].some((record) => record.workspaceSessionId === id);
     if (shared) await rm(path.join(this.directory(id), "session.json"), { force: true });

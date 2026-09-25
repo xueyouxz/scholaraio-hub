@@ -1,4 +1,5 @@
 import type {
+  ProviderName,
   SessionAttachment,
   SessionDirectoryListing,
   SessionFileContent,
@@ -86,7 +87,7 @@ export const sessionApi = {
       if (!current.messages.some((message) => message.id === input.id)) throw error;
     }
   },
-  commands: (provider: "claude" | "codex", sessionId?: string, signal?: AbortSignal) =>
+  commands: (provider: ProviderName, sessionId?: string, signal?: AbortSignal) =>
     requestJson<{ commands: SlashCommand[] }>(
       sessionId
         ? `/api/sessions/${pathSegment(sessionId)}/commands`
@@ -108,7 +109,7 @@ export const sessionApi = {
   get: (id: string, signal?: AbortSignal) =>
     requestJson<StoredSession>(`/api/sessions/${pathSegment(id)}`, { signal }),
   create: (
-    provider: "claude" | "codex",
+    provider: ProviderName,
     paperIds: string[] = [],
     model?: string,
     projectId?: string,

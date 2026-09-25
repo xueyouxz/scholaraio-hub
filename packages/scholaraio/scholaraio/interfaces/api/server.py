@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import logging
 import os
 import socket
 import sys
@@ -21,6 +22,16 @@ from scholaraio.interfaces.api.security import TOKEN_VARIABLE
 # Once the owner is gone, how long cleanup may take before the process is killed.
 SHUTDOWN_GRACE_SECONDS = 5
 
+# One record per line on stderr, led by its level: the Node server logs each
+# line at that level (see LibraryService.ts). Stdout carries only the port.
+LOG_FORMAT = "%(levelname)s\t%(name)s: %(message)s"
+
+
+def configure_logging() -> None:
+    logging.basicConfig(level=logging.INFO, stream=sys.stderr, format=LOG_FORMAT)
+    for name in ("httpx", "urllib3", "httpcore", "sentence_transformers"):
+        logging.getLogger(name).setLevel(logging.WARNING)
+
 
 def watch_parent(server: uvicorn.Server, stopped: threading.Event) -> None:
     """An EOF on the Node-owned pipe also covers SIGKILL and watch restarts."""
@@ -28,7 +39,7 @@ def watch_parent(server: uvicorn.Server, stopped: threading.Event) -> None:
         while os.read(sys.stdin.fileno(), 1024):
             pass
     except OSError as exc:
-        print(f"Parent pipe failed: {exc}", file=sys.stderr, flush=True)
+        logging.getLogger("scholaraio.api").warning("Parent pipe failed: %s", exc)
     if stopped.is_set():
         return
     server.should_exit = True
@@ -43,6 +54,7 @@ def main() -> None:
     parser.add_argument("--data-dir", type=Path, required=True)
     parser.add_argument("--watch-stdin", action="store_true")
     args = parser.parse_args()
+    configure_logging()
     token = os.environ.get(TOKEN_VARIABLE, "")
     if not token:
         raise SystemExit("Missing internal service token")

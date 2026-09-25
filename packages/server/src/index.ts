@@ -5,7 +5,7 @@ import { serve } from "@hono/node-server";
 import { createApp } from "./app.js";
 import { loadConfig } from "./config.js";
 import { DevFrontend } from "./frontend/dev.js";
-import { initLogger, interceptConsole } from "./logging/logger.js";
+import { initLogger, interceptConsole, loggerFor } from "./logging/logger.js";
 import { bindAgentLibrary } from "./providers/agent-env.js";
 import { closeProviderTrace, initProviderTrace } from "./providers/trace.js";
 import { LibraryService } from "./services/LibraryService.js";
@@ -22,12 +22,13 @@ initLogger({
   prettyPrint: config.logPretty,
 });
 interceptConsole();
+const log = loggerFor("server");
 // Opt-in trace of raw provider messages for debugging (LOG_SDK_MESSAGES).
 initProviderTrace({ enabled: config.logSdkMessages, logDir: config.logDir });
-console.log(`[Config] Profile ${config.profile}, data directory ${config.dataDir}`);
+log.info({ profile: config.profile, dataDir: config.dataDir }, "Configuration loaded");
 // Production serves the built client; without it every page would 404.
 if (config.nodeEnv === "production" && !existsSync(path.join(config.clientDistDir, "index.html"))) {
-  console.error(`[Startup] 未找到前端构建产物 ${config.clientDistDir}，请先运行 pnpm build。`);
+  log.fatal(`未找到前端构建产物 ${config.clientDistDir}，请先运行 pnpm build。`);
   process.exit(1);
 }
 // Development serves the client from Vite on this same port; production from the build.
@@ -47,16 +48,27 @@ async function shutdown() {
   await library.close();
   closeProviderTrace();
 }
-for (const signal of ["SIGINT", "SIGTERM"])
-  process.once(signal, () => {
-    void shutdown().then(
-      () => process.exit(0),
-      (error) => {
-        console.error(error);
-        process.exit(1);
-      },
-    );
-  });
+/** Shut down, then leave with `code`; a failed shutdown still leaves. */
+function exitAfterShutdown(code: number): void {
+  void shutdown().then(
+    () => process.exit(code),
+    (error) => {
+      log.error({ err: error }, "Shutdown failed");
+      process.exit(1);
+    },
+  );
+}
+for (const signal of ["SIGINT", "SIGTERM"]) process.once(signal, () => exitAfterShutdown(0));
+// A promise nobody awaited failed: a bug, but one request's, not the server's.
+process.on("unhandledRejection", (reason) => {
+  log.error({ err: reason }, "Unhandled promise rejection");
+});
+// A throw that escaped every handler leaves the process in an unknown state:
+// stop the agents and the library cleanly rather than keep serving.
+process.on("uncaughtException", (error) => {
+  log.fatal({ err: error }, "Uncaught exception; shutting down");
+  exitAfterShutdown(1);
+});
 try {
   const origin = `http://${config.host}:${config.port}`;
   // Every agent this server starts works on its library, through its API.
@@ -75,6 +87,7 @@ try {
     frontendDistPath: devFrontend ? undefined : config.clientDistDir,
     scholaraioSkillsDir: config.skillsDir,
     allowedHosts: config.allowedHosts,
+    profile: config.profile,
   });
   await application.ready;
   server = serve({
@@ -87,18 +100,18 @@ try {
   });
   server.on("error", (error: NodeJS.ErrnoException) => {
     if (error.code === "EADDRINUSE")
-      console.error(
-        `[Server] 端口 ${config.port} 已被占用：可能已有一个 Hub 在运行（pnpm hub doctor 可查看），或用 PORT=xxxx 换端口。`,
+      log.fatal(
+        `端口 ${config.port} 已被占用：可能已有一个 Hub 在运行（pnpm hub doctor 可查看），或用 PORT=xxxx 换端口。`,
       );
-    else console.error("[Server]", error);
+    else log.fatal({ err: error }, "Server error");
     void shutdown().then(() => {
       process.exitCode = 1;
     });
   });
   if (devFrontend) await devFrontend.attach(server as Server);
-  console.log(`ScholarAIO Hub: ${origin}`);
+  log.info(`ScholarAIO Hub: ${origin}`);
 } catch (error) {
-  console.error("[Startup]", error);
+  log.fatal({ err: error }, "Startup failed");
   await shutdown();
   process.exitCode = 1;
 }

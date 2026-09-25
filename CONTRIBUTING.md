@@ -1,101 +1,79 @@
-# Contributing to scholaraio-hub
+# 参与开发
 
-## Prerequisites
+使用说明见 [README](README.md)，架构见 [docs/architecture.md](docs/architecture.md)。用 coding agent
+开发时，它读取的规则在 [AGENTS.md](AGENTS.md)；这些规则对人同样适用。
 
-- Node.js `>= 20`
-- pnpm `>= 10.27.0`
-- [uv](https://docs.astral.sh/uv/getting-started/installation/), which installs the Python library runtime
+## 准备
 
-Enable pnpm if not already available:
-
-```bash
-corepack enable
-```
-
-## First-time setup
+- Node.js 20+
+- pnpm 10.27+（`corepack enable` 即可使用仓库固定的版本）
+- [uv](https://docs.astral.sh/uv/getting-started/installation/)，用于安装 Python 文献服务的运行环境
 
 ```bash
 git clone https://github.com/xueyouxz/scholaraio-hub.git
 cd scholaraio-hub
 pnpm install
-pnpm hub setup
+pnpm hub setup                              # Python 运行环境装进 dev profile 的数据目录
+pnpm exec playwright install chromium       # 浏览器测试，只需一次
 ```
 
-`pnpm hub setup` installs the Python runtime into the development data directory
-(`~/.scholaraio-hub-dev`). Optional overrides go in `.env.local`; see `.env.example`.
+可选的本地配置写在 `.env.local`，可用项见 [.env.example](.env.example)。
 
-Install Playwright for E2E tests (one-time):
+## 开发
 
 ```bash
-pnpm exec playwright install chromium
+pnpm dev             # http://127.0.0.1:3500
+PORT=3800 pnpm dev   # 换端口
 ```
 
-## Development
+开发服务器在同一个端口上提供 API，并以中间件模式运行 Vite，页面、API 和前端热更新同源，与生产一致。
+前端直接读取 `packages/shared` 源码，修改共享类型无需重新构建；修改服务端代码时进程会重启，页面自动重连。
+启动前会检查端口占用和文献运行环境。`pnpm hub doctor` 显示当前 profile 对应的数据目录和端口。
 
-Start the dev server:
+其他命令：`pnpm hub skills-sync` 找出 skills 目录里 `packages/server/src/skills/scholaraioCategories.ts` 尚未收录的 skill，追加到文件末尾的注释块，供维护者归类。
+
+## 验证
+
+推送前在本地跑完整门禁，与 CI（`.github/workflows/ci.yml`）一致：
 
 ```bash
-pnpm dev
+pnpm ci:local
 ```
 
-Open `http://127.0.0.1:3500`: the server serves the API and, through Vite in middleware
-mode, the client with hot module replacement, on the same port as production uses one.
-`pnpm hub doctor` shows which data directory and port the current profile resolves to.
+它依次执行 lint（Biome + `scripts/check-conventions.mjs`）、类型检查、Python 测试、单元测试、服务端 e2e 和浏览器
+e2e。单独运行：`pnpm lint`、`pnpm typecheck`、`pnpm test`、`pnpm test:python`、`pnpm test:e2e`。
 
-## Code style
-
-This project uses [Biome](https://biomejs.dev/) for formatting and linting. Run before opening a PR:
+以下两组测试会调用本机已登录的 CLI、发送真实模型请求，只在需要时手动运行：
 
 ```bash
-pnpm lint:fix
+pnpm --filter @scholaraio-hub/server test:e2e:real
+REAL_HUB_TESTS=true REAL_HUB_PROVIDER=codex pnpm --filter @scholaraio-hub/server exec vitest run test/e2e/workbench-real.test.ts
 ```
 
-The pre-commit hook runs `lint-staged` automatically on changed files.
+`pnpm build` 会覆盖生产使用的 `dist/`；生产实例正在运行时，先确认再重建。
 
-## Testing
+## 代码规范
 
-Unit and integration tests:
+- 格式和 lint 由 Biome 负责，提交时 pre-commit 钩子对暂存文件运行 `lint-staged`。
+- `scripts/check-conventions.mjs` 拒绝 suppression 注释、吞掉错误的空 catch，以及放错位置的测试文件。
+- 各包的具体规则在 `.claude/rules/`（client / server / shared / python），UI 以 [.design/DESIGN.md](.design/DESIGN.md) 为准。
 
-```bash
-pnpm test
-```
+## 提交与 PR
 
-End-to-end tests (builds client first):
+- 提交标题简短、祈使句、具体，例如 `Add session pagination for Codex provider`；避免 `Fix bug` 这类笼统标题。
+  commit-msg 钩子会拒绝 AI 署名行。
+- 从 `main` 拉分支，附上相应测试，推送前 `pnpm ci:local` 通过。
+- PR 按模板填写：改了什么、为什么、如何验证；界面改动附截图；新增环境变量或配置（`PORT`、`SCHOLARAIO_HUB_*`）要写明。
 
-```bash
-pnpm test:e2e
-```
-
-All tests must pass before a PR can be merged.
-
-## Commit messages
-
-Keep commit subjects short (under 72 characters), imperative, and specific:
-
-```
-Add session pagination for Codex provider
-Fix scatter plot tooltip positioning on resize
-```
-
-Avoid vague subjects like `Fix bug` or `Update code`.
-
-## Pull request flow
-
-1. Fork the repo and create a branch from `main`
-2. Make your changes with appropriate tests
-3. Run `pnpm lint:fix && pnpm typecheck && pnpm test`
-4. Open a PR with a brief description of what changed and why
-5. Include screenshots for any UI changes
-6. Call out any new environment variables or config changes
-
-## Project structure
+## 目录
 
 ```
 packages/
-  client/   # Vite + React frontend
-  server/   # Hono API, session supervision, providers, `pnpm hub` commands
-  shared/   # Shared types, schemas, profile and port rules
-  scholaraio/  # Python library service (sidecar)
-scripts/    # hub.mjs entry and CI helpers
-e2e/        # Playwright smoke tests
+  client/      # Vite + React 前端
+  server/      # Hono API、会话监管、provider、`pnpm hub` 命令
+  shared/      # 共享类型、schema、profile 与端口规则
+  scholaraio/  # Python 文献服务（sidecar）
+scripts/       # hub.mjs 入口、CI 与规范检查
+e2e/           # Playwright 浏览器测试
+docs/          # 架构说明
 ```

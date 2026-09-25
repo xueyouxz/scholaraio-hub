@@ -7,17 +7,19 @@
 
 ## Rendering stack (as wired today)
 
-- **Session transcript**: Streamdown (`shared/components/Markdown.tsx`) with the `code`
-  (Shiki), `math` (KaTeX, `$…$` enabled) and `cjk` plugins; streaming mode and a block
-  caret while a part is live. `script` / `iframe` / `object` / `embed` / `form` / `input`
-  are dropped.
-- **Paper reader and skills**: `react-markdown` with `remark-gfm`, `remark-math`,
-  `rehype-katex`, `rehype-raw`. See `packages/client/src/features/library/reader/PaperMarkdown.tsx` and
-  `packages/client/src/features/skills/SkillDetailView.tsx`. The paper reader is typeset by
+- **Session transcript**: Streamdown (`packages/client/src/shared/components/Markdown.tsx`)
+  with the `code` (Shiki), `math` (KaTeX, `$…$` enabled) and `cjk` plugins; streaming mode
+  and a block caret while a part is live. `script` / `iframe` / `object` / `embed` / `form` /
+  `input` are dropped and URLs pass Streamdown's `defaultUrlTransform`.
+- **Paper reader**: `react-markdown` with `remark-gfm`, `remark-math`, `rehype-katex` and
+  `rehype-raw` (`packages/client/src/features/library/reader/PaperMarkdown.tsx`). Typeset by
   Tailwind Typography (`prose`, palette mapped in `.paper-prose` in `styles.css`); a small
-  rehype step tags each top-level block with its `data-line` for reading position and citations.
-- **Server sanitization**: `packages/server/src/augments/safe-markdown.ts`
-  (`sanitize-html`), plus `marked` and `shiki` for server-side highlighting.
+  rehype step tags each top-level block with its `data-line` for reading position and
+  citations.
+- **Skill detail**: `react-markdown` with `remark-gfm`, `remark-math`, `rehype-katex`, no raw
+  HTML (`packages/client/src/features/skills/SkillDetailView.tsx`).
+- There is no server-side Markdown or HTML step: the server streams text, the client
+  renders it.
 
 ## What renders
 
@@ -30,9 +32,9 @@
   - Inline `$…$`, display `$$…$$`.
   - Prefer real math over ASCII art — output is selectable and scales.
   - Math inside fenced code blocks is not rendered (code is opaque to the math plugin).
-- **Raw HTML**: `rehype-raw` parses inline HTML, but it passes through `sanitize-html`
-  on the server. Anything outside the sanitizer allowlist is stripped/escaped — do not
-  rely on arbitrary tags or `javascript:` / `data:` URLs.
+- **Raw HTML**: Streamdown's default rehype chain (`rehype-raw`, `rehype-sanitize`,
+  `rehype-harden`) plus the dropped elements above decides what survives in the
+  transcript; skill pages render none. Do not rely on HTML in agent output.
 
 ## Guidance for agents
 

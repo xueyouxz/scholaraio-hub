@@ -24,6 +24,9 @@ export type {
 export {
   ALL_PERMISSION_MODES,
   ATTACHMENT_LIMITS,
+  DEFAULT_PROVIDER,
+  PROVIDER_NAMES,
+  isProviderName,
   thinkingModeToConfig,
   readLegacyThinking,
 } from "./types.js";

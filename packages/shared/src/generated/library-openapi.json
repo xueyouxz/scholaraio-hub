@@ -1,0 +1,3182 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "ScholarAIO library",
+    "version": "0.1.0"
+  },
+  "paths": {
+    "/health": {
+      "get": {
+        "summary": "Health",
+        "operationId": "health_health_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Health"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/events": {
+      "get": {
+        "summary": "Events",
+        "description": "Stream library changes, so the browser does not have to ask for them.",
+        "operationId": "events_events_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          }
+        }
+      }
+    },
+    "/papers": {
+      "get": {
+        "tags": [
+          "papers"
+        ],
+        "summary": "List Papers",
+        "operationId": "list_papers_papers_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PaperList"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/papers/{paper_id}": {
+      "get": {
+        "tags": [
+          "papers"
+        ],
+        "summary": "Detail",
+        "operationId": "detail_papers__paper_id__get",
+        "parameters": [
+          {
+            "name": "paper_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LibraryPaperDetail"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "patch": {
+        "tags": [
+          "papers"
+        ],
+        "summary": "Update Metadata",
+        "operationId": "update_metadata_papers__paper_id__patch",
+        "parameters": [
+          {
+            "name": "paper_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MetadataInput"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LibraryPaper"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/papers/{paper_id}/refetch": {
+      "post": {
+        "tags": [
+          "papers"
+        ],
+        "summary": "Refetch Metadata",
+        "operationId": "refetch_metadata_papers__paper_id__refetch_post",
+        "parameters": [
+          {
+            "name": "paper_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RefetchResult"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/papers/{paper_id}/images": {
+      "get": {
+        "tags": [
+          "papers"
+        ],
+        "summary": "Images",
+        "operationId": "images_papers__paper_id__images_get",
+        "parameters": [
+          {
+            "name": "paper_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ImageList"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/papers/{paper_id}/pdf": {
+      "get": {
+        "tags": [
+          "papers"
+        ],
+        "summary": "Pdf",
+        "operationId": "pdf_papers__paper_id__pdf_get",
+        "parameters": [
+          {
+            "name": "paper_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/papers/{paper_id}/attachments/{relative}": {
+      "get": {
+        "tags": [
+          "papers"
+        ],
+        "summary": "Attachment",
+        "operationId": "attachment_papers__paper_id__attachments__relative__get",
+        "parameters": [
+          {
+            "name": "paper_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "relative",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/papers/{paper_id}/position": {
+      "get": {
+        "tags": [
+          "papers"
+        ],
+        "summary": "Get Position",
+        "operationId": "get_position_papers__paper_id__position_get",
+        "parameters": [
+          {
+            "name": "paper_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReadingPosition"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "put": {
+        "tags": [
+          "papers"
+        ],
+        "summary": "Set Position",
+        "operationId": "set_position_papers__paper_id__position_put",
+        "parameters": [
+          {
+            "name": "paper_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ReadingPositionInput"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReadingPosition"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/search": {
+      "get": {
+        "tags": [
+          "search"
+        ],
+        "summary": "Search",
+        "operationId": "search_search_get",
+        "parameters": [
+          {
+            "name": "mode",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "q",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": ""
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "default": 50
+            }
+          },
+          {
+            "name": "projectId",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LibrarySearchResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/discover": {
+      "get": {
+        "tags": [
+          "search"
+        ],
+        "summary": "Discover",
+        "description": "Papers on the open web the library could fetch.",
+        "operationId": "discover_discover_get",
+        "parameters": [
+          {
+            "name": "q",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": ""
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "default": 20
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DiscoverResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/context": {
+      "post": {
+        "tags": [
+          "search"
+        ],
+        "summary": "Context",
+        "operationId": "context_context_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ContextInput"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LibraryContext"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/scope": {
+      "post": {
+        "tags": [
+          "search"
+        ],
+        "summary": "Scope",
+        "operationId": "scope_scope_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ScopeInput"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Scope"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/analytics": {
+      "get": {
+        "tags": [
+          "analytics"
+        ],
+        "summary": "Analytics",
+        "operationId": "analytics_analytics_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LibraryAnalytics"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/papers/{paper_id}/references": {
+      "get": {
+        "tags": [
+          "citations"
+        ],
+        "summary": "References",
+        "operationId": "references_papers__paper_id__references_get",
+        "parameters": [
+          {
+            "name": "paper_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "projectId",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReferenceList"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/papers/{paper_id}/citing": {
+      "get": {
+        "tags": [
+          "citations"
+        ],
+        "summary": "Citing",
+        "operationId": "citing_papers__paper_id__citing_get",
+        "parameters": [
+          {
+            "name": "paper_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "projectId",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CitingList"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/citations/export": {
+      "post": {
+        "tags": [
+          "citations"
+        ],
+        "summary": "Export References",
+        "operationId": "export_references_citations_export_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ExportInput"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ExportFile"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/projects": {
+      "get": {
+        "tags": [
+          "projects"
+        ],
+        "summary": "List Projects",
+        "operationId": "list_projects_projects_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProjectList"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "projects"
+        ],
+        "summary": "Create Project",
+        "operationId": "create_project_projects_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ProjectInput"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LiteratureProject"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/projects/{project_id}": {
+      "get": {
+        "tags": [
+          "projects"
+        ],
+        "summary": "Project",
+        "operationId": "project_projects__project_id__get",
+        "parameters": [
+          {
+            "name": "project_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LiteratureProject"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "projects"
+        ],
+        "summary": "Delete Project",
+        "operationId": "delete_project_projects__project_id__delete",
+        "parameters": [
+          {
+            "name": "project_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ArchivedProject"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/projects/{project_id}/rename": {
+      "post": {
+        "tags": [
+          "projects"
+        ],
+        "summary": "Rename Project",
+        "operationId": "rename_project_projects__project_id__rename_post",
+        "parameters": [
+          {
+            "name": "project_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ProjectInput"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LiteratureProject"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/projects/{project_id}/papers": {
+      "post": {
+        "tags": [
+          "projects"
+        ],
+        "summary": "Update Project Papers",
+        "operationId": "update_project_papers_projects__project_id__papers_post",
+        "parameters": [
+          {
+            "name": "project_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ProjectPapersInput"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LiteratureProject"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/imports": {
+      "get": {
+        "tags": [
+          "imports"
+        ],
+        "summary": "List Jobs",
+        "operationId": "list_jobs_imports_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ImportJobList"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "imports"
+        ],
+        "summary": "Upload",
+        "operationId": "upload_imports_post",
+        "requestBody": {
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "$ref": "#/components/schemas/Body_upload_imports_post"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ImportJob"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/imports/fetch": {
+      "post": {
+        "tags": [
+          "imports"
+        ],
+        "summary": "Fetch",
+        "operationId": "fetch_imports_fetch_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AcquireInput"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FetchedImportJob"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/imports/{job_id}/retry": {
+      "post": {
+        "tags": [
+          "imports"
+        ],
+        "summary": "Retry",
+        "operationId": "retry_imports__job_id__retry_post",
+        "parameters": [
+          {
+            "name": "job_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "202": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ImportJob"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/tasks": {
+      "get": {
+        "tags": [
+          "tasks"
+        ],
+        "summary": "Readiness",
+        "operationId": "readiness_tasks_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LibraryCapabilities"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/tasks/{kind}": {
+      "post": {
+        "tags": [
+          "tasks"
+        ],
+        "summary": "Start Task",
+        "operationId": "start_task_tasks__kind__post",
+        "parameters": [
+          {
+            "name": "kind",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "202": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LibraryTask"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "tasks"
+        ],
+        "summary": "Cancel Task",
+        "operationId": "cancel_task_tasks__kind__delete",
+        "parameters": [
+          {
+            "name": "kind",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LibraryTask"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/settings": {
+      "get": {
+        "tags": [
+          "settings"
+        ],
+        "summary": "Read Settings",
+        "operationId": "read_settings_settings_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LibrarySettings"
+                }
+              }
+            }
+          }
+        }
+      },
+      "patch": {
+        "tags": [
+          "settings"
+        ],
+        "summary": "Update Settings",
+        "operationId": "update_settings_settings_patch",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SettingsInput"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LibrarySettings"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/settings/check": {
+      "post": {
+        "tags": [
+          "settings"
+        ],
+        "summary": "Check Settings",
+        "description": "Try the configured service once, so the page can say whether it works.",
+        "operationId": "check_settings_settings_check_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SettingsCheckInput"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SettingsCheck"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "AcquireInput": {
+        "properties": {
+          "locator": {
+            "type": "string",
+            "maxLength": 2000,
+            "minLength": 1
+          },
+          "projectId": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 120,
+                "minLength": 1
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "title": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 500
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "type": "object",
+        "required": [
+          "locator"
+        ]
+      },
+      "ArchivedProject": {
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "archivedAt": {
+            "type": "string"
+          },
+          "path": {
+            "type": "string",
+            "description": "Where the archived project's directory now is."
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "archivedAt",
+          "path"
+        ]
+      },
+      "Body_upload_imports_post": {
+        "properties": {
+          "files": {
+            "items": {
+              "type": "string",
+              "contentMediaType": "application/octet-stream"
+            },
+            "type": "array"
+          },
+          "projectId": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 120
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "type": "object",
+        "required": [
+          "files"
+        ]
+      },
+      "CitingList": {
+        "properties": {
+          "citing": {
+            "items": {
+              "$ref": "#/components/schemas/LibraryPaper"
+            },
+            "type": "array"
+          }
+        },
+        "type": "object",
+        "required": [
+          "citing"
+        ]
+      },
+      "ContextInput": {
+        "properties": {
+          "paperIds": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "maxItems": 100
+          },
+          "projectId": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 120,
+                "minLength": 1
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "query": {
+            "type": "string",
+            "maxLength": 20000
+          }
+        },
+        "type": "object",
+        "required": [
+          "query"
+        ]
+      },
+      "DiscoverError": {
+        "properties": {
+          "source": {
+            "type": "string"
+          },
+          "error": {
+            "type": "string"
+          }
+        },
+        "type": "object",
+        "required": [
+          "source",
+          "error"
+        ]
+      },
+      "DiscoverResponse": {
+        "properties": {
+          "results": {
+            "items": {
+              "$ref": "#/components/schemas/DiscoveredPaper"
+            },
+            "type": "array"
+          },
+          "errors": {
+            "items": {
+              "$ref": "#/components/schemas/DiscoverError"
+            },
+            "type": "array",
+            "description": "Sources that could not answer; the others still did."
+          }
+        },
+        "type": "object",
+        "required": [
+          "results",
+          "errors"
+        ]
+      },
+      "DiscoveredPaper": {
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          },
+          "authors": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "year": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "venue": {
+            "type": "string"
+          },
+          "doi": {
+            "type": "string"
+          },
+          "arxivId": {
+            "type": "string"
+          },
+          "locator": {
+            "type": "string"
+          },
+          "openAccess": {
+            "type": "boolean"
+          },
+          "citations": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "source": {
+            "type": "string",
+            "enum": [
+              "openalex",
+              "arxiv"
+            ]
+          },
+          "paperId": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Set when the library already holds this work."
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "title",
+          "authors",
+          "year",
+          "venue",
+          "doi",
+          "arxivId",
+          "locator",
+          "openAccess",
+          "citations",
+          "source",
+          "paperId"
+        ],
+        "description": "A paper found on the open web, with the locator the import queue fetches it by."
+      },
+      "ExportFile": {
+        "properties": {
+          "filename": {
+            "type": "string"
+          },
+          "contentType": {
+            "type": "string"
+          },
+          "content": {
+            "type": "string"
+          }
+        },
+        "type": "object",
+        "required": [
+          "filename",
+          "contentType",
+          "content"
+        ]
+      },
+      "ExportInput": {
+        "properties": {
+          "paperIds": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "maxItems": 1000
+          },
+          "projectId": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 120,
+                "minLength": 1
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "format": {
+            "type": "string",
+            "enum": [
+              "bibtex",
+              "ris",
+              "markdown"
+            ],
+            "default": "bibtex"
+          },
+          "style": {
+            "type": "string",
+            "enum": [
+              "apa",
+              "vancouver",
+              "chicago-author-date",
+              "mla"
+            ],
+            "default": "apa"
+          }
+        },
+        "type": "object"
+      },
+      "FetchedImportJob": {
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "projectId": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Workspace each paper joins once it is in the library."
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/ImportItem"
+            },
+            "type": "array"
+          },
+          "source": {
+            "type": "string",
+            "enum": [
+              "arxiv",
+              "patent",
+              "doi"
+            ],
+            "description": "What the locator was taken for."
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "items",
+          "source"
+        ]
+      },
+      "HTTPValidationError": {
+        "properties": {
+          "detail": {
+            "items": {
+              "$ref": "#/components/schemas/ValidationError"
+            },
+            "type": "array"
+          }
+        },
+        "type": "object"
+      },
+      "Health": {
+        "properties": {
+          "status": {
+            "type": "string",
+            "const": "ok"
+          }
+        },
+        "type": "object",
+        "required": [
+          "status"
+        ]
+      },
+      "ImageList": {
+        "properties": {
+          "images": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          }
+        },
+        "type": "object",
+        "required": [
+          "images"
+        ]
+      },
+      "ImportItem": {
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "title": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "What the user knows a fetched paper by, when it is not the file name."
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "queued",
+              "running",
+              "completed",
+              "completed_incomplete",
+              "duplicate",
+              "needs_review",
+              "failed"
+            ],
+            "description": "\"completed_incomplete\": ingested, but key metadata such as the DOI is missing."
+          },
+          "step": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Pipeline step currently running: mineru | extract | dedup | ingest."
+          },
+          "paperId": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "missingMetadata": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "projectError": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Why a paper that did arrive could not join the job's workspace."
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "name",
+          "status"
+        ]
+      },
+      "ImportJob": {
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "projectId": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Workspace each paper joins once it is in the library."
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/ImportItem"
+            },
+            "type": "array"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "items"
+        ]
+      },
+      "ImportJobList": {
+        "properties": {
+          "jobs": {
+            "items": {
+              "$ref": "#/components/schemas/ImportJob"
+            },
+            "type": "array"
+          }
+        },
+        "type": "object",
+        "required": [
+          "jobs"
+        ]
+      },
+      "LibraryAnalytics": {
+        "properties": {
+          "topics": {
+            "$ref": "#/components/schemas/TopicOverview"
+          },
+          "projection": {
+            "$ref": "#/components/schemas/Projection"
+          }
+        },
+        "type": "object",
+        "required": [
+          "topics",
+          "projection"
+        ],
+        "description": "The topics, and where each paper sits on the map."
+      },
+      "LibraryCapabilities": {
+        "properties": {
+          "papers": {
+            "type": "integer"
+          },
+          "vectors": {
+            "type": "integer"
+          },
+          "embedProvider": {
+            "type": "string"
+          },
+          "embedModel": {
+            "type": "string"
+          },
+          "modelReady": {
+            "type": "boolean"
+          },
+          "vectorRuntimeReady": {
+            "type": "boolean",
+            "description": "Whether the optional embedding packages are installed in the Python env."
+          },
+          "semanticReady": {
+            "type": "boolean"
+          },
+          "topicsBuilt": {
+            "type": "boolean"
+          },
+          "mappedPapers": {
+            "type": "integer",
+            "description": "Papers the stored topic map places; behind `vectors` means the map is out of date."
+          },
+          "deepPending": {
+            "type": "integer"
+          },
+          "missingAbstracts": {
+            "type": "integer"
+          },
+          "llmConfigured": {
+            "type": "boolean"
+          },
+          "mineruConfigured": {
+            "type": "boolean"
+          },
+          "tasks": {
+            "items": {
+              "$ref": "#/components/schemas/LibraryTask"
+            },
+            "type": "array"
+          }
+        },
+        "type": "object",
+        "required": [
+          "papers",
+          "vectors",
+          "embedProvider",
+          "embedModel",
+          "modelReady",
+          "vectorRuntimeReady",
+          "semanticReady",
+          "topicsBuilt",
+          "mappedPapers",
+          "deepPending",
+          "missingAbstracts",
+          "llmConfigured",
+          "mineruConfigured",
+          "tasks"
+        ],
+        "description": "What the library can do right now, and what it would take to do more."
+      },
+      "LibraryCitation": {
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "paperId": {
+            "type": "string"
+          },
+          "chunkId": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          },
+          "startLine": {
+            "type": "integer"
+          },
+          "endLine": {
+            "type": "integer"
+          },
+          "text": {
+            "type": "string"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "paperId",
+          "chunkId",
+          "title",
+          "startLine",
+          "endLine",
+          "text"
+        ]
+      },
+      "LibraryContext": {
+        "properties": {
+          "citations": {
+            "items": {
+              "$ref": "#/components/schemas/LibraryCitation"
+            },
+            "type": "array"
+          },
+          "truncated": {
+            "type": "boolean"
+          }
+        },
+        "type": "object",
+        "required": [
+          "citations",
+          "truncated"
+        ]
+      },
+      "LibraryPaper": {
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          },
+          "authors": {
+            "type": "string"
+          },
+          "year": {
+            "type": "string"
+          },
+          "doi": {
+            "type": "string"
+          },
+          "journal": {
+            "type": "string"
+          },
+          "abstract": {
+            "type": "string"
+          },
+          "hasPdf": {
+            "type": "boolean"
+          },
+          "hasMarkdown": {
+            "type": "boolean"
+          },
+          "parseStatus": {
+            "type": "string",
+            "enum": [
+              "ready",
+              "pending",
+              "failed"
+            ]
+          },
+          "error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "coverImage": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "citationCount": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "citationCounts": {
+            "anyOf": [
+              {
+                "additionalProperties": {
+                  "type": "integer"
+                },
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "paperType": {
+            "type": "string"
+          },
+          "metadataStatus": {
+            "type": "string",
+            "enum": [
+              "complete",
+              "incomplete"
+            ],
+            "description": "\"incomplete\" when ingestion could not establish key metadata such as the DOI."
+          },
+          "missingMetadata": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "title",
+          "authors",
+          "year",
+          "doi",
+          "journal",
+          "abstract",
+          "hasPdf",
+          "hasMarkdown",
+          "parseStatus",
+          "error",
+          "coverImage",
+          "citationCount",
+          "citationCounts",
+          "paperType",
+          "metadataStatus",
+          "missingMetadata"
+        ],
+        "description": "One paper as every list, search and citation view shows it."
+      },
+      "LibraryPaperDetail": {
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          },
+          "authors": {
+            "type": "string"
+          },
+          "year": {
+            "type": "string"
+          },
+          "doi": {
+            "type": "string"
+          },
+          "journal": {
+            "type": "string"
+          },
+          "abstract": {
+            "type": "string"
+          },
+          "hasPdf": {
+            "type": "boolean"
+          },
+          "hasMarkdown": {
+            "type": "boolean"
+          },
+          "parseStatus": {
+            "type": "string",
+            "enum": [
+              "ready",
+              "pending",
+              "failed"
+            ]
+          },
+          "error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "coverImage": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "citationCount": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "citationCounts": {
+            "anyOf": [
+              {
+                "additionalProperties": {
+                  "type": "integer"
+                },
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "paperType": {
+            "type": "string"
+          },
+          "metadataStatus": {
+            "type": "string",
+            "enum": [
+              "complete",
+              "incomplete"
+            ],
+            "description": "\"incomplete\" when ingestion could not establish key metadata such as the DOI."
+          },
+          "missingMetadata": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "markdown": {
+            "type": "string"
+          },
+          "l3Conclusion": {
+            "type": "string"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "title",
+          "authors",
+          "year",
+          "doi",
+          "journal",
+          "abstract",
+          "hasPdf",
+          "hasMarkdown",
+          "parseStatus",
+          "error",
+          "coverImage",
+          "citationCount",
+          "citationCounts",
+          "paperType",
+          "metadataStatus",
+          "missingMetadata",
+          "markdown",
+          "l3Conclusion"
+        ]
+      },
+      "LibraryReference": {
+        "properties": {
+          "doi": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          },
+          "year": {
+            "type": "string"
+          },
+          "paper": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/LibraryPaper"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "type": "object",
+        "required": [
+          "doi",
+          "title",
+          "year",
+          "paper"
+        ],
+        "description": "A work this paper cites; ``paper`` is set when the library holds it."
+      },
+      "LibrarySearchResponse": {
+        "properties": {
+          "results": {
+            "items": {
+              "$ref": "#/components/schemas/SearchResult"
+            },
+            "type": "array"
+          },
+          "notice": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "unavailable": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "runtime_missing",
+                  "provider_none",
+                  "no_vectors"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Set when the mode itself cannot run, so the page can offer the remedy."
+          }
+        },
+        "type": "object",
+        "required": [
+          "results"
+        ],
+        "description": "The matching papers, best first."
+      },
+      "LibrarySettings": {
+        "properties": {
+          "extractor": {
+            "type": "string"
+          },
+          "pdfParser": {
+            "type": "string"
+          },
+          "llmBackend": {
+            "type": "string"
+          },
+          "llmModel": {
+            "type": "string"
+          },
+          "llmBaseUrl": {
+            "type": "string"
+          },
+          "embedProvider": {
+            "type": "string"
+          },
+          "embedModel": {
+            "type": "string"
+          },
+          "embedSource": {
+            "type": "string"
+          },
+          "embedDevice": {
+            "type": "string"
+          },
+          "mineruConfigured": {
+            "type": "boolean"
+          },
+          "mineruKeyLength": {
+            "type": "integer",
+            "description": "Length of the stored MinerU token, so the field can mask it at its real length."
+          },
+          "llmConfigured": {
+            "type": "boolean"
+          },
+          "llmKeyLength": {
+            "type": "integer",
+            "description": "Length of the stored LLM API key; 0 when none is configured."
+          },
+          "embedApiConfigured": {
+            "type": "boolean"
+          },
+          "configPath": {
+            "type": "string",
+            "description": "The documented file a user can still edit by hand."
+          },
+          "papersDir": {
+            "type": "string",
+            "description": "Where the library keeps its papers."
+          },
+          "workspaceDir": {
+            "type": "string",
+            "description": "Where each workspace's directory is created."
+          }
+        },
+        "type": "object",
+        "required": [
+          "extractor",
+          "pdfParser",
+          "llmBackend",
+          "llmModel",
+          "llmBaseUrl",
+          "embedProvider",
+          "embedModel",
+          "embedSource",
+          "embedDevice",
+          "mineruConfigured",
+          "mineruKeyLength",
+          "llmConfigured",
+          "llmKeyLength",
+          "embedApiConfigured",
+          "configPath",
+          "papersDir",
+          "workspaceDir"
+        ],
+        "description": "Library settings the browser owns; API keys are write-only."
+      },
+      "LibraryTask": {
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "semantic",
+              "topics",
+              "deep",
+              "quality"
+            ]
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "queued",
+              "running",
+              "completed",
+              "cancelled",
+              "failed"
+            ]
+          },
+          "phase": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Stage within the task, e.g. downloading the model before embedding."
+          },
+          "done": {
+            "type": "integer"
+          },
+          "total": {
+            "type": "integer"
+          },
+          "summary": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "startedAt": {
+            "type": "string"
+          },
+          "finishedAt": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "waitingFor": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "semantic",
+                  "topics",
+                  "deep",
+                  "quality"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "For a queued task: the running task it waits behind, if any."
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "kind",
+          "status",
+          "done",
+          "total",
+          "startedAt"
+        ],
+        "description": "Optional library work that costs model time: run it when the user asks."
+      },
+      "LibraryTopic": {
+        "properties": {
+          "id": {
+            "type": "integer"
+          },
+          "keywords": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "paperCount": {
+            "type": "integer"
+          },
+          "name": {
+            "type": "string"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "keywords",
+          "paperCount",
+          "name"
+        ],
+        "description": "A topic the library's topic map found."
+      },
+      "LiteratureProject": {
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "path": {
+            "type": "string",
+            "description": "Directory the agent works in."
+          },
+          "paperIds": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "paperCount": {
+            "type": "integer"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "name",
+          "path",
+          "paperIds",
+          "paperCount"
+        ]
+      },
+      "MetadataInput": {
+        "properties": {
+          "title": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 2000
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "doi": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 300
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "authors": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array",
+                "maxItems": 200
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "year": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "maximum": 2200.0,
+                "minimum": 1000.0
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "journal": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 500
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "abstract": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 20000
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "paper_type": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 100
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "type": "object"
+      },
+      "PaperList": {
+        "properties": {
+          "papers": {
+            "items": {
+              "$ref": "#/components/schemas/LibraryPaper"
+            },
+            "type": "array"
+          }
+        },
+        "type": "object",
+        "required": [
+          "papers"
+        ]
+      },
+      "ProjectInput": {
+        "properties": {
+          "name": {
+            "type": "string",
+            "maxLength": 120,
+            "minLength": 1
+          }
+        },
+        "type": "object",
+        "required": [
+          "name"
+        ]
+      },
+      "ProjectList": {
+        "properties": {
+          "projects": {
+            "items": {
+              "$ref": "#/components/schemas/LiteratureProject"
+            },
+            "type": "array"
+          }
+        },
+        "type": "object",
+        "required": [
+          "projects"
+        ]
+      },
+      "ProjectPapersInput": {
+        "properties": {
+          "paperIds": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "maxItems": 100
+          },
+          "action": {
+            "type": "string",
+            "enum": [
+              "add",
+              "remove"
+            ],
+            "default": "add"
+          }
+        },
+        "type": "object",
+        "required": [
+          "paperIds"
+        ]
+      },
+      "Projection": {
+        "properties": {
+          "built": {
+            "type": "boolean"
+          },
+          "points": {
+            "items": {
+              "$ref": "#/components/schemas/ProjectionPoint"
+            },
+            "type": "array"
+          }
+        },
+        "type": "object",
+        "required": [
+          "built",
+          "points"
+        ]
+      },
+      "ProjectionPoint": {
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "x": {
+            "type": "number"
+          },
+          "y": {
+            "type": "number"
+          },
+          "topicId": {
+            "type": "integer"
+          },
+          "year": {
+            "type": "integer"
+          },
+          "title": {
+            "type": "string"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "x",
+          "y",
+          "topicId",
+          "year",
+          "title"
+        ],
+        "description": "One paper placed on the topic map."
+      },
+      "ReadingPosition": {
+        "properties": {
+          "page": {
+            "type": "integer"
+          },
+          "line": {
+            "type": "integer"
+          },
+          "mode": {
+            "type": "string",
+            "enum": [
+              "pdf",
+              "markdown"
+            ]
+          }
+        },
+        "type": "object",
+        "required": [
+          "page",
+          "line",
+          "mode"
+        ],
+        "description": "Where the reader left off in a paper."
+      },
+      "ReadingPositionInput": {
+        "properties": {
+          "page": {
+            "type": "integer",
+            "minimum": 1.0,
+            "default": 1
+          },
+          "line": {
+            "type": "integer",
+            "minimum": 1.0,
+            "default": 1
+          },
+          "mode": {
+            "type": "string",
+            "enum": [
+              "pdf",
+              "markdown"
+            ],
+            "default": "pdf"
+          }
+        },
+        "type": "object"
+      },
+      "ReferenceList": {
+        "properties": {
+          "references": {
+            "items": {
+              "$ref": "#/components/schemas/LibraryReference"
+            },
+            "type": "array"
+          }
+        },
+        "type": "object",
+        "required": [
+          "references"
+        ]
+      },
+      "RefetchResult": {
+        "properties": {
+          "changed": {
+            "type": "boolean"
+          },
+          "paper": {
+            "$ref": "#/components/schemas/LibraryPaper"
+          }
+        },
+        "type": "object",
+        "required": [
+          "changed",
+          "paper"
+        ]
+      },
+      "Scope": {
+        "properties": {
+          "paperIds": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "None means the whole library."
+          }
+        },
+        "type": "object",
+        "required": [
+          "paperIds"
+        ]
+      },
+      "ScopeInput": {
+        "properties": {
+          "paperIds": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "maxItems": 100
+          },
+          "projectId": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 120,
+                "minLength": 1
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "type": "object"
+      },
+      "SearchResult": {
+        "properties": {
+          "paper": {
+            "$ref": "#/components/schemas/LibraryPaper"
+          }
+        },
+        "type": "object",
+        "required": [
+          "paper"
+        ]
+      },
+      "SettingsCheck": {
+        "properties": {
+          "target": {
+            "type": "string",
+            "enum": [
+              "mineru",
+              "llm",
+              "embed"
+            ]
+          },
+          "ok": {
+            "type": "boolean"
+          },
+          "level": {
+            "type": "string",
+            "enum": [
+              "ok",
+              "warning",
+              "error"
+            ]
+          },
+          "message": {
+            "type": "string"
+          }
+        },
+        "type": "object",
+        "required": [
+          "target",
+          "ok",
+          "level",
+          "message"
+        ],
+        "description": "One service tried with the current settings."
+      },
+      "SettingsCheckInput": {
+        "properties": {
+          "target": {
+            "type": "string",
+            "enum": [
+              "mineru",
+              "llm",
+              "embed"
+            ]
+          }
+        },
+        "type": "object",
+        "required": [
+          "target"
+        ]
+      },
+      "SettingsInput": {
+        "properties": {
+          "extractor": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 40
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "pdfParser": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 40
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "llmBackend": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 40
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "llmModel": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 200
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "llmBaseUrl": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 500
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "llmApiKey": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 500
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "mineruApiKey": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 500
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "embedProvider": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 40
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "embedModel": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 200
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "embedSource": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 40
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "embedDevice": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 40
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "embedApiKey": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 500
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "type": "object",
+        "description": "Library settings the browser may change; keys are write-only."
+      },
+      "TopicOverview": {
+        "properties": {
+          "built": {
+            "type": "boolean"
+          },
+          "topics": {
+            "items": {
+              "$ref": "#/components/schemas/LibraryTopic"
+            },
+            "type": "array"
+          }
+        },
+        "type": "object",
+        "required": [
+          "built",
+          "topics"
+        ]
+      },
+      "ValidationError": {
+        "properties": {
+          "loc": {
+            "items": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "integer"
+                }
+              ]
+            },
+            "type": "array"
+          },
+          "msg": {
+            "type": "string"
+          },
+          "type": {
+            "type": "string"
+          },
+          "input": {},
+          "ctx": {
+            "type": "object"
+          }
+        },
+        "type": "object",
+        "required": [
+          "loc",
+          "msg",
+          "type"
+        ]
+      }
+    }
+  }
+}

@@ -9,6 +9,7 @@
       "**/playwright-report/**",
       "**/test-results/**",
       "packages/server/src/providers/codex/protocol/generated/**",
+      "packages/shared/src/generated/**",
       "reference/**",
       "temp/**"
     ]

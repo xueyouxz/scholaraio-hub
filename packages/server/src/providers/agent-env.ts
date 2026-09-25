@@ -9,6 +9,7 @@
 import { existsSync } from "node:fs";
 import path from "node:path";
 import { HUB_ENV_KEYS } from "../env.js";
+import { loggerFor } from "../logging/logger.js";
 import { pythonRuntime } from "../runtime/python.js";
 
 /** What every agent process of this server starts with. */
@@ -126,5 +127,5 @@ const warned = new Set<string>();
 function warnOnce(message: string): void {
   if (warned.has(message)) return;
   warned.add(message);
-  console.warn(`[Library] ${message}`);
+  loggerFor("agent-env").warn(message);
 }

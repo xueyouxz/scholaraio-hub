@@ -1,45 +1,44 @@
-import { PassThrough } from "node:stream";
+import { Writable } from "node:stream";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-describe("logger defaults", () => {
+/** A destination that keeps each JSON line pino writes. */
+function capture() {
+  const lines: Record<string, unknown>[] = [];
+  const stream = new Writable({
+    write(chunk, _encoding, done) {
+      lines.push(JSON.parse(String(chunk)));
+      done();
+    },
+  });
+  return { lines, stream };
+}
+
+describe("logger", () => {
   afterEach(() => {
-    vi.unstubAllEnvs();
-    vi.doUnmock("node:fs");
     vi.resetModules();
   });
 
-  it("disables file logging by default in test environment", async () => {
-    vi.stubEnv("NODE_ENV", "test");
-    vi.stubEnv("VITEST", "true");
-    vi.stubEnv("LOG_TO_FILE", undefined);
-
-    const createWriteStream = vi.fn();
-    vi.doMock("node:fs", async () => {
-      const actual = await vi.importActual<typeof import("node:fs")>("node:fs");
-      return {
-        ...actual,
-        createWriteStream,
-      };
-    });
-
-    const loggerModule = await import("../../src/logging/logger.js");
-    const logger = loggerModule.getLogger();
-
-    expect(logger).toBeDefined();
-    expect(createWriteStream).not.toHaveBeenCalled();
+  it("gives component loggers taken before initialization the configured outputs", async () => {
+    const { getLogger, initLogger, loggerFor } = await import("../../src/logging/logger.js");
+    const before = loggerFor("codex");
+    const { lines, stream } = capture();
+    const root = initLogger({ consoleLevel: "debug" }, stream);
+    expect(getLogger()).toBe(root);
+    expect(loggerFor("codex")).not.toBe(before);
+    loggerFor("codex").debug("configured");
+    expect(lines).toEqual([expect.objectContaining({ component: "codex", msg: "configured" })]);
   });
 
-  it("still honors explicit initLogger file config when requested", async () => {
-    const createWriteStream = vi.fn((_path: string) => new PassThrough());
-    vi.doMock("node:fs", async () => {
-      const actual = await vi.importActual<typeof import("node:fs")>("node:fs");
-      return { ...actual, mkdirSync: vi.fn(), createWriteStream };
+  it("serializes an error under either key and redacts credentials", async () => {
+    const { initLogger, loggerFor } = await import("../../src/logging/logger.js");
+    const { lines, stream } = capture();
+    initLogger({}, stream);
+    loggerFor("test").error({ error: new Error("boom"), headers: { authorization: "Bearer x" } });
+    loggerFor("test").error({ err: new Error("bang"), token: "secret" });
+    expect(lines[0]).toMatchObject({
+      error: { type: "Error", message: "boom" },
+      headers: { authorization: "[redacted]" },
     });
-
-    const loggerModule = await import("../../src/logging/logger.js");
-    loggerModule.initLogger({ logToFile: true, logDir: "/tmp/hub-logs" });
-
-    expect(createWriteStream).toHaveBeenCalledTimes(1);
-    expect(createWriteStream.mock.calls[0]?.[0]).toBe("/tmp/hub-logs/server.log");
+    expect(lines[1]).toMatchObject({ err: { message: "bang" }, token: "[redacted]" });
   });
 });

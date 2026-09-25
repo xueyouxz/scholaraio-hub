@@ -1,7 +1,13 @@
 import type { LiteratureProject } from "@scholaraio-hub/shared";
 import { Hono } from "hono";
+import { z } from "zod";
 import type { LibraryService } from "../services/LibraryService.js";
 import type { SessionStore } from "../sessions/SessionStore.js";
+import { validate } from "./validate.js";
+
+const RenameSchema = z.object({
+  name: z.string({ error: "项目名称不能为空" }).trim().min(1, "项目名称不能为空"),
+});
 
 /**
  * Project changes the library service cannot make alone: renaming or removing a
@@ -11,16 +17,15 @@ import type { SessionStore } from "../sessions/SessionStore.js";
 export function createProjectRoutes(service: LibraryService, store: SessionStore) {
   const routes = new Hono();
 
-  routes.post("/:id/rename", async (c) => {
+  routes.post("/:id/rename", validate("json", RenameSchema), async (c) => {
     const id = c.req.param("id");
-    const body = await c.req.json<{ name?: string }>();
-    if (!body.name?.trim()) return c.json({ error: "项目名称不能为空" }, 400);
+    const { name } = c.req.valid("json");
     const project = await service.json<LiteratureProject>(
       `/projects/${encodeURIComponent(id)}/rename`,
       {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ name: body.name.trim() }),
+        body: JSON.stringify({ name }),
       },
     );
     const sessions = await store.retargetProject(id, project.id);

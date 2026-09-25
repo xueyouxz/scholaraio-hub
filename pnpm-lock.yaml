@@ -144,15 +144,15 @@ importers:
       '@hono/node-server':
         specifier: ^1.19.9
         version: 1.19.13(hono@4.12.12)
+      '@hono/zod-validator':
+        specifier: ^0.9.1
+        version: 0.9.1(hono@4.12.12)(zod@4.3.6)
       '@scholaraio-hub/shared':
         specifier: workspace:*
         version: link:../shared
       ai:
         specifier: ^7.0.107
         version: 7.0.107(zod@4.3.6)
-      dotenv:
-        specifier: ^16.4.7
-        version: 16.6.1
       hono:
         specifier: ^4.12.1
         version: 4.12.12
@@ -710,6 +710,12 @@ packages:
     engines: {node: '>=18.14.1'}
     peerDependencies:
       hono: ^4
+
+  '@hono/zod-validator@0.9.1':
+    resolution: {integrity: sha512-iiv6w0qrIc0arfvCtUqBWsvl4fXjzaTcQcCJTTtCnkawF9HHGE+KjEl0ox3gQJ6rKZEgE3mLExlQCF72M+mNuw==}
+    peerDependencies:
+      hono: '>=4.11.2'
+      zod: ^4.3.6
 
   '@img/sharp-darwin-arm64@0.34.5':
     resolution: {integrity: sha512-imtQ3WMJXbMY4fxb/Ndp6HBTNVtWCUI0WdobyheGf5+ad6xX8VIDO8u2xE4qc/fr08CKG/7dDseFtn6M6g/r3w==}
@@ -1807,10 +1813,6 @@ packages:
   diff@9.0.0:
     resolution: {integrity: sha512-svtcdpS8CgJyqAjEQIXdb3OjhFVVYjzGAPO8WGCmRbrml64SPw/jJD4GoE98aR7r25A0XcgrK3F02yw9R/vhQw==}
     engines: {node: '>=0.3.1'}
-
-  dotenv@16.6.1:
-    resolution: {integrity: sha512-uBq4egWHTcTt33a72vpSG0z3HnPuIl6NqYcTrKEg2azoEyl2hpW0zqlxysq2pK9HlDIHyHyakeYaYnSAwd8bow==}
-    engines: {node: '>=12'}
 
   dunder-proto@1.0.1:
     resolution: {integrity: sha512-KIN/nDJBQRcXw0MLVhZE9iQHmG68qAVIBg9CqmUYjmQIhgij9U5MFvrqkUL5FbtyyzZuOeOt0zdeRe4UY7ct+A==}
@@ -3753,6 +3755,11 @@ snapshots:
     dependencies:
       hono: 4.12.12
 
+  '@hono/zod-validator@0.9.1(hono@4.12.12)(zod@4.3.6)':
+    dependencies:
+      hono: 4.12.12
+      zod: 4.3.6
+
   '@img/sharp-darwin-arm64@0.34.5':
     optionalDependencies:
       '@img/sharp-libvips-darwin-arm64': 1.2.4
@@ -4791,8 +4798,6 @@ snapshots:
       dequal: 2.0.3
 
   diff@9.0.0: {}
-
-  dotenv@16.6.1: {}
 
   dunder-proto@1.0.1:
     dependencies:

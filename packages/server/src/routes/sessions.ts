@@ -13,15 +13,15 @@ import { MAX_ATTACHMENT_BYTES } from "../sessions/SessionAttachments.js";
 import { SessionFiles } from "../sessions/SessionFiles.js";
 import type { SessionService } from "../sessions/SessionService.js";
 import { SessionInputError } from "../sessions/errors.js";
+import { validate } from "./validate.js";
 
 export function createSessionRoutes(service: SessionService, settings?: ServerSettingsService) {
   const routes = new Hono();
   const files = new SessionFiles(service.store);
   routes.get("/", (c) => c.json({ sessions: service.store.list() }));
-  routes.post("/", async (c) => {
-    const input = CreateSessionSchema.partial({ provider: true }).parse(await c.req.json());
+  routes.post("/", validate("json", CreateSessionSchema.partial({ provider: true })), async (c) => {
     const defaults = settings?.getSettings().newSessionDefaults;
-    return c.json(await service.create(input, defaults), 201);
+    return c.json(await service.create(c.req.valid("json"), defaults), 201);
   });
   // A new chat's files upload before its session exists; creating it claims them.
   routes.post(
@@ -82,61 +82,61 @@ export function createSessionRoutes(service: SessionService, settings?: ServerSe
     );
     return c.body(new Uint8Array(bytes));
   });
-  routes.get("/commands", async (c) =>
-    c.json({
-      commands: await service.commands(
-        undefined,
-        z.enum(["claude", "codex"]).default("claude").parse(c.req.query("provider")),
-      ),
-    }),
+  routes.get(
+    "/commands",
+    validate("query", z.object({ provider: z.enum(["claude", "codex"]).default("claude") })),
+    async (c) =>
+      c.json({ commands: await service.commands(undefined, c.req.valid("query").provider) }),
   );
   routes.get("/:id/commands", async (c) =>
     c.json({ commands: await service.commands(c.req.param("id")) }),
   );
   routes.get("/:id", (c) => c.json(service.detail(c.req.param("id"))));
-  routes.patch("/:id", async (c) => {
-    const { title } = z
-      .object({ title: z.string().trim().min(1).max(200) })
-      .strict()
-      .parse(await c.req.json());
-    return c.json(await service.rename(c.req.param("id"), title));
-  });
+  routes.patch(
+    "/:id",
+    validate("json", z.object({ title: z.string().trim().min(1).max(200) }).strict()),
+    async (c) => c.json(await service.rename(c.req.param("id"), c.req.valid("json").title)),
+  );
   routes.delete("/:id", async (c) => {
     await service.delete(c.req.param("id"));
     return c.body(null, 204);
   });
-  routes.patch("/:id/options", async (c) => {
-    const input = SessionOptionsSchema.strict().parse(await c.req.json());
-    return c.json(await service.updateOptions(c.req.param("id"), input));
-  });
-  routes.post("/:id/messages", async (c) => {
-    const input = SendSessionMessageSchema.parse(await c.req.json());
-    await service.send(c.req.param("id"), input);
+  routes.patch("/:id/options", validate("json", SessionOptionsSchema.strict()), async (c) =>
+    c.json(await service.updateOptions(c.req.param("id"), c.req.valid("json"))),
+  );
+  routes.post("/:id/messages", validate("json", SendSessionMessageSchema), async (c) => {
+    await service.send(c.req.param("id"), c.req.valid("json"));
     const stream = service.stream(c.req.param("id"), c.req.raw.signal);
     if (!stream) return c.json({ error: "本轮已结束，请刷新会话。" }, 409);
     return createUIMessageStreamResponse({ stream });
   });
-  routes.post("/:id/queue", async (c) =>
-    c.json(
-      await service.enqueue(c.req.param("id"), SendSessionMessageSchema.parse(await c.req.json())),
-    ),
+  routes.post("/:id/queue", validate("json", SendSessionMessageSchema), async (c) =>
+    c.json(await service.enqueue(c.req.param("id"), c.req.valid("json"))),
   );
-  routes.patch("/:id/queue", async (c) => {
-    const input = z
-      .object({ action: z.enum(["resume", "remove"]), messageId: z.string().optional() })
-      .parse(await c.req.json());
-    return c.json(await service.editQueue(c.req.param("id"), input.action, input.messageId));
-  });
+  routes.patch(
+    "/:id/queue",
+    validate(
+      "json",
+      z.object({ action: z.enum(["resume", "remove"]), messageId: z.string().optional() }),
+    ),
+    async (c) => {
+      const { action, messageId } = c.req.valid("json");
+      return c.json(await service.editQueue(c.req.param("id"), action, messageId));
+    },
+  );
+  // The body is optional (the validator refuses an empty one): without a
+  // messageId the fork holds the whole session.
   routes.post("/:id/fork", async (c) => {
     const { messageId } = z
       .object({ messageId: z.string().min(1).optional() })
       .parse(await c.req.json().catch(() => ({})));
     return c.json(await service.fork(c.req.param("id"), messageId), 201);
   });
-  routes.post("/:id/rewind", async (c) => {
-    const { messageId } = z.object({ messageId: z.string().min(1) }).parse(await c.req.json());
-    return c.json(await service.rewind(c.req.param("id"), messageId));
-  });
+  routes.post(
+    "/:id/rewind",
+    validate("json", z.object({ messageId: z.string().min(1) })),
+    async (c) => c.json(await service.rewind(c.req.param("id"), c.req.valid("json").messageId)),
+  );
   routes.get("/:id/stream", (c) => {
     service.store.get(c.req.param("id"));
     const stream = service.stream(c.req.param("id"), c.req.raw.signal);
@@ -146,21 +146,26 @@ export function createSessionRoutes(service: SessionService, settings?: ServerSe
     await service.stop(c.req.param("id"));
     return c.json({ stopped: true });
   });
-  routes.post("/:id/input", async (c) => {
-    const input = z
-      .object({
+  routes.post(
+    "/:id/input",
+    validate(
+      "json",
+      z.object({
         requestId: z.string(),
         decision: z.enum(["approve", "approve_accept_edits", "deny"]),
         answers: z.record(z.string(), z.string()).optional(),
-      })
-      .parse(await c.req.json());
-    const accepted = service.input(
-      c.req.param("id"),
-      input.requestId,
-      input.decision,
-      input.answers,
-    );
-    return c.json({ accepted }, accepted ? 200 : 409);
-  });
+      }),
+    ),
+    (c) => {
+      const input = c.req.valid("json");
+      const accepted = service.input(
+        c.req.param("id"),
+        input.requestId,
+        input.decision,
+        input.answers,
+      );
+      return c.json({ accepted }, accepted ? 200 : 409);
+    },
+  );
   return routes;
 }

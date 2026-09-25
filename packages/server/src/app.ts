@@ -17,6 +17,7 @@ import { createProvidersRoutes } from "./routes/providers.js";
 import { createSessionRoutes } from "./routes/sessions.js";
 import { createSettingsRoutes } from "./routes/settings.js";
 import { createSkillsRoutes } from "./routes/skills.js";
+import { validate } from "./routes/validate.js";
 import { LibraryRequestError, LibraryService } from "./services/LibraryService.js";
 import { ProviderUsageLimitService } from "./services/ProviderUsageLimitService.js";
 import type { ServerSettingsService } from "./services/ServerSettingsService.js";
@@ -43,6 +44,16 @@ export interface AppOptions {
   scholaraioSkillsDir?: string;
   /** `ALLOWED_HOSTS`: extra hostnames the API answers besides loopback, or "*". */
   allowedHosts?: string;
+}
+
+/** What a failed API request tells the client; for bad input, each field that was wrong. */
+function messageFor(error: Error): string {
+  if (!(error instanceof z.ZodError)) return error.message;
+  return error.issues
+    .map((issue) =>
+      issue.path.length ? `${issue.path.map(String).join(".")}: ${issue.message}` : issue.message,
+    )
+    .join("; ");
 }
 
 /** The status a failed API request answers with, by what went wrong. */
@@ -104,27 +115,40 @@ export function createApp(options: AppOptions) {
   );
   // Reveals a directory this Hub owns. No path comes from the browser: it names
   // which one, and the path is the library's own, checked to lie inside dataDir.
-  app.post("/api/status/data-dir/open", async (c) => {
-    const target = c.req.query("target") ?? "data";
-    try {
-      let directory = dataDir;
-      if (target === "papers" || target === "workspaces") {
-        const settings = await library.json<{ papersDir: string; workspaceDir: string }>(
-          "/settings",
-        );
-        directory = path.resolve(target === "papers" ? settings.papersDir : settings.workspaceDir);
-        const relative = path.relative(path.resolve(dataDir), directory);
-        if (relative.startsWith("..") || path.isAbsolute(relative))
-          return c.json({ error: "该目录不在数据目录内，不能从这里打开" }, 400);
-      } else if (target !== "data") {
-        return c.json({ error: `未知的目录：${target}` }, 400);
+  app.post(
+    "/api/status/data-dir/open",
+    validate(
+      "query",
+      z.object({
+        target: z
+          .enum(["data", "papers", "workspaces"], {
+            error: (issue) => `未知的目录：${issue.input}`,
+          })
+          .default("data"),
+      }),
+    ),
+    async (c) => {
+      const { target } = c.req.valid("query");
+      try {
+        let directory = dataDir;
+        if (target !== "data") {
+          const settings = await library.json<{ papersDir: string; workspaceDir: string }>(
+            "/settings",
+          );
+          directory = path.resolve(
+            target === "papers" ? settings.papersDir : settings.workspaceDir,
+          );
+          const relative = path.relative(path.resolve(dataDir), directory);
+          if (relative.startsWith("..") || path.isAbsolute(relative))
+            return c.json({ error: "该目录不在数据目录内，不能从这里打开" }, 400);
+        }
+        openInFileManager(directory);
+        return c.json({ opened: true, dataDir: directory });
+      } catch (error) {
+        return c.json({ error: error instanceof Error ? error.message : "无法打开数据目录" }, 500);
       }
-      openInFileManager(directory);
-      return c.json({ opened: true, dataDir: directory });
-    } catch (error) {
-      return c.json({ error: error instanceof Error ? error.message : "无法打开数据目录" }, 500);
-    }
-  });
+    },
+  );
   if (options.serverSettingsService)
     app.route(
       "/api/settings",
@@ -133,9 +157,11 @@ export function createApp(options: AppOptions) {
   // Unknown APIs must never be served the SPA index.
   app.all("/api/*", (c) => c.json({ error: "Not found" }, 404));
   app.onError((error, c) => {
-    if (error instanceof HTTPException) return error.getResponse();
+    // A thrown response (body limit) stands; a bare status (malformed JSON) answers as JSON.
+    if (error instanceof HTTPException)
+      return error.res ? error.getResponse() : c.json({ error: error.message }, error.status);
     console.error("[API] request failed", error);
-    return c.json({ error: error.message }, statusFor(error));
+    return c.json({ error: messageFor(error) }, statusFor(error));
   });
   if (options.frontendDistPath)
     app.route("/", createStaticRoutes({ distPath: options.frontendDistPath }));

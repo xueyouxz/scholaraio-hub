@@ -1,8 +1,8 @@
 import { existsSync, readFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { parseEnv } from "node:util";
 import { resolveProfileName } from "@scholaraio-hub/shared";
-import { parse as parseDotenv } from "dotenv";
 import { z } from "zod";
 
 const __filename = fileURLToPath(import.meta.url);
@@ -95,7 +95,7 @@ function loadEnvFilesIntoProcessEnv(env: NodeJS.ProcessEnv): void {
   const load = (fileName: string) => {
     const filePath = path.join(repoRoot, fileName);
     if (existsSync(filePath)) {
-      Object.assign(loadedValues, parseDotenv(readFileSync(filePath, "utf-8")));
+      Object.assign(loadedValues, parseEnv(readFileSync(filePath, "utf-8")));
     }
   };
 

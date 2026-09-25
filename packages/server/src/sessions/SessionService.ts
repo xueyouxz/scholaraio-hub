@@ -28,7 +28,6 @@ import { SessionAttachments } from "./SessionAttachments.js";
 import type { SessionRecord, SessionStore } from "./SessionStore.js";
 import { UIChunkWriter, appendReplayChunk } from "./UIChunkWriter.js";
 import { SessionConflictError, SessionInputError } from "./errors.js";
-import { importHistory } from "./import-history.js";
 
 /** How long a stopped turn may take to settle before its worker is terminated. */
 const STOP_SETTLE_MS = 3000;
@@ -130,24 +129,6 @@ export class SessionService {
     await this.validateExecution(provider, request);
     const record = await this.store.create(request);
     await this.attachments.claimDrafts(record.id, attachmentIds);
-    return this.store.toStoredSession(record);
-  }
-
-  /** Keep a transcript from a provider's own history as a read-only session. */
-  async importTranscript(input: {
-    provider: ProviderName;
-    title: string;
-    content: string;
-  }): Promise<StoredSession> {
-    const messages = await importHistory(input.content, input.provider);
-    const record = await this.store.create({
-      title: input.title,
-      provider: input.provider,
-      paperIds: [],
-    });
-    record.messages = messages;
-    record.readOnly = true;
-    await this.store.save(record);
     return this.store.toStoredSession(record);
   }
 

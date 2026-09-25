@@ -38,16 +38,6 @@ export function createSessionRoutes(service: SessionService, settings?: ServerSe
     await service.attachments.removeDraft(c.req.param("attachmentId"));
     return c.body(null, 204);
   });
-  routes.post("/import", async (c) => {
-    const input = z
-      .object({
-        provider: z.enum(["claude", "codex"]),
-        title: z.string().max(200),
-        content: z.string().max(25_000_000),
-      })
-      .parse(await c.req.json());
-    return c.json(await service.importTranscript(input), 201);
-  });
   routes.post(
     "/:id/attachments",
     bodyLimit({ maxSize: MAX_ATTACHMENT_BYTES + 65536 }),

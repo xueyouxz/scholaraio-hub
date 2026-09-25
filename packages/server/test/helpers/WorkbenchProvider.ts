@@ -12,6 +12,30 @@ import type {
 } from "../../src/providers/types.js";
 import { TEST_CAPABILITIES } from "./scriptedProvider.js";
 
+/**
+ * A reply that exercises the transcript renderer: a table, math, markup that must
+ * not execute, a long body, an unterminated code fence and an Edit with its result.
+ * Sent back whole, as a provider does when it does not stream.
+ */
+const RENDER_SAMPLE_PROMPT = "render sample";
+const RENDER_SAMPLE_TEXT = [
+  "# 历史阅读测试",
+  "",
+  "| 项目 | 数值 |",
+  "| --- | --- |",
+  "| 样本 | 42 |",
+  "",
+  "$E=mc^2$",
+  "",
+  '<script>window.__unsafeExecuted=true</script><img src=x onerror="window.__unsafeExecuted=true">',
+  "[危险链接](javascript:alert(1))",
+  "",
+  ...Array.from({ length: 50 }, (_, index) => `中文长消息段落 ${index}，用于检查内容保留。`),
+  "",
+  "```typescript",
+  'const result = "未闭合代码块";',
+].join("\n");
+
 /** The fake speaks Agent SDK wire format; translate it as the real provider does. */
 async function* replayThroughAdapter(
   messages: AsyncIterable<SDKMessage>,
@@ -69,6 +93,29 @@ export class WorkbenchProvider implements AgentProvider {
             : JSON.stringify(item.message.content);
         owner.inputs.push(text);
         const nativeId = randomUUID();
+        if (text.includes(RENDER_SAMPLE_PROMPT)) {
+          yield {
+            type: "assistant",
+            message: {
+              id: nativeId,
+              content: [
+                { type: "text", text: RENDER_SAMPLE_TEXT },
+                {
+                  type: "tool_use",
+                  id: "edit",
+                  name: "Edit",
+                  input: { file_path: "result.txt", old_string: "before\n", new_string: "after\n" },
+                },
+              ],
+            },
+          };
+          yield {
+            type: "user",
+            message: { content: [{ type: "tool_result", tool_use_id: "edit", content: "Edited" }] },
+          };
+          yield { type: "result", subtype: "success", session_id: sessionId };
+          continue;
+        }
         yield { type: "stream_event", event: { type: "message_start", message: { id: nativeId } } };
         yield {
           type: "stream_event",

@@ -5,7 +5,6 @@ import { ClaudeEventAdapter } from "../../../src/providers/claude/ClaudeEventAda
 import type { SDKMessage } from "../../../src/providers/claude/sdk-message.js";
 import { CodexEventAdapter } from "../../../src/providers/codex/CodexEventAdapter.js";
 import { UIChunkWriter } from "../../../src/sessions/UIChunkWriter.js";
-import { importHistory } from "../../../src/sessions/import-history.js";
 
 async function assemble(chunks: UIMessageChunk[]) {
   let result: SessionMessage | undefined;
@@ -268,22 +267,5 @@ describe("Claude events to UI chunks", () => {
     expect(result?.parts).toEqual([
       { type: "file", mediaType: "image/png", url: "data:image/png;base64,aW1hZ2U=" },
     ]);
-  });
-  it("imports explicitly selected Claude history without native IDs", async () => {
-    const messages = await importHistory(
-      [
-        { type: "user", uuid: "native-user", message: { content: "问题" } },
-        {
-          type: "assistant",
-          message: { id: "native-assistant", content: [{ type: "text", text: "回答" }] },
-        },
-      ]
-        .map((item) => JSON.stringify(item))
-        .join("\n"),
-      "claude",
-    );
-    expect(messages.map((message) => message.role)).toEqual(["user", "assistant"]);
-    expect(messages[0]?.id).not.toBe("native-user");
-    await expect(importHistory("broken", "claude")).rejects.toThrow("第 1 行");
   });
 });

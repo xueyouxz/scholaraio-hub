@@ -37,11 +37,81 @@ function fileSource(block: Record<string, unknown>): { mediaType: string; url: s
   return { mediaType, url };
 }
 
+/** What a failed run's `subtype` means, when it carries no message of its own. */
+const RESULT_ERRORS: Record<string, string> = {
+  error_during_execution: "The run failed while executing.",
+  error_max_turns: "The run stopped: it reached the maximum number of turns.",
+  error_max_budget_usd: "The run stopped: it reached its budget.",
+  error_max_structured_output_retries: "The run stopped: its structured output kept failing.",
+};
+
 /** Error text for a failed `result` message, or undefined when it succeeded. */
 export function claudeResultError(message: SDKMessage): string | undefined {
-  const failed = message.is_error === true || String(message.subtype ?? "").startsWith("error");
+  const subtype = String(message.subtype ?? "");
+  const failed = message.is_error === true || subtype.startsWith("error");
   if (!failed) return undefined;
-  return String(message.error ?? message.result ?? message.errors ?? message.subtype);
+  const errors = Array.isArray(message.errors)
+    ? message.errors.filter((error): error is string => typeof error === "string" && !!error)
+    : [];
+  if (errors.length) return errors.join("\n");
+  if (typeof message.result === "string" && message.result) return message.result;
+  return RESULT_ERRORS[subtype] ?? (subtype || "The Claude run failed.");
+}
+
+/** What the user can do about an API error the SDK reports, by its kind. */
+const API_ERROR_HINTS: Record<string, string> = {
+  authentication_failed:
+    "Claude is not logged in, or the login has expired. Run `claude auth login` in a terminal, then send the message again.",
+  billing_error: "The Claude account has a billing problem.",
+  rate_limit: "The Claude usage limit has been reached.",
+};
+
+/**
+ * The error of a message the SDK made up to report a failed API call (it
+ * carries `error`), or undefined for a real assistant message.
+ */
+function apiError(message: SDKMessage): string | undefined {
+  if (typeof message.error !== "string") return undefined;
+  const content = message.message?.content;
+  const text = Array.isArray(content)
+    ? content
+        .map((block) => (block.type === "text" ? (block.text ?? "") : ""))
+        .join("")
+        .trim()
+    : String(content ?? "").trim();
+  const hint = API_ERROR_HINTS[message.error];
+  return [hint, text].filter(Boolean).join("\n") || `Claude API error: ${message.error}`;
+}
+
+/** A system message worth showing: retries, compaction, a local command's output. */
+function systemNotice(message: SDKMessage): AgentEvent[] {
+  const key = String(message.uuid ?? message.subtype);
+  switch (message.subtype) {
+    case "api_retry": {
+      const status = message.error_status ?? message.error ?? "error";
+      const delay = Math.round(Number(message.retry_delay_ms ?? 0) / 1000);
+      // One notice per turn, updated by each retry.
+      return [
+        {
+          type: "notice",
+          key: "api-retry",
+          level: "info",
+          text: `The API request failed (${status}); retry ${message.attempt}/${message.max_retries} in ${delay}s.`,
+        },
+      ];
+    }
+    case "compact_boundary": {
+      const metadata = record(message.compact_metadata);
+      const how = metadata.trigger === "auto" ? "automatically" : "on request";
+      return [{ type: "notice", key, level: "info", text: `Context compacted ${how}.` }];
+    }
+    case "local_command_output":
+      return typeof message.content === "string" && message.content
+        ? [{ type: "notice", key, level: "info", text: message.content }]
+        : [];
+    default:
+      return [];
+  }
 }
 
 /** Largest context window across `modelUsage` entries (keys may carry "[1m]"). */
@@ -223,6 +293,8 @@ export class ClaudeEventAdapter {
   private root = new ClaudeScope();
   private subagents = new Map<string, ClaudeScope>();
   private modelResolved = false;
+  /** A failed API call this turn; it, not the result's bare text, explains the failure. */
+  private turnApiError: string | undefined;
 
   accept(message: SDKMessage): AgentEvent[] {
     const parent =
@@ -233,26 +305,36 @@ export class ClaudeEventAdapter {
 
     switch (message.type) {
       case "system":
-        return message.subtype === "init" && typeof message.session_id === "string"
-          ? [{ type: "session.started", sessionId: message.session_id }]
-          : [];
-      case "assistant":
+        if (message.subtype === "init" && typeof message.session_id === "string")
+          return [{ type: "session.started", sessionId: message.session_id }];
+        return systemNotice(message);
+      case "assistant": {
+        // The SDK's report of a failed API call is no answer; the turn ends with it.
+        const error = apiError(message);
+        if (error) {
+          this.turnApiError = error;
+          return [];
+        }
         return [...this.resolveModel(message), ...this.scoped(this.root, message)];
+      }
       case "rate_limit_event": {
         const limits = normalizeClaudeRateLimitEvent("claude", message);
         return limits ? [{ type: "rate-limit", limits }] : [];
       }
-      case "result":
+      case "result": {
+        const error = this.turnApiError ?? claudeResultError(message);
         this.root = new ClaudeScope();
         this.subagents.clear();
+        this.turnApiError = undefined;
         return [
           {
             type: "turn.completed",
-            error: claudeResultError(message),
+            error,
             usage: usage(message),
             contextWindow: contextWindow(message),
           },
         ];
+      }
       default:
         return this.scoped(this.root, message);
     }

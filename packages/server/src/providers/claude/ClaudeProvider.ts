@@ -36,6 +36,7 @@ import type {
   AgentSession,
   AuthStatus,
   ForkSessionOptions,
+  PermissionMode,
   ProviderCapabilities,
   ProviderName,
   StartSessionOptions,
@@ -248,6 +249,8 @@ const AUTH_STATUS_TTL_MS = 30_000;
 const MODEL_CACHE_TTL_MS = 60 * 60 * 1000;
 /** After a failed probe, how long to offer no models before probing again (each costs up to 15s). */
 const PROBE_RETRY_MS = 60_000;
+/** How much of the CLI's stderr is kept to explain a failure. */
+const STDERR_TAIL_CHARS = 4096;
 
 /**
  * Claude provider implementation using @anthropic-ai/claude-agent-sdk.
@@ -681,6 +684,9 @@ export class ClaudeProvider implements AgentProvider {
     // Spawn the CLI ourselves to keep its handle: stale detection can then tell
     // "process died silently" from "process is busy with a long tool call".
     let capturedProcess: SpawnedProcess | null = null;
+    // The CLI's last stderr: read, so a full pipe never blocks it, and kept to
+    // say why it failed (a resume that no longer exists, a broken config).
+    let stderrTail = "";
     const spawnClaudeCodeProcess = (
       spawnOpts: import("@anthropic-ai/claude-agent-sdk").SpawnOptions,
     ): SpawnedProcess => {
@@ -694,8 +700,12 @@ export class ClaudeProvider implements AgentProvider {
         proc.kill("SIGTERM");
       };
       spawnOpts.signal.addEventListener("abort", abortHandler);
-      proc.on("exit", () => {
+      proc.stderr?.on("data", (chunk: Buffer) => {
+        stderrTail = (stderrTail + chunk.toString("utf-8")).slice(-STDERR_TAIL_CHARS);
+      });
+      proc.on("exit", (code, signal) => {
         spawnOpts.signal.removeEventListener("abort", abortHandler);
+        if (code) log().warn({ code, signal, stderr: stderrTail.trim() }, "Claude CLI exited");
       });
       capturedProcess = proc;
       return proc;
@@ -710,14 +720,7 @@ export class ClaudeProvider implements AgentProvider {
           cwd: options.cwd,
           resume: options.resumeSessionId,
           abortController,
-          // The mode reaches the SDK only to shape its system prompt; the
-          // decision itself always comes back to canUseTool. bypassPermissions
-          // goes in as "default" so the SDK cannot answer on its own — see
-          // supervisor/permission-policy.ts.
-          permissionMode:
-            options.permissionMode === "bypassPermissions"
-              ? "default"
-              : (options.permissionMode ?? "default"),
+          permissionMode: toClaudePermissionMode(options.permissionMode),
           canUseTool,
           systemPrompt: { type: "preset", preset: "claude_code" },
           settingSources: ["user", "project", "local"],
@@ -748,7 +751,7 @@ export class ClaudeProvider implements AgentProvider {
     }
 
     return {
-      events: this.toAgentEvents(sdkQuery),
+      events: this.toAgentEvents(sdkQuery, () => stderrTail.trim()),
       queue,
       abort: () => {
         abortController.abort();
@@ -761,6 +764,12 @@ export class ClaudeProvider implements AgentProvider {
       setThinking: (thinking) =>
         sdkQuery.setMaxThinkingTokens(thinking?.type === "disabled" ? 0 : 1),
       interrupt: () => sdkQuery.interrupt(),
+      // The CLI's own mode shapes its prompt (plan mode keeps it planning).
+      setPermissionMode: (mode) => {
+        sdkQuery.setPermissionMode(toClaudePermissionMode(mode)).catch((error) => {
+          log().warn({ err: error, mode }, "Claude permission mode change failed");
+        });
+      },
     };
   }
 
@@ -768,7 +777,10 @@ export class ClaudeProvider implements AgentProvider {
    * Translate the SDK stream into AgentEvents. The raw SDK message is logged
    * (when LOG_SDK_MESSAGES is on) but never forwarded.
    */
-  private async *toAgentEvents(sdkQuery: Query): AsyncIterableIterator<AgentEvent> {
+  private async *toAgentEvents(
+    sdkQuery: Query,
+    stderr: () => string,
+  ): AsyncIterableIterator<AgentEvent> {
     const adapter = new ClaudeEventAdapter();
     let sessionId = "unknown";
 
@@ -791,10 +803,22 @@ export class ClaudeProvider implements AgentProvider {
         return;
       }
       // Transport failures ("ProcessTransport is not ready for writing") are
-      // the AgentProcess to classify.
+      // the AgentProcess to classify; what the CLI last printed says why.
+      const tail = stderr();
+      if (tail && error instanceof Error)
+        throw new Error(`${error.message}\n${tail}`, { cause: error });
       throw error;
     }
   }
+}
+
+/**
+ * The mode the CLI runs under. It only shapes the CLI's prompt; the decision
+ * always comes back to canUseTool. bypassPermissions goes in as "default" so
+ * the CLI cannot answer on its own — see supervisor/permission-policy.ts.
+ */
+function toClaudePermissionMode(mode: PermissionMode | undefined): PermissionMode {
+  return !mode || mode === "bypassPermissions" ? "default" : mode;
 }
 
 /** Ask for summarized thinking: by default the model may omit it and leave reasoning empty. */
@@ -810,7 +834,12 @@ function toClaudeEffort(effort?: string): (typeof CLAUDE_EFFORTS)[number] | unde
   return CLAUDE_EFFORTS.find((known) => known === effort);
 }
 
-const CONTEXT_USAGE_TIMEOUT_MS = 5000;
+/**
+ * The turn's end waits for this read, so it stays well under the time a Stop
+ * waits for the turn to settle (SessionService's STOP_SETTLE_MS) before it
+ * kills the CLI instead.
+ */
+const CONTEXT_USAGE_TIMEOUT_MS = 1500;
 
 /** Claude Code's own `/context` numbers; undefined when the CLI cannot answer in time. */
 export async function readClaudeContextUsage(

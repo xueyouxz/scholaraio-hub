@@ -139,6 +139,71 @@ describe("Claude events to UI chunks", () => {
     ]);
     expect(result?.parts.filter((part) => part.type === "dynamic-tool")).toHaveLength(1);
   });
+  it("shows retries, compaction and local command output as notices", () => {
+    const adapter = new ClaudeEventAdapter();
+    const events = [
+      {
+        type: "system",
+        subtype: "api_retry",
+        attempt: 2,
+        max_retries: 10,
+        retry_delay_ms: 4000,
+        error_status: 529,
+        error: "server_error",
+        uuid: "r1",
+      },
+      {
+        type: "system",
+        subtype: "compact_boundary",
+        compact_metadata: { trigger: "auto", pre_tokens: 1000 },
+        uuid: "c1",
+      },
+      { type: "system", subtype: "local_command_output", content: "Total cost: $0.10", uuid: "l1" },
+    ].flatMap((message) => adapter.accept(message));
+    expect(events).toEqual([
+      {
+        type: "notice",
+        key: "api-retry",
+        level: "info",
+        text: "The API request failed (529); retry 2/10 in 4s.",
+      },
+      { type: "notice", key: "c1", level: "info", text: "Context compacted automatically." },
+      { type: "notice", key: "l1", level: "info", text: "Total cost: $0.10" },
+    ]);
+  });
+  it("ends the turn with a failed API call's explanation instead of showing it as the answer", () => {
+    const adapter = new ClaudeEventAdapter();
+    const failure = adapter.accept({
+      type: "assistant",
+      error: "authentication_failed",
+      message: {
+        model: "<synthetic>",
+        content: [{ type: "text", text: "Invalid API key · Please run /login" }],
+      },
+    });
+    expect(failure).toEqual([]);
+    const [completed] = adapter.accept({
+      type: "result",
+      subtype: "success",
+      is_error: true,
+      result: "Invalid API key · Please run /login",
+    });
+    expect(completed).toMatchObject({ type: "turn.completed" });
+    const error = completed?.type === "turn.completed" ? completed.error : undefined;
+    expect(error).toContain("claude auth login");
+    expect(error).toContain("Invalid API key");
+  });
+  it("reports a failed run by its errors, or in words for its subtype", () => {
+    const adapter = new ClaudeEventAdapter();
+    expect(
+      adapter.accept({ type: "result", subtype: "error_during_execution", errors: ["a", "b"] }),
+    ).toMatchObject([{ type: "turn.completed", error: "a\nb" }]);
+    expect(
+      adapter.accept({ type: "result", subtype: "error_max_turns", errors: [] }),
+    ).toMatchObject([
+      { type: "turn.completed", error: "The run stopped: it reached the maximum number of turns." },
+    ]);
+  });
   it("combines Codex deltas and completed item snapshots once", async () => {
     const adapter = new CodexEventAdapter("thread");
     adapter.beginTurn("turn");

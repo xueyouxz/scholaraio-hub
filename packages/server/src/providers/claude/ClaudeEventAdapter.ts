@@ -8,6 +8,9 @@
  *
  * Block identity follows the Anthropic API: `<message id>:<content index>`,
  * which is the same for a streamed block and its copy in the final message.
+ * Claude Code splits one API message into several assistant messages that
+ * share its id and carry one block each, so a complete message's blocks start
+ * at the index after those already received for that id.
  */
 
 import { TurnState } from "../TurnState.js";
@@ -72,6 +75,8 @@ class ClaudeScope {
   turn = new TurnState();
   activeMessage = "";
   private serial = 0;
+  /** Blocks of the complete messages received so far, by message id. */
+  private completeBlocks = new Map<string, string[]>();
   private streamedTools = new Map<string, { id: string; name: string; json: string }>();
 
   streamEvent(event: Record<string, unknown>): AgentEvent[] {
@@ -140,9 +145,10 @@ class ClaudeScope {
         events.push(...this.turn.textSnapshot("text", nativeId, nested.content));
       } else if (Array.isArray(nested.content)) {
         const messageId = String(nested.id ?? (this.activeMessage || nativeId));
-        for (const [index, value] of nested.content.entries()) {
+        const offset = this.contentOffset(messageId, nested.content);
+        for (const [position, value] of nested.content.entries()) {
           const block = record(value);
-          const key = `${messageId}:${index}`;
+          const key = `${messageId}:${offset + position}`;
           if (block.type === "text") {
             events.push(...this.turn.textSnapshot("text", key, String(block.text ?? "")));
           } else if (block.type === "thinking") {
@@ -180,6 +186,31 @@ class ClaudeScope {
     }
     return events;
   }
+
+  /**
+   * Content index of the first block of a complete message: 0 when it repeats
+   * the blocks already received for its id, otherwise the next free index.
+   */
+  private contentOffset(messageId: string, content: unknown[]): number {
+    const seen = this.completeBlocks.get(messageId) ?? [];
+    const blocks = content.map(blockSignature);
+    const repeat = blocks.every((signature, index) => seen[index] === signature);
+    const offset = repeat ? 0 : seen.length;
+    blocks.forEach((signature, index) => {
+      seen[offset + index] = signature;
+    });
+    this.completeBlocks.set(messageId, seen);
+    return offset;
+  }
+}
+
+/** What tells two copies of a content block apart from two different blocks. */
+function blockSignature(value: unknown): string {
+  const block = record(value);
+  if (block.type === "tool_use") return `tool_use:${String(block.id)}`;
+  if (block.type === "text") return `text:${String(block.text ?? "")}`;
+  if (block.type === "thinking") return `thinking:${String(block.thinking ?? "")}`;
+  return String(block.type);
 }
 
 /**

@@ -104,6 +104,8 @@ export interface ProviderInfo {
   plan?: string;
   /** Available models for this provider */
   models?: ModelInfo[];
+  /** Why the models could not be listed; the login fields still hold. */
+  modelsError?: string;
   /** What the composer offers for this provider, in the provider's own terms. */
   capabilities: ProviderCapabilities;
   /** Why the provider's status could not be read; the other fields then say nothing. */

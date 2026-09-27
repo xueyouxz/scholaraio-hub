@@ -40,4 +40,26 @@ describe("Providers Routes", () => {
     await expect(response.json().then((body) => body.data)).resolves.toEqual({ usageLimits });
     expect(getUsageLimits).toHaveBeenCalledWith([expect.objectContaining({ name: "claude" })]);
   });
+
+  it("keeps the login status when the models cannot be listed", async () => {
+    const provider = new WorkbenchProvider("claude");
+    provider.getAvailableModels = async () => {
+      throw new Error("model probe timed out");
+    };
+    const routes = createProvidersRoutes({
+      providers: new ProviderRegistry([provider]),
+      providerUsageLimitService: {} as ProviderUsageLimitService,
+    });
+    routes.onError(handleApiError);
+
+    const response = await routes.request("/");
+
+    const [info] = (await response.json()).data.providers;
+    expect(info).toMatchObject({
+      installed: true,
+      authenticated: true,
+      modelsError: "model probe timed out",
+    });
+    expect(info.error).toBeUndefined();
+  });
 });

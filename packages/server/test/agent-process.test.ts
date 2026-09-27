@@ -257,6 +257,41 @@ describe("AgentProcess", () => {
       expect(process.state.type).toBe("in-turn");
     });
 
+    it("moves on when the approval shown is aborted after an earlier one was answered", async () => {
+      const { process } = start();
+      const turn = new AbortController();
+      const first = process.handleToolApproval("Bash", { command: "ls" }, { signal });
+      const second = process.handleToolApproval("Bash", { command: "pwd" }, turn);
+      process.respondToInput(pendingInput(process)?.id ?? "", "approve");
+      await first;
+      turn.abort();
+      expect((await second).behavior).toBe("deny");
+      expect(process.state.type).toBe("in-turn");
+    });
+
+    it("denies the stopped turn's approvals when interrupted, so later ones are shown", async () => {
+      const { process } = start({ session: { interrupt: vi.fn(async () => {}) } });
+      // A provider whose interrupt does not abort the approval's signal.
+      const stale = process.handleToolApproval("Bash", { command: "ls" }, { signal });
+      await process.interrupt();
+      expect((await stale).behavior).toBe("deny");
+      expect(process.state.type).toBe("in-turn");
+      void process.handleToolApproval("Bash", { command: "pwd" }, { signal });
+      expect(pendingInput(process)?.toolInput).toEqual({ command: "pwd" });
+      process.stop("done");
+    });
+
+    it("denies approvals the finished turn left open", async () => {
+      const { process } = start({
+        events: openStream([{ type: "turn.completed" }]),
+        idleTimeoutMs: 60_000,
+      });
+      const leftOpen = process.handleToolApproval("Bash", { command: "ls" }, { signal });
+      expect((await leftOpen).behavior).toBe("deny");
+      await expect.poll(() => process.state.type).toBe("idle");
+      process.stop("done");
+    });
+
     it("answers nothing for an unknown request", () => {
       const { process } = start();
       expect(process.respondToInput("missing", "approve")).toBeUndefined();

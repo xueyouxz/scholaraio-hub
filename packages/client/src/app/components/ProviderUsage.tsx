@@ -42,7 +42,12 @@ export function describeProvider(provider: ProviderInfo | undefined, loading: bo
   if (!provider.installed) return "未找到可用的 CLI";
   if (!provider.authenticated) return "已安装，尚未登录";
   const plan = provider.plan ? `${formatPlan(provider.plan)} 订阅` : "未订阅";
-  return ["已登录", provider.plan === "free" ? "Free 套餐" : plan, provider.user?.email]
+  return [
+    "已登录",
+    provider.plan === "free" ? "Free 套餐" : plan,
+    provider.user?.email,
+    provider.modelsError && `模型列表读取失败：${provider.modelsError}`,
+  ]
     .filter(Boolean)
     .join(" · ");
 }

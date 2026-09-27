@@ -5,6 +5,7 @@ import type {
   ProviderName,
   ProviderUsageLimits,
   SlashCommand,
+  ThinkingConfig,
   UploadedFile,
 } from "@scholaraio-hub/shared";
 import type { MessageQueue } from "./MessageQueue.js";
@@ -78,8 +79,8 @@ export interface StartSessionOptions {
   permissionMode?: PermissionMode;
   /** Model to use (e.g., "sonnet", "opus", "haiku") */
   model?: string;
-  /** Thinking configuration (undefined = thinking disabled) */
-  thinking?: import("@scholaraio-hub/shared").ThinkingConfig;
+  /** Thinking configuration (undefined = provider default) */
+  thinking?: ThinkingConfig;
   /** One of the model's native effort ids (undefined = provider default). */
   effort?: string;
   /** Tool approval callback */
@@ -116,16 +117,11 @@ export interface AgentSession {
    * Returns true when steered immediately, false when caller should enqueue instead.
    */
   steer?: (message: UserMessage) => Promise<boolean>;
-  /**
-   * Change max thinking tokens without restarting the session.
-   * Pass null to disable thinking mode.
-   * Only supported by Claude SDK 0.2.7+.
-   */
-  setMaxThinkingTokens?: (tokens: number | null) => Promise<void>;
+  /** Switch thinking without restarting the session; undefined is the provider default. */
+  setThinking?: (thinking: ThinkingConfig | undefined) => Promise<void>;
   /**
    * Interrupt the current turn gracefully without killing the process.
    * The query will stop processing the current turn and return control.
-   * Only supported by Claude SDK 0.2.7+.
    */
   interrupt?: () => Promise<void>;
 }

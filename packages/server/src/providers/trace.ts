@@ -16,10 +16,14 @@ export function initProviderTrace(options: { enabled: boolean; logDir: string })
   if (!options.enabled) return;
   fs.mkdirSync(options.logDir, { recursive: true });
   // The trace holds whole prompts, files and tool output: readable by this user only.
-  writeStream = fs.createWriteStream(path.join(options.logDir, "sdk-raw.jsonl"), {
+  const stream = fs.createWriteStream(path.join(options.logDir, "sdk-raw.jsonl"), {
     flags: "a",
     mode: 0o600,
   });
+  // Write errors (a full disk, a revoked permission) arrive here, not at write():
+  // unheard, they would be an uncaught exception that shuts the server down.
+  stream.on("error", (error) => stopTracing(stream, error));
+  writeStream = stream;
   write({ _meta: "trace_started", timestamp: new Date().toISOString(), pid: process.pid });
 }
 
@@ -39,11 +43,19 @@ export function closeProviderTrace(): void {
 }
 
 function write(record: unknown): void {
+  const stream = writeStream;
+  if (!stream) return;
   try {
-    writeStream?.write(`${JSON.stringify(record)}\n`);
+    stream.write(`${JSON.stringify(record)}\n`);
   } catch (error) {
-    // A debug trace must never break a session; say once why it stopped.
-    loggerFor("trace").warn({ err: error }, "Provider trace write failed; tracing stops");
-    writeStream = null;
+    stopTracing(stream, error);
   }
+}
+
+/** A debug trace must never break a session; say once why it stopped. */
+function stopTracing(stream: fs.WriteStream, error: unknown): void {
+  if (writeStream !== stream) return;
+  writeStream = null;
+  loggerFor("trace").warn({ err: error }, "Provider trace write failed; tracing stops");
+  stream.destroy();
 }

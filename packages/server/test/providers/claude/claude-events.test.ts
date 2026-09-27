@@ -100,6 +100,45 @@ describe("Claude events to UI chunks", () => {
     });
     expect(chunks.filter((chunk) => chunk.type === "text-end")).toHaveLength(2);
   });
+  it("keeps block identity when Claude Code splits a message into one block per message", async () => {
+    const block = (content: Record<string, unknown>): SDKMessage => ({
+      type: "assistant",
+      message: { id: "m1", content: [content] },
+    });
+    const events: SDKMessage[] = [
+      stream({ type: "message_start", message: { id: "m1" } }),
+      stream({
+        type: "content_block_start",
+        index: 0,
+        content_block: { type: "thinking", thinking: "" },
+      }),
+      stream({ type: "content_block_start", index: 1, content_block: { type: "text", text: "" } }),
+      stream({
+        type: "content_block_delta",
+        index: 1,
+        delta: { type: "text_delta", text: "Hello" },
+      }),
+      stream({
+        type: "content_block_start",
+        index: 2,
+        content_block: { type: "tool_use", id: "tool1", name: "Read" },
+      }),
+      stream({
+        type: "content_block_delta",
+        index: 2,
+        delta: { type: "input_json_delta", partial_json: '{"path":"a"}' },
+      }),
+      stream({ type: "content_block_stop", index: 2 }),
+      block({ type: "thinking", thinking: "" }),
+      block({ type: "text", text: "Hello" }),
+      block({ type: "tool_use", id: "tool1", name: "Read", input: { path: "a" } }),
+    ];
+    const { result } = await normalize([...events, events[7] as SDKMessage]);
+    expect(result?.parts.filter((part) => part.type === "text").map((part) => part.text)).toEqual([
+      "Hello",
+    ]);
+    expect(result?.parts.filter((part) => part.type === "dynamic-tool")).toHaveLength(1);
+  });
   it("combines Codex deltas and completed item snapshots once", async () => {
     const adapter = new CodexEventAdapter("thread");
     adapter.beginTurn("turn");

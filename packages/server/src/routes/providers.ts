@@ -19,31 +19,46 @@ async function describe(provider: AgentProvider): Promise<ProviderInfo> {
     displayName: provider.displayName,
     capabilities: provider.capabilities,
   };
-  try {
-    const [authStatus, models] = await Promise.all([
-      provider.getAuthStatus(),
-      provider.getAvailableModels(),
-    ]);
-    return {
-      ...base,
-      installed: authStatus.installed,
-      authenticated: authStatus.authenticated,
-      enabled: authStatus.enabled,
-      expiresAt: authStatus.expiresAt?.toISOString(),
-      user: authStatus.user,
-      plan: authStatus.plan,
-      models,
-    };
-  } catch (error) {
-    loggerFor("providers").error({ err: error, provider: provider.name }, "Status unavailable");
+  // Read apart: a model listing that fails or times out must not hide the login.
+  const [auth, models] = await Promise.allSettled([
+    provider.getAuthStatus(),
+    provider.getAvailableModels(),
+  ]);
+  if (auth.status === "rejected") {
+    loggerFor("providers").error(
+      { err: auth.reason, provider: provider.name },
+      "Status unavailable",
+    );
     return {
       ...base,
       installed: false,
       authenticated: false,
       enabled: false,
-      error: error instanceof Error ? error.message : String(error),
+      error: errorMessage(auth.reason),
     };
   }
+  const authStatus = auth.value;
+  if (models.status === "rejected")
+    loggerFor("providers").error(
+      { err: models.reason, provider: provider.name },
+      "Models unavailable",
+    );
+  return {
+    ...base,
+    installed: authStatus.installed,
+    authenticated: authStatus.authenticated,
+    enabled: authStatus.enabled,
+    expiresAt: authStatus.expiresAt?.toISOString(),
+    user: authStatus.user,
+    plan: authStatus.plan,
+    ...(models.status === "fulfilled"
+      ? { models: models.value }
+      : { modelsError: errorMessage(models.reason) }),
+  };
+}
+
+function errorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
 }
 
 /** 创建 Provider 状态与用量查询接口。 */

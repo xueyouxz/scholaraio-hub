@@ -126,18 +126,12 @@ export class AgentProcess {
     return this._effort;
   }
 
-  /** Whether thinking can be switched without a restart (Claude SDK 0.2.7+). */
-  get supportsThinkingModeChange(): boolean {
-    return this.session.setMaxThinkingTokens !== undefined;
-  }
-
   /**
    * Switch thinking on (non-zero) or off (undefined/0) in place, keeping the
    * recorded config in step. False when the provider cannot.
    */
   async changeThinking(thinking: ThinkingConfig | undefined): Promise<boolean> {
-    if (!this.session.setMaxThinkingTokens) return false;
-    const enabled = thinking?.type !== "disabled";
+    if (!this.session.setThinking) return false;
     loggerFor("agent-process").info(
       {
         event: "thinking_mode_change",
@@ -148,15 +142,15 @@ export class AgentProcess {
       },
       "Changing thinking mode in place",
     );
-    // On adaptive models any non-zero budget means "adaptive"; null turns thinking off.
-    await this.session.setMaxThinkingTokens(enabled ? 1 : null);
+    await this.session.setThinking(thinking);
     this._thinking = thinking;
     return true;
   }
 
   /**
    * Stop the current turn without ending the process. False when the provider
-   * cannot interrupt; the caller then has to stop the process instead.
+   * cannot interrupt; the caller then has to stop the process instead. Any
+   * approval of the stopped turn is denied: not every provider aborts it.
    */
   async interrupt(): Promise<boolean> {
     if (!this.session.interrupt) return false;
@@ -165,6 +159,8 @@ export class AgentProcess {
       `Interrupting process: ${this.sessionId}`,
     );
     await this.session.interrupt();
+    this.approvals.denyAll("Operation interrupted");
+    if (this._state.type === "waiting-input") this.setState({ type: "in-turn" });
     return true;
   }
 
@@ -295,7 +291,11 @@ export class AgentProcess {
         if (event.type === "session.started") this._nativeSessionId = event.sessionId;
         if (event.type === "model.resolved") this._resolvedModel = event.model;
         this.emit({ type: "agent", event });
-        if (event.type === "turn.completed") this.transitionToIdle();
+        if (event.type === "turn.completed") {
+          // A question the finished turn left open can no longer be answered.
+          this.approvals.denyAll("Turn ended");
+          this.transitionToIdle();
+        }
       }
     } catch (error) {
       failure = error instanceof Error ? error : new Error(String(error));

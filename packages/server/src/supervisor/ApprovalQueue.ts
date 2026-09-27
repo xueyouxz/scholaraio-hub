@@ -15,6 +15,8 @@ import type { ToolApprovalResult } from "../providers/types.js";
 interface PendingApproval {
   request: InputRequest;
   resolve: (result: ToolApprovalResult) => void;
+  /** Stop listening for the turn's abort once the request is retired. */
+  detach: () => void;
 }
 
 export interface ApprovalQueueHooks {
@@ -45,21 +47,22 @@ export class ApprovalQueue {
    * turn is aborted first.
    */
   ask(request: InputRequest, signal: AbortSignal): Promise<ToolApprovalResult> {
-    const isFirst = this.pending.size === 0;
     return new Promise<ToolApprovalResult>((resolve) => {
-      this.pending.set(request.id, { request, resolve });
-      this.order.push(request.id);
-
-      const onAbort = () => {
-        if (!this.pending.has(request.id)) return;
-        this.remove(request.id);
-        if (isFirst) this.advance();
-        resolve({ behavior: "deny", message: "Operation aborted", interrupt: true });
-      };
+      const onAbort = () =>
+        this.retire(request.id, {
+          behavior: "deny",
+          message: "Operation aborted",
+          interrupt: true,
+        });
       signal.addEventListener("abort", onAbort, { once: true });
-
+      this.pending.set(request.id, {
+        request,
+        resolve,
+        detach: () => signal.removeEventListener("abort", onAbort),
+      });
+      this.order.push(request.id);
       // Later requests wait their turn silently.
-      if (isFirst) this.hooks.onShow(request);
+      if (this.order.length === 1) this.hooks.onShow(request);
     });
   }
 
@@ -73,21 +76,34 @@ export class ApprovalQueue {
    * Returns false when the id is unknown (already answered or aborted).
    */
   settle(requestId: string, result: ToolApprovalResult): boolean {
-    const pending = this.pending.get(requestId);
-    if (!pending) return false;
-    pending.resolve(result);
-    this.remove(requestId);
-    this.advance();
+    if (!this.pending.has(requestId)) return false;
+    this.retire(requestId, result);
     return true;
   }
 
-  /** Deny everything still waiting, e.g. when the process dies. */
+  /**
+   * Deny everything still waiting, e.g. when the process dies or its turn
+   * ends. Nothing is shown afterwards; the caller sets the process state.
+   */
   denyAll(message: string): void {
-    for (const pending of this.pending.values()) {
-      pending.resolve({ behavior: "deny", message, interrupt: true });
-    }
+    const pending = [...this.pending.values()];
     this.pending.clear();
     this.order = [];
+    for (const approval of pending) {
+      approval.detach();
+      approval.resolve({ behavior: "deny", message, interrupt: true });
+    }
+  }
+
+  /** Resolve one request; when it was the one shown, show the next. */
+  private retire(requestId: string, result: ToolApprovalResult): void {
+    const approval = this.pending.get(requestId);
+    if (!approval) return;
+    const shown = this.order[0] === requestId;
+    this.remove(requestId);
+    approval.detach();
+    approval.resolve(result);
+    if (shown) this.advance();
   }
 
   private remove(requestId: string): void {

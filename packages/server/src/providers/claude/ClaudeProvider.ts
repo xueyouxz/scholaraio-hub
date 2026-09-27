@@ -10,6 +10,7 @@ import {
   type CanUseTool as SDKCanUseTool,
   type SDKUserMessage,
   type ModelInfo as SdkModelInfo,
+  type ThinkingConfig as SdkThinkingConfig,
   type SpawnedProcess,
   forkSession,
   getSessionMessages,
@@ -21,6 +22,7 @@ import {
   type ProviderUsageLimits,
   type SessionContextUsage,
   type SlashCommand,
+  type ThinkingConfig,
 } from "@scholaraio-hub/shared";
 import { loggerFor } from "../../logging/logger.js";
 import { outboundFetch } from "../../utils/outboundFetch.js";
@@ -722,7 +724,7 @@ export class ClaudeProvider implements AgentProvider {
           includePartialMessages: true,
           // Model, thinking, and effort options
           model: options.model,
-          thinking: options.thinking,
+          thinking: toClaudeThinking(options.thinking),
           effort: toClaudeEffort(options.effort),
           // Filter env to exclude npm_*, scholaraio-hub specific, and other irrelevant vars
           env: this.getEnv(),
@@ -754,7 +756,10 @@ export class ClaudeProvider implements AgentProvider {
       },
       isProcessAlive: () =>
         capturedProcess !== null && capturedProcess.exitCode === null && !capturedProcess.killed,
-      setMaxThinkingTokens: (tokens: number | null) => sdkQuery.setMaxThinkingTokens(tokens),
+      // On adaptive models any non-zero budget means "adaptive" and 0 turns
+      // thinking off; null would only clear the limit.
+      setThinking: (thinking) =>
+        sdkQuery.setMaxThinkingTokens(thinking?.type === "disabled" ? 0 : 1),
       interrupt: () => sdkQuery.interrupt(),
     };
   }
@@ -790,6 +795,13 @@ export class ClaudeProvider implements AgentProvider {
       throw error;
     }
   }
+}
+
+/** Ask for summarized thinking: by default the model may omit it and leave reasoning empty. */
+function toClaudeThinking(thinking?: ThinkingConfig): SdkThinkingConfig | undefined {
+  return thinking && thinking.type !== "disabled"
+    ? { ...thinking, display: "summarized" }
+    : thinking;
 }
 
 const CLAUDE_EFFORTS = ["low", "medium", "high", "max"] as const;

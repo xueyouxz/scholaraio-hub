@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import type { ModelInfo, SlashCommand } from "@scholaraio-hub/shared";
 import { MessageQueue } from "../../src/providers/MessageQueue.js";
 import { ClaudeEventAdapter } from "../../src/providers/claude/ClaudeEventAdapter.js";
-import { claudePrompt } from "../../src/providers/claude/ClaudeProvider.js";
+import { claudePrompt } from "../../src/providers/claude/ClaudeSession.js";
 import type { SDKMessage } from "../../src/providers/claude/sdk-message.js";
 import type { AgentEvent } from "../../src/providers/events.js";
 import type {

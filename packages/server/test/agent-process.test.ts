@@ -3,7 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it, vi } from "vitest";
 import { MessageQueue } from "../src/providers/MessageQueue.js";
-import { toClaudeUserMessage } from "../src/providers/claude/ClaudeProvider.js";
+import { toClaudeUserMessage } from "../src/providers/claude/ClaudeSession.js";
 import type { AgentEvent } from "../src/providers/events.js";
 import type { AgentSession, UserMessage } from "../src/providers/types.js";
 import {

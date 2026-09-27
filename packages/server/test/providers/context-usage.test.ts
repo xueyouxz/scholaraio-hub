@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { readClaudeContextUsage } from "../../src/providers/claude/ClaudeProvider.js";
+import { readClaudeContextUsage } from "../../src/providers/claude/ClaudeSession.js";
 import {
   CodexEventAdapter,
   codexContextUsage,

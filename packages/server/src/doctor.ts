@@ -5,10 +5,8 @@
  */
 import { spawnSync } from "node:child_process";
 import { loadClaudeSettings } from "./config.js";
-import {
-  ClaudeProvider,
-  resolveLocalClaudeCodeExecutable,
-} from "./providers/claude/ClaudeProvider.js";
+import { ClaudeProvider } from "./providers/claude/ClaudeProvider.js";
+import { resolveLocalClaudeCodeExecutable } from "./providers/claude/cli.js";
 import { CodexProvider } from "./providers/codex/CodexProvider.js";
 import { findCodexCli } from "./providers/codex/cli.js";
 

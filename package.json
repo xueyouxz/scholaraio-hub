@@ -26,7 +26,7 @@
     "gen:library-types": "node scripts/generate-library-types.mjs"
   },
   "devDependencies": {
-    "@biomejs/biome": "^1.9.4",
+    "@biomejs/biome": "^2.5.14",
     "@playwright/test": "^1.50.1",
     "@tailwindcss/vite": "^4.1.14",
     "@vitejs/plugin-react": "^4.3.4",

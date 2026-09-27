@@ -55,6 +55,8 @@ REAL_HUB_TESTS=true REAL_HUB_PROVIDER=codex pnpm --filter @scholaraio-hub/server
 ## 代码规范
 
 - 格式和 lint 由 Biome 负责，提交时 pre-commit 钩子对暂存文件运行 `lint-staged`。
+  VS Code 请安装仓库推荐的 Biome 扩展（`biomejs.biome`）：`.vscode/settings.json` 让本仓库的
+  JS/TS/JSON/CSS 用 Biome 格式化并关闭 Prettier，保存时不会再按其他格式化器的规则改写文件。
 - `scripts/check-conventions.mjs` 拒绝 suppression 注释、吞掉错误的空 catch，以及放错位置的测试文件。
 - 各包的具体规则在 `.claude/rules/`（client / server / shared / python），UI 以 [.design/DESIGN.md](.design/DESIGN.md) 为准。
 

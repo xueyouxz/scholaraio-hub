@@ -2,9 +2,9 @@ import { mkdir, mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { createApp } from "../../src/app.js";
 import { LibraryClient } from "../../src/lib/LibraryClient.js";
 import { WorkbenchProvider } from "../helpers/WorkbenchProvider.js";
+import { createTestApp } from "../helpers/app.js";
 import { libraryResponse } from "../helpers/library.js";
 import { TEST_LIBRARY_URL } from "../helpers/library.js";
 
@@ -33,14 +33,14 @@ describe("sessions in a literature project", () => {
   let root: string;
   let projectPath: string;
   let provider: WorkbenchProvider;
-  let server: ReturnType<typeof createApp>;
+  let server: ReturnType<typeof createTestApp>;
 
   beforeEach(async () => {
     root = await mkdtemp(join(tmpdir(), "hub-project-sessions-"));
     projectPath = join(root, "workspace", "review");
     await mkdir(projectPath, { recursive: true });
     provider = new WorkbenchProvider("claude");
-    server = createApp({
+    server = createTestApp({
       dataDir: root,
       provider,
       library: new ProjectLibrary(projectPath),

@@ -67,6 +67,11 @@ export class ServerSettingsService {
     return { ...this.settings };
   }
 
+  /** 等待已排队的保存写完，关闭时调用。 */
+  async close(): Promise<void> {
+    await this.writes;
+  }
+
   private ensureInitialized(): void {
     if (!this.initialized) {
       throw new Error("ServerSettingsService not initialized. Call initialize() first.");

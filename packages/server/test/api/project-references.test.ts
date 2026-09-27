@@ -3,9 +3,9 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { CSRF_HEADER } from "@scholaraio-hub/shared";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { createApp } from "../../src/app.js";
 import { LibraryClient } from "../../src/lib/LibraryClient.js";
 import { WorkbenchProvider } from "../helpers/WorkbenchProvider.js";
+import { createTestApp } from "../helpers/app.js";
 import { libraryResponse } from "../helpers/library.js";
 import { TEST_LIBRARY_URL } from "../helpers/library.js";
 
@@ -41,13 +41,13 @@ class ProjectLibrary extends LibraryClient {
 describe("a session's project reference", () => {
   let root: string;
   let projectPath: string;
-  let server: ReturnType<typeof createApp>;
+  let server: ReturnType<typeof createTestApp>;
 
   beforeEach(async () => {
     root = await mkdtemp(join(tmpdir(), "hub-project-references-"));
     projectPath = join(root, "workspace", "review");
     await mkdir(projectPath, { recursive: true });
-    server = createApp({
+    server = createTestApp({
       dataDir: root,
       provider: new WorkbenchProvider("claude"),
       library: new ProjectLibrary(projectPath),

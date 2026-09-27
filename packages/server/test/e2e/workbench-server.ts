@@ -9,18 +9,10 @@ import { uvSyncCommand } from "../../../cli/src/install.js";
 import { LibraryProcess } from "../../../cli/src/library-process.js";
 import { pythonRuntime } from "../../../cli/src/python.js";
 import { createApp } from "../../src/app.js";
+import { type Services, createServices } from "../../src/container.js";
 import { LibraryClient } from "../../src/lib/LibraryClient.js";
-import { claudeProvider, codexProvider } from "../../src/providers/index.js";
-import { ServerSettingsService } from "../../src/services/ServerSettingsService.js";
+import { ProviderRegistry } from "../../src/providers/ProviderRegistry.js";
 import { WorkbenchProvider } from "../helpers/WorkbenchProvider.js";
-
-// Keep both tool choices deterministic; never launch a real CLI from browser tests.
-for (const provider of [claudeProvider, codexProvider]) {
-  const fake = new WorkbenchProvider(provider.name);
-  provider.startSession = fake.startSession.bind(fake);
-  provider.getAuthStatus = fake.getAuthStatus.bind(fake);
-  provider.getAvailableModels = fake.getAvailableModels.bind(fake);
-}
 
 const dataDir = await mkdtemp(path.join(tmpdir(), "hub-browser-test-"));
 // Browser tests must not depend on Crossref, Semantic Scholar or OpenAlex:
@@ -33,14 +25,14 @@ const library = new LibraryProcess({
   port: resolveLibraryPort({ PORT: String(port) }),
   hubPort: port,
 });
-let application: ReturnType<typeof createApp> | undefined;
+let services: Services | undefined;
 let server: ReturnType<typeof serve> | undefined;
 let closing = false;
 async function close() {
   if (closing) return;
   closing = true;
   server?.close();
-  await application?.close();
+  await services?.close();
   await library.stop();
   await rm(dataDir, { recursive: true, force: true });
 }
@@ -59,25 +51,26 @@ try {
   if (setup.status !== 0)
     throw setup.error ?? new Error("Cannot prepare isolated Python test environment; install uv");
   await library.start();
-  const settings = new ServerSettingsService({ dataDir });
-  await settings.initialize();
   const skillsDir = path.join(dataDir, "skills");
   await mkdir(path.join(skillsDir, "review-fixture"), { recursive: true });
   await writeFile(
     path.join(skillsDir, "review-fixture", "SKILL.md"),
     "---\nname: review-fixture\ndescription: 用于隔离测试的科研技能\n---\n阅读研究资料并总结 $ARGUMENTS",
   );
-  application = createApp({
-    scholaraioSkillsDir: skillsDir,
-    serverSettingsService: settings,
+  // Both tool choices are deterministic fakes: browser tests never launch a real CLI.
+  services = createServices({
     dataDir,
     library: new LibraryClient(library.url),
-    provider: new WorkbenchProvider(),
-    frontendDistPath: path.resolve("../client/dist"),
+    providers: new ProviderRegistry([
+      new WorkbenchProvider("claude"),
+      new WorkbenchProvider("codex"),
+    ]),
+    skillsDir,
   });
-  await application.ready;
+  await services.start();
+  const app = createApp(services, { frontendDistPath: path.resolve("../client/dist") });
   server = serve({
-    fetch: application.app.fetch,
+    fetch: app.fetch,
     port,
     hostname: "127.0.0.1",
   });

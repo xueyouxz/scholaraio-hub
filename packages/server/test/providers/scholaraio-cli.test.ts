@@ -2,7 +2,7 @@ import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
-import { bindAgentLibrary, withScholaraioCli } from "../../src/providers/agent-env.js";
+import { agentEnv, withScholaraioCli } from "../../src/providers/agent-env.js";
 
 const executable = process.platform === "win32" ? "scholaraio.exe" : "scholaraio";
 const binDirName = process.platform === "win32" ? "Scripts" : "bin";
@@ -41,20 +41,15 @@ describe("withScholaraioCli", () => {
     expect(env.PATH?.split(path.delimiter)[0]).toBe(described.cliBinDir);
   });
 
-  it("follows the library the server bound, and sends writes to the library service", () => {
+  it("gives an agent the library it was built with, and the service its writes go to", () => {
     const described = library({ config: true, cli: true });
-    bindAgentLibrary({ ...described, libraryUrl: "http://127.0.0.1:3601" });
-    try {
-      const env = withScholaraioCli({ PATH: "/usr/bin" });
-      expect(env.SCHOLARAIO_CONFIG).toBe(described.configFile);
-      expect(env.SCHOLARAIO_LIBRARY_API).toBe("http://127.0.0.1:3601");
-    } finally {
-      bindAgentLibrary(undefined);
-    }
+    const env = agentEnv({ ...described, libraryUrl: "http://127.0.0.1:3601" });
+    expect(env.SCHOLARAIO_CONFIG).toBe(described.configFile);
+    expect(env.SCHOLARAIO_LIBRARY_API).toBe("http://127.0.0.1:3601");
   });
 
   it("leaves the environment alone when no library is bound", () => {
-    expect(withScholaraioCli({ PATH: "/usr/bin" })).toEqual({ PATH: "/usr/bin" });
+    expect(withScholaraioCli({ PATH: "/usr/bin" }, undefined)).toEqual({ PATH: "/usr/bin" });
   });
 
   it("does not claim a library when the application config is missing", () => {

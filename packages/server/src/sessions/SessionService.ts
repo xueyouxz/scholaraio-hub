@@ -14,16 +14,12 @@ import type {
   StoredSession,
   UploadedFile,
 } from "@scholaraio-hub/shared";
-import {
-  DEFAULT_PROVIDER,
-  UNTITLED_SESSION_TITLE,
-  thinkingModeToConfig,
-} from "@scholaraio-hub/shared";
+import { UNTITLED_SESSION_TITLE, thinkingModeToConfig } from "@scholaraio-hub/shared";
 import { type UIMessageChunk, readUIMessageStream } from "ai";
 import type { z } from "zod";
 import { type LibraryClient, LibraryRequestError } from "../lib/LibraryClient.js";
 import { loggerFor } from "../logging/logger.js";
-import type { AgentProvider } from "../providers/types.js";
+import { type ProviderRegistry, ProviderUnavailableError } from "../providers/ProviderRegistry.js";
 import type { PermissionMode } from "../providers/types.js";
 import { researchSlashCommands } from "../skills/scholaraioSkills.js";
 import { Supervisor } from "../supervisor/Supervisor.js";
@@ -75,8 +71,8 @@ export type NewSessionInput = Omit<z.output<typeof CreateSessionSchema>, "provid
 };
 
 export interface SessionServiceOptions {
-  /** Agent provider used when a session does not name one. */
-  provider: AgentProvider;
+  /** The providers this server runs; a session that does not name one gets the default. */
+  providers: ProviderRegistry;
   idleTimeoutMs?: number;
   /** Research skills, offered as commands and expanded into prompts. */
   skillsDir?: string;
@@ -103,6 +99,7 @@ export class SessionService {
   private changingOptions = new Set<string>();
   /** The provider processes serving these sessions, one per session. */
   private readonly supervisor: Supervisor;
+  private readonly providers: ProviderRegistry;
   private readonly skillsDir?: string;
   private readonly onUsageLimits?: (limits: ProviderUsageLimits) => void;
   readonly attachments: SessionAttachments;
@@ -114,8 +111,9 @@ export class SessionService {
     this.attachments = new SessionAttachments(store);
     this.skillsDir = options.skillsDir;
     this.onUsageLimits = options.onUsageLimits;
+    this.providers = options.providers;
     this.supervisor = new Supervisor({
-      provider: options.provider,
+      providers: options.providers,
       idleTimeoutMs: options.idleTimeoutMs,
       onEvent: (id, event) => this.onEvent(id, event),
     });
@@ -126,7 +124,8 @@ export class SessionService {
    * new-session defaults; draft uploads named in the request move into it.
    */
   async create(input: NewSessionInput, defaults?: NewSessionDefaults): Promise<StoredSession> {
-    const provider = input.provider ?? defaults?.provider ?? DEFAULT_PROVIDER;
+    const provider = input.provider ?? defaults?.provider ?? this.providers.defaultProvider.name;
+    this.enabled(provider, SessionInputError);
     const model =
       input.model === ""
         ? undefined
@@ -145,7 +144,7 @@ export class SessionService {
    * for this session's workspace), then the hub's research skills, which the
    * hub itself expands when a message starts with one.
    */
-  async commands(id?: string, provider: ProviderName = DEFAULT_PROVIDER) {
+  async commands(id?: string, provider?: ProviderName) {
     const record = id ? this.store.get(id) : undefined;
     const workspace = record
       ? await this.workingDirectory(record)
@@ -163,6 +162,19 @@ export class SessionService {
       seen.add(key);
       return true;
     });
+  }
+
+  /** 拒绝未启用的 Provider：新建会话时是输入错误，已有会话继续运行时是状态冲突。 */
+  private enabled(
+    provider: ProviderName,
+    refusal: typeof SessionInputError | typeof SessionConflictError,
+  ): void {
+    try {
+      this.providers.get(provider);
+    } catch (error) {
+      if (!(error instanceof ProviderUnavailableError)) throw error;
+      throw new refusal(error.message);
+    }
   }
 
   /** Refuse papers or a project the library does not have. */
@@ -383,6 +395,7 @@ export class SessionService {
     const record = this.store.get(id);
     if (record.readOnly || this.closing)
       throw new SessionConflictError("Cannot send messages in the current session.");
+    this.enabled(record.provider, SessionConflictError);
     if (
       queued &&
       (record.queuePaused || !record.queuedMessages?.some((message) => message.id === input.id))

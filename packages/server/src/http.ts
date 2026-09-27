@@ -7,6 +7,7 @@ import type { ContentfulStatusCode } from "hono/utils/http-status";
 import type { z } from "zod";
 import { LibraryRequestError, LibraryUnavailableError } from "./lib/LibraryClient.js";
 import { loggerFor } from "./logging/logger.js";
+import { ProviderUnavailableError } from "./providers/ProviderRegistry.js";
 import {
   SessionConflictError,
   SessionFileTooLargeError,
@@ -78,7 +79,7 @@ export function handleApiError(error: Error, c: Context) {
   else if (error instanceof SessionFileTooLargeError)
     mapped = new ApiError("PAYLOAD_TOO_LARGE", error.message);
   else if (error instanceof SessionConflictError) mapped = new ApiError(error.code, error.message);
-  else if (error instanceof SessionInputError)
+  else if (error instanceof SessionInputError || error instanceof ProviderUnavailableError)
     mapped = new ApiError("VALIDATION_FAILED", error.message);
   else if (error instanceof LibraryUnavailableError)
     mapped = new ApiError(

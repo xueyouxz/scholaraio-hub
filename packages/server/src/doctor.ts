@@ -4,18 +4,24 @@
  * provider can run with a local login.
  */
 import { spawnSync } from "node:child_process";
+import { loadClaudeSettings } from "./config.js";
 import {
-  claudeProvider,
+  ClaudeProvider,
   resolveLocalClaudeCodeExecutable,
 } from "./providers/claude/ClaudeProvider.js";
-import { codexProvider } from "./providers/codex/CodexProvider.js";
+import { CodexProvider } from "./providers/codex/CodexProvider.js";
 import { findCodexCli } from "./providers/codex/cli.js";
+
+// doctor 不经启动器运行：只读 Claude 相关变量，不需要实例配置。
+const claudeSettings = loadClaudeSettings();
+const claudeProvider = new ClaudeProvider(claudeSettings);
+const codexProvider = new CodexProvider();
 
 const codex = await findCodexCli();
 console.log(
   `Codex: ${codex ? `${codex.path} (${codex.version})` : "Codex CLI cannot run. Repair with: npm install -g @openai/codex"}`,
 );
-const claudePath = resolveLocalClaudeCodeExecutable();
+const claudePath = resolveLocalClaudeCodeExecutable(claudeSettings.executable);
 const claude = claudePath
   ? spawnSync(claudePath, ["--version"], { encoding: "utf8", timeout: 10000 })
   : undefined;

@@ -2,13 +2,13 @@ import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
-import { createApp } from "../src/app.js";
+import { createTestApp } from "./helpers/app.js";
 import { offlineLibrary } from "./helpers/library.js";
 import { createScriptedProvider } from "./helpers/scriptedProvider.js";
 
 describe("App frontend integration", () => {
   const tempDirs: string[] = [];
-  const apps: ReturnType<typeof createApp>[] = [];
+  const apps: ReturnType<typeof createTestApp>[] = [];
 
   afterEach(async () => {
     for (const server of apps) {
@@ -29,7 +29,7 @@ describe("App frontend integration", () => {
       "utf-8",
     );
 
-    const server = createApp({
+    const server = createTestApp({
       dataDir: distDir,
       frontendDistPath: distDir,
       provider: createScriptedProvider(),
@@ -52,7 +52,7 @@ describe("App frontend integration", () => {
     const distDir = await mkdtemp(join(tmpdir(), "client-dist-"));
     tempDirs.push(distDir);
     await writeFile(join(distDir, "index.html"), "<!doctype html>", "utf-8");
-    const server = createApp({
+    const server = createTestApp({
       dataDir: distDir,
       frontendDistPath: distDir,
       provider: createScriptedProvider(),
@@ -68,7 +68,7 @@ describe("App frontend integration", () => {
     await writeFile(join(distDir, "index.html"), "<!doctype html><title>client</title>", "utf-8");
     await mkdir(join(distDir, "assets"));
     await writeFile(join(distDir, "assets", "index-BrUm1Kv-.js"), "export {};", "utf-8");
-    const server = createApp({
+    const server = createTestApp({
       dataDir: distDir,
       frontendDistPath: distDir,
       provider: createScriptedProvider(),

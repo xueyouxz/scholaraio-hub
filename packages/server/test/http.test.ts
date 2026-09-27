@@ -2,19 +2,19 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { createApp } from "../src/app.js";
 import { MAX_ATTACHMENT_BYTES } from "../src/sessions/SessionAttachments.js";
 import { WorkbenchProvider } from "./helpers/WorkbenchProvider.js";
+import { createTestApp } from "./helpers/app.js";
 import { offlineLibrary } from "./helpers/library.js";
 
 const HEADERS = { "Content-Type": "application/json", "ScholarAIO-Hub": "true" };
 
 describe("统一 HTTP 契约", () => {
   let root: string;
-  let server: ReturnType<typeof createApp>;
+  let server: ReturnType<typeof createTestApp>;
   beforeEach(async () => {
     root = await mkdtemp(join(tmpdir(), "hub-http-"));
-    server = createApp({
+    server = createTestApp({
       dataDir: root,
       library: offlineLibrary(),
       provider: new WorkbenchProvider("claude"),

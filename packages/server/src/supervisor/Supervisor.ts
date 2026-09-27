@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import type { ProviderName, ThinkingConfig } from "@scholaraio-hub/shared";
 import { loggerFor } from "../logging/logger.js";
-import { getProvider } from "../providers/index.js";
+import type { ProviderRegistry } from "../providers/ProviderRegistry.js";
 import type { AgentProvider } from "../providers/types.js";
 import type { PermissionMode, UserMessage } from "../providers/types.js";
 import { AgentProcess } from "./AgentProcess.js";
@@ -51,8 +51,8 @@ export interface SessionMessageRequest {
 }
 
 export interface SupervisorOptions {
-  /** Agent provider used when a request does not name one */
-  provider: AgentProvider;
+  /** The providers this server runs; a request names one or gets the default. */
+  providers: ProviderRegistry;
   idleTimeoutMs?: number;
   /** How long a pending approval or question may go unanswered before the process stops. */
   unansweredInputTimeoutMs?: number;
@@ -71,14 +71,14 @@ export interface SupervisorOptions {
  */
 export class Supervisor {
   private readonly processes = new Map<string, AgentProcess>();
-  private readonly provider: AgentProvider;
+  private readonly providers: ProviderRegistry;
   private readonly idleTimeoutMs?: number;
   private readonly unansweredInputTimeoutMs: number;
   private readonly onEvent: SupervisorOptions["onEvent"];
   private readonly staleCheckTimer: ReturnType<typeof setInterval>;
 
   constructor(options: SupervisorOptions) {
-    this.provider = options.provider;
+    this.providers = options.providers;
     this.idleTimeoutMs = options.idleTimeoutMs;
     this.unansweredInputTimeoutMs =
       options.unansweredInputTimeoutMs ?? DEFAULT_UNANSWERED_INPUT_TIMEOUT_MS;
@@ -92,13 +92,10 @@ export class Supervisor {
 
   /**
    * The provider that would run a session for `name`: the one the caller named,
-   * otherwise the supervisor default. An unknown name is a caller bug.
+   * otherwise the default. One that is not enabled throws `ProviderUnavailableError`.
    */
   providerFor(name: ProviderName | undefined): AgentProvider {
-    if (!name || name === this.provider.name) return this.provider;
-    const provider = getProvider(name);
-    if (!provider) throw new Error(`Unknown provider: ${name}`);
-    return provider;
+    return this.providers.get(name);
   }
 
   /** The session's live process, if it has one. */

@@ -3,10 +3,10 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { createApp } from "../../src/app.js";
 import { LibraryClient } from "../../src/lib/LibraryClient.js";
 import { ClaudeProvider } from "../../src/providers/claude/ClaudeProvider.js";
 import { CodexProvider } from "../../src/providers/codex/CodexProvider.js";
+import { createTestApp } from "../helpers/app.js";
 import { libraryResponse } from "../helpers/library.js";
 import { TEST_LIBRARY_URL } from "../helpers/library.js";
 
@@ -23,7 +23,7 @@ describe.skipIf(!enabled)("real application sessions", () => {
       async () => {
         const root = await mkdtemp(join(tmpdir(), "hub-real-cli-"));
         const provider = name === "claude" ? new ClaudeProvider() : new CodexProvider();
-        let server = createApp({
+        let server = createTestApp({
           dataDir: root,
           provider,
           library: new EmptyLibrary(TEST_LIBRARY_URL),
@@ -58,7 +58,7 @@ describe.skipIf(!enabled)("real application sessions", () => {
             token,
           );
           await server.close();
-          server = createApp({
+          server = createTestApp({
             dataDir: root,
             provider,
             library: new EmptyLibrary(TEST_LIBRARY_URL),

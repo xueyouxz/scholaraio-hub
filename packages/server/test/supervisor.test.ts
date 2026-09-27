@@ -1,10 +1,15 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { MessageQueue } from "../src/providers/MessageQueue.js";
+import { ProviderRegistry, ProviderUnavailableError } from "../src/providers/ProviderRegistry.js";
 import type { AgentEvent } from "../src/providers/events.js";
 import type { StartSessionOptions } from "../src/providers/types.js";
 import { type SessionMessageRequest, Supervisor } from "../src/supervisor/Supervisor.js";
 import type { ProcessEvent } from "../src/supervisor/types.js";
 import { createScriptedProvider, providerFromSessionFactory } from "./helpers/scriptedProvider.js";
+
+/** 只启用一个由会话工厂构造的 Provider。 */
+const registryFromFactory = (factory: Parameters<typeof providerFromSessionFactory>[0]) =>
+  new ProviderRegistry([providerFromSessionFactory(factory)]);
 
 const request = (overrides: Partial<SessionMessageRequest> = {}): SessionMessageRequest => ({
   sessionId: "app-1",
@@ -22,7 +27,7 @@ describe("Supervisor", () => {
     startCalls = [];
     events = [];
     supervisor = new Supervisor({
-      provider: createScriptedProvider({ startCalls, holdOpen: true }),
+      providers: new ProviderRegistry([createScriptedProvider({ startCalls, holdOpen: true })]),
       idleTimeoutMs: 60_000,
       onEvent: (sessionId, event) => events.push({ sessionId, event }),
     });
@@ -101,7 +106,7 @@ describe("Supervisor", () => {
   it("starts a new process once the old one died, reporting the death", async () => {
     let started = 0;
     const dying = new Supervisor({
-      provider: providerFromSessionFactory(async (options) => {
+      providers: registryFromFactory(async (options) => {
         started += 1;
         async function* stream(): AsyncIterableIterator<AgentEvent> {
           yield { type: "session.started", sessionId: options.resumeSessionId ?? "dying-1" };
@@ -133,16 +138,16 @@ describe("Supervisor", () => {
     expect(events.some(({ event }) => event.type === "terminated")).toBe(false);
   });
 
-  it("names the default provider for no name, and refuses an unknown one", () => {
+  it("names the default provider for no name, and refuses one that is not enabled", () => {
     expect(supervisor.providerFor(undefined).name).toBe("claude");
-    expect(() => supervisor.providerFor("nope" as never)).toThrow("Unknown provider: nope");
+    expect(() => supervisor.providerFor("codex")).toThrow(ProviderUnavailableError);
   });
 
   it("stops a process whose approval nobody answers, saying why", async () => {
     vi.useFakeTimers();
     try {
       const waiting = new Supervisor({
-        provider: createScriptedProvider({ startCalls, holdOpen: true }),
+        providers: new ProviderRegistry([createScriptedProvider({ startCalls, holdOpen: true })]),
         unansweredInputTimeoutMs: 1000,
         onEvent: (sessionId, event) => events.push({ sessionId, event }),
       });
@@ -173,7 +178,7 @@ describe("Supervisor", () => {
       let aborted = false;
       let started = 0;
       const idle = new Supervisor({
-        provider: providerFromSessionFactory(async () => {
+        providers: registryFromFactory(async () => {
           started += 1;
           async function* stream(): AsyncIterableIterator<AgentEvent> {
             yield { type: "session.started", sessionId: "idle-native" };

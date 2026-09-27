@@ -18,7 +18,7 @@ import {
 } from "@scholaraio-hub/shared";
 import { loggerFor } from "../../logging/logger.js";
 import { withTimeout } from "../../utils/timeout.js";
-import { agentEnv } from "../agent-env.js";
+import { type AgentLibrary, agentEnv } from "../agent-env.js";
 import type {
   AgentProvider,
   AgentSession,
@@ -38,6 +38,8 @@ const log = () => loggerFor("codex-provider");
 export interface CodexProviderConfig {
   /** Path to codex binary (auto-detected if not specified); tests point it at a fake. */
   codexPath?: string;
+  /** agent 中 `scholaraio` CLI 使用的文献库。 */
+  agentLibrary?: AgentLibrary;
 }
 
 const MODEL_CACHE_TTL_MS = 60 * 60 * 1000;
@@ -113,7 +115,7 @@ export class CodexProvider implements AgentProvider {
 
   /** The environment every Codex process gets: the user's, minus the Hub's, plus the library CLI. */
   private env(): NodeJS.ProcessEnv {
-    return agentEnv();
+    return agentEnv(this.config.agentLibrary);
   }
 
   /** Run `use` against a fresh, initialized app-server in `cwd`; it is closed afterwards. */
@@ -273,8 +275,6 @@ export class CodexProvider implements AgentProvider {
     return new CodexSession(options, await this.launchCommand(), this.env());
   }
 }
-
-export const codexProvider = new CodexProvider();
 
 /** Visible `model/list` entries in the app-server's own order, naming and effort levels. */
 export function toCodexModels(models: AppServerModel[]): ModelInfo[] {

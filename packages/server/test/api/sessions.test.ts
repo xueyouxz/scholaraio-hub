@@ -2,10 +2,10 @@ import { mkdir, mkdtemp, readFile, rm, symlink, unlink, writeFile } from "node:f
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { createApp } from "../../src/app.js";
 import { LibraryClient } from "../../src/lib/LibraryClient.js";
 import { SessionStore } from "../../src/sessions/SessionStore.js";
 import { WorkbenchProvider } from "../helpers/WorkbenchProvider.js";
+import { createTestApp } from "../helpers/app.js";
 import { libraryResponse } from "../helpers/library.js";
 import { TEST_LIBRARY_URL } from "../helpers/library.js";
 
@@ -31,7 +31,7 @@ const headers = { "Content-Type": "application/json", "ScholarAIO-Hub": "true" }
 describe.each(["claude", "codex"] as const)("%s application sessions", (name) => {
   let root: string;
   let provider: WorkbenchProvider;
-  let server: ReturnType<typeof createApp>;
+  let server: ReturnType<typeof createTestApp>;
   beforeEach(async () => {
     root = await mkdtemp(join(tmpdir(), "hub-sessions-"));
     const skillsDir = join(root, "skills");
@@ -41,7 +41,7 @@ describe.each(["claude", "codex"] as const)("%s application sessions", (name) =>
       "---\nname: review-fixture\ndescription: Test research skill\n---\nRESEARCH_SKILL_INSTRUCTIONS $ARGUMENTS",
     );
     provider = new WorkbenchProvider(name);
-    server = createApp({
+    server = createTestApp({
       dataDir: root,
       provider,
       library: new TestLibrary(TEST_LIBRARY_URL),
@@ -102,7 +102,7 @@ describe.each(["claude", "codex"] as const)("%s application sessions", (name) =>
       expect.objectContaining({ type: "file", filename: "研究资料.pdf", url: attachment.url }),
     ]);
     await server.close();
-    server = createApp({
+    server = createTestApp({
       dataDir: root,
       provider,
       library: new TestLibrary(TEST_LIBRARY_URL),
@@ -156,7 +156,7 @@ describe.each(["claude", "codex"] as const)("%s application sessions", (name) =>
     await stopped.text();
     expect(server.sessions.detail(id).queuePaused).toBe(true);
     await server.close();
-    server = createApp({
+    server = createTestApp({
       dataDir: root,
       provider,
       library: new TestLibrary(TEST_LIBRARY_URL),
@@ -432,7 +432,7 @@ describe.each(["claude", "codex"] as const)("%s application sessions", (name) =>
     await server.close();
     const file = join(root, "sessions", id, "session.json");
     await writeFile(file, JSON.stringify({ ...record, thinking: "on:max" }));
-    server = createApp({
+    server = createTestApp({
       dataDir: root,
       provider,
       library: new TestLibrary(TEST_LIBRARY_URL),
@@ -463,7 +463,7 @@ describe.each(["claude", "codex"] as const)("%s application sessions", (name) =>
     expect(provider.inputs[1]).not.toContain("第一问");
     expect(server.sessions.detail(id).messages).toHaveLength(4);
     await server.close();
-    server = createApp({
+    server = createTestApp({
       dataDir: root,
       provider,
       library: new TestLibrary(TEST_LIBRARY_URL),
@@ -567,7 +567,7 @@ describe.each(["claude", "codex"] as const)("%s application sessions", (name) =>
       expect(error.code).toBe("EEXIST"),
     );
     await server.close();
-    server = createApp({
+    server = createTestApp({
       dataDir: root,
       provider,
       library: new TestLibrary(TEST_LIBRARY_URL),
@@ -692,7 +692,7 @@ describe("workbench project and settings contract", () => {
         return libraryResponse({ paperIds: [] });
       }
     }
-    const server = createApp({
+    const server = createTestApp({
       dataDir: root,
       provider: new WorkbenchProvider("claude"),
       library: new ProjectLibrary(TEST_LIBRARY_URL),
@@ -744,9 +744,9 @@ describe("workbench project and settings contract", () => {
     await settings.updateSettings({
       newSessionDefaults: { provider: "codex", model: "codex-model" },
     });
-    const server = createApp({
+    const server = createTestApp({
       dataDir: root,
-      provider: new WorkbenchProvider("codex"),
+      providers: [new WorkbenchProvider("codex"), new WorkbenchProvider("claude")],
       library: new ScopedLibrary(TEST_LIBRARY_URL),
       serverSettingsService: settings,
     });

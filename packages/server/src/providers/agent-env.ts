@@ -11,9 +11,9 @@ import path from "node:path";
 import { HUB_ENV_KEYS } from "../env.js";
 import { loggerFor } from "../logging/logger.js";
 
-/** What every agent process of this server starts with. */
-export function agentEnv(): Record<string, string | undefined> {
-  return withScholaraioCli(filterEnvForChildProcess());
+/** agent 进程启动时的环境：用户环境去掉 Hub 自己的变量，再指向 `library`（若有）。 */
+export function agentEnv(library?: AgentLibrary): Record<string, string | undefined> {
+  return withScholaraioCli(filterEnvForChildProcess(), library);
 }
 
 /** Prefixes to exclude from child process environment */
@@ -79,16 +79,6 @@ export interface AgentLibrary {
   libraryUrl?: string;
 }
 
-let bound: AgentLibrary | undefined;
-
-/**
- * Name the library for every agent this process starts. The server's entry
- * point binds it once; providers are shared singletons and cannot ask their app.
- */
-export function bindAgentLibrary(library: AgentLibrary | undefined): void {
-  bound = library;
-}
-
 /**
  * Point an agent's `scholaraio` CLI at this application's library.
  *
@@ -98,9 +88,9 @@ export function bindAgentLibrary(library: AgentLibrary | undefined): void {
  */
 export function withScholaraioCli(
   env: Record<string, string | undefined>,
-  library: AgentLibrary | undefined = bound,
+  library: AgentLibrary | undefined,
 ): Record<string, string | undefined> {
-  // Nothing bound: no Hub library to point at (a test, or the doctor).
+  // No library: nothing to point at (a test, or the doctor).
   if (!library?.configFile) return env;
   const { configFile, cliBinDir, libraryUrl } = library;
   // A missing config would make the CLI treat the agent's project directory as

@@ -1,7 +1,6 @@
 import { readFile } from "node:fs/promises";
 import {
   CreateSessionSchema,
-  DEFAULT_PROVIDER,
   PROVIDER_NAMES,
   SendSessionMessageSchema,
   SessionOptionsSchema,
@@ -61,7 +60,7 @@ export function createSessionRoutes(service: SessionService, settings?: ServerSe
   // 命令发现：全局命令与会话命令。
   routes.get(
     "/commands",
-    validate("query", z.object({ provider: z.enum(PROVIDER_NAMES).default(DEFAULT_PROVIDER) })),
+    validate("query", z.object({ provider: z.enum(PROVIDER_NAMES).optional() })),
     async (c) =>
       success(c, { commands: await service.commands(undefined, c.req.valid("query").provider) }),
   );

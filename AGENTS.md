@@ -8,7 +8,8 @@ index; the rules it points to live in `.claude/` and apply to every agent.
 ## Project map
 
 - `packages/client` — Vite + React 19 frontend (`src/`).
-- `packages/server` — Hono API (`src/routes/`), session supervision (`src/supervisor/`),
+- `packages/server` — composition root (`src/container.ts`), Hono API (`src/routes/`),
+  session supervision (`src/supervisor/`),
   session runs (`src/sessions/`), provider integrations (`src/providers/`, one directory per
   provider), the library service's client (`src/lib/LibraryClient.ts`).
 - `packages/cli` — the launcher behind `pnpm dev` / `pnpm start` (starts the library service

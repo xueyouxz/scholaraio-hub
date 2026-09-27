@@ -2,16 +2,16 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { createApp } from "../../src/app.js";
+import { createTestApp } from "../helpers/app.js";
 import { offlineLibrary } from "../helpers/library.js";
 import { createScriptedProvider } from "../helpers/scriptedProvider.js";
 
 describe("workbench security middleware wiring", () => {
   let root: string;
-  let server: ReturnType<typeof createApp>;
+  let server: ReturnType<typeof createTestApp>;
   beforeEach(async () => {
     root = await mkdtemp(join(tmpdir(), "hub-security-"));
-    server = createApp({
+    server = createTestApp({
       dataDir: root,
       provider: createScriptedProvider(),
       library: offlineLibrary(),

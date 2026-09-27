@@ -1,15 +1,15 @@
-import type { ProviderInfo, ProviderName } from "@scholaraio-hub/shared";
+import type { ProviderInfo } from "@scholaraio-hub/shared";
 import { Hono } from "hono";
 import { success } from "../http.js";
 import { loggerFor } from "../logging/logger.js";
-import { getAllProviders } from "../providers/index.js";
+import type { ProviderRegistry } from "../providers/ProviderRegistry.js";
 import type { AgentProvider } from "../providers/types.js";
 import type { ProviderUsageLimitService } from "../services/ProviderUsageLimitService.js";
 
 interface ProviderRouteDeps {
-  providerUsageLimitService?: ProviderUsageLimitService;
-  /** If non-empty, only these providers are exposed. */
-  enabledProviders?: ProviderName[];
+  /** 已启用的 Provider；只展示这些。 */
+  providers: ProviderRegistry;
+  providerUsageLimitService: ProviderUsageLimitService;
 }
 
 /** 查询单个 Provider 的登录状态、模型和能力。 */
@@ -47,14 +47,9 @@ async function describe(provider: AgentProvider): Promise<ProviderInfo> {
 }
 
 /** 创建 Provider 状态与用量查询接口。 */
-export function createProvidersRoutes(deps: ProviderRouteDeps = {}): Hono {
+export function createProvidersRoutes(deps: ProviderRouteDeps): Hono {
   const routes = new Hono();
-  const enabledProviders = () => {
-    const providers = getAllProviders();
-    if (!deps.enabledProviders?.length) return providers;
-    const enabled = new Set(deps.enabledProviders);
-    return providers.filter((provider) => enabled.has(provider.name));
-  };
+  const enabledProviders = () => deps.providers.list();
 
   // 并发查询各 Provider 的状态。
   routes.get("/", async (c) =>
@@ -62,10 +57,6 @@ export function createProvidersRoutes(deps: ProviderRouteDeps = {}): Hono {
   );
 
   routes.get("/usage-limits", async (c) => {
-    if (!deps.providerUsageLimitService) {
-      return success(c, { usageLimits: [] });
-    }
-
     const usageLimits = await deps.providerUsageLimitService.getUsageLimits(enabledProviders());
     return success(c, { usageLimits });
   });

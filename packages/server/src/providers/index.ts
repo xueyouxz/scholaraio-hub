@@ -1,8 +1,7 @@
 /**
- * The providers this Hub runs: Claude and Codex.
+ * The providers this Hub runs: Claude and Codex, created once per server by
+ * `ProviderRegistry.create` from its configuration.
  */
-
-import type { AgentProvider, ProviderName } from "./types.js";
 export type {
   AgentProvider,
   AgentSession,
@@ -10,28 +9,10 @@ export type {
   ProviderName,
   StartSessionOptions,
 } from "./types.js";
-
-import { claudeProvider } from "./claude/ClaudeProvider.js";
-export { ClaudeProvider, claudeProvider } from "./claude/ClaudeProvider.js";
-
-import { codexProvider } from "./codex/CodexProvider.js";
+export { ClaudeProvider, type ClaudeProviderConfig } from "./claude/ClaudeProvider.js";
+export { CodexProvider, type CodexProviderConfig } from "./codex/CodexProvider.js";
 export {
-  CodexProvider,
-  codexProvider,
-  type CodexProviderConfig,
-} from "./codex/CodexProvider.js";
-
-export function getAllProviders(): AgentProvider[] {
-  return [claudeProvider, codexProvider];
-}
-
-export function getProvider(name: ProviderName): AgentProvider | null {
-  switch (name) {
-    case "claude":
-      return claudeProvider;
-    case "codex":
-      return codexProvider;
-    default:
-      return null;
-  }
-}
+  ProviderRegistry,
+  type ProviderSettings,
+  ProviderUnavailableError,
+} from "./ProviderRegistry.js";

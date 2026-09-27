@@ -11,13 +11,74 @@ service left out stays out, so the model filters an answer but never adds to it.
 Services build camelCase dicts; the fields are snake_case with camelCase
 aliases, like the request bodies in :mod:`.schemas`.
 """
+
 from __future__ import annotations
 
-from typing import Literal
+from typing import Generic, Literal, TypeVar
 
 from pydantic import Field
 
 from scholaraio.interfaces.api.schemas import CamelModel
+
+T = TypeVar("T")
+
+
+class ApiSuccess(CamelModel, Generic[T]):
+    """统一的 JSON 成功响应。"""
+
+    id: str
+    code: Literal["success"]
+    message: str
+    data: T
+
+
+class ApiIssue(CamelModel):
+    """请求字段的校验错误。"""
+
+    location: str
+    path: list[str | int]
+    code: str
+    message: str
+
+
+class ApiErrorDetails(CamelModel):
+    """可供调用方展示的错误详情。"""
+
+    issues: list[ApiIssue]
+
+
+class ApiFailure(CamelModel):
+    """统一的 JSON 失败响应。"""
+
+    id: str
+    code: Literal[
+        "INVALID_JSON",
+        "INVALID_MULTIPART",
+        "HOST_NOT_ALLOWED",
+        "CSRF_REJECTED",
+        "CORS_REJECTED",
+        "RESOURCE_NOT_FOUND",
+        "ROUTE_NOT_FOUND",
+        "SESSION_NOT_FOUND",
+        "PAPER_NOT_FOUND",
+        "PROJECT_NOT_FOUND",
+        "SKILL_NOT_FOUND",
+        "METHOD_NOT_ALLOWED",
+        "STATE_CONFLICT",
+        "SESSION_BUSY",
+        "APPROVAL_EXPIRED",
+        "PAYLOAD_TOO_LARGE",
+        "UNSUPPORTED_MEDIA_TYPE",
+        "VALIDATION_FAILED",
+        "RATE_LIMITED",
+        "INTERNAL_ERROR",
+        "UPSTREAM_ERROR",
+        "LIBRARY_UNAVAILABLE",
+        "LIBRARY_TIMEOUT",
+    ]
+    message: str
+    data: ApiErrorDetails | None
+
 
 TaskKind = Literal["semantic", "topics", "deep", "quality"]
 
@@ -137,9 +198,7 @@ class DiscoverError(CamelModel):
 
 class DiscoverResponse(CamelModel):
     results: list[DiscoveredPaper]
-    errors: list[DiscoverError] = Field(
-        description="Sources that could not answer; the others still did."
-    )
+    errors: list[DiscoverError] = Field(description="Sources that could not answer; the others still did.")
 
 
 class LibraryCitation(CamelModel):
@@ -240,9 +299,7 @@ class ImportItem(CamelModel):
 
 class ImportJob(CamelModel):
     id: str
-    project_id: str | None = Field(
-        default=None, description="Workspace each paper joins once it is in the library."
-    )
+    project_id: str | None = Field(default=None, description="Workspace each paper joins once it is in the library.")
     items: list[ImportItem]
 
 

@@ -245,7 +245,7 @@ export class CodexProvider implements AgentProvider {
         cwd,
       });
       const threadId = fork.thread?.id;
-      if (!threadId) throw new Error("Codex thread/fork 没有返回新会话");
+      if (!threadId) throw new Error("Codex thread/fork did not return a new session");
       if (dropTurns > 0) await client.request("thread/rollback", { threadId, numTurns: dropTurns });
       return threadId;
     });

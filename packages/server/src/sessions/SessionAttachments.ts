@@ -8,7 +8,12 @@ import {
 } from "@scholaraio-hub/shared";
 import { loggerFor } from "../logging/logger.js";
 import type { SessionStore } from "./SessionStore.js";
-import { SessionInputError } from "./errors.js";
+import {
+  SessionConflictError,
+  SessionFileTooLargeError,
+  SessionInputError,
+  SessionResourceNotFoundError,
+} from "./errors.js";
 
 export const MAX_ATTACHMENT_BYTES = ATTACHMENT_LIMITS.maxBytes;
 /** The size limit as the user reads it, e.g. "25 MB". */
@@ -41,7 +46,7 @@ export class SessionAttachments {
     const folder = path.join(workspace, ".attachments");
     await mkdir(folder, { recursive: true });
     if ((await realpath(workspace)) !== workspace || (await realpath(folder)) !== folder)
-      throw new SessionInputError("附件目录不能使用符号链接");
+      throw new SessionInputError("Attachment directories must not be symbolic links");
     return {
       folder,
       manifests: path.join(this.store.directory(sessionId), "attachments"),
@@ -54,7 +59,7 @@ export class SessionAttachments {
     const folder = path.join(root, "files");
     await mkdir(folder, { recursive: true });
     if ((await realpath(folder)) !== folder)
-      throw new SessionInputError("附件目录不能使用符号链接");
+      throw new SessionInputError("Attachment directories must not be symbolic links");
     return {
       folder,
       manifests: path.join(root, "manifests"),
@@ -62,9 +67,11 @@ export class SessionAttachments {
     };
   }
 
+  /** 保存附件文件及元数据，并返回可供接口使用的附件信息。 */
   private async write(area: Area, file: File): Promise<SessionAttachment> {
-    if (!file.size || file.size > MAX_ATTACHMENT_BYTES)
-      throw new SessionInputError(`附件不能为空，且单个文件不能超过 ${MAX_ATTACHMENT_LABEL}`);
+    if (!file.size) throw new SessionInputError("Attachment must not be empty");
+    if (file.size > MAX_ATTACHMENT_BYTES)
+      throw new SessionFileTooLargeError(`Each file must not exceed ${MAX_ATTACHMENT_LABEL}`);
     const id = randomUUID();
     const filename =
       path
@@ -100,23 +107,25 @@ export class SessionAttachments {
   }
 
   private async read(area: Area, id: string): Promise<{ metadata: Manifest; filePath: string }> {
-    if (!ATTACHMENT_ID.test(id)) throw new SessionInputError("附件不存在");
+    if (!ATTACHMENT_ID.test(id)) throw new SessionInputError("Attachment not found");
     let metadata: Manifest;
     try {
       metadata = JSON.parse(await readFile(path.join(area.manifests, `${id}.json`), "utf8"));
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code === "ENOENT")
-        throw new SessionInputError("附件不属于当前会话或已被移除");
+        throw new SessionResourceNotFoundError(
+          "Attachment does not belong to this session or has been removed",
+        );
       throw error;
     }
     if (metadata.id !== id || path.basename(metadata.name) !== metadata.name)
-      throw new SessionInputError("附件记录无效");
+      throw new SessionInputError("Invalid attachment record");
     const filePath = path.join(area.folder, metadata.name);
     if ((await realpath(filePath)) !== filePath)
-      throw new SessionInputError("附件不能使用符号链接");
+      throw new SessionInputError("Attachments must not be symbolic links");
     const info = await stat(filePath);
     if (!info.isFile() || info.size > MAX_ATTACHMENT_BYTES)
-      throw new SessionInputError("附件文件无效");
+      throw new SessionInputError("Invalid attachment file");
     return { metadata, filePath };
   }
 
@@ -140,7 +149,8 @@ export class SessionAttachments {
   }
 
   async upload(sessionId: string, file: File): Promise<SessionAttachment> {
-    if (this.store.get(sessionId).readOnly) throw new SessionInputError("只读会话不能上传附件");
+    if (this.store.get(sessionId).readOnly)
+      throw new SessionConflictError("Cannot upload attachments to a read-only session");
     return this.write(await this.sessionArea(sessionId), file);
   }
 
@@ -164,7 +174,10 @@ export class SessionAttachments {
       message.parts.some((part) => part.type === "file" && part.url === metadata.url),
     );
     const queued = record.queuedMessages?.some((message) => message.attachmentIds.includes(id));
-    if (sent || queued) throw new SessionInputError("已发送或排队的附件不能删除");
+    if (sent || queued)
+      throw new SessionConflictError(
+        "Cannot delete attachments referenced by sent or queued messages",
+      );
     await rm(filePath, { force: true });
     await rm(path.join(area.manifests, `${id}.json`), { force: true });
   }

@@ -3,6 +3,7 @@
 An export works on the same selection the rest of the browser uses: the papers
 the user ticked, or the open project, or the whole library.
 """
+
 from __future__ import annotations
 
 from datetime import datetime, timezone
@@ -30,7 +31,7 @@ class ExportService:
         if scoped is None:
             return None
         if not scoped:
-            raise InvalidRequest("没有可导出的文献")
+            raise InvalidRequest("No papers to export")
         return [self.runtime.papers.find(paper_id).directory.name for paper_id in scoped]
 
     def export(
@@ -43,9 +44,9 @@ class ExportService:
         from scholaraio.services.export import export_bibtex, export_markdown_refs, export_ris
 
         if fmt not in FORMATS:
-            raise InvalidRequest(f"不支持的导出格式：{fmt}")
+            raise InvalidRequest(f"Unsupported export format: {fmt}")
         if style not in STYLES:
-            raise InvalidRequest(f"不支持的引用格式：{style}")
+            raise InvalidRequest(f"Unsupported citation style: {style}")
         with self.runtime.lock:
             names = self.directories(paper_ids, project_id)
             papers_dir = self.runtime.cfg.papers_dir
@@ -56,7 +57,7 @@ class ExportService:
             else:
                 content = export_markdown_refs(papers_dir, cfg=self.runtime.cfg, paper_ids=names, style=style)
         if not content.strip():
-            raise InvalidRequest("没有可导出的文献")
+            raise InvalidRequest("No papers to export")
         suffix, content_type = FORMATS[fmt]
         stamp = datetime.now(timezone.utc).strftime("%Y%m%d")
         return {

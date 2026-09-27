@@ -9,26 +9,31 @@ import type {
   StoredSession,
 } from "@scholaraio-hub/shared";
 import { queryOptions } from "@tanstack/react-query";
-import { hubHeaders, pathSegment, requestJson } from "./http";
+import {
+  HttpError,
+  UPLOAD_TIMEOUT_MS,
+  decodeResponse,
+  hubHeaders,
+  hubHttp,
+  pathSegment,
+  readJsonResponse,
+} from "./http";
 
-/** Execution options a session can change, in the provider's own terms. */
+/** 定义会话可调整的 Provider 执行选项。 */
 export type SessionOptions = Partial<
   Pick<StoredSession, "model" | "permissionMode" | "thinking" | "effort">
 >;
 
-/** Where a composer's files go: an existing session, or the draft area of a new chat. */
+/** 指定附件所属会话或新会话的草稿区。 */
 export type AttachmentTarget = { sessionId: string } | "draft";
 
 const attachmentsPath = (target: AttachmentTarget) =>
   target === "draft"
-    ? "/api/sessions/draft-attachments"
-    : `/api/sessions/${pathSegment(target.sessionId)}/attachments`;
+    ? "/sessions/draft-attachments"
+    : `/sessions/${pathSegment(target.sessionId)}/attachments`;
 
 export const sessionApi = {
-  /**
-   * Upload one file, reporting progress (0–1). XHR rather than fetch because
-   * fetch cannot report upload progress.
-   */
+  /** 上传单个附件，报告上传进度并处理取消和超时。 */
   uploadAttachment(
     target: AttachmentTarget,
     file: File,
@@ -37,144 +42,154 @@ export const sessionApi = {
   ): Promise<SessionAttachment> {
     return new Promise((resolve, reject) => {
       const request = new XMLHttpRequest();
-      request.open("POST", attachmentsPath(target));
+      request.open("POST", hubHttp.url(attachmentsPath(target)));
       hubHeaders().forEach((value, name) => request.setRequestHeader(name, value));
       request.responseType = "json";
+      request.timeout = UPLOAD_TIMEOUT_MS;
+      request.ontimeout = () => reject(new HttpError("Upload timed out", 0, "REQUEST_TIMEOUT"));
       request.upload.onprogress = (event) => {
         if (event.lengthComputable) onProgress?.(event.loaded / event.total);
       };
       request.onload = () => {
-        if (request.status >= 200 && request.status < 300) {
-          resolve(request.response as SessionAttachment);
-          return;
+        try {
+          resolve(
+            decodeResponse<SessionAttachment>(
+              request.response,
+              request.status,
+              request.getResponseHeader("X-Request-ID") ?? undefined,
+            ),
+          );
+        } catch (error) {
+          reject(error);
         }
-        const payload = request.response as { error?: string } | null;
-        reject(new Error(payload?.error ?? `附件上传失败 (${request.status})`));
       };
-      request.onerror = () => reject(new Error("附件上传失败：网络错误"));
-      request.onabort = () => reject(new DOMException("上传已取消", "AbortError"));
-      signal?.addEventListener("abort", () => request.abort(), { once: true });
+      request.onerror = () =>
+        reject(new HttpError("Attachment upload failed: network error", 0, "NETWORK_ERROR"));
+      request.onabort = () => reject(new DOMException("Upload cancelled", "AbortError"));
+      const abort = () => request.abort();
+      request.onloadend = () => signal?.removeEventListener("abort", abort);
+      if (signal?.aborted) {
+        reject(new DOMException("Upload cancelled", "AbortError"));
+        return;
+      }
+      signal?.addEventListener("abort", abort, { once: true });
       const body = new FormData();
       body.set("file", file);
       request.send(body);
     });
   },
-  /** Take back an uploaded file that has not been sent. */
+  /** 删除尚未发送的已上传附件。 */
   removeAttachment: (target: AttachmentTarget, attachmentId: string) =>
-    requestJson<void>(`${attachmentsPath(target)}/${pathSegment(attachmentId)}`, {
+    hubHttp.json<void>(`${attachmentsPath(target)}/${pathSegment(attachmentId)}`, {
       method: "DELETE",
     }),
-  /**
-   * Start a new session's first turn from the new-chat page. The body is the
-   * one the chat stream sends (`sessionInput`); only the stream is let go of,
-   * for the session page to resume.
-   */
+  /** 提交首条消息并释放响应流，失败时按消息标识核对接收状态。 */
   async sendFirstMessage(id: string, input: SessionInput): Promise<void> {
     try {
-      const response = await fetch(chatPaths(id).messages, {
-        method: "POST",
-        headers: hubHeaders({ "Content-Type": "application/json" }),
-        body: JSON.stringify(input),
-      });
-      if (!response.ok)
-        throw new Error(`首条消息提交失败 (${response.status})：${await response.text()}`);
-      // The server owns the run. The conversation page resumes the same stream.
-      await response.body?.cancel();
+      await hubHttp.read(
+        `/sessions/${pathSegment(id)}/messages`,
+        {
+          method: "POST",
+          json: input,
+        },
+        async (response) => {
+          if (!response.ok) await readJsonResponse<never>(response);
+          await response.body?.cancel();
+        },
+      );
     } catch (error) {
-      // A lost response can still have accepted the input. Check its stable ID
-      // before allowing a retry, so the first turn is never duplicated.
+      // 按消息标识查询会话中的实际接收状态。
       const current = await sessionApi.get(id);
       if (!current.messages.some((message) => message.id === input.id)) throw error;
     }
   },
   commands: (provider: ProviderName, sessionId?: string, signal?: AbortSignal) =>
-    requestJson<{ commands: SlashCommand[] }>(
+    hubHttp.json<{ commands: SlashCommand[] }>(
       sessionId
-        ? `/api/sessions/${pathSegment(sessionId)}/commands`
-        : `/api/sessions/commands?provider=${provider}`,
+        ? `/sessions/${pathSegment(sessionId)}/commands`
+        : `/sessions/commands?provider=${provider}`,
       { signal },
     ),
   browseFiles: (id: string, relative = "", signal?: AbortSignal) =>
-    requestJson<SessionDirectoryListing>(
-      `/api/sessions/${pathSegment(id)}/fs/browse?path=${encodeURIComponent(relative)}`,
+    hubHttp.json<SessionDirectoryListing>(
+      `/sessions/${pathSegment(id)}/fs/browse?path=${encodeURIComponent(relative)}`,
       { signal },
     ),
   file: (id: string, relative: string, signal?: AbortSignal) =>
-    requestJson<SessionFileContent>(
-      `/api/sessions/${pathSegment(id)}/fs/file?path=${encodeURIComponent(relative)}`,
+    hubHttp.json<SessionFileContent>(
+      `/sessions/${pathSegment(id)}/fs/file?path=${encodeURIComponent(relative)}`,
       { signal },
     ),
   list: (signal?: AbortSignal) =>
-    requestJson<{ sessions: StoredSession[] }>("/api/sessions", { signal }),
+    hubHttp.json<{ sessions: StoredSession[] }>("/sessions", { signal }),
   get: (id: string, signal?: AbortSignal) =>
-    requestJson<StoredSession>(`/api/sessions/${pathSegment(id)}`, { signal }),
+    hubHttp.json<StoredSession>(`/sessions/${pathSegment(id)}`, { signal }),
   create: (
     provider: ProviderName,
     paperIds: string[] = [],
     model?: string,
     projectId?: string,
     execution?: Omit<SessionOptions, "model">,
-    /** Draft uploads the new session takes over. */
+    /** 由新会话接收的草稿附件标识。 */
     attachmentIds: string[] = [],
   ) =>
-    requestJson<StoredSession>("/api/sessions", {
+    hubHttp.json<StoredSession>("/sessions", {
       method: "POST",
-      body: JSON.stringify({ provider, paperIds, model, projectId, ...execution, attachmentIds }),
+      json: { provider, paperIds, model, projectId, ...execution, attachmentIds },
     }),
   options: (id: string, options: SessionOptions) =>
-    requestJson<StoredSession>(`/api/sessions/${pathSegment(id)}/options`, {
+    hubHttp.json<StoredSession>(`/sessions/${pathSegment(id)}/options`, {
       method: "PATCH",
-      body: JSON.stringify(options),
+      json: options,
     }),
   enqueue: (id: string, input: SessionInput) =>
-    requestJson<StoredSession>(`/api/sessions/${pathSegment(id)}/queue`, {
+    hubHttp.json<StoredSession>(`/sessions/${pathSegment(id)}/queue`, {
       method: "POST",
-      body: JSON.stringify(input),
+      json: input,
     }),
   editQueue: (id: string, action: "resume" | "remove", messageId?: string) =>
-    requestJson<StoredSession>(`/api/sessions/${pathSegment(id)}/queue`, {
+    hubHttp.json<StoredSession>(`/sessions/${pathSegment(id)}/queue`, {
       method: "PATCH",
-      body: JSON.stringify({ action, messageId }),
+      json: { action, messageId },
     }),
-  /** A new session holding this one through the turn `messageId` starts, or all of it. */
+  /** 从指定消息之前的历史或完整历史创建分叉会话。 */
   fork: (id: string, messageId?: string) =>
-    requestJson<StoredSession>(`/api/sessions/${pathSegment(id)}/fork`, {
+    hubHttp.json<StoredSession>(`/sessions/${pathSegment(id)}/fork`, {
       method: "POST",
-      body: JSON.stringify({ messageId }),
+      json: { messageId },
     }),
   rename: (id: string, title: string) =>
-    requestJson<StoredSession>(`/api/sessions/${pathSegment(id)}`, {
+    hubHttp.json<StoredSession>(`/sessions/${pathSegment(id)}`, {
       method: "PATCH",
-      body: JSON.stringify({ title }),
+      json: { title },
     }),
-  /** Stop and remove a session; the provider's own transcript is left alone. */
-  remove: (id: string) =>
-    requestJson<void>(`/api/sessions/${pathSegment(id)}`, { method: "DELETE" }),
-  /** Drop the user turn `messageId` and everything after it, before sending an edit. */
+  /** 停止并删除应用会话，保留 Provider 原生记录。 */
+  remove: (id: string) => hubHttp.json<void>(`/sessions/${pathSegment(id)}`, { method: "DELETE" }),
+  /** 删除指定用户消息及其后的会话历史。 */
   rewind: (id: string, messageId: string) =>
-    requestJson<StoredSession>(`/api/sessions/${pathSegment(id)}/rewind`, {
+    hubHttp.json<StoredSession>(`/sessions/${pathSegment(id)}/rewind`, {
       method: "POST",
-      body: JSON.stringify({ messageId }),
+      json: { messageId },
     }),
-  stop: (id: string) => requestJson(`/api/sessions/${pathSegment(id)}/stop`, { method: "POST" }),
+  stop: (id: string) => hubHttp.json(`/sessions/${pathSegment(id)}/stop`, { method: "POST" }),
   input: (
     id: string,
     requestId: string,
     decision: "approve" | "approve_accept_edits" | "deny",
     answers?: Record<string, string>,
   ) =>
-    requestJson(`/api/sessions/${pathSegment(id)}/input`, {
+    hubHttp.json(`/sessions/${pathSegment(id)}/input`, {
       method: "POST",
-      body: JSON.stringify({ requestId, decision, answers }),
+      json: { requestId, decision, answers },
     }),
 };
 
-/** An open session's page. */
+/** 构造会话详情页面地址。 */
 export function sessionUrl(id: string): string {
   return `/sessions/${encodeURIComponent(id)}`;
 }
 
-/** A new chat, optionally in a workspace and about some papers. */
+/** 构造带有可选项目和文献上下文的新会话地址。 */
 export function newSessionUrl(projectId?: string, paperIds: string[] = []) {
   const params = new URLSearchParams();
   if (projectId) params.set("project", projectId);
@@ -182,34 +197,31 @@ export function newSessionUrl(projectId?: string, paperIds: string[] = []) {
   return `/sessions${params.size ? `?${params}` : ""}`;
 }
 
-/**
- * The endpoints the chat stream talks to itself: the AI SDK transport does its
- * own fetch, so it takes paths rather than going through `sessionApi`.
- */
+/** 构造 AI SDK 消息发送和流订阅接口地址。 */
 export function chatPaths(id: string) {
   const base = `/api/sessions/${pathSegment(id)}`;
   return { messages: `${base}/messages`, stream: `${base}/stream` };
 }
 
-/** Every session, for the sidebar and the workspace list. */
+/** 定义侧栏和工作区共用的会话列表查询。 */
 export const sessionsQuery = queryOptions({
   queryKey: ["sessions"],
   queryFn: ({ signal }) => sessionApi.list(signal),
 });
 
-/** One session's snapshot: its messages, run state, pending decision and options. */
+/** 查询会话消息、运行状态、待处理交互和执行选项。 */
 export const sessionQuery = (id: string) =>
   queryOptions({
     queryKey: ["session", id],
     queryFn: ({ signal }) => sessionApi.get(id, signal),
   });
 
-/** A turn is running, or waiting on the user to decide something. */
+/** 判断会话是否正在运行或等待用户输入。 */
 export function isSessionActive(state: StoredSession["state"] | undefined): boolean {
   return state === "running" || state === "waiting-input";
 }
 
-/** A message the chat sends, as every way of sending one takes it: now, queued, or first. */
+/** 将会话消息转换为即时发送、排队和首条消息共用的输入。 */
 export function sessionInput(sessionId: string, message: SessionMessage): SessionInput {
   return {
     id: message.id,
@@ -218,12 +230,9 @@ export function sessionInput(sessionId: string, message: SessionMessage): Sessio
   };
 }
 
-/**
- * The files of a sent message that are this session's own uploads, so an
- * edited prompt can send them again.
- */
+/** 提取消息中属于当前会话的已上传附件。 */
 export function ownAttachments(sessionId: string, message: SessionMessage): SessionAttachment[] {
-  const own = `${attachmentsPath({ sessionId })}/`;
+  const own = `${hubHttp.url(attachmentsPath({ sessionId }))}/`;
   return message.parts.flatMap((part) =>
     part.type === "file" && part.url.startsWith(own)
       ? [

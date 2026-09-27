@@ -58,12 +58,12 @@ def test_a_locator_that_yields_no_pdf_says_so(library, monkeypatch):
 
     monkeypatch.setattr("scholaraio.services.pdf_fetch.fetch_pdf", refuse)
 
-    with pytest.raises(ValueError, match="未能获取 PDF"):
+    with pytest.raises(ValueError, match="Unable to retrieve PDF"):
         library.acquire.fetch("10.1038/unreachable")
 
 
 def test_an_empty_locator_is_refused_before_any_request(library):
-    with pytest.raises(ValueError, match="请填写"):
+    with pytest.raises(ValueError, match="Provide"):
         library.acquire.fetch("   ")
 
 

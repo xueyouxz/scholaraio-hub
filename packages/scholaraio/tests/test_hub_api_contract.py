@@ -18,17 +18,17 @@ def client(tmp_path):
 def test_a_missing_resource_is_a_404_that_names_it(client):
     paper = client.get("/papers/unknown")
     assert paper.status_code == 404
-    assert paper.json() == {"error": "文献不存在：unknown"}
+    assert paper.json()["message"] == "Paper not found: unknown"
 
     job = client.post("/imports/unknown/retry")
     assert job.status_code == 404
-    assert "unknown" in job.json()["error"]
+    assert "unknown" in job.json()["message"]
 
 
-def test_a_refused_request_is_a_400_with_the_reason(client):
+def test_a_refused_request_is_a_422_with_the_reason(client):
     response = client.post("/tasks/unknown")
-    assert response.status_code == 400
-    assert response.json() == {"error": "未知的任务类型：unknown"}
+    assert response.status_code == 422
+    assert response.json()["message"] == "Unknown task type: unknown"
 
 
 def test_a_bug_is_a_500_not_a_missing_resource(client, monkeypatch):
@@ -39,7 +39,7 @@ def test_a_bug_is_a_500_not_a_missing_resource(client, monkeypatch):
 
     response = client.get("/papers")
     assert response.status_code == 500
-    assert response.json() == {"error": "文献服务内部错误，详见服务日志。"}
+    assert response.json()["message"] == "Internal library service error. Check the service logs."
 
 
 def test_a_failure_the_caller_did_not_cause_is_logged_with_its_traceback(client, monkeypatch, caplog):
@@ -50,14 +50,14 @@ def test_a_failure_the_caller_did_not_cause_is_logged_with_its_traceback(client,
 
     with caplog.at_level("ERROR", logger="scholaraio.api"):
         assert client.get("/papers").status_code == 500
-    assert "GET /papers failed" in caplog.text
+    assert "GET /papers requestId=" in caplog.text
     assert "index unreadable" in caplog.text
 
 
 def test_invalid_input_answers_in_the_same_shape_as_every_other_failure(client):
     response = client.put("/papers/unknown/position", json={"page": "not a number"})
     assert response.status_code == 422
-    assert set(response.json()) == {"error"}
+    assert set(response.json()) == {"id", "code", "message", "data"}
 
 
 def test_an_unreadable_settings_overlay_is_a_storage_fault(client):
@@ -67,7 +67,7 @@ def test_an_unreadable_settings_overlay_is_a_storage_fault(client):
     response = client.patch("/settings", json={"extractor": "regex"})
 
     assert response.status_code == 500
-    assert "config.local.yaml" in response.json()["error"]
+    assert response.json()["code"] == "INTERNAL_ERROR"
 
 
 def test_request_bodies_use_the_browsers_field_names(client):
@@ -76,7 +76,7 @@ def test_request_bodies_use_the_browsers_field_names(client):
     response = client.patch("/settings", json={"llmModel": "model-a", "pdfParser": "mineru"})
 
     assert response.status_code == 200
-    assert response.json()["llmModel"] == "model-a"
+    assert response.json()["data"]["llmModel"] == "model-a"
     stored = yaml.safe_load(library.settings.path.read_text(encoding="utf-8"))
     assert stored["llm"]["model"] == "model-a"
 
@@ -85,7 +85,7 @@ def test_a_query_scoped_to_a_project_uses_its_camel_case_name(client):
     assert client.post("/projects", json={"name": "empty"}).status_code == 201
 
     search = {"q": "anything", "mode": "keyword"}
-    assert client.get("/search", params={**search, "projectId": "empty"}).json() == {"results": []}
+    assert client.get("/search", params={**search, "projectId": "empty"}).json()["data"] == {"results": []}
     assert client.get("/search", params={**search, "projectId": "missing"}).status_code == 404
 
 
@@ -96,48 +96,74 @@ def test_an_upload_for_a_missing_workspace_is_a_404(client):
         data={"projectId": "Nowhere"},
     )
     assert response.status_code == 404
-    assert "Nowhere" in response.json()["error"]
+    assert "Nowhere" in response.json()["message"]
 
 
 def test_settings_check_names_what_it_checked(client):
     response = client.post("/settings/check", json={"target": "embed"})
     assert response.status_code == 200
-    assert response.json()["target"] == "embed"
+    assert response.json()["data"]["target"] == "embed"
     assert client.post("/settings/check", json={"target": "disk"}).status_code == 422
 
 
-# The Node server and the launcher call these themselves rather than proxying
-# them: health, and session scope and context.
-SERVER_ONLY = {
-    ("GET", "/health"),
-    ("POST", "/scope"),
-    ("POST", "/context"),
-}
-PROXY = Path(__file__).resolve().parents[2] / "server" / "src" / "routes" / "library.ts"
+def test_all_json_routes_describe_the_response_envelope(tmp_path):
+    """检查文献 JSON 接口的生成契约包含统一响应结构。"""
+    doc = create_app(tmp_path / "app").openapi()
+    for operations in doc["paths"].values():
+        for operation in operations.values():
+            for status, response in operation["responses"].items():
+                schema = response.get("content", {}).get("application/json", {}).get("schema", {})
+                reference = schema.get("$ref")
+                if reference and status.startswith("2"):
+                    model = doc["components"]["schemas"][reference.rsplit("/", 1)[-1]]
+                    assert set(model["properties"]) == {"id", "code", "message", "data"}
+                    assert set(model["required"]) == {"id", "code", "message", "data"}
 
 
-def _shape(path: str) -> str:
-    """A route with its parameters unnamed, so FastAPI and Hono paths compare."""
-    return re.sub(r"\{[^}]+\}|:\w+|\*", "{}", path)
+def test_request_identifier_matches_headers_and_is_not_the_resource_id(client):
+    response = client.post("/projects", json={"name": "contract"})
+    payload = response.json()
+    assert response.status_code == 201
+    assert set(payload) == {"id", "code", "message", "data"}
+    assert payload["code"] == "success"
+    assert payload["message"] == "success"
+    assert payload["id"] == response.headers["x-request-id"]
+    assert payload["id"] != payload["data"]["id"]
+    assert client.get("/projects").json()["id"] != payload["id"]
 
 
-def test_every_route_is_proxied_or_called_by_the_server(tmp_path):
-    """The Node proxy's allowlist and this API list the same routes.
+@pytest.mark.parametrize("path,method,status,code", [
+    ("/unknown", "get", 404, "ROUTE_NOT_FOUND"),
+    ("/health", "delete", 405, "METHOD_NOT_ALLOWED"),
+    ("/papers/unknown", "get", 404, "PAPER_NOT_FOUND"),
+    ("/projects/unknown", "get", 404, "PROJECT_NOT_FOUND"),
+])
+def test_framework_and_domain_errors_follow_one_contract(client, path, method, status, code):
+    response = getattr(client, method)(path)
+    assert response.status_code == status
+    assert response.json()["code"] == code
+    assert response.json()["id"] == response.headers["x-request-id"]
+    if status == 405:
+        assert "GET" in response.headers["allow"]
 
-    A route on neither side of that list is one nothing can reach; a proxied
-    route this API lacks is a page that can only fail.
-    """
-    app = create_app(tmp_path / "app")
-    served = {
-        (method.upper(), _shape(path))
-        for path, operations in app.openapi()["paths"].items()
-        for method in operations
-    }
-    proxied = {
-        (method, _shape(path))
-        for method, path in re.findall(
-            r'\["(GET|POST|PATCH|PUT|DELETE)", "([^"]+)"\]', PROXY.read_text(encoding="utf-8")
-        )
-    }
-    assert proxied, "no routes found in the proxy allowlist"
-    assert served - SERVER_ONLY == proxied
+
+def test_json_syntax_and_field_validation_are_distinct(client):
+    malformed = client.post("/projects", content="{", headers={"content-type": "application/json"})
+    assert malformed.status_code == 400
+    assert malformed.json()["code"] == "INVALID_JSON"
+    invalid = client.post("/projects", json={"name": ""})
+    assert invalid.status_code == 422
+    assert invalid.json()["code"] == "VALIDATION_FAILED"
+    assert invalid.json()["data"]["issues"][0]["path"] == ["name"]
+    unsupported = client.post("/projects", content='{"name":"plain"}', headers={"content-type": "text/plain"})
+    assert unsupported.status_code == 415
+    assert unsupported.json()["code"] == "UNSUPPORTED_MEDIA_TYPE"
+
+
+def test_python_and_typescript_declare_the_same_error_codes():
+    from scholaraio.interfaces.api.responses import ApiFailure
+    contract = Path(__file__).resolve().parents[2] / "shared" / "src" / "http.ts"
+    source = contract.read_text(encoding="utf-8").split("} as const;")[0]
+    typescript_codes = set(re.findall(r"^  ([A-Z_]+): \d+", source, re.MULTILINE))
+    python_codes = set(ApiFailure.model_json_schema()["properties"]["code"]["enum"])
+    assert python_codes == typescript_codes

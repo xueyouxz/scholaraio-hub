@@ -75,8 +75,8 @@ export interface AgentLibrary {
   configFile?: string;
   /** The directory holding the library runtime's `scholaraio` CLI. */
   cliBinDir?: string;
-  /** Where this server listens, so the CLI does not edit the library behind its back. */
-  apiBaseUrl?: string;
+  /** The library service, which the CLI asks to write rather than edit the library behind its back. */
+  libraryUrl?: string;
 }
 
 let bound: AgentLibrary | undefined;
@@ -102,7 +102,7 @@ export function withScholaraioCli(
 ): Record<string, string | undefined> {
   // Nothing bound: no Hub library to point at (a test, or the doctor).
   if (!library?.configFile) return env;
-  const { configFile, cliBinDir, apiBaseUrl } = library;
+  const { configFile, cliBinDir, libraryUrl } = library;
   // A missing config would make the CLI treat the agent's project directory as
   // a library root and write a stray one there. The library service creates the
   // file on startup, so this only guards a degraded start.
@@ -111,7 +111,7 @@ export function withScholaraioCli(
     return env;
   }
   const result: Record<string, string | undefined> = { ...env, SCHOLARAIO_CONFIG: configFile };
-  if (apiBaseUrl) result.SCHOLARAIO_HUB_API = apiBaseUrl;
+  if (libraryUrl) result.SCHOLARAIO_LIBRARY_API = libraryUrl;
   const executable = cliBinDir && path.join(cliBinDir, cliName("scholaraio"));
   if (!cliBinDir || !executable || !existsSync(executable)) {
     warnOnce(`未找到 ${executable ?? "文献库 CLI"}，agent 将使用 PATH 上已有的 scholaraio。`);

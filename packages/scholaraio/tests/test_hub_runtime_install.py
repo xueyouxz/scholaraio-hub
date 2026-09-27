@@ -100,5 +100,5 @@ def test_an_install_the_process_did_not_finish_is_reported_failed(runtime, tmp_p
 
 def test_the_routes_answer_with_the_status(tmp_path):
     with hub_client(tmp_path / "app") as client:
-        assert client.get("/runtime").json() == {"state": "idle", "log": []}
+        assert client.get("/runtime").json()["data"] == {"state": "idle", "log": []}
         assert client.post("/runtime/gpu").status_code == 422

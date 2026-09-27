@@ -1,17 +1,14 @@
 import { QueryClient } from "@tanstack/react-query";
-import { HttpError } from "./http";
+import { shouldRetryQuery } from "./http";
 
 export const queryClient = new QueryClient({
   defaultOptions: {
+    mutations: { retry: false },
     queries: {
       staleTime: 30_000,
       gcTime: 5 * 60_000,
-      retry: (failureCount, error) => {
-        if (error instanceof HttpError && error.status >= 400 && error.status < 500) {
-          return false;
-        }
-        return failureCount < 2;
-      },
+      retry: shouldRetryQuery,
+      retryDelay: (attempt) => Math.min(1000 * 2 ** attempt, 5000),
       refetchOnWindowFocus: false,
     },
   },

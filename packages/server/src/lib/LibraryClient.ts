@@ -1,4 +1,9 @@
-import { CSRF_HEADER } from "@scholaraio-hub/shared";
+import {
+  type ApiErrorCode,
+  type ApiErrorDetails,
+  CSRF_HEADER,
+  parseApiResponse,
+} from "@scholaraio-hub/shared";
 
 /** How long a request to the library may take unless the caller gives its own signal. */
 const REQUEST_TIMEOUT_MS = 30_000;
@@ -10,32 +15,39 @@ export class LibraryRequestError extends Error {
   constructor(
     readonly status: number,
     readonly detail: string,
+    readonly code: ApiErrorCode = "UPSTREAM_ERROR",
+    readonly details: ApiErrorDetails | null = null,
   ) {
-    super(`文献请求失败 (${status}): ${detail}`);
+    super(`Library request failed (${status}): ${detail}`);
   }
 }
 
 /** The library service did not answer: it is not running, not reachable, or too slow. */
 export class LibraryUnavailableError extends Error {
+  readonly timedOut: boolean;
   constructor(baseUrl: string, cause: unknown) {
     const timedOut = cause instanceof Error && cause.name === "TimeoutError";
     super(
       timedOut
-        ? `文献服务（${baseUrl}）响应超时。`
-        : `文献服务不可用（${baseUrl}），请确认它已随 Hub 启动并查看其日志。`,
+        ? `Library service timed out (${baseUrl}).`
+        : `Library service unavailable (${baseUrl}). Check that it is running and inspect its logs.`,
       { cause },
     );
+    this.timedOut = timedOut;
   }
 }
 
-/**
- * The server's client of the library service, which the launcher runs beside
- * it at `LIBRARY_URL`. The server neither starts nor stops that service; it
- * only calls its API, as the browser and the agents' CLI do.
- */
+/** 调用独立文献服务并解析其统一响应。 */
 export class LibraryClient {
   constructor(readonly baseUrl: string) {}
 
+  /** 获取文献服务端口。 */
+  get port(): number {
+    const url = new URL(this.baseUrl);
+    return Number(url.port || (url.protocol === "https:" ? 443 : 80));
+  }
+
+  /** 发送文献服务请求，附加访问标识并处理连接错误。 */
   async request(resource: string, init: RequestInit = {}): Promise<Response> {
     const headers = new Headers(init.headers);
     headers.set(CSRF_HEADER.name, CSRF_HEADER.value);
@@ -52,13 +64,27 @@ export class LibraryClient {
     }
   }
 
+  /** 调用文献 JSON 接口并解包业务数据或抛出业务错误。 */
   async json<T>(resource: string, init?: RequestInit): Promise<T> {
     const response = await this.request(resource, init);
-    if (!response.ok) throw new LibraryRequestError(response.status, await errorText(response));
-    return response.json() as Promise<T>;
+    let payload: ReturnType<typeof parseApiResponse>;
+    try {
+      payload = parseApiResponse(await response.json());
+    } catch {
+      throw new LibraryRequestError(
+        502,
+        "Invalid library service response format.",
+        "UPSTREAM_ERROR",
+      );
+    }
+    if (payload.code !== "success")
+      throw new LibraryRequestError(response.status, payload.message, payload.code, payload.data);
+    if (!response.ok)
+      throw new LibraryRequestError(502, "Invalid library service response status.");
+    return payload.data as T;
   }
 
-  /** Whether the library answers its health check right now. */
+  /** 检查文献服务当前是否可用。 */
   async available(): Promise<boolean> {
     try {
       const response = await this.request("/health", {
@@ -70,16 +96,4 @@ export class LibraryClient {
       return false;
     }
   }
-}
-
-/** The service's `{"error": ...}` message, or its whole body when it has none. */
-async function errorText(response: Response): Promise<string> {
-  const text = await response.text();
-  try {
-    const body = JSON.parse(text) as { error?: unknown };
-    if (typeof body.error === "string") return body.error;
-  } catch {
-    // Not JSON: the text itself is the message.
-  }
-  return text;
 }

@@ -4,6 +4,7 @@ Building topics costs minutes of model time, so the topics task writes its
 results here once and the dashboard only ever reads them. Both sides use the
 paths below; nothing else knows where the files live.
 """
+
 from __future__ import annotations
 
 import json
@@ -26,7 +27,7 @@ class AnalysisArtifacts:
     def path(self, relative: str) -> Path:
         path = (self.state_root / relative).resolve()
         if not path.is_relative_to(self.app_root):
-            raise InvalidRequest("分析数据超出应用目录")
+            raise InvalidRequest("Analytics data is outside the application directory")
         return path
 
     def topics_built(self) -> bool:
@@ -44,7 +45,7 @@ class AnalysisArtifacts:
         data = json.loads(path.read_text(encoding="utf-8"))
         if not isinstance(data, dict):
             # Exists but unreadable: a storage fault, not an empty result.
-            raise RuntimeError(f"分析数据格式无效：{path}")
+            raise RuntimeError(f"Invalid analytics data format: {path}")
         return data
 
     def write(self, model) -> int:

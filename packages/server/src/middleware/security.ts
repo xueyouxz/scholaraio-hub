@@ -1,5 +1,6 @@
 import { CSRF_HEADER } from "@scholaraio-hub/shared";
 import type { MiddlewareHandler } from "hono";
+import { errorResponse } from "../http.js";
 import { loggerFor } from "../logging/logger.js";
 
 /**
@@ -43,15 +44,10 @@ export function hostCheck(allowed: AllowedHosts): MiddlewareHandler {
     if (!isAllowedHost(host, allowed)) {
       loggerFor("security").warn({ host }, "Rejected request with a disallowed Host");
       const hostname = (host ?? "(unknown)").replace(/:\d+$/, "");
-      return c.text(
-        [
-          `Blocked request: "${hostname}" is not an allowed host.`,
-          "",
-          "To allow it, add it to ALLOWED_HOSTS (comma-separated), or set ALLOWED_HOSTS=* to allow any:",
-          "",
-          `  ALLOWED_HOSTS=${hostname}`,
-        ].join("\n"),
-        403,
+      return errorResponse(
+        c,
+        "HOST_NOT_ALLOWED",
+        `Host not allowed: ${hostname}. Configure ALLOWED_HOSTS to allow it.`,
       );
     }
     await next();
@@ -63,7 +59,7 @@ export const requireCsrfHeader: MiddlewareHandler = async (c, next) => {
   const method = c.req.method;
   if (method !== "GET" && method !== "HEAD" && method !== "OPTIONS") {
     if (c.req.header(CSRF_HEADER.name) !== CSRF_HEADER.value) {
-      return c.json({ error: "请求缺少必需的请求头" }, 403);
+      return errorResponse(c, "CSRF_REJECTED", "Request is missing a required header.");
     }
   }
   await next();

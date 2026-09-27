@@ -53,7 +53,8 @@ export class SessionStore {
       if (data.state === "running" || data.state === "waiting-input") {
         data.state = "interrupted";
         data.pendingInput = undefined;
-        data.error = "服务重启中断了上一轮，可发送新消息继续。";
+        data.error =
+          "The previous turn was interrupted by a service restart. Send a new message to continue.";
         await this.save(data);
       }
     }

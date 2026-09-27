@@ -481,11 +481,11 @@ export class ClaudeProvider implements AgentProvider {
     const credentials = await this.readClaudeOAuthCredentials();
     const accessToken = credentials?.accessToken;
     if (typeof accessToken !== "string" || accessToken.length === 0) {
-      throw new Error("未找到 Claude Code 的登录凭据，请先在终端运行 claude auth login。");
+      throw new Error("Claude Code credentials not found. Run claude auth login in a terminal.");
     }
     // An expired token is refused by the API; saying so beats an opaque 401.
     if (credentials?.expiresAt && credentials.expiresAt <= Date.now()) {
-      throw new Error("Claude Code 的登录凭据已过期，请重新登录后再查看用量。");
+      throw new Error("Claude Code credentials have expired. Sign in again to view usage.");
     }
     return accessToken;
   }
@@ -513,18 +513,20 @@ export class ClaudeProvider implements AgentProvider {
         // The endpoint rate-limits polling, and refuses tokens that lost the
         // scope. Both read as "no data" to the caller, so name which it was.
         if (response.status === 429) {
-          throw new Error("用量接口暂时限流，稍后会自动重试。");
+          throw new Error("The usage API is rate limited. It will be retried later.");
         }
         if (response.status === 401) {
-          throw new Error("当前登录凭据无权读取用量，请重新登录 Claude Code。");
+          throw new Error(
+            "The current credentials cannot read usage. Sign in to Claude Code again.",
+          );
         }
         // Also what a direct connection from a region Anthropic does not serve gets.
         if (response.status === 403) {
           throw new Error(
-            "用量接口拒绝了请求（HTTP 403）；若本机需经代理访问，请设置 HTTPS_PROXY。",
+            "The usage API rejected the request (HTTP 403). Set HTTPS_PROXY if a proxy is required.",
           );
         }
-        throw new Error(`用量接口返回 HTTP ${response.status}。`);
+        throw new Error(`The usage API returned HTTP ${response.status}.`);
       }
 
       return await response.json();
@@ -624,7 +626,8 @@ export class ClaudeProvider implements AgentProvider {
       const prompts = messages.flatMap((message, index) => (isUserPrompt(message) ? [index] : []));
       const cut = prompts[prompts.length - dropTurns];
       upToMessageId = cut === undefined ? undefined : messages[cut - 1]?.uuid;
-      if (!upToMessageId) throw new Error("Claude 会话记录中找不到这条消息之前的内容");
+      if (!upToMessageId)
+        throw new Error("No content before this message was found in the Claude session history");
     }
     const fork = await forkSession(sessionId, { dir: cwd, upToMessageId });
     return fork.sessionId;
@@ -727,7 +730,7 @@ export class ClaudeProvider implements AgentProvider {
           );
         }
         if (error.message.includes("SPAWN") || error.message.includes("spawn")) {
-          throw new Error(`无法启动 Claude CLI：${error.message}`);
+          throw new Error(`Unable to start Claude CLI: ${error.message}`);
         }
       }
       throw error;

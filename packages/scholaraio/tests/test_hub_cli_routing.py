@@ -73,9 +73,9 @@ def test_workspace_writes_go_through_the_hub(tmp_path, hub_session, monkeypatch)
     workspace_cli.cmd_ws(add_arguments("review", ["Smith-2024-Spectroscopy"]), cfg)
 
     assert [(method, path) for method, path, _ in calls] == [
-        ("GET", "/api/library/projects/review"),
-        ("POST", "/api/library/projects"),
-        ("POST", "/api/library/projects/review/papers"),
+        ("GET", "/projects/review"),
+        ("POST", "/projects"),
+        ("POST", "/projects/review/papers"),
     ]
     assert calls[-1][2] == {"paperIds": ["uuid-1"], "action": "add"}
     # The Hub owns the files: nothing was written next to them.
@@ -106,7 +106,7 @@ def test_renaming_a_workspace_goes_through_the_hub(tmp_path, hub_session, monkey
         Config(_root=tmp_path),
     )
 
-    assert calls == [("POST", "/api/library/projects/review/rename", {"name": "survey"})]
+    assert calls == [("POST", "/projects/review/rename", {"name": "survey"})]
     assert not (Config(_root=tmp_path).workspace_dir / "survey").exists()
 
 
@@ -122,7 +122,7 @@ def test_an_agent_can_ask_the_hub_to_fetch_a_paper(hub_session, monkeypatch):
         command("fetch-pdf", locator="10.1038/x", paper=None, all=False, force=False, direct=False)
     )
 
-    assert calls == [("POST", "/api/library/imports/fetch", {"locator": "10.1038/x"})]
+    assert calls == [("POST", "/imports/fetch", {"locator": "10.1038/x"})]
     assert "Hub" in (message or "")
 
 
@@ -136,7 +136,7 @@ def test_an_agent_can_ask_the_hub_to_prepare_semantic_search(hub_session, monkey
 
     assert hub_routing.delegate(command("embed", rebuild=False)) is not None
     assert hub_routing.delegate(command("enrich-toc", force=False)) is not None
-    assert calls == ["/api/library/tasks/semantic", "/api/library/tasks/deep"]
+    assert calls == ["/tasks/semantic", "/tasks/deep"]
 
 
 def test_options_the_hub_does_not_offer_are_still_refused(hub_session, monkeypatch):

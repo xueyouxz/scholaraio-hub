@@ -6,6 +6,7 @@ carries the DOI, identifiers and citation data the rest of the library depends
 on. The queue owns per-item staging, status and retry; the pipeline owns the
 work.
 """
+
 from __future__ import annotations
 
 import copy
@@ -71,7 +72,7 @@ class ImportQueue:
         for job in self.jobs.values():
             for item in job["items"]:
                 if item["status"] in ACTIVE:
-                    item.update(status="failed", error="导入被中断，可重试继续", step=None)
+                    item.update(status="failed", error="Import was interrupted and can be retried", step=None)
             self.save(job)
 
     def close(self):
@@ -86,7 +87,7 @@ class ImportQueue:
     # ---- queue ---------------------------------------------------------
 
     def save(self, job):
-        atomic_json(self.root / f'{job["id"]}.json', job)
+        atomic_json(self.root / f"{job['id']}.json", job)
         self.runtime.events.publish("imports")
 
     def list(self):
@@ -105,10 +106,7 @@ class ImportQueue:
                 # keeps the project's id, which a rename in the meantime does not change.
                 project_id = self.projects.get(project_id)["id"]
             pending = {
-                item["source"]
-                for job in self.jobs.values()
-                for item in job["items"]
-                if item["status"] in ACTIVE
+                item["source"] for job in self.jobs.values() for item in job["items"] if item["status"] in ACTIVE
             }
             items = [
                 {"id": uuid.uuid4().hex, "source": str(source), "name": name, "status": "queued"}
@@ -131,7 +129,7 @@ class ImportQueue:
         with self.runtime.lock:
             job = self.jobs.get(job_id)
             if job is None:
-                raise NotFound(f"导入任务不存在：{job_id}")
+                raise NotFound(f"Import job not found: {job_id}")
             if any(item["status"] in ACTIVE for item in job["items"]):
                 raise InvalidRequest("Import already running")
             for item in job["items"]:
@@ -306,7 +304,7 @@ class ImportQueue:
         return {
             "status": "needs_review" if status == "needs_review" else "failed",
             "source": str(staged) if staged.exists() else str(work),
-            "error": ctx.error or f"导入未完成（{status}）",
+            "error": ctx.error or f"Import did not complete ({status})",
         }
 
 

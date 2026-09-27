@@ -41,13 +41,13 @@ describe("withScholaraioCli", () => {
     expect(env.PATH?.split(path.delimiter)[0]).toBe(described.cliBinDir);
   });
 
-  it("follows the library the server bound, and routes writes through its API", () => {
+  it("follows the library the server bound, and sends writes to the library service", () => {
     const described = library({ config: true, cli: true });
-    bindAgentLibrary({ ...described, apiBaseUrl: "http://127.0.0.1:3600" });
+    bindAgentLibrary({ ...described, libraryUrl: "http://127.0.0.1:3601" });
     try {
       const env = withScholaraioCli({ PATH: "/usr/bin" });
       expect(env.SCHOLARAIO_CONFIG).toBe(described.configFile);
-      expect(env.SCHOLARAIO_HUB_API).toBe("http://127.0.0.1:3600");
+      expect(env.SCHOLARAIO_LIBRARY_API).toBe("http://127.0.0.1:3601");
     } finally {
       bindAgentLibrary(undefined);
     }

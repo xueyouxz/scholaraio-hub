@@ -23,7 +23,7 @@ def client(tmp_path):
 def test_a_rebinding_host_is_refused(client):
     response = client.get("/health", headers={"host": "attacker.example:3401"})
     assert response.status_code == 403
-    assert "ALLOWED_HOSTS" in response.json()["error"]
+    assert "ALLOWED_HOSTS" in response.json()["message"]
     assert client.get("/health", headers={"host": "127.0.0.1:3401"}).status_code == 200
     assert client.get("/health", headers={"host": "[::1]:3401"}).status_code == 200
 
@@ -39,7 +39,7 @@ def test_a_mutation_needs_the_csrf_header(client):
     del client.headers[CSRF_HEADER]
     refused = client.post("/projects", json={"name": "p"})
     assert refused.status_code == 403
-    assert refused.json() == {"error": "请求缺少必需的请求头"}
+    assert refused.json()["message"] == "Request is missing a required header."
     assert client.get("/projects").status_code == 200
     assert client.post("/projects", json={"name": "p"}, headers={CSRF_HEADER: CSRF_VALUE}).status_code == 201
 
@@ -51,7 +51,8 @@ def test_only_the_hub_page_passes_the_preflight(client):
     assert CSRF_HEADER.lower() in granted.headers["access-control-allow-headers"].lower()
     for origin in ("http://evil.example", "http://localhost:9999", "http://localhost:3400.evil.example"):
         refused = client.options("/projects", headers={"origin": origin, **PREFLIGHT})
-        assert refused.status_code == 400
+        assert refused.status_code == 403
+        assert refused.json()["code"] == "CORS_REJECTED"
         assert "access-control-allow-origin" not in refused.headers
 
 

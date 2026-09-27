@@ -10,6 +10,7 @@ outlives the launcher, even one that was killed.
 The service exits with :data:`RESTART_EXIT_CODE` when it needs a new process
 (after installing packages into its own runtime); the launcher restarts it.
 """
+
 from __future__ import annotations
 
 import argparse
@@ -77,7 +78,9 @@ def listen(host: str, port: int) -> socket.socket:
     try:
         return socket.create_server((host, port), family=family)
     except OSError as error:
-        raise SystemExit(f"文献服务无法监听 {host}:{port}：{error.strerror}（端口被占用时可设 LIBRARY_PORT 换一个）") from error
+        raise SystemExit(
+            f"Library service cannot listen on {host}:{port}: {error.strerror}. Set LIBRARY_PORT to use another port."
+        ) from error
 
 
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:

@@ -160,7 +160,7 @@ describe("Supervisor", () => {
       await expect(answer).resolves.toMatchObject({ behavior: "deny" });
       const ended = events.find(({ event }) => event.type === "terminated")?.event;
       expect(ended).toMatchObject({ type: "terminated" });
-      expect(ended?.type === "terminated" && ended.error?.message).toContain("无人回应");
+      expect(ended?.type === "terminated" && ended.error?.message).toContain("Approval timed out");
       waiting.close();
     } finally {
       vi.useRealTimers();

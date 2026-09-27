@@ -40,6 +40,12 @@ export function resolvePort(env: PortEnv = {}): number {
 }
 
 /**
+ * The page's `<meta>` naming the library service's port: the browser calls the
+ * service directly, on the host it loaded the page from.
+ */
+export const LIBRARY_PORT_META = "scholaraio-library-port";
+
+/**
  * The library service's port: `LIBRARY_PORT`, else the one after the Hub's,
  * so every profile's pair stays apart (3400/3401, 3500/3501, 3600/3601).
  */

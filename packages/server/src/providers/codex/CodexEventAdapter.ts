@@ -719,7 +719,7 @@ export class CodexEventAdapter {
               type: "notice",
               key: `retry-${params.turnId}`,
               level: "info",
-              text: `${params.error.message}（正在重试）`,
+              text: `${params.error.message} (retrying)`,
             },
           ];
         }

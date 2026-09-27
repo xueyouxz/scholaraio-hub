@@ -263,7 +263,9 @@ export class Supervisor {
         const minutes = Math.round(waitingMs / 60_000);
         process.stop(
           `input unanswered for ${minutes} min`,
-          new Error(`等待确认超过 ${minutes} 分钟无人回应，已停止本轮；发送新消息可继续。`),
+          new Error(
+            `Approval timed out after ${minutes} minutes. This turn was stopped; send a new message to continue.`,
+          ),
         );
         continue;
       }

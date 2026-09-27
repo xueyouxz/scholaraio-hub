@@ -8,6 +8,7 @@ Kinds that touch the same files share a lane and run one after another; kinds
 in different lanes run side by side, so an hour of LLM summaries does not hold
 back a topic rebuild.
 """
+
 from __future__ import annotations
 
 import json
@@ -84,7 +85,9 @@ class TaskRunner:
             record = json.loads(path.read_text(encoding="utf-8"))
             if record.get("status") in ACTIVE:
                 # The process that was running it is gone; the work is restartable.
-                record.update(status="failed", error="任务被中断，可重新开始", phase=None, finishedAt=now())
+                record.update(
+                    status="failed", error="Task was interrupted and can be restarted", phase=None, finishedAt=now()
+                )
             self.tasks[kind] = record
 
     def close(self) -> None:
@@ -96,7 +99,7 @@ class TaskRunner:
     # ---- records -------------------------------------------------------
 
     def save(self, record: dict) -> None:
-        atomic_json(self.root / f'{record["kind"]}.json', record)
+        atomic_json(self.root / f"{record['kind']}.json", record)
         self.runtime.events.publish("tasks")
 
     def update(self, record: dict, **fields) -> None:
@@ -126,11 +129,11 @@ class TaskRunner:
 
     def start(self, kind: str) -> dict:
         if kind not in self.jobs:
-            raise InvalidRequest(f"未知的任务类型：{kind}")
+            raise InvalidRequest(f"Unknown task type: {kind}")
         with self.runtime.lock:
             current = self.tasks.get(kind)
             if current and current["status"] in ACTIVE:
-                raise InvalidRequest("该任务已在运行")
+                raise InvalidRequest("Task is already running")
             stop = threading.Event()
             self.stops[kind] = stop
             record = {
@@ -154,11 +157,11 @@ class TaskRunner:
         with self.runtime.lock:
             record = self.tasks.get(kind)
             if not record or record["status"] not in ACTIVE:
-                raise InvalidRequest("该任务没有在运行")
+                raise InvalidRequest("Task is not running")
             self.stops[kind].set()
             if record["status"] == "queued":
                 # Nothing has started: it ends now instead of when its turn comes.
-                record.update(status="cancelled", phase=None, summary="未开始即已停止", finishedAt=now())
+                record.update(status="cancelled", phase=None, summary="Stopped before execution", finishedAt=now())
             else:
                 record["phase"] = "stopping"
             self.save(record)

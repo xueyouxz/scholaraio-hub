@@ -1,4 +1,5 @@
 """Liveness, and the stream of library changes."""
+
 from __future__ import annotations
 
 import asyncio
@@ -10,7 +11,8 @@ from fastapi.responses import StreamingResponse
 
 from scholaraio.hub.events import EventBus
 from scholaraio.interfaces.api.dependencies import Events
-from scholaraio.interfaces.api.responses import Health
+from scholaraio.interfaces.api.errors import success
+from scholaraio.interfaces.api.responses import ApiSuccess, Health
 
 # Idle gap after which an open event stream sends a comment to stay alive.
 HEARTBEAT_SECONDS = 15.0
@@ -18,14 +20,15 @@ HEARTBEAT_SECONDS = 15.0
 router = APIRouter()
 
 
-@router.get("/health", response_model=Health)
-def health():
-    return {"status": "ok"}
+@router.get("/health", response_model=ApiSuccess[Health])
+def health(request: Request):
+    """查询文献服务健康状态。"""
+    return success(request, {"status": "ok"})
 
 
 @router.get("/events")
 async def events(request: Request, bus: Events):
-    """Stream library changes, so the browser does not have to ask for them."""
+    """订阅文献变更并返回 SSE 响应。"""
     bus.bind(asyncio.get_running_loop())
     # Subscribe before answering, so nothing published in between is missed.
     queue = bus.subscribe()

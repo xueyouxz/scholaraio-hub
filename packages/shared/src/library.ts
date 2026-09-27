@@ -32,3 +32,5 @@ export type ExportFile = Schemas["ExportFile"];
 
 /** How installing the optional embedding packages is going. */
 export type VectorRuntimeStatus = Schemas["RuntimeInstallStatus"];
+
+export type { paths as LibraryPaths } from "./generated/library-api.js";

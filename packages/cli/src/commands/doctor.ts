@@ -26,7 +26,7 @@ async function ownHub(host: string, port: number, dataDir: string): Promise<bool
     const response = await fetch(`http://${host}:${port}/api/status`, {
       signal: AbortSignal.timeout(2000),
     });
-    return ((await response.json()) as { dataDir?: string }).dataDir === dataDir;
+    return ((await response.json()) as { data?: { dataDir?: string } }).data?.dataDir === dataDir;
   } catch (error) {
     console.log(
       "Cannot identify the process using the HTTP port:",

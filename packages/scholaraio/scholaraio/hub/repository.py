@@ -4,6 +4,7 @@ Every paper is a directory holding ``meta.json``. Upstream stores walk those
 directories by name; Hub names a paper by its UUID. This module is the one
 place that translates between the two.
 """
+
 from __future__ import annotations
 
 from collections.abc import Iterator
@@ -49,7 +50,7 @@ class PaperRepository:
     def find(self, paper_id: str) -> PaperRecord:
         record = self.get(paper_id)
         if record is None:
-            raise NotFound(f"文献不存在：{paper_id}")
+            raise NotFound(f"Paper not found: {paper_id}", code="PAPER_NOT_FOUND")
         return record
 
     def reload(self, record: PaperRecord) -> PaperRecord:

@@ -91,7 +91,7 @@ def test_pdf_range_and_position(tmp_path):
         assert response.status_code == 206
         assert len(response.content) == 20
         assert client.put(f"/papers/{pid}/position", json={"page": 2, "line": 3, "mode": "markdown"}).status_code == 200
-        assert client.get(f"/papers/{pid}/position").json()["page"] == 2
+        assert client.get(f"/papers/{pid}/position").json()["data"]["page"] == 2
         assert client.get("/papers/unknown").status_code == 404
 
 
@@ -120,14 +120,14 @@ def test_attachment_boundaries_and_batch_results(tmp_path):
         (directory / "images").mkdir()
         (directory / "images/a.png").write_bytes(b"image")
         assert client.get(f"/papers/{pid}/attachments/images/a.png").content == b"image"
-        assert client.get(f"/papers/{pid}/attachments/meta.json").status_code == 400
+        assert client.get(f"/papers/{pid}/attachments/meta.json").status_code == 422
         (directory / "images/outside.png").symlink_to(source)
         assert client.get(f"/papers/{pid}/attachments/images/outside.png").status_code == 404
         response = client.post("/imports", files=[("files", ("duplicate.pdf", source.read_bytes(), "application/pdf")), ("files", ("broken.pdf", b"broken", "application/pdf"))])
         assert response.status_code == 202
         for _ in range(100):
-            jobs = client.get("/imports").json()["jobs"]
-            job = next(j for j in jobs if j["id"] == response.json()["id"])
+            jobs = client.get("/imports").json()["data"]["jobs"]
+            job = next(j for j in jobs if j["id"] == response.json()["data"]["id"])
             if all(item["status"] in ("complete", "duplicate", "failed") for item in job["items"]):
                 break
             time.sleep(0.02)
@@ -141,23 +141,23 @@ def test_projects_membership_scope_and_restart(tmp_path):
     with hub_client(root) as client:
         pid = ingest(client.app.state.library, source, "Paper.pdf")["paperId"]
         assert client.post("/projects", json={"name": "文献项目"}).status_code == 201
-        assert client.post("/projects", json={"name": "文献项目"}).status_code == 400
-        assert client.post("/context", json={"query": "molecular", "projectId": "文献项目"}).json()["citations"] == []
-        assert client.post("/scope", json={"projectId": "文献项目", "paperIds": [pid]}).status_code == 400
+        assert client.post("/projects", json={"name": "文献项目"}).status_code == 422
+        assert client.post("/context", json={"query": "molecular", "projectId": "文献项目"}).json()["data"]["citations"] == []
+        assert client.post("/scope", json={"projectId": "文献项目", "paperIds": [pid]}).status_code == 422
         for _ in range(2):
             response = client.post("/projects/文献项目/papers", json={"paperIds": [pid], "action": "add"})
             assert response.status_code == 200
-            assert response.json()["paperCount"] == 1
+            assert response.json()["data"]["paperCount"] == 1
         refs = root / "workspace/文献项目/refs/papers.json"
         assert refs.exists()
-        context = client.post("/context", json={"query": "总结", "projectId": "文献项目"}).json()
+        context = client.post("/context", json={"query": "总结", "projectId": "文献项目"}).json()["data"]
         assert {c["paperId"] for c in context["citations"]} == {pid}
         assert client.post("/scope", json={"projectId": "missing"}).status_code == 404
     with hub_client(root) as client:
-        assert client.get("/projects").json()["projects"][0]["paperIds"] == [pid]
-        assert client.post("/projects/文献项目/papers", json={"paperIds": [pid], "action": "remove"}).json()["paperCount"] == 0
-        assert client.post("/context", json={"query": "molecular", "projectId": "文献项目"}).json()["citations"] == []
-        assert client.post("/context", json={"query": "molecular"}).json()["citations"]
+        assert client.get("/projects").json()["data"]["projects"][0]["paperIds"] == [pid]
+        assert client.post("/projects/文献项目/papers", json={"paperIds": [pid], "action": "remove"}).json()["data"]["paperCount"] == 0
+        assert client.post("/context", json={"query": "molecular", "projectId": "文献项目"}).json()["data"]["citations"] == []
+        assert client.post("/context", json={"query": "molecular"}).json()["data"]["citations"]
 
 
 def test_project_boundaries_and_invalid_indexes(tmp_path):
@@ -167,30 +167,30 @@ def test_project_boundaries_and_invalid_indexes(tmp_path):
     root = tmp_path / "app"
     with hub_client(root) as client:
         for name in ["../outside", "a/b", ".hidden", "C:drive", " invalid ", "\n"]:
-            assert client.post("/projects", json={"name": name}).status_code == 400
+            assert client.post("/projects", json={"name": name}).status_code == 422
         external = tmp_path / "external"
         create(external)
         ws_root = client.app.state.library.runtime.cfg.workspace_dir
         ws_root.mkdir(parents=True, exist_ok=True)
         (ws_root / "escape").symlink_to(external, target_is_directory=True)
-        assert client.get("/projects/escape").status_code == 400
+        assert client.get("/projects/escape").status_code == 422
         (ws_root / "escape").unlink()
         legacy = ws_root / "legacy"
         legacy.mkdir()
         (legacy / "papers.json").write_text("[]")
-        assert "refs/papers.json" in client.get("/projects").json()["error"]
+        assert "refs/papers.json" in client.get("/projects").json()["message"]
         (legacy / "papers.json").unlink()
         assert client.post("/projects", json={"name": "valid"}).status_code == 201
         index = ws_root / "valid/refs/papers.json"
         index.write_text("{broken")
         assert client.get("/projects/valid").status_code == 500
         index.write_text(json.dumps(["old-paper-id"]))
-        assert client.get("/projects/valid").json()["paperIds"] == ["old-paper-id"]
+        assert client.get("/projects/valid").json()["data"]["paperIds"] == ["old-paper-id"]
         # Missing papers in an otherwise valid project never broaden its scope.
-        assert client.post("/context", json={"query": "molecular", "projectId": "valid"}).json()["citations"] == []
+        assert client.post("/context", json={"query": "molecular", "projectId": "valid"}).json()["data"]["citations"] == []
         index.unlink()
         index.symlink_to(external / "refs/papers.json")
-        assert client.get("/projects/valid").status_code == 400
+        assert client.get("/projects/valid").status_code == 422
 
 
 def test_original_search_modes_and_image_gallery_are_scoped(tmp_path, monkeypatch):
@@ -270,25 +270,25 @@ def test_projects_can_be_renamed_and_archived(tmp_path):
     with hub_client(root) as client:
         library = client.app.state.library
         pid = ingest(library, source, "Paper.pdf")["paperId"]
-        project = client.post("/projects", json={"name": "review"}).json()
+        project = client.post("/projects", json={"name": "review"}).json()["data"]
         client.post("/projects/review/papers", json={"paperIds": [pid], "action": "add"})
 
         renamed = client.post(f"/projects/{project['id']}/rename", json={"name": "survey"})
         assert renamed.status_code == 200
         # A rename keeps the id: everything that refers to the project still does.
-        assert renamed.json()["id"] == project["id"]
-        assert renamed.json()["paperIds"] == [pid]
+        assert renamed.json()["data"]["id"] == project["id"]
+        assert renamed.json()["data"]["paperIds"] == [pid]
         assert client.get("/projects/review").status_code == 404
-        assert client.get(f"/projects/{project['id']}").json()["name"] == "survey"
-        assert [p["name"] for p in client.get("/projects").json()["projects"]] == ["survey"]
+        assert client.get(f"/projects/{project['id']}").json()["data"]["name"] == "survey"
+        assert [p["name"] for p in client.get("/projects").json()["data"]["projects"]] == ["survey"]
 
         archived = client.delete(f"/projects/{project['id']}")
         assert archived.status_code == 200
-        assert archived.json()["id"] == project["id"]
+        assert archived.json()["data"]["id"] == project["id"]
         assert client.get(f"/projects/{project['id']}").status_code == 404
-        assert client.get("/projects").json()["projects"] == []
+        assert client.get("/projects").json()["data"]["projects"] == []
         # Archived, not deleted: the agent's work is still on disk.
-        assert Path(archived.json()["path"]).is_dir()
+        assert Path(archived.json()["data"]["path"]).is_dir()
         assert library.papers.detail(pid)["id"] == pid
 
 
@@ -297,7 +297,7 @@ def test_renaming_onto_an_existing_project_is_refused(tmp_path):
         client.post("/projects", json={"name": "review"})
         client.post("/projects", json={"name": "survey"})
         response = client.post("/projects/review/rename", json={"name": "survey"})
-        assert response.status_code == 400
+        assert response.status_code == 422
         assert client.get("/projects/review").status_code == 200
 
 
@@ -380,13 +380,13 @@ def test_filling_in_a_missing_doi_clears_the_incomplete_mark(tmp_path):
             json={"doi": " 10.1/known ", "title": "Spectroscopy", "authors": ["Ada Lovelace", " "]},
         )
         assert response.status_code == 200
-        assert response.json()["metadataStatus"] == "complete"
-        assert response.json()["doi"] == "10.1/known"
-        assert response.json()["authors"] == "Ada Lovelace"
+        assert response.json()["data"]["metadataStatus"] == "complete"
+        assert response.json()["data"]["doi"] == "10.1/known"
+        assert response.json()["data"]["authors"] == "Ada Lovelace"
         # The correction is searchable, not just stored.
         assert library.search.keyword("spectroscopy")[0]["paper"]["id"] == pid
 
-        assert client.patch(f"/papers/{pid}", json={}).status_code == 400
+        assert client.patch(f"/papers/{pid}", json={}).status_code == 422
         assert client.patch(f"/papers/{pid}", json={"year": "not a year"}).status_code == 422
 
 
@@ -396,8 +396,8 @@ def test_a_paper_without_a_doi_cannot_be_refetched(tmp_path):
     with hub_client(tmp_path / "app") as client:
         pid = ingest(client.app.state.library, source, "Research.pdf")["paperId"]
         response = client.post(f"/papers/{pid}/refetch")
-        assert response.status_code == 400
-        assert "DOI" in response.json()["error"]
+        assert response.status_code == 422
+        assert "DOI" in response.json()["message"]
 
 
 def test_a_project_from_before_ids_is_given_one_that_lasts(tmp_path):
@@ -407,15 +407,15 @@ def test_a_project_from_before_ids_is_given_one_that_lasts(tmp_path):
     with hub_client(root) as client:
         # A project an older Hub made: a directory with a paper index and no id.
         create(client.app.state.library.projects.root / "legacy")
-        listed = client.get("/projects").json()["projects"]
+        listed = client.get("/projects").json()["data"]["projects"]
         assert [p["name"] for p in listed] == ["legacy"]
         project_id = listed[0]["id"]
-        assert client.get("/projects/legacy").json()["id"] == project_id
+        assert client.get("/projects/legacy").json()["data"]["id"] == project_id
     with hub_client(root) as client:
-        assert client.get(f"/projects/{project_id}").json()["name"] == "legacy"
+        assert client.get(f"/projects/{project_id}").json()["data"]["name"] == "legacy"
 
 
 def test_a_project_cannot_be_named_like_an_id(tmp_path):
     with hub_client(tmp_path / "app") as client:
         response = client.post("/projects", json={"name": "3f2b7c1e-0000-4000-8000-000000000000"})
-        assert response.status_code == 400
+        assert response.status_code == 422

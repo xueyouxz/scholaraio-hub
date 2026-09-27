@@ -1,6 +1,6 @@
 import type { ProviderInfo, ProviderName } from "@scholaraio-hub/shared";
 import { useQuery } from "@tanstack/react-query";
-import { providersQuery } from "../../../../core/settings";
+import { providersQuery } from "../../../../core/providers";
 
 /** The providers, and one looked up by name. */
 export function useProviders() {

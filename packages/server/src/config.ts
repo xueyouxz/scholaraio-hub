@@ -68,7 +68,10 @@ export function loadConfig(): Readonly<Config> {
     skillsDir: env.SCHOLARAIO_SKILLS_DIR ?? skillsDirectory(dataDir),
     allowedHosts: env.ALLOWED_HOSTS,
     logSdkMessages: env.LOG_SDK_MESSAGES ?? false,
-    agentLibrary: { configFile: env.SCHOLARAIO_CONFIG, cliBinDir: env.SCHOLARAIO_CLI_BIN },
+    agentLibrary: {
+      configFile: env.SCHOLARAIO_CONFIG,
+      cliBinDir: env.SCHOLARAIO_CLI_BIN,
+    },
   });
 }
 

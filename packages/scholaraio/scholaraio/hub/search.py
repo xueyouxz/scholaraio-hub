@@ -1,5 +1,6 @@
 """Finding papers: the keyword search the browser runs as the user types, and
 the library's original search modes."""
+
 from __future__ import annotations
 
 import re
@@ -58,8 +59,11 @@ class SearchService:
                 continue
             records[record.id] = record
             self._match_literally(record, query, matches)
-        return [{"paper": paper_row(records[pid]), "matches": parts[:MATCHES_PER_PAPER]}
-                for pid, parts in list(matches.items())[:limit] if pid in records]
+        return [
+            {"paper": paper_row(records[pid]), "matches": parts[:MATCHES_PER_PAPER]}
+            for pid, parts in list(matches.items())[:limit]
+            if pid in records
+        ]
 
     def _match_literally(self, record, query: str, matches: dict[str, list]) -> None:
         meta = record.meta
@@ -101,13 +105,21 @@ class SearchService:
         # browser offers a different remedy for each, so say which one it is
         # rather than handing back one opaque failure.
         if not vectors.runtime_available():
-            return {"results": [], "unavailable": "runtime_missing", "notice": "语义检索运行时尚未安装。"}
+            return {
+                "results": [],
+                "unavailable": "runtime_missing",
+                "notice": "Semantic search runtime is not installed.",
+            }
         if vectors.embedding_provider(cfg) == "none":
-            return {"results": [], "unavailable": "provider_none", "notice": "配置中关闭了向量嵌入。"}
+            return {
+                "results": [],
+                "unavailable": "provider_none",
+                "notice": "Vector embeddings are disabled in the configuration.",
+            }
         try:
             ranked = vectors.vsearch(text, cfg.index_db, top_k=limit, cfg=cfg, paper_ids=paper_ids)
         except (ImportError, FileNotFoundError, RuntimeError, ValueError) as error:
-            return {"results": [], "unavailable": "no_vectors", "notice": f"语义检索不可用：{error}"}
+            return {"results": [], "unavailable": "no_vectors", "notice": f"Semantic search is unavailable: {error}"}
         return {"results": self._ranked(ranked, paper_ids), "notice": None}
 
     def _unified(self, text: str, limit: int, paper_ids: set[str] | None) -> dict:
@@ -115,7 +127,11 @@ class SearchService:
         ranked, diagnostics = index.unified_search(
             text, cfg.index_db, top_k=limit, cfg=cfg, paper_ids=paper_ids, return_diagnostics=True
         )
-        notice = "语义索引暂不可用，本次综合检索使用关键词结果。" if diagnostics["vector_degraded"] else None
+        notice = (
+            "Semantic index is unavailable. Combined search is using keyword results."
+            if diagnostics["vector_degraded"]
+            else None
+        )
         if not ranked:
             return {"results": self.keyword(text, limit, paper_ids), "notice": notice}
         return {"results": self._ranked(ranked, paper_ids), "notice": notice}

@@ -9,7 +9,7 @@
 
 - **client**：`app/` 是文献库、阅读器、会话、设置的导航外壳；`features/library` 负责导入、检索和阅读，
   `features/session` 负责会话显示与输入；`shared/components/Markdown.tsx` 统一 Streamdown 渲染。
-- **server/routes**：校验、响应、二进制文件流和订阅连接。只挂载 `/api/library`、`/api/sessions` 等应用接口。
+- **server/routes**：校验、响应、二进制文件流和订阅连接。挂载 `/api/sessions`、`/api/providers` 等应用接口；浏览器直接调用 Python 文献接口。
 - **启动器**（`packages/cli`）：解析 profile，先启动 Python 文献服务并等它就绪，再启动 server；负责两者的
   重启与关闭。server 不启动、不重启、不配置 Python。
 - **LibraryClient**（`server/src/lib/`）：server 调用文献服务 API 的客户端（会话范围、上下文、项目目录），
@@ -31,7 +31,7 @@
 
 - `interfaces/api/routes/*`：按领域拆分的薄控制器，只解析参数、调用一个服务、返回结果；通过
   `dependencies.py` 取服务，不读 `app.state`，不导入 stores。`schemas.py` 定义请求体（属性 snake_case，
-  线上字段 camelCase）；`errors.py` 统一 `{"error": ...}` 响应。
+  线上字段 camelCase）；`errors.py` 统一 `{id, code, message, data}` 响应，具体约定见 [HTTP 接口约定](http-api.md)。
 - `hub/*` 服务：`PaperService`、`SearchService`、`RetrievalService`、`DiscoverService`、`ProjectService`、
   `CitationService`、`MetadataService`、`ExportService`、`SettingsService`、`AnalyticsService`、
   `LibraryStatus`；后台为 `ImportQueue`、`AcquireService`、`TaskRunner`（通用执行器）+
@@ -39,8 +39,8 @@
   与所用的兄弟服务，不回引 `HubLibrary`。
 - `hub/runtime.py`：配置、写锁、`PaperRepository`、`EventBus`、重建索引等共享基础设施。
 - `hub/repository.py` 与 `hub/views.py`：磁盘上的论文（按 UUID 寻址）及其对浏览器的行结构；其他模块不再各自遍历目录或拼装行。
-- `hub/errors.py`：`InvalidRequest`(400)、`NotFound`(404)、`TooLarge`(413)。上游沿用
-  `ValueError` = 拒绝请求、`RuntimeError` = 数据损坏(500)；普通 `KeyError` 视为缺陷，返回 500 而不是 404。
+- `hub/errors.py`：`InvalidRequest`(422)、`NotFound`(404)、`TooLarge`(413)。上游沿用
+  `ValueError` = 拒绝请求(422)、`RuntimeError` = 数据损坏(500)；普通 `KeyError` 视为缺陷，返回 500 而不是 404。
 - `hub/library.py`：组合根，唯一负责装配与生命周期。
 
 ## 会话消息与恢复
@@ -96,6 +96,8 @@ Python 意外退出时启动器重启它（5 分钟内至多 3 次）。单独�
   [`providers/codex/protocol/README.md`](../packages/server/src/providers/codex/protocol/README.md)。
 - 两者都只传本轮新增输入，权限审批在 Supervisor 中处理。服务端内部环境变量不传给子进程
   （`providers/agent-env.ts`），CLI 自身的认证与代理配置保留。
+- agent 里的 `scholaraio` CLI 由 server 注入 `SCHOLARAIO_CONFIG`（本库配置）、库运行环境的 bin 目录和
+  `SCHOLARAIO_LIBRARY_API`（文献服务地址）；它的写操作直接交给文献服务执行，不经 server。
 - CLI 检测会实际运行 `--version`，不能仅因 PATH 里有脚本就判定可用；本地登录状态也不能保证远端令牌仍然有效。
 
 ## 迁移与恢复

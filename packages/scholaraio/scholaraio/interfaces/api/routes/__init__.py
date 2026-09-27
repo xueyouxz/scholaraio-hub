@@ -1,5 +1,6 @@
 """HTTP routes, one module per library domain. Each only translates a request
 into a service call; the work happens in :mod:`scholaraio.hub`."""
+
 from __future__ import annotations
 
 from scholaraio.interfaces.api.routes import (

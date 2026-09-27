@@ -1,161 +1,113 @@
 import type {
-  ArchivedProject,
-  DiscoverResponse,
-  ExportFile,
-  FetchedImportJob,
-  ImportJob,
-  LibraryAnalytics,
-  LibraryCapabilities,
-  LibraryPaper,
-  LibraryPaperDetail,
-  LibraryReference,
-  LibrarySearchResponse,
-  LibrarySettings,
-  LibraryTask,
+  LibraryPaths,
   LibraryTaskKind,
-  LiteratureProject,
   ReadingPosition,
   SettingsCheck,
-  VectorRuntimeStatus,
 } from "@scholaraio-hub/shared";
-import { pathSegment, requestJson } from "./http";
+import { UPLOAD_TIMEOUT_MS } from "./http";
+import { libraryClient } from "./libraryClient";
 
-/** The reference-file formats the library exports. */
-export type ReferenceFormat = "bibtex" | "ris" | "markdown";
+/** 文献元数据更新请求。 */
+type MetadataInput =
+  LibraryPaths["/papers/{paper_id}"]["patch"]["requestBody"]["content"]["application/json"];
+/** 文献服务配置更新请求。 */
+type SettingsInput =
+  LibraryPaths["/settings"]["patch"]["requestBody"]["content"]["application/json"];
+type ExportInput =
+  LibraryPaths["/citations/export"]["post"]["requestBody"]["content"]["application/json"];
+export type ReferenceFormat = NonNullable<ExportInput["format"]>;
 
+const { request } = libraryClient;
+
+/** 提供文献、项目、导入、设置和维护任务的业务请求。 */
 export const libraryApi = {
+  revealDirectory: (target: "data" | "papers" | "workspaces") =>
+    request("post", "/directories/{target}/reveal", { path: { target } }),
   images: (id: string, signal?: AbortSignal) =>
-    requestJson<{ images: string[] }>(`/api/library/papers/${pathSegment(id)}/images`, { signal }),
-  analytics: (signal?: AbortSignal) =>
-    requestJson<LibraryAnalytics>("/api/library/analytics", { signal }),
-  projects: (signal?: AbortSignal) =>
-    requestJson<{ projects: LiteratureProject[] }>("/api/library/projects", { signal }),
+    request("get", "/papers/{paper_id}/images", { path: { paper_id: id }, signal }),
+  analytics: (signal?: AbortSignal) => request("get", "/analytics", { signal }),
+  projects: (signal?: AbortSignal) => request("get", "/projects", { signal }),
   project: (id: string, signal?: AbortSignal) =>
-    requestJson<LiteratureProject>(`/api/library/projects/${pathSegment(id)}`, { signal }),
-  createProject: (name: string) =>
-    requestJson<LiteratureProject>("/api/library/projects", {
-      method: "POST",
-      body: JSON.stringify({ name }),
-    }),
-  /** The project keeps its id, so the sessions that refer to it follow. */
+    request("get", "/projects/{project_id}", { path: { project_id: id }, signal }),
+  createProject: (name: string) => request("post", "/projects", { body: { name } }),
   renameProject: (id: string, name: string) =>
-    requestJson<LiteratureProject>(`/api/library/projects/${pathSegment(id)}/rename`, {
-      method: "POST",
-      body: JSON.stringify({ name }),
-    }),
+    request("post", "/projects/{project_id}/rename", { path: { project_id: id }, body: { name } }),
   archiveProject: (id: string) =>
-    requestJson<ArchivedProject>(`/api/library/projects/${pathSegment(id)}`, {
-      method: "DELETE",
-    }),
+    request("delete", "/projects/{project_id}", { path: { project_id: id } }),
   projectPapers: (id: string, paperIds: string[], action: "add" | "remove") =>
-    requestJson<LiteratureProject>(`/api/library/projects/${pathSegment(id)}/papers`, {
-      method: "POST",
-      body: JSON.stringify({ paperIds, action }),
+    request("post", "/projects/{project_id}/papers", {
+      path: { project_id: id },
+      body: { paperIds, action },
     }),
-  /** Papers matching `query`, best first; within a workspace when `projectId` is given. */
   search: (
     params: { query: string; mode: string; limit: number; projectId?: string },
     signal?: AbortSignal,
-  ) => {
-    const query = new URLSearchParams({
-      q: params.query,
-      mode: params.mode,
-      limit: String(params.limit),
-    });
-    if (params.projectId) query.set("projectId", params.projectId);
-    return requestJson<LibrarySearchResponse>(`/api/library/search?${query}`, { signal });
-  },
-  papers: (signal?: AbortSignal) =>
-    requestJson<{ papers: LibraryPaper[] }>("/api/library/papers", { signal }),
-  detail: (id: string, signal?: AbortSignal) =>
-    requestJson<LibraryPaperDetail>(`/api/library/papers/${pathSegment(id)}`, { signal }),
-  updatePaper: (id: string, fields: Record<string, unknown>) =>
-    requestJson<LibraryPaper>(`/api/library/papers/${pathSegment(id)}`, {
-      method: "PATCH",
-      body: JSON.stringify(fields),
-    }),
-  refetchPaper: (id: string) =>
-    requestJson<{ changed: boolean; paper: LibraryPaper }>(
-      `/api/library/papers/${pathSegment(id)}/refetch`,
-      { method: "POST" },
-    ),
-  references: (id: string, signal?: AbortSignal, projectId?: string) =>
-    requestJson<{ references: LibraryReference[] }>(
-      `/api/library/papers/${pathSegment(id)}/references${projectId ? `?projectId=${encodeURIComponent(projectId)}` : ""}`,
-      { signal },
-    ),
-  citing: (id: string, signal?: AbortSignal, projectId?: string) =>
-    requestJson<{ citing: LibraryPaper[] }>(
-      `/api/library/papers/${pathSegment(id)}/citing${projectId ? `?projectId=${encodeURIComponent(projectId)}` : ""}`,
-      { signal },
-    ),
-  jobs: (signal?: AbortSignal) =>
-    requestJson<{ jobs: ImportJob[] }>("/api/library/imports", { signal }),
-  /** Upload PDFs for import; with a workspace, each paper joins it once it is in. */
-  upload: (files: File[], projectId?: string) => {
-    const body = new FormData();
-    for (const file of files) body.append("files", file);
-    if (projectId) body.append("projectId", projectId);
-    return requestJson<ImportJob>("/api/library/imports", { method: "POST", body });
-  },
-  /** Papers on the open web the library could fetch. */
-  discover: (query: string, signal?: AbortSignal) =>
-    requestJson<DiscoverResponse>(`/api/library/discover?q=${encodeURIComponent(query)}`, {
+  ) =>
+    request("get", "/search", {
+      query: {
+        q: params.query,
+        mode: params.mode,
+        limit: params.limit,
+        projectId: params.projectId,
+      },
       signal,
     }),
-  exportReferences: (body: { paperIds: string[]; format: ReferenceFormat }) =>
-    requestJson<ExportFile>("/api/library/citations/export", {
-      method: "POST",
-      body: JSON.stringify(body),
+  papers: (signal?: AbortSignal) => request("get", "/papers", { signal }),
+  detail: (id: string, signal?: AbortSignal) =>
+    request("get", "/papers/{paper_id}", { path: { paper_id: id }, signal }),
+  updatePaper: (id: string, fields: MetadataInput) =>
+    request("patch", "/papers/{paper_id}", { path: { paper_id: id }, body: fields }),
+  refetchPaper: (id: string) =>
+    request("post", "/papers/{paper_id}/refetch", { path: { paper_id: id } }),
+  references: (id: string, signal?: AbortSignal, projectId?: string) =>
+    request("get", "/papers/{paper_id}/references", {
+      path: { paper_id: id },
+      query: { projectId },
+      signal,
     }),
+  citing: (id: string, signal?: AbortSignal, projectId?: string) =>
+    request("get", "/papers/{paper_id}/citing", {
+      path: { paper_id: id },
+      query: { projectId },
+      signal,
+    }),
+  jobs: (signal?: AbortSignal) => request("get", "/imports", { signal }),
+  /** 上传文献文件并创建导入任务。 */
+  upload: (files: File[], projectId?: string, signal?: AbortSignal) => {
+    const form = new FormData();
+    for (const file of files) form.append("files", file);
+    if (projectId) form.append("projectId", projectId);
+    return request("post", "/imports", { form, signal, timeoutMs: UPLOAD_TIMEOUT_MS });
+  },
+  discover: (query: string, signal?: AbortSignal) =>
+    request("get", "/discover", { query: { q: query }, signal }),
+  exportReferences: (body: Omit<ExportInput, "style"> & { style?: ExportInput["style"] }) =>
+    request("post", "/citations/export", { body: { ...body, style: body.style ?? "apa" } }),
   fetchPaper: (locator: string, projectId?: string, title?: string) =>
-    requestJson<FetchedImportJob>("/api/library/imports/fetch", {
-      method: "POST",
-      body: JSON.stringify({ locator, projectId, title }),
-    }),
-  retry: (id: string) =>
-    requestJson<ImportJob>(`/api/library/imports/${pathSegment(id)}/retry`, { method: "POST" }),
-  settings: (signal?: AbortSignal) =>
-    requestJson<LibrarySettings>("/api/library/settings", { signal }),
-  saveSettings: (fields: Partial<Record<string, string>>) =>
-    requestJson<LibrarySettings>("/api/library/settings", {
-      method: "PATCH",
-      body: JSON.stringify(fields),
-    }),
-  /** Try one configured service with the saved settings. */
+    request("post", "/imports/fetch", { body: { locator, projectId, title } }),
+  retry: (id: string) => request("post", "/imports/{job_id}/retry", { path: { job_id: id } }),
+  settings: (signal?: AbortSignal) => request("get", "/settings", { signal }),
+  saveSettings: (fields: SettingsInput) => request("patch", "/settings", { body: fields }),
   checkSettings: (target: SettingsCheck["target"]) =>
-    requestJson<SettingsCheck>("/api/library/settings/check", {
-      method: "POST",
-      body: JSON.stringify({ target }),
-    }),
-  capabilities: (signal?: AbortSignal) =>
-    requestJson<LibraryCapabilities>("/api/library/tasks", { signal }),
-  vectorRuntime: (signal?: AbortSignal) =>
-    requestJson<VectorRuntimeStatus>("/api/library/runtime", { signal }),
+    request("post", "/settings/check", { body: { target } }),
+  capabilities: (signal?: AbortSignal) => request("get", "/tasks", { signal }),
+  vectorRuntime: (signal?: AbortSignal) => request("get", "/runtime", { signal }),
   installVectorRuntime: () =>
-    requestJson<VectorRuntimeStatus>("/api/library/runtime/semantic", { method: "POST" }),
-  startTask: (kind: LibraryTaskKind) =>
-    requestJson<LibraryTask>(`/api/library/tasks/${pathSegment(kind)}`, { method: "POST" }),
-  cancelTask: (kind: LibraryTaskKind) =>
-    requestJson<LibraryTask>(`/api/library/tasks/${pathSegment(kind)}`, { method: "DELETE" }),
+    request("post", "/runtime/{capability}", { path: { capability: "semantic" } }),
+  startTask: (kind: LibraryTaskKind) => request("post", "/tasks/{kind}", { path: { kind } }),
+  cancelTask: (kind: LibraryTaskKind) => request("delete", "/tasks/{kind}", { path: { kind } }),
   position: (id: string, signal?: AbortSignal) =>
-    requestJson<ReadingPosition>(`/api/library/papers/${pathSegment(id)}/position`, { signal }),
+    request("get", "/papers/{paper_id}/position", { path: { paper_id: id }, signal }),
   savePosition: (id: string, position: ReadingPosition) =>
-    requestJson<ReadingPosition>(`/api/library/papers/${pathSegment(id)}/position`, {
-      method: "PUT",
-      body: JSON.stringify(position),
-    }),
+    request("put", "/papers/{paper_id}/position", { path: { paper_id: id }, body: position }),
 };
 
-/** A workspace's own page: its papers, and what is still on its way in. */
+/** 构造项目工作区页面地址。 */
 export function workspaceUrl(projectId: string): string {
   return `/workspaces/${encodeURIComponent(projectId)}`;
 }
 
-/**
- * The reader for a paper. `returnTo` is the page the user opened it from, so
- * "back" goes there; `projectId` scopes it to a workspace.
- */
+/** 构造包含返回页面和项目范围的文献阅读地址。 */
 export function readerUrl(
   paperId: string,
   options: { returnTo?: string; projectId?: string } = {},

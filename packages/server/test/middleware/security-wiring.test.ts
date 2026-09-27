@@ -22,8 +22,8 @@ describe("workbench security middleware wiring", () => {
     await server.close();
     await rm(root, { recursive: true, force: true });
   });
-  it("rejects DNS rebinding on the library and session APIs", async () => {
-    for (const url of ["/api/library/papers", "/api/sessions"]) {
+  it("rejects DNS rebinding on the session and provider APIs", async () => {
+    for (const url of ["/api/providers", "/api/sessions"]) {
       expect((await server.app.request(url, { headers: { host: "evil.com" } })).status).toBe(403);
     }
   });

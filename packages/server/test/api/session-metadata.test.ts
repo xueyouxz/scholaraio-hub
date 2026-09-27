@@ -6,12 +6,13 @@ import { createApp } from "../../src/app.js";
 import { LibraryClient } from "../../src/lib/LibraryClient.js";
 import { MessageQueue } from "../../src/providers/MessageQueue.js";
 import type { AgentEvent } from "../../src/providers/events.js";
+import { libraryResponse } from "../helpers/library.js";
 import { TEST_LIBRARY_URL } from "../helpers/library.js";
 import { providerFromSessionFactory } from "../helpers/scriptedProvider.js";
 
 class NoLibrary extends LibraryClient {
   override async request() {
-    return Response.json({ citations: [], truncated: false });
+    return libraryResponse({ citations: [], truncated: false });
   }
 }
 
@@ -55,7 +56,7 @@ describe("assistant turn metadata", () => {
       headers,
       body: JSON.stringify({ provider: "claude" }),
     });
-    const { id } = (await created.json()) as { id: string };
+    const { id } = (await created.json().then((body) => body.data)) as { id: string };
     const response = await server.app.request(`/api/sessions/${id}/messages`, {
       method: "POST",
       headers,

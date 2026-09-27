@@ -179,7 +179,7 @@ export const SendSessionMessageSchema = z
   })
   .refine(
     (input) => input.text.length > 0 || input.attachmentIds.length > 0,
-    "请输入内容或添加附件",
+    "Enter a message or attach a file",
   );
 export type SessionInput = z.infer<typeof SendSessionMessageSchema>;
 

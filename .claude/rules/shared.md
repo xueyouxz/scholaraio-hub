@@ -12,9 +12,13 @@ Terms used here are defined in [`../glossary.md`](../glossary.md).
 
 `packages/shared` is the canonical home for cross-cutting contracts:
 
-- **Profile and port**: `src/ports.ts` (`resolveProfileName`, `resolvePort`). There is one
-  application port per profile; development serves Vite on it too. Nothing else may
-  redefine port defaults.
+- **Profile and ports**: `src/ports.ts` (`resolveProfileName`, `resolvePort`,
+  `resolveLibraryPort`). Each profile has the Hub's port (page, API and, in development,
+  Vite) and the library service's port; the page names the latter in
+  `LIBRARY_PORT_META`. Nothing else may redefine port defaults.
+- **HTTP protocol**: `src/http.ts` (the `{ id, code, message, data }` envelope and the error
+  codes with their statuses), shared by the server, the client and, through the contract
+  test, the library service. See `docs/http-api.md`.
 - **Schemas / types**: `src/session/StoredSession.ts` (the session contract),
   `src/library.ts` (library API shapes, aliases of the types generated into
   `src/generated/` from the library service's OpenAPI document), `src/types.ts` (providers, capabilities,

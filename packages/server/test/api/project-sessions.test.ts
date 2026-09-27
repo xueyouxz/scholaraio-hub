@@ -5,6 +5,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { createApp } from "../../src/app.js";
 import { LibraryClient } from "../../src/lib/LibraryClient.js";
 import { WorkbenchProvider } from "../helpers/WorkbenchProvider.js";
+import { libraryResponse } from "../helpers/library.js";
 import { TEST_LIBRARY_URL } from "../helpers/library.js";
 
 const headers = { "Content-Type": "application/json", "ScholarAIO-Hub": "true" };
@@ -16,15 +17,15 @@ class ProjectLibrary extends LibraryClient {
   }
   override async request(resource: string) {
     if (resource.startsWith("/projects/"))
-      return Response.json({
+      return libraryResponse({
         id: "review",
         name: "review",
         path: this.projectPath,
         paperIds: ["paper-1"],
         paperCount: 1,
       });
-    if (resource.startsWith("/scope")) return Response.json({ paperIds: ["paper-1"] });
-    return Response.json({ citations: [], truncated: false });
+    if (resource.startsWith("/scope")) return libraryResponse({ paperIds: ["paper-1"] });
+    return libraryResponse({ citations: [], truncated: false });
   }
 }
 
@@ -59,7 +60,7 @@ describe("sessions in a literature project", () => {
       body: JSON.stringify({ provider: "claude", paperIds: [], projectId }),
     });
     expect(response.status).toBe(201);
-    return (await response.json()).id as string;
+    return (await response.json().then((body) => body.data)).id as string;
   }
 
   const send = (id: string, text: string) =>

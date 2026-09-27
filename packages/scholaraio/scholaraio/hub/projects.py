@@ -5,6 +5,7 @@ a UUID kept in a marker file inside that directory, so it stays the same when
 the project is renamed: sessions and the browser refer to a project by id.
 Every method also accepts the project's name, which agents and older records use.
 """
+
 from __future__ import annotations
 
 import json
@@ -28,6 +29,7 @@ def is_project_id(value: str) -> bool:
         return str(uuid.UUID(value)) == value
     except ValueError:
         return False
+
 
 AGENTS_GUIDE = """\
 # 文献项目 {name}
@@ -72,7 +74,7 @@ class ProjectService:
         self.runtime = runtime
         self.root = runtime.cfg.workspace_dir.resolve()
         if not self.root.is_relative_to(runtime.root):
-            raise InvalidRequest("文献项目目录必须位于应用数据目录内")
+            raise InvalidRequest("Library project directories must be inside the application data directory")
 
     def resolve(self, project: str) -> Path:
         """The directory of a project named by its id, or by its name."""
@@ -81,14 +83,18 @@ class ProjectService:
         for directory in self.directories():
             if self.identity(directory) == project:
                 return directory
-        raise NotFound(f"文献项目不存在：{project}")
+        raise NotFound(f"Library project not found: {project}", code="PROJECT_NOT_FOUND")
 
     def directories(self) -> list[Path]:
         if not self.root.exists():
             return []
-        return [d for d in sorted(self.root.iterdir())
-                if d.is_dir() and not d.name.startswith(".")
-                and (workspace.has_paper_index(d) or workspace.has_legacy_paper_index(d))]
+        return [
+            d
+            for d in sorted(self.root.iterdir())
+            if d.is_dir()
+            and not d.name.startswith(".")
+            and (workspace.has_paper_index(d) or workspace.has_legacy_paper_index(d))
+        ]
 
     def identity(self, directory: Path) -> str:
         """The project's id; a project from before ids existed is given one now."""
@@ -100,28 +106,32 @@ class ProjectService:
             atomic_json(marker, {"id": value})
             return value
         except (OSError, ValueError, KeyError, TypeError) as error:
-            raise RuntimeError(f"项目标识文件无法读取：{marker}") from error
+            raise RuntimeError(f"Cannot read project identity file: {marker}") from error
         if not isinstance(value, str) or not is_project_id(value):
-            raise RuntimeError(f"项目标识文件内容无效：{marker}")
+            raise RuntimeError(f"Invalid project identity file: {marker}")
         return value
 
     def directory(self, name: str, *, existing: bool = True) -> Path:
         """The directory a project name stands for, checked to stay inside the workspace root."""
         project_id = name
-        if (not workspace.validate_workspace_name(project_id) or project_id.startswith(".")
-                or len(project_id) > NAME_LIMIT or any(ord(c) < 32 for c in project_id)
-                or is_project_id(project_id)):
-            raise InvalidRequest("项目名称无效：请使用不含路径分隔符的名称")
+        if (
+            not workspace.validate_workspace_name(project_id)
+            or project_id.startswith(".")
+            or len(project_id) > NAME_LIMIT
+            or any(ord(c) < 32 for c in project_id)
+            or is_project_id(project_id)
+        ):
+            raise InvalidRequest("Invalid project name: path separators are not allowed")
         directory = self.root / project_id
         if not directory.resolve().is_relative_to(self.root):
-            raise InvalidRequest("项目目录超出受管理范围")
+            raise InvalidRequest("Project directory is outside the managed area")
         for relative in ("refs", "refs/papers.json", "papers.json"):
             if not (directory / relative).resolve().is_relative_to(directory.resolve()):
-                raise InvalidRequest("项目索引超出项目目录")
+                raise InvalidRequest("Project index is outside the project directory")
         if existing and not workspace.has_paper_index(directory):
             if workspace.has_legacy_paper_index(directory):
-                raise InvalidRequest(f"项目 {project_id} 使用旧 papers.json，请先迁移到 refs/papers.json")
-            raise NotFound(f"文献项目不存在：{project_id}")
+                raise InvalidRequest(f"Project {project_id} uses legacy papers.json. Migrate to refs/papers.json first")
+            raise NotFound(f"Library project not found: {project_id}", code="PROJECT_NOT_FOUND")
         return directory
 
     def get(self, project: str) -> dict:
@@ -148,7 +158,7 @@ class ProjectService:
         with self.runtime.lock:
             directory = self.directory(name, existing=False)
             if directory.exists():
-                raise InvalidRequest("项目或同名目录已存在")
+                raise InvalidRequest("A project or directory with this name already exists")
             workspace.create(directory)
             self.scaffold(directory, name)
             return self.describe(directory)
@@ -172,7 +182,7 @@ class ProjectService:
             self.identity(directory)
             target = self.directory(name, existing=False)
             if target.exists():
-                raise InvalidRequest("目标项目名称已被占用")
+                raise InvalidRequest("The target project name is already in use")
             return self.describe(workspace.rename(self.root, directory.name, name))
 
     def delete(self, project: str) -> dict:
@@ -198,7 +208,7 @@ class ProjectService:
             elif action == "remove":
                 workspace.remove(directory, paper_ids, self.runtime.cfg.index_db)
             else:
-                raise InvalidRequest(f"未知的项目文献操作：{action}")
+                raise InvalidRequest(f"Unknown project paper operation: {action}")
             return self.describe(directory)
 
     def scope(self, project_id: str | None, paper_ids: list[str]) -> list[str] | None:
@@ -210,11 +220,11 @@ class ProjectService:
             available = self.runtime.papers.ids()
             selected = set(paper_ids)
             if selected - available:
-                raise InvalidRequest("选中的文献已不存在，请重新选择")
+                raise InvalidRequest("Selected papers no longer exist. Select them again")
             if project_id:
                 members = set(self.get(project_id)["paperIds"])
                 if selected - members:
-                    raise InvalidRequest("选中的文献不属于当前项目，请重新选择")
+                    raise InvalidRequest("Selected papers do not belong to this project. Select them again")
                 return sorted(selected or (members & available))
             return sorted(selected) if selected else None
 

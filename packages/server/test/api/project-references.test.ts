@@ -6,6 +6,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { createApp } from "../../src/app.js";
 import { LibraryClient } from "../../src/lib/LibraryClient.js";
 import { WorkbenchProvider } from "../helpers/WorkbenchProvider.js";
+import { libraryResponse } from "../helpers/library.js";
 import { TEST_LIBRARY_URL } from "../helpers/library.js";
 
 const headers = { "content-type": "application/json", [CSRF_HEADER.name]: CSRF_HEADER.value };
@@ -27,13 +28,13 @@ class ProjectLibrary extends LibraryClient {
       paperIds: [],
       paperCount: 0,
     };
-    if (resource === "/projects") return Response.json({ projects: [review] });
+    if (resource === "/projects") return libraryResponse({ projects: [review] });
     if (resource === `/projects/${REVIEW_ID}` || resource === "/projects/review")
-      return Response.json(review);
+      return libraryResponse(review);
     if (resource.startsWith("/projects/"))
-      return Response.json({ error: "文献项目不存在" }, { status: 404 });
-    if (resource.startsWith("/scope")) return Response.json({ paperIds: [] });
-    return Response.json({ citations: [], truncated: false });
+      return libraryResponse({ error: "文献项目不存在" }, { status: 404 });
+    if (resource.startsWith("/scope")) return libraryResponse({ paperIds: [] });
+    return libraryResponse({ citations: [], truncated: false });
   }
 }
 
@@ -65,7 +66,7 @@ describe("a session's project reference", () => {
       headers,
       body: JSON.stringify({ provider: "claude", paperIds: [], projectId }),
     });
-    return (await response.json()).id as string;
+    return (await response.json().then((body) => body.data)).id as string;
   }
 
   it("moves from the project's name to its id when the session uses it", async () => {

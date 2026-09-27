@@ -10,7 +10,8 @@ import { CheckCircle2, FolderOpen } from "lucide-react";
 import { useEffect, useState } from "react";
 import { readStoredJson, writeStoredJson } from "../../core/browserStorage";
 import { libraryApi } from "../../core/library";
-import { appSettingsQuery, providersQuery, settingsApi } from "../../core/settings";
+import { providersApi, providersQuery } from "../../core/providers";
+import { appSettingsQuery, settingsApi } from "../../core/settings";
 import { LibrarySettingsForm } from "../../features/library/components/LibrarySettingsForm";
 import { usePageTitle } from "../components/NavigationLayout";
 import { UsageLimitBlock, describeProvider } from "../components/ProviderUsage";
@@ -56,7 +57,7 @@ export function SettingsPage() {
   });
   const usage = useQuery({
     queryKey: ["provider-usage-limits"],
-    queryFn: ({ signal }) => settingsApi.usageLimits(signal),
+    queryFn: ({ signal }) => providersApi.usageLimits(signal),
     staleTime: 60_000,
     // The server holds each answer for minutes; asking again is cheap and silent.
     refetchInterval: 60_000,
@@ -73,7 +74,7 @@ export function SettingsPage() {
     mutationFn: settingsApi.save,
     onSuccess: (data) => client.setQueryData(appSettingsQuery.queryKey, data),
   });
-  const openDirectory = useMutation({ mutationFn: settingsApi.openDirectory });
+  const openDirectory = useMutation({ mutationFn: libraryApi.revealDirectory });
   const defaults = settings.data?.settings.newSessionDefaults;
   const providerName = defaults?.provider ?? DEFAULT_PROVIDER;
   const update = (value: NewSessionDefaults) => {

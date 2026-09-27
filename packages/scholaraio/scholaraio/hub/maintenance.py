@@ -5,6 +5,7 @@ search, the topic map and LLM-written summaries each cost minutes of model
 time, so they run as tasks with progress and a stop button rather than inside
 an import.
 """
+
 from __future__ import annotations
 
 from pathlib import Path
@@ -53,13 +54,13 @@ class MaintenanceJobs:
 
         cfg = self.runtime.cfg
         if vectors.embedding_provider(cfg) == "none":
-            raise InvalidRequest("当前配置关闭了向量嵌入（embed.provider=none）")
+            raise InvalidRequest("Vector embeddings are disabled (embed.provider=none)")
         if not vectors.runtime_available():
-            raise InvalidRequest("向量依赖尚未安装，请先在前端安装语义检索运行时")
+            raise InvalidRequest("Vector dependencies are missing. Install the semantic search runtime first")
         progress.phase("model")
         vectors.prepare_model(cfg)
         if progress.stopped:
-            return "已在下载模型后停止"
+            return "Stopped after downloading the model"
         progress.phase("embed")
         count = vectors.build_vectors(
             cfg.papers_dir,
@@ -68,7 +69,7 @@ class MaintenanceJobs:
             on_progress=progress.advance,
             should_stop=lambda: progress.stopped,
         )
-        return f"新增 {count} 篇论文的向量"
+        return f"Added embeddings for {count} papers"
 
     def topics(self, progress: Progress) -> str:
         """Cluster the existing vectors into topics and write what the dashboard reads."""
@@ -78,9 +79,9 @@ class MaintenanceJobs:
         progress.phase("cluster")
         model = build_topics(cfg.index_db, cfg.papers_dir, cfg=cfg, save_path=self.model_dir)
         if progress.stopped:
-            return "已在建模后停止"
+            return "Stopped after building the model"
         progress.phase("artifacts")
-        return f"{self.artifacts.write(model)} 个主题"
+        return f"{self.artifacts.write(model)} topics"
 
     def deep(self, progress: Progress) -> str:
         """Ask the LLM for a table of contents and a conclusion, paper by paper."""
@@ -89,7 +90,7 @@ class MaintenanceJobs:
 
         cfg = self.runtime.cfg
         if not cfg.resolved_api_key():
-            raise InvalidRequest("深度解析需要先配置 LLM API Key")
+            raise InvalidRequest("Deep parsing requires an LLM API key")
         pending = [directory for directory in self.runtime.papers.directories() if needs_deep(directory)]
         progress.phase("deep", done=0, total=len(pending))
         done = 0
@@ -104,7 +105,7 @@ class MaintenanceJobs:
             progress.advance(done)
         if done:
             self.runtime.reindex()
-        return f"处理 {done} 篇" + (f"，其中 {failed} 篇未能完成" if failed else "")
+        return f"Processed {done} papers" + (f", {failed} could not be completed" if failed else "")
 
     def quality(self, progress: Progress) -> str:
         """Fill in the abstracts the library is missing: from the DOI, else from the full text.
@@ -145,7 +146,7 @@ class MaintenanceJobs:
         if filled:
             self.runtime.reindex()
             self.runtime.events.publish("papers")
-        return f"补全 {filled} 篇摘要" + (f"，{failed} 篇未能补全" if failed else "")
+        return f"Completed {filled} abstracts" + (f", {failed} could not be completed" if failed else "")
 
 
 __all__ = ["MaintenanceJobs", "has_abstract", "needs_deep"]

@@ -37,8 +37,8 @@ if (config.nodeEnv === "production" && !existsSync(path.join(config.clientDistDi
   process.exit(1);
 }
 // Development serves the client from Vite on this same port; production from the build.
-const devFrontend = config.nodeEnv === "development" ? new DevFrontend() : undefined;
 const library = new LibraryClient(config.libraryUrl);
+const devFrontend = config.nodeEnv === "development" ? new DevFrontend(library.port) : undefined;
 const settings = new ServerSettingsService({ dataDir: config.dataDir });
 let application: ReturnType<typeof createApp> | undefined;
 let server: ReturnType<typeof serve> | undefined;
@@ -77,8 +77,8 @@ process.on("uncaughtException", (error) => {
 });
 try {
   const origin = `http://${config.host}:${config.port}`;
-  // Every agent this server starts works on the library, through the Hub's API.
-  bindAgentLibrary({ ...config.agentLibrary, apiBaseUrl: origin });
+  // Every agent this server starts works on the library, through the library service.
+  bindAgentLibrary({ ...config.agentLibrary, libraryUrl: config.libraryUrl });
   await Promise.all([settings.initialize(), ensureSkillsDirectory(config.skillsDir)]);
   application = createApp({
     dataDir: config.dataDir,

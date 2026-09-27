@@ -11,6 +11,7 @@ process. The launcher that started the service restarts it (see
 Which extras each capability means lives in ``runtime-capabilities.json``
 beside ``pyproject.toml``, shared with ``pnpm hub setup``.
 """
+
 from __future__ import annotations
 
 import json
@@ -34,7 +35,7 @@ CAPABILITIES_FILE = PROJECT_DIR / "runtime-capabilities.json"
 MANIFEST_VERSION = 1
 # Output lines kept for the browser: enough to see progress, not the whole build.
 LOG_LINES = 40
-UV_MISSING_HINT = "需要 uv，请安装 https://docs.astral.sh/uv/getting-started/installation/"
+UV_MISSING_HINT = "uv is required. Install it from https://docs.astral.sh/uv/getting-started/installation/"
 
 
 def now() -> str:
@@ -76,10 +77,10 @@ class RuntimeInstaller:
     def install(self, capability: str) -> dict:
         """Start the install; the caller polls :meth:`read` for how it goes."""
         if capability not in self.extras:
-            raise InvalidRequest(f"未知的运行环境能力：{capability}")
+            raise InvalidRequest(f"Unknown runtime capability: {capability}")
         with self._lock:
             if self._status["state"] == "installing":
-                raise Conflict("依赖正在安装中")
+                raise Conflict("Dependencies are being installed")
             self._set({"state": "installing", "log": [], "startedAt": now()})
         threading.Thread(target=self._run, args=(capability,), name="runtime-install", daemon=True).start()
         return self.read()
@@ -95,15 +96,29 @@ class RuntimeInstaller:
         try:
             capabilities = sorted({*self._installed(), capability})
             command = [
-                self.uv, "sync", "--project", str(PROJECT_DIR), "--locked",
-                *[flag for extra in [*self.core, *(e for c in capabilities for e in self.extras[c])]
-                  for flag in ("--extra", extra)],
+                self.uv,
+                "sync",
+                "--project",
+                str(PROJECT_DIR),
+                "--locked",
+                *[
+                    flag
+                    for extra in [*self.core, *(e for c in capabilities for e in self.extras[c])]
+                    for flag in ("--extra", extra)
+                ],
                 "--no-default-groups",
             ]
             env = {**os.environ, "UV_PROJECT_ENVIRONMENT": str(self.environment), "UV_CACHE_DIR": str(self.cache_dir)}
             try:
-                self._child = subprocess.Popen(command, env=env, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
-                                               stdin=subprocess.DEVNULL, text=True, errors="replace")
+                self._child = subprocess.Popen(
+                    command,
+                    env=env,
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.STDOUT,
+                    stdin=subprocess.DEVNULL,
+                    text=True,
+                    errors="replace",
+                )
             except OSError as error:
                 self._fail(f"{UV_MISSING_HINT}（{error}）")
                 return
@@ -113,7 +128,7 @@ class RuntimeInstaller:
             code = self._child.wait()
             self._child = None
             if code != 0:
-                self._fail(f"安装失败 (exit {code})，详见下方输出。")
+                self._fail(f"Installation failed (exit {code}). See the output below.")
                 return
             self._write_manifest(capabilities)
         except Exception as error:
@@ -122,8 +137,14 @@ class RuntimeInstaller:
             self._fail(str(error))
             return
         with self._lock:
-            self._set({**self._status, "state": "ready", "finishedAt": now(),
-                       "log": [*self._status["log"], "重启文献服务…"][-LOG_LINES:]})
+            self._set(
+                {
+                    **self._status,
+                    "state": "ready",
+                    "finishedAt": now(),
+                    "log": [*self._status["log"], "Restarting the library service..."][-LOG_LINES:],
+                }
+            )
         _log.info("Installed %s; restarting so the new packages load", capability)
         self.request_restart()
 
@@ -132,7 +153,7 @@ class RuntimeInstaller:
         if self.manifest_file.exists():
             manifest = json.loads(self.manifest_file.read_text(encoding="utf-8"))
             if manifest.get("version") != MANIFEST_VERSION or not isinstance(manifest.get("capabilities"), list):
-                raise RuntimeError(f"运行环境清单格式不对：{self.manifest_file}")
+                raise RuntimeError(f"Invalid runtime manifest: {self.manifest_file}")
             return list(manifest["capabilities"])
         from scholaraio.services import vectors
 
@@ -168,7 +189,12 @@ class RuntimeInstaller:
             return {"state": "idle", "log": []}
         if status.get("state") == "installing":
             # The process that ran it is gone; so is the install.
-            status = {**status, "state": "failed", "error": "安装被中断，请重试。", "finishedAt": now()}
+            status = {
+                **status,
+                "state": "failed",
+                "error": "Installation was interrupted. Try again.",
+                "finishedAt": now(),
+            }
         return status
 
 

@@ -61,6 +61,6 @@ def test_a_project_exports_as_a_markdown_reference_list(library):
 
 
 def test_an_unknown_format_is_refused(library):
-    with pytest.raises(ValueError, match="导出格式"):
+    with pytest.raises(ValueError, match="export format"):
         library.exports.export([], None, "docx")
 

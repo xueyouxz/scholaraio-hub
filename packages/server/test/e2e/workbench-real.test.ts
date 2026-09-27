@@ -7,11 +7,12 @@ import { createApp } from "../../src/app.js";
 import { LibraryClient } from "../../src/lib/LibraryClient.js";
 import { ClaudeProvider } from "../../src/providers/claude/ClaudeProvider.js";
 import { CodexProvider } from "../../src/providers/codex/CodexProvider.js";
+import { libraryResponse } from "../helpers/library.js";
 import { TEST_LIBRARY_URL } from "../helpers/library.js";
 
 class EmptyLibrary extends LibraryClient {
   override async request() {
-    return Response.json({ citations: [], truncated: false });
+    return libraryResponse({ citations: [], truncated: false });
   }
 }
 const enabled = process.env.REAL_HUB_TESTS === "true";

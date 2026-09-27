@@ -116,7 +116,12 @@ class ClaudeScope {
       try {
         return this.turn.toolCall(tool.id, tool.name, JSON.parse(tool.json || "{}"));
       } catch {
-        return this.turn.toolCallInvalid(tool.id, tool.name, tool.json, "工具参数不完整");
+        return this.turn.toolCallInvalid(
+          tool.id,
+          tool.name,
+          tool.json,
+          "Incomplete tool arguments",
+        );
       }
     }
     return [];

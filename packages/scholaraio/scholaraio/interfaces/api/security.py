@@ -14,12 +14,14 @@ the Hub starts. Three checks keep every other web page out:
 These are the Hub server's own rules (``packages/server/src/middleware/security.ts``);
 the header name and value are those of ``packages/shared/src/csrf.ts``.
 """
+
 from __future__ import annotations
 
 import re
 from dataclasses import dataclass
 
 from fastapi import FastAPI
+from starlette.datastructures import Headers
 from starlette.middleware.cors import CORSMiddleware
 from starlette.types import ASGIApp, Receive, Scope, Send
 
@@ -33,7 +35,15 @@ SAFE_METHODS = frozenset({"GET", "HEAD", "OPTIONS"})
 # What the Hub's page sends and reads across origins: the CSRF header, JSON
 # bodies, and the conditional and range requests of the PDF reader.
 ALLOWED_HEADERS = [CSRF_HEADER, "content-type", "range", "if-range", "if-none-match", "if-modified-since"]
-EXPOSED_HEADERS = ["content-range", "accept-ranges", "content-length", "etag", "last-modified", "content-disposition"]
+EXPOSED_HEADERS = [
+    "content-range",
+    "accept-ranges",
+    "content-length",
+    "etag",
+    "last-modified",
+    "content-disposition",
+    "x-request-id",
+]
 
 
 @dataclass(frozen=True)
@@ -77,9 +87,7 @@ class AccessPolicy:
         if self.allowed_hosts is None:
             hosts = r"[^/:]+|\[[0-9a-fA-F:]+\]"
         else:
-            hosts = "|".join(
-                re.escape(f"[{host}]" if ":" in host else host) for host in sorted(self.allowed_hosts)
-            )
+            hosts = "|".join(re.escape(f"[{host}]" if ":" in host else host) for host in sorted(self.allowed_hosts))
         return rf"https?://({hosts}):{self.hub_port}"
 
 
@@ -96,13 +104,49 @@ class AccessGuard:
             return
         headers = {name.decode("latin-1"): value.decode("latin-1") for name, value in scope["headers"]}
         if not self.policy.host_allowed(headers.get("host")):
-            response = error_response(403, f"不允许的主机名：{headers.get('host')}（可加入 ALLOWED_HOSTS）")
+            response = error_response(
+                403,
+                f"Host not allowed: {headers.get('host')}. Configure ALLOWED_HOSTS to allow it.",
+                request_id=scope["state"]["request_id"],
+                code="HOST_NOT_ALLOWED",
+            )
         elif scope["method"] not in SAFE_METHODS and headers.get(CSRF_HEADER.lower()) != CSRF_VALUE:
-            response = error_response(403, "请求缺少必需的请求头")
+            response = error_response(
+                403,
+                "Request is missing a required header.",
+                request_id=scope["state"]["request_id"],
+                code="CSRF_REJECTED",
+            )
         else:
             await self.app(scope, receive, send)
             return
         await response(scope, receive, send)
+
+
+class ApiCorsMiddleware(CORSMiddleware):
+    """对跨域预检执行访问检查并输出统一失败响应。"""
+
+    async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
+        if scope["type"] == "http" and scope["method"] == "OPTIONS":
+            headers = Headers(scope=scope)
+            if "origin" in headers and "access-control-request-method" in headers:
+                response = self.preflight_response(headers)
+                if response.status_code >= 400:
+                    kept = {
+                        key: value
+                        for key, value in response.headers.items()
+                        if key.startswith("access-control-") or key == "vary"
+                    }
+                    response = error_response(
+                        403,
+                        "Cross-origin request is not allowed.",
+                        code="CORS_REJECTED",
+                        request_id=scope["state"]["request_id"],
+                        headers=kept,
+                    )
+                await response(scope, receive, send)
+                return
+        await super().__call__(scope, receive, send)
 
 
 def install_access_policy(app: FastAPI, policy: AccessPolicy) -> None:
@@ -112,7 +156,7 @@ def install_access_policy(app: FastAPI, policy: AccessPolicy) -> None:
     pattern = policy.origin_pattern()
     if pattern:
         app.add_middleware(
-            CORSMiddleware,
+            ApiCorsMiddleware,
             allow_origin_regex=pattern,
             allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE"],
             allow_headers=ALLOWED_HEADERS,

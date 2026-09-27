@@ -1,4 +1,5 @@
 """The library's directories on this machine, shown in the desktop's file manager."""
+
 from __future__ import annotations
 
 import logging
@@ -23,8 +24,9 @@ def open_in_file_manager(directory: Path) -> None:
         command = ["explorer.exe", str(directory)]
     else:
         command = ["xdg-open", str(directory)]
-    subprocess.Popen(command, stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
-                     stderr=subprocess.DEVNULL, start_new_session=True)
+    subprocess.Popen(
+        command, stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, start_new_session=True
+    )
 
 
 class DirectoryService:
@@ -42,8 +44,8 @@ class DirectoryService:
         elif target == "workspaces":
             directory = cfg.workspace_dir
         else:
-            raise InvalidRequest(f"未知的目录：{target}")
-        return self.runtime.require_inside(directory, "该目录不在数据目录内，不能从这里打开")
+            raise InvalidRequest(f"Unknown directory: {target}")
+        return self.runtime.require_inside(directory, "Cannot open a directory outside the data directory")
 
     def reveal(self, target: str) -> dict:
         directory = self.path(target)
@@ -51,7 +53,7 @@ class DirectoryService:
             self.opener(directory)
         except OSError as error:
             _log.error("Could not open %s", directory, exc_info=error)
-            raise RuntimeError(f"无法打开目录 {directory}：{error}") from error
+            raise RuntimeError(f"Cannot open directory {directory}: {error}") from error
         return {"opened": True, "path": str(directory)}
 
 

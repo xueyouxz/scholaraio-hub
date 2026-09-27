@@ -1,5 +1,11 @@
 export { CSRF_HEADER } from "./csrf.js";
-export { resolveLibraryPort, resolvePort, resolveProfileName } from "./ports.js";
+export * from "./http.js";
+export {
+  LIBRARY_PORT_META,
+  resolveLibraryPort,
+  resolvePort,
+  resolveProfileName,
+} from "./ports.js";
 
 export type {
   ProviderName,

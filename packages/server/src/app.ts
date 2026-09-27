@@ -1,8 +1,14 @@
-import type { HttpBindings } from "@hono/node-server";
 import { Hono } from "hono";
+import { secureHeaders } from "hono/secure-headers";
 import type { Services } from "./container.js";
 import { createStaticRoutes } from "./frontend/static.js";
-import { errorResponse, handleApiError, registerMethodFallback, requestContext } from "./http.js";
+import {
+  type AppEnv,
+  errorResponse,
+  handleApiError,
+  registerMethodFallback,
+  requestContext,
+} from "./http.js";
 import { hostCheck, parseAllowedHosts, requireCsrfHeader } from "./middleware/security.js";
 import { createProvidersRoutes } from "./routes/providers.js";
 import { createSessionRoutes } from "./routes/sessions.js";
@@ -21,8 +27,11 @@ export interface AppOptions {
 
 /** 装配中间件和领域路由。只组装已创建的服务，不创建服务、不读写磁盘。 */
 export function createApp(services: Services, options: AppOptions = {}) {
-  const app = new Hono<{ Bindings: HttpBindings }>();
+  const app = new Hono<AppEnv>();
+  // 顺序：先观测（请求标识、访问日志），再安全（响应头、Host、CSRF），最后是路由。
   app.use("/api/*", requestContext);
+  // 本机 HTTP 服务：不发 HSTS；其余默认值（nosniff、同源资源策略、禁止嵌入等）适用于 JSON 与文件接口。
+  app.use("/api/*", secureHeaders({ strictTransportSecurity: false }));
   app.use("/api/*", hostCheck(parseAllowedHosts(options.allowedHosts)));
   app.use("/api/*", requireCsrfHeader);
   app.route("/api/sessions", createSessionRoutes(services.sessions, services.settings));

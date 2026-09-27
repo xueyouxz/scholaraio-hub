@@ -5,7 +5,7 @@ import {
 } from "@scholaraio-hub/shared";
 import { Hono } from "hono";
 import { z } from "zod";
-import { ApiError, success, validate } from "../http.js";
+import { ApiError, type AppEnv, success, validate } from "../http.js";
 import type { ServerSettingsService } from "../services/ServerSettingsService.js";
 
 export interface SettingsRoutesDeps {
@@ -40,8 +40,8 @@ function savedDefaults(input: NewSessionDefaults | null | ""): NewSessionDefault
 }
 
 /** 创建应用设置的读取与更新接口。 */
-export function createSettingsRoutes(deps: SettingsRoutesDeps): Hono {
-  const app = new Hono();
+export function createSettingsRoutes(deps: SettingsRoutesDeps): Hono<AppEnv> {
+  const app = new Hono<AppEnv>();
   const { serverSettingsService } = deps;
 
   app.get("/", (c) => {

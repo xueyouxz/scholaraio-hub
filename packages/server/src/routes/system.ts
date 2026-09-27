@@ -1,5 +1,5 @@
 import { Hono } from "hono";
-import { success } from "../http.js";
+import { type AppEnv, success } from "../http.js";
 import type { LibraryClient } from "../lib/LibraryClient.js";
 
 /** 创建应用状态与健康检查接口。 */
@@ -8,7 +8,7 @@ export function createSystemRoutes(options: {
   profile?: string;
   library: LibraryClient;
 }) {
-  const routes = new Hono();
+  const routes = new Hono<AppEnv>();
   routes.get("/status", async (c) =>
     success(c, {
       dataDir: options.dataDir,

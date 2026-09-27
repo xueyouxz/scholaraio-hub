@@ -1,5 +1,5 @@
 import { Hono } from "hono";
-import { ApiError, success } from "../http.js";
+import { ApiError, type AppEnv, success } from "../http.js";
 import { getCategoryList } from "../skills/scholaraioCategories.js";
 import {
   getScholaraioSkill,
@@ -13,7 +13,7 @@ export interface SkillsRoutesDeps {
 
 /** 创建科研技能列表、详情和刷新接口。 */
 export function createSkillsRoutes(deps: SkillsRoutesDeps) {
-  const app = new Hono();
+  const app = new Hono<AppEnv>();
 
   app.get("/scholaraio", async (c) => {
     const skills = await listScholaraioSkills(deps.scholaraioSkillsDir);

@@ -57,6 +57,9 @@ PDF、附件、文件下载不使用 JSON 外壳，保留原有媒体类型、Ra
 ## 代码入口
 
 - Node `src/http.ts`：请求标识、校验、成功响应和错误转换；`src/middleware/security.ts`：访问策略。
+  `/api/*` 中间件顺序为：请求上下文（`X-Request-ID`、`c.var.logger`、访问日志）→ 安全响应头（`hono/secure-headers`，
+  本机 HTTP 不发 HSTS）→ Host 检查 → CSRF 头。访问日志中修改请求与失败请求记为 info，成功的读取记为 debug；
+  失败日志与访问日志带同一个请求标识。
 - Node `src/routes/*.ts`：按领域平铺；`sessions.ts` 内分组组织记录、执行、交互、历史和文件接口。
 - Python `interfaces/api/errors.py`：请求标识、成功包装及异常处理；`responses.py`：响应模型；`security.py`：访问策略。
 - 前端 `core/http.ts`：统一解包数据、HTTP 错误、网络错误和取消处理。XHR 上传复用同一解码函数。

@@ -1,9 +1,11 @@
 import { randomUUID } from "node:crypto";
+import type { HttpBindings } from "@hono/node-server";
 import { zValidator } from "@hono/zod-validator";
 import { API_ERROR_STATUS, type ApiErrorCode, type ApiErrorDetails } from "@scholaraio-hub/shared";
 import type { Context, Env, Hono, HonoRequest, MiddlewareHandler, ValidationTargets } from "hono";
 import { HTTPException } from "hono/http-exception";
 import type { ContentfulStatusCode } from "hono/utils/http-status";
+import type { Logger } from "pino";
 import type { z } from "zod";
 import { LibraryRequestError, LibraryUnavailableError } from "./lib/LibraryClient.js";
 import { loggerFor } from "./logging/logger.js";
@@ -27,19 +29,50 @@ export class ApiError extends Error {
   }
 }
 
-/** 为请求分配关联标识，并写入响应头。 */
-export const requestContext: MiddlewareHandler = async (c, next) => {
-  c.header("X-Request-ID", randomUUID());
-  await next();
+/** 应用的 Hono 环境：`c.var` 带有本次请求的关联标识和带该标识的 logger。 */
+export type AppEnv = {
+  Bindings: HttpBindings;
+  Variables: { requestId: string; logger: Logger };
 };
 
-/** 获取当前请求的关联标识。 */
+/**
+ * 为请求分配关联标识（写入 `X-Request-ID` 响应头）和带该标识的 logger，并在响应后
+ * 记录访问日志：修改请求和失败的请求记为 info，成功的读取记为 debug（页面会定时轮询）。
+ */
+export const requestContext: MiddlewareHandler<AppEnv> = async (c, next) => {
+  const id = randomUUID();
+  const logger = loggerFor("api").child({ requestId: id });
+  c.set("requestId", id);
+  c.set("logger", logger);
+  c.header("X-Request-ID", id);
+  const started = performance.now();
+  await next();
+  const entry = {
+    method: c.req.method,
+    path: c.req.path,
+    status: c.res.status,
+    durationMs: Math.round(performance.now() - started),
+  };
+  const read = c.req.method === "GET" || c.req.method === "HEAD";
+  if (read && c.res.status < 400) logger.debug(entry, "Request");
+  else logger.info(entry, "Request");
+};
+
+/** 获取当前请求的关联标识；未经过 `requestContext` 的路由（单独测试时）当场分配一个。 */
 function requestId(c: Context): string {
-  const existing = c.res.headers.get("X-Request-ID");
+  const existing = c.get("requestId") as string | undefined;
   if (existing) return existing;
   const id = randomUUID();
+  c.set("requestId", id);
   c.header("X-Request-ID", id);
   return id;
+}
+
+/** 当前请求的 logger，带关联标识。 */
+function requestLogger(c: Context): Logger {
+  return (
+    (c.get("logger") as Logger | undefined) ?? loggerFor("api").child({ requestId: requestId(c) })
+  );
 }
 
 /** 输出普通 JSON 成功响应。 */
@@ -102,15 +135,10 @@ export function handleApiError(error: Error, c: Context) {
     };
     mapped = new ApiError(codes[error.status] ?? "INTERNAL_ERROR", error.message);
   } else mapped = new ApiError("INTERNAL_ERROR", "Internal server error. Check the service logs.");
-  const info = {
-    requestId: requestId(c),
-    method: c.req.method,
-    path: c.req.path,
-    code: mapped.code,
-  };
-  if (API_ERROR_STATUS[mapped.code] >= 500)
-    loggerFor("api").error({ ...info, err: error }, "Request failed");
-  else loggerFor("api").info(info, "Request rejected");
+  const info = { method: c.req.method, path: c.req.path, code: mapped.code };
+  const logger = requestLogger(c);
+  if (API_ERROR_STATUS[mapped.code] >= 500) logger.error({ ...info, err: error }, "Request failed");
+  else logger.info(info, "Request rejected");
   return errorResponse(c, mapped.code, mapped.message, mapped.details);
 }
 

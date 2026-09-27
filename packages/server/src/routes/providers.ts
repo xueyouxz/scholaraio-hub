@@ -1,6 +1,6 @@
 import type { ProviderInfo } from "@scholaraio-hub/shared";
 import { Hono } from "hono";
-import { success } from "../http.js";
+import { type AppEnv, success } from "../http.js";
 import { loggerFor } from "../logging/logger.js";
 import type { ProviderRegistry } from "../providers/ProviderRegistry.js";
 import type { AgentProvider } from "../providers/types.js";
@@ -47,8 +47,8 @@ async function describe(provider: AgentProvider): Promise<ProviderInfo> {
 }
 
 /** 创建 Provider 状态与用量查询接口。 */
-export function createProvidersRoutes(deps: ProviderRouteDeps): Hono {
-  const routes = new Hono();
+export function createProvidersRoutes(deps: ProviderRouteDeps): Hono<AppEnv> {
+  const routes = new Hono<AppEnv>();
   const enabledProviders = () => deps.providers.list();
 
   // 并发查询各 Provider 的状态。

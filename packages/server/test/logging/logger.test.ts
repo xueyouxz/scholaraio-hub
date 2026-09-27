@@ -40,5 +40,11 @@ describe("logger", () => {
       headers: { authorization: "[redacted]" },
     });
     expect(lines[1]).toMatchObject({ err: { message: "bang" }, token: "[redacted]" });
+    loggerFor("test").info({ headers: { cookie: "sid=1" }, password: "p", accessToken: "a" });
+    expect(lines[2]).toMatchObject({
+      headers: { cookie: "[redacted]" },
+      password: "[redacted]",
+      accessToken: "[redacted]",
+    });
   });
 });

@@ -9,7 +9,15 @@ import { createUIMessageStreamResponse } from "ai";
 import { Hono, type HonoRequest } from "hono";
 import { bodyLimit } from "hono/body-limit";
 import { z } from "zod";
-import { ApiError, created, emptyBody, optionalJson, success, validate } from "../http.js";
+import {
+  ApiError,
+  type AppEnv,
+  created,
+  emptyBody,
+  optionalJson,
+  success,
+  validate,
+} from "../http.js";
 import type { ServerSettingsService } from "../services/ServerSettingsService.js";
 import { MAX_ATTACHMENT_BYTES } from "../sessions/SessionAttachments.js";
 import { SessionFiles } from "../sessions/SessionFiles.js";
@@ -54,7 +62,7 @@ function downloadDisposition(filename: string): string {
 
 /** 创建会话领域接口，提供记录、执行、交互、历史和文件操作。 */
 export function createSessionRoutes(service: SessionService, settings?: ServerSettingsService) {
-  const routes = new Hono();
+  const routes = new Hono<AppEnv>();
   const files = new SessionFiles((id) => service.workingDirectory(id));
 
   // 命令发现：全局命令与会话命令。
@@ -176,7 +184,6 @@ export function createSessionRoutes(service: SessionService, settings?: ServerSe
       c.req.param("attachmentId"),
     );
     c.header("Content-Type", visible.mediaType);
-    c.header("X-Content-Type-Options", "nosniff");
     c.header("Content-Disposition", downloadDisposition(visible.filename));
     return c.body(await readFile(file.path));
   });
@@ -190,7 +197,6 @@ export function createSessionRoutes(service: SessionService, settings?: ServerSe
     const relative = c.req.query("path") ?? "";
     const { bytes } = await files.read(c.req.param("id"), relative, true);
     c.header("Content-Type", "application/octet-stream");
-    c.header("X-Content-Type-Options", "nosniff");
     c.header("Content-Disposition", downloadDisposition(relative.split("/").at(-1) ?? "file"));
     return c.body(new Uint8Array(bytes));
   });

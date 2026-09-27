@@ -10,7 +10,7 @@
   },
   "dependencies": {
     "@scholaraio-hub/shared": "workspace:*",
-    "tsx": "^4.19.2"
+    "tsx": "^4.23.15"
   },
   "devDependencies": {
     "@types/node": "^22.10.2",

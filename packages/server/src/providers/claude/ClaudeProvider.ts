@@ -722,7 +722,9 @@ export class ClaudeProvider implements AgentProvider {
       });
       proc.on("exit", (code, signal) => {
         spawnOpts.signal.removeEventListener("abort", abortHandler);
-        if (code) log().warn({ code, signal, stderr: stderrTail.trim() }, "Claude CLI exited");
+        // Our own abort ends it with SIGTERM (exit 143): not worth a warning.
+        if (code && !spawnOpts.signal.aborted)
+          log().warn({ code, signal, stderr: stderrTail.trim() }, "Claude CLI exited");
       });
       capturedProcess = proc;
       return proc;

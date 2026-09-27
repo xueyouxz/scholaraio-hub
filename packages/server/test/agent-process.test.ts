@@ -121,6 +121,38 @@ describe("AgentProcess", () => {
     });
   });
 
+  describe("provider activity", () => {
+    it("counts provider work while idle as a turn, so the idle timeout does not stop it", async () => {
+      let emit: (event: AgentEvent) => void = () => {};
+      const events: AsyncIterableIterator<AgentEvent> = {
+        next: () =>
+          new Promise((resolve) => {
+            emit = (value) => resolve({ done: false, value });
+          }),
+        [Symbol.asyncIterator]: () => events,
+      };
+      const { process } = start({ events, idleTimeoutMs: 30 });
+      await wait(0);
+      emit({ type: "turn.completed" });
+      await expect.poll(() => process.state.type).toBe("idle");
+      emit({ type: "text.delta", blockId: "b", delta: "background work" });
+      await expect.poll(() => process.state.type).toBe("in-turn");
+      await wait(60);
+      expect(process.isTerminated).toBe(false);
+      process.stop("done");
+    });
+
+    it("aborts the provider session when its stream ends on its own", async () => {
+      const events: AsyncIterableIterator<AgentEvent> = {
+        next: async () => ({ done: true, value: undefined }),
+        [Symbol.asyncIterator]: () => events,
+      };
+      const { process, session } = start({ events });
+      await expect.poll(() => process.isTerminated).toBe(true);
+      expect(session.abort).toHaveBeenCalledOnce();
+    });
+  });
+
   describe("stop", () => {
     it("kills the CLI and reports the ending once", () => {
       const { process, session } = start();

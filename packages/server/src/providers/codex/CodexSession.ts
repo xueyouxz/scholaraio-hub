@@ -125,10 +125,10 @@ export class CodexSession implements AgentSession {
     this.permissionMode = mode;
   }
 
-  abort(): void {
+  abort(): Promise<void> {
     this.aborted.abort();
     this.queue.close();
-    this.client.close();
+    return this.client.close();
   }
 
   isProcessAlive(): boolean {

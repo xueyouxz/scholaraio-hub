@@ -589,10 +589,13 @@ export class SessionService {
       }
       const skill = await requestedSkill(input.text, this.skillsDir);
       const text = agentPrompt(input.text, skill, context);
-      await this.supervisor.send({
+      const projectPath = await this.workingDirectory(record);
+      // Stopped while the prompt was being prepared: nothing to send.
+      if (run.finished) return;
+      const process = await this.supervisor.send({
         sessionId: id,
         nativeSessionId: record.nativeSessionId,
-        projectPath: await this.workingDirectory(record),
+        projectPath,
         message: { text, attachments },
         permissionMode: record.permissionMode ?? "default",
         settings: {
@@ -602,7 +605,8 @@ export class SessionService {
           ...(record.effort ? { effort: record.effort } : {}),
         },
       });
-      if (run.finished) this.supervisor.release(id, "Application run already stopped");
+      // Stopped while the process was starting: stop that one, not a later run's.
+      if (run.finished) this.supervisor.release(id, "Application run already stopped", process);
     } catch (error) {
       await this.finish(run, error instanceof Error ? error.message : String(error));
     }
@@ -800,7 +804,9 @@ export class SessionService {
     if (!run || run.finished) return;
     run.interrupted = true;
     const process = this.supervisor.get(id);
-    if (process) {
+    // An idle process has not been handed this run's message yet: there is no
+    // turn to interrupt, and the run's launch sees it finished and sends nothing.
+    if (process && process.state.type !== "idle") {
       // Interrupt the turn and let it settle, so the worker stays for the next
       // message. One that cannot interrupt, or does not settle in time, is
       // terminated; the next message resumes its native session.
@@ -851,7 +857,7 @@ export class SessionService {
     await Promise.all(this.drains.values());
     for (const run of this.runs.values())
       await this.finish(run, "The run was interrupted by service shutdown.", true);
-    this.supervisor.close();
+    await this.supervisor.close();
     await this.store.flush();
   }
 }

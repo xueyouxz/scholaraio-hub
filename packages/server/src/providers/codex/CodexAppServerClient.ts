@@ -99,6 +99,8 @@ export class CodexAppServerClient {
   private readonly notifications = new AsyncQueue<JsonRpcNotification>();
   private onServerRequest: AppServerRequestHandler | null = null;
   private closed = false;
+  /** Settles once a closed app-server has exited. */
+  private exited: Promise<void> = Promise.resolve();
   /** The last of the app-server's stderr, for the error that reports its exit. */
   private stderrTail = "";
   private readonly closeListeners = new Set<(error: Error) => void>();
@@ -329,8 +331,9 @@ export class CodexAppServerClient {
     return await this.notifications.shift(signal);
   }
 
-  close(): void {
-    if (this.closed) return;
+  /** Stop the app-server; settles once it has exited. */
+  close(): Promise<void> {
+    if (this.closed) return this.exited;
     this.closed = true;
 
     const closeError = new Error("Codex app-server client closed");
@@ -343,7 +346,8 @@ export class CodexAppServerClient {
 
     const child = this.process;
     this.process = null;
-    void terminateChildProcess(child);
+    this.exited = terminateChildProcess(child);
+    return this.exited;
   }
 
   private handleProcessClose(error: Error): void {

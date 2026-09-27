@@ -108,8 +108,11 @@ export interface AgentSession {
   events: AsyncIterableIterator<AgentEvent>;
   /** Message queue for sending messages to the agent */
   queue: MessageQueue;
-  /** Abort function to cancel the session */
-  abort: () => void;
+  /**
+   * End the session and its CLI. What it returns settles once the CLI has
+   * exited, when the provider can tell; it never rejects.
+   */
+  abort: () => void | Promise<void>;
   /** Check if the underlying CLI process is still alive (undefined = not available) */
   isProcessAlive?: () => boolean;
   /** Apply a new permission mode to the provider's own side from its next action on. */

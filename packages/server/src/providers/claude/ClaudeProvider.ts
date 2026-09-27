@@ -1,4 +1,4 @@
-import { execFile, spawn } from "node:child_process";
+import { type ChildProcess, execFile, spawn } from "node:child_process";
 import { constants, accessSync, existsSync, readFileSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import { createRequire } from "node:module";
@@ -251,6 +251,23 @@ const MODEL_CACHE_TTL_MS = 60 * 60 * 1000;
 const PROBE_RETRY_MS = 60_000;
 /** How much of the CLI's stderr is kept to explain a failure. */
 const STDERR_TAIL_CHARS = 4096;
+/** How long an aborted CLI gets to exit before SIGKILL. */
+const EXIT_GRACE_MS = 1500;
+
+/** Settles once `proc` has exited, killing it outright if it outlives the grace. */
+function processExit(proc: ChildProcess): Promise<void> {
+  if (proc.exitCode !== null || proc.signalCode !== null) return Promise.resolve();
+  return new Promise((resolve) => {
+    const timer = setTimeout(() => {
+      if (proc.exitCode === null && proc.signalCode === null) proc.kill("SIGKILL");
+    }, EXIT_GRACE_MS);
+    timer.unref();
+    proc.once("exit", () => {
+      clearTimeout(timer);
+      resolve();
+    });
+  });
+}
 
 /**
  * Claude provider implementation using @anthropic-ai/claude-agent-sdk.
@@ -683,7 +700,7 @@ export class ClaudeProvider implements AgentProvider {
 
     // Spawn the CLI ourselves to keep its handle: stale detection can then tell
     // "process died silently" from "process is busy with a long tool call".
-    let capturedProcess: SpawnedProcess | null = null;
+    let capturedProcess: ChildProcess | null = null;
     // The CLI's last stderr: read, so a full pipe never blocks it, and kept to
     // say why it failed (a resume that no longer exists, a broken config).
     let stderrTail = "";
@@ -756,6 +773,7 @@ export class ClaudeProvider implements AgentProvider {
       abort: () => {
         abortController.abort();
         queue.close();
+        return capturedProcess ? processExit(capturedProcess) : Promise.resolve();
       },
       isProcessAlive: () =>
         capturedProcess !== null && capturedProcess.exitCode === null && !capturedProcess.killed,

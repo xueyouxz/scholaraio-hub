@@ -50,12 +50,20 @@ export class AgentProcess {
   private _effort: string | undefined;
   private _lastMessageTime = new Date();
   private readonly listeners = new Set<Listener>();
+  /** Settles once the session was aborted and its CLI has exited. */
+  private exited: Promise<void> = Promise.resolve();
   private idleTimer: NodeJS.Timeout | null = null;
   private readonly idleTimeoutMs: number;
 
   /** Tool approvals waiting on the user, in the order they were asked. */
   private readonly approvals = new ApprovalQueue({
-    onShow: (request) => this.setState({ type: "waiting-input", request }),
+    // Stamped when shown: a request that waited behind another has only been
+    // unanswered since then.
+    onShow: (request) =>
+      this.setState({
+        type: "waiting-input",
+        request: { ...request, timestamp: new Date().toISOString() },
+      }),
     onDrained: () => this.setState({ type: "in-turn" }),
   });
 
@@ -174,10 +182,7 @@ export class AgentProcess {
     if (this._state.type === "terminated") {
       return { success: false, error: `Process terminated: ${this._state.reason}` };
     }
-    if (this._state.type === "idle") {
-      this.clearIdleTimer();
-      this.setState({ type: "in-turn" });
-    }
+    if (this._state.type === "idle") this.setState({ type: "in-turn" });
     // The same UUID reaches the provider and our own record of the message.
     this.session.queue.push({ ...message, uuid: randomUUID() });
     return { success: true };
@@ -248,13 +253,14 @@ export class AgentProcess {
    * End the process: kill the provider's CLI and report the ending once. Its
    * event stream winds down on its own; nothing it says afterwards is relayed.
    * `error` tells the session why, when the user should know. Safe to call more
-   * than once.
+   * than once; what it returns settles once the CLI has exited, as far as the
+   * provider can tell.
    */
-  stop(reason: string, error?: Error): void {
-    if (this.isTerminated) return;
-    this.session.abort();
+  stop(reason: string, error?: Error): Promise<void> {
+    if (this.isTerminated) return this.exited;
     this.markTerminated(reason, error);
     this.listeners.clear();
+    return this.exited;
   }
 
   private async consume(): Promise<void> {
@@ -265,13 +271,16 @@ export class AgentProcess {
         if (result.done || this.isTerminated) break;
         const event = result.value;
         this._lastMessageTime = new Date();
+        // The provider is working, whether or not a message of ours started it.
+        if (this._state.type === "idle" && event.type !== "turn.completed")
+          this.setState({ type: "in-turn" });
         if (event.type === "session.started") this._nativeSessionId = event.sessionId;
         if (event.type === "model.resolved") this._resolvedModel = event.model;
         this.emit({ type: "agent", event });
         if (event.type === "turn.completed") {
           // A question the finished turn left open can no longer be answered.
           this.approvals.denyAll("Turn ended");
-          this.transitionToIdle();
+          this.setState({ type: "idle" });
         }
       }
     } catch (error) {
@@ -307,19 +316,28 @@ export class AgentProcess {
       },
       `Process terminated: ${this.sessionId} - ${reason}`,
     );
-    this.clearIdleTimer();
     this.approvals.denyAll(`Process terminated: ${reason}`);
     this.setState({ type: "terminated", reason, error });
+    // Whatever ended the process, its CLI and input queue go with it.
+    const abortFailed = (abortError: unknown) =>
+      loggerFor("agent-process").warn(
+        { sessionId: this.sessionId, processId: this.id, err: abortError },
+        "Provider session abort failed",
+      );
+    try {
+      this.exited = Promise.resolve(this.session.abort()).catch(abortFailed);
+    } catch (abortError) {
+      abortFailed(abortError);
+    }
     this.emit({ type: "terminated", reason, error });
   }
 
-  private transitionToIdle(): void {
+  /** Our session keeps its native id to resume; an idle worker need not live forever. */
+  private armIdleTimer(): void {
     this.clearIdleTimer();
-    this.setState({ type: "idle" });
-    // Our session keeps its native id to resume; an idle worker need not live forever.
     this.idleTimer = setTimeout(() => {
       this.idleTimer = null;
-      if (this._state.type === "idle") this.stop("Idle timeout");
+      if (this._state.type === "idle") void this.stop("Idle timeout");
     }, this.idleTimeoutMs);
     this.idleTimer.unref?.();
   }
@@ -331,8 +349,11 @@ export class AgentProcess {
     }
   }
 
+  /** The only way the state changes; the idle timer runs exactly while idle. */
   private setState(state: ProcessState): void {
     this._state = state;
+    if (state.type === "idle") this.armIdleTimer();
+    else this.clearIdleTimer();
     this.emit({ type: "state-change", state });
   }
 

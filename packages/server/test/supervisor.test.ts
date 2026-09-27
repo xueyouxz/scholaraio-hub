@@ -79,6 +79,53 @@ describe("Supervisor", () => {
     expect(startCalls).toHaveLength(1);
   });
 
+  it("launches one process for sends that arrive together", async () => {
+    const [first, second] = await Promise.all([
+      supervisor.send(request({ nativeSessionId: "sess-123" })),
+      supervisor.send(request({ nativeSessionId: "sess-123", message: { text: "second" } })),
+    ]);
+    expect(second).toBe(first);
+    expect(startCalls).toHaveLength(1);
+  });
+
+  it("releases only the process the caller expects", async () => {
+    const first = await supervisor.send(request({ nativeSessionId: "sess-1" }));
+    const second = await supervisor.send(request({ nativeSessionId: "sess-2" }));
+    // The first was replaced when the conversation changed.
+    expect(first.isTerminated).toBe(true);
+    supervisor.release("app-1", "late stop of the first", first);
+    expect(supervisor.get("app-1")).toBe(second);
+    expect(second.isTerminated).toBe(false);
+  });
+
+  it("waits for the CLIs to exit on close, and starts none afterwards", async () => {
+    let exit = () => {};
+    const exited = new Promise<void>((resolve) => {
+      exit = resolve;
+    });
+    const closing = new Supervisor({
+      providers: registryFromFactory(async () => ({
+        events: (async function* (): AsyncIterableIterator<AgentEvent> {
+          yield { type: "session.started", sessionId: "native" };
+          await exited;
+        })(),
+        queue: new MessageQueue(),
+        abort: () => exited,
+      })),
+      onEvent: () => {},
+    });
+    await closing.send(request());
+    let closed = false;
+    const close = closing.close().then(() => {
+      closed = true;
+    });
+    await Promise.resolve();
+    expect(closed).toBe(false);
+    exit();
+    await close;
+    await expect(closing.send(request())).rejects.toThrow("shutting down");
+  });
+
   it("keeps separate processes for separate sessions", async () => {
     const first = await supervisor.send(request());
     const second = await supervisor.send(request({ sessionId: "app-2" }));

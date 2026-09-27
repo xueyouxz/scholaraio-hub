@@ -76,6 +76,9 @@ export class Supervisor {
   private readonly unansweredInputTimeoutMs: number;
   private readonly onEvent: SupervisorOptions["onEvent"];
   private readonly staleCheckTimer: ReturnType<typeof setInterval>;
+  /** The send in progress for each session; the next one waits for it. */
+  private readonly sending = new Map<string, Promise<unknown>>();
+  private closed = false;
 
   constructor(options: SupervisorOptions) {
     this.providers = options.providers;
@@ -106,9 +109,27 @@ export class Supervisor {
   /**
    * Send a message to a session: to its live process when that one still
    * matches the request, otherwise to a new process (resuming the native
-   * conversation when there is one).
+   * conversation when there is one). Sends to one session run one at a time,
+   * so two never launch a process each. Resolves with the process that took
+   * the message.
    */
-  async send(request: SessionMessageRequest): Promise<AgentProcess> {
+  send(request: SessionMessageRequest): Promise<AgentProcess> {
+    const { sessionId } = request;
+    const previous = this.sending.get(sessionId) ?? Promise.resolve();
+    const sent = previous.then(
+      () => this.deliver(request),
+      () => this.deliver(request),
+    );
+    this.sending.set(sessionId, sent);
+    const forget = () => {
+      if (this.sending.get(sessionId) === sent) this.sending.delete(sessionId);
+    };
+    sent.then(forget, forget);
+    return sent;
+  }
+
+  private async deliver(request: SessionMessageRequest): Promise<AgentProcess> {
+    if (this.closed) throw new Error("The server is shutting down");
     const live = this.processes.get(request.sessionId);
     if (live && (await this.adopt(live, request))) {
       if (request.permissionMode) live.setPermissionMode(request.permissionMode);
@@ -120,18 +141,24 @@ export class Supervisor {
 
   /**
    * Stop the session's process without reporting its ending: whoever releases
-   * it is replacing it or removing the session. No-op when there is none.
+   * it is replacing it or removing the session. With `expected`, only that
+   * process: one that has since been replaced belongs to someone else. No-op
+   * when there is none.
    */
-  release(sessionId: string, reason: string): void {
+  release(sessionId: string, reason: string, expected?: AgentProcess): void {
     const process = this.processes.get(sessionId);
-    if (!process) return;
+    if (!process || (expected && process !== expected)) return;
     this.processes.delete(sessionId);
-    process.stop(reason);
+    void process.stop(reason);
   }
 
-  close(): void {
+  /** Stop every process and wait for their CLIs to exit; no process starts afterwards. */
+  async close(): Promise<void> {
+    this.closed = true;
     clearInterval(this.staleCheckTimer);
-    for (const id of [...this.processes.keys()]) this.release(id, "Server closing");
+    const processes = [...this.processes.values()];
+    this.processes.clear();
+    await Promise.all(processes.map((process) => process.stop("Server closing")));
   }
 
   /**
@@ -204,12 +231,18 @@ export class Supervisor {
       idleTimeoutMs: this.idleTimeoutMs,
     });
     holder.process = process;
+    if (this.closed) {
+      await process.stop("Server closing");
+      throw new Error("The server is shutting down");
+    }
     this.register(process);
     return process;
   }
 
   private register(process: AgentProcess): void {
     const { sessionId } = process;
+    // Never two processes for one session: the one being replaced stops.
+    this.release(sessionId, "Superseded by a new process");
     loggerFor("supervisor").info(
       { event: "process_registered", sessionId, processId: process.id },
       `Process registered for session ${sessionId}`,
@@ -258,7 +291,7 @@ export class Supervisor {
           `Stopping process for ${process.sessionId}: input unanswered`,
         );
         const minutes = Math.round(waitingMs / 60_000);
-        process.stop(
+        void process.stop(
           `input unanswered for ${minutes} min`,
           new Error(
             `Approval timed out after ${minutes} minutes. This turn was stopped; send a new message to continue.`,
@@ -283,7 +316,7 @@ export class Supervisor {
         },
         `Terminating ${alive === undefined ? "stale" : "dead"} process for ${process.sessionId} (no events for ${Math.round(silentMs / 1000)}s)`,
       );
-      process.stop(`stale: no provider events for ${Math.round(silentMs / 1000)}s`);
+      void process.stop(`stale: no provider events for ${Math.round(silentMs / 1000)}s`);
     }
   }
 }

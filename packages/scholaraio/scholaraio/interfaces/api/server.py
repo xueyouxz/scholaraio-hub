@@ -31,6 +31,8 @@ from scholaraio.interfaces.api.security import AccessPolicy
 RESTART_EXIT_CODE = 75
 # Once the owner is gone, how long cleanup may take before the process is killed.
 SHUTDOWN_GRACE_SECONDS = 5
+# How long a stop waits for requests still in flight before cancelling them.
+REQUEST_GRACE_SECONDS = 3
 LOG_FORMAT = "%(asctime)s %(levelname)s %(name)s: %(message)s"
 # How much one log file may hold, and how many rotated files are kept.
 LOG_FILE_BYTES = 10 * 1024 * 1024
@@ -56,7 +58,24 @@ def configure_logging(log_file: Path | None) -> None:
         logging.getLogger(name).setLevel(logging.WARNING)
 
 
-def watch_parent(server: uvicorn.Server, stopped: threading.Event) -> None:
+class LibraryServer(uvicorn.Server):
+    """uvicorn，加上一条：无论因何停止，先结束事件流，等待连接关闭时就不必等这些永不结束的请求。"""
+
+    def __init__(self, config: uvicorn.Config, end_streams):
+        super().__init__(config)
+        self.end_streams = end_streams
+
+    def stop(self) -> None:
+        """请求停止：结束事件流并让 uvicorn 退出循环。可在任意线程调用。"""
+        self.end_streams()
+        self.should_exit = True
+
+    def handle_exit(self, sig, frame) -> None:
+        self.end_streams()
+        super().handle_exit(sig, frame)
+
+
+def watch_parent(server: LibraryServer, stopped: threading.Event) -> None:
     """An EOF on the launcher-owned pipe also covers SIGKILL of the launcher."""
     try:
         while os.read(sys.stdin.fileno(), 1024):
@@ -65,7 +84,7 @@ def watch_parent(server: uvicorn.Server, stopped: threading.Event) -> None:
         _log.warning("Parent pipe failed: %s", exc)
     if stopped.is_set():
         return
-    server.should_exit = True
+    server.stop()
     # An import worker or a request may block graceful shutdown. Once the owner
     # is gone, bound cleanup time; persisted imports are recovered on next start.
     if not stopped.wait(SHUTDOWN_GRACE_SECONDS):
@@ -104,16 +123,24 @@ def main(argv: list[str] | None = None) -> None:
 
     def request_restart() -> None:
         restart.set()
-        server.should_exit = True
+        server.stop()
+
+    app = create_app(args.data_dir, policy, request_restart)
+
+    def end_streams() -> None:
+        library = getattr(app.state, "library", None)
+        if library is not None:
+            library.events.close()
 
     config = uvicorn.Config(
-        create_app(args.data_dir, policy, request_restart),
+        app,
         # Our handlers, not uvicorn's: its records reach the same outputs.
         log_config=None,
         log_level="warning",
         access_log=False,
+        timeout_graceful_shutdown=REQUEST_GRACE_SECONDS,
     )
-    server = uvicorn.Server(config)
+    server = LibraryServer(config, end_streams)
     stopped = threading.Event()
     if args.watch_stdin:
         # Process-owned daemon: a normal server exit ends a pending pipe read;

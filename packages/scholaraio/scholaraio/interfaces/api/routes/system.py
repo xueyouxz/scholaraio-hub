@@ -9,7 +9,7 @@ from collections.abc import AsyncIterator
 from fastapi import APIRouter, Request
 from fastapi.responses import StreamingResponse
 
-from scholaraio.hub.events import EventBus
+from scholaraio.hub.events import CLOSED, EventBus
 from scholaraio.interfaces.api.dependencies import Events
 from scholaraio.interfaces.api.errors import success
 from scholaraio.interfaces.api.responses import ApiSuccess, Health
@@ -48,6 +48,9 @@ async def server_sent_events(request: Request, bus: EventBus, queue: asyncio.Que
                 # Keeps the connection open through idle proxies.
                 yield ": keep-alive\n\n"
                 continue
+            if event is CLOSED:
+                # The service is stopping: end the stream, and the browser reconnects later.
+                return
             yield f"data: {json.dumps(event, ensure_ascii=False)}\n\n"
             if await request.is_disconnected():
                 return

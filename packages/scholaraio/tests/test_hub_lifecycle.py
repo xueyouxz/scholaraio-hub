@@ -84,6 +84,26 @@ def test_pipe_eof_shuts_down_healthy_service(tmp_path):
         assert not healthy(port)
 
 
+@pytest.mark.parametrize("stop", ["pipe", "signal"])
+def test_an_open_event_stream_does_not_hold_up_a_stop(tmp_path, stop):
+    """A browser tab keeps /events open for good; a stop must not wait on it."""
+    import signal
+    import socket as sockets
+
+    with service(tmp_path) as (child, port):
+        stream = sockets.create_connection(("127.0.0.1", port), timeout=5)
+        stream.sendall(b"GET /events HTTP/1.1\r\nHost: 127.0.0.1\r\n\r\n")
+        assert b"200" in stream.recv(1024).split(b"\r\n", 1)[0]
+        started = time.monotonic()
+        if stop == "pipe":
+            child.stdin.close()
+        else:
+            child.send_signal(signal.SIGINT)
+        assert child.wait(timeout=10) == 0
+        assert time.monotonic() - started < 3
+        stream.close()
+
+
 def test_standalone_service_does_not_watch_stdin(tmp_path):
     with service(tmp_path, watch=False) as (child, port):
         child.stdin.close()

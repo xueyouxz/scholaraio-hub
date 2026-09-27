@@ -149,4 +149,24 @@ def install_error_handlers(app: FastAPI) -> None:
         return answer(request, 500, "Internal library service error. Check the service logs.")
 
 
-ERROR_RESPONSES = {status: {"model": ApiFailure} for status in STATUS_CODES}
+# 错误响应在 OpenAPI 中的描述。显式写出 RFC 9110 的名称，不取解释器的 HTTP 状态短语：
+# Python 3.13 起 413、422 的短语变了，生成的文档（及 TS 类型）不能随解释器版本变化。
+STATUS_DESCRIPTIONS = {
+    400: "Bad Request",
+    403: "Forbidden",
+    404: "Not Found",
+    405: "Method Not Allowed",
+    409: "Conflict",
+    413: "Content Too Large",
+    415: "Unsupported Media Type",
+    422: "Unprocessable Content",
+    429: "Too Many Requests",
+    500: "Internal Server Error",
+    502: "Bad Gateway",
+    503: "Service Unavailable",
+    504: "Gateway Timeout",
+}
+
+ERROR_RESPONSES = {
+    status: {"model": ApiFailure, "description": STATUS_DESCRIPTIONS[status]} for status in STATUS_CODES
+}

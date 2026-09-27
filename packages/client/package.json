@@ -15,7 +15,7 @@
     "@streamdown/cjk": "^1.0.3",
     "@streamdown/code": "^1.1.1",
     "@streamdown/math": "^1.0.2",
-    "@tanstack/react-query": "^5.100.11",
+    "@tanstack/react-query": "^5.103.2",
     "@tanstack/react-virtual": "^3.13.24",
     "ai": "^7.0.107",
     "d3": "^7.9.0",

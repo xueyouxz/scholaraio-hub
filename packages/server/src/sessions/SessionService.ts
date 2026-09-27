@@ -8,13 +8,11 @@ import type {
   NewSessionDefaults,
   ProviderName,
   SessionInput,
-  SessionMessage,
-  SessionMessageMetadata,
   StoredSession,
   UploadedFile,
 } from "@scholaraio-hub/shared";
 import { UNTITLED_SESSION_TITLE, thinkingModeToConfig } from "@scholaraio-hub/shared";
-import { type UIMessageChunk, readUIMessageStream } from "ai";
+import type { UIMessageChunk } from "ai";
 import type { z } from "zod";
 import { type LibraryClient, LibraryRequestError } from "../lib/LibraryClient.js";
 import { loggerFor } from "../logging/logger.js";
@@ -26,7 +24,7 @@ import type { Supervisor } from "../supervisor/Supervisor.js";
 import { resolvesWithin } from "../utils/timeout.js";
 import type { SessionAttachments } from "./SessionAttachments.js";
 import type { SessionRecord, SessionStore } from "./SessionStore.js";
-import { UIChunkWriter, appendReplayChunk } from "./UIChunkWriter.js";
+import { Turn } from "./Turn.js";
 import { agentPrompt, requestedSkill } from "./agent-prompt.js";
 import { SessionConflictError, SessionInputError } from "./errors.js";
 
@@ -34,33 +32,12 @@ const log = () => loggerFor("session");
 
 /** How long a stopped turn may take to settle before its worker is terminated. */
 const STOP_SETTLE_MS = 3000;
-/** How often a running turn's progress is written to disk, at most. */
-const CHECKPOINT_INTERVAL_MS = 1000;
 /** How many messages may wait behind a running turn. */
 const MAX_QUEUED_MESSAGES = 20;
 /** How much of the first message becomes the session's title. */
 const TITLE_LENGTH = 60;
 /** How much of a question is sent to the library to find passages for it. */
 const CONTEXT_QUERY_LENGTH = 20_000;
-
-interface SessionRun {
-  record: SessionRecord;
-  assistantId: string;
-  chunks: UIMessageChunk[];
-  listeners: Set<(chunk: UIMessageChunk | null) => void>;
-  controller: ReadableStreamDefaultController<UIMessageChunk>;
-  /** Turns this run's AgentEvents into UI chunks. */
-  writer: UIChunkWriter;
-  /** Model and usage for this turn, sent as message metadata when it ends. */
-  metadata: SessionMessageMetadata;
-  startedAt: number;
-  consume: Promise<void>;
-  timer?: ReturnType<typeof setTimeout>;
-  finished: boolean;
-  interrupted?: boolean;
-  done: Promise<void>;
-  resolveDone: () => void;
-}
 
 type ExecutionInput = Partial<Pick<StoredSession, "model" | "thinking" | "effort">>;
 
@@ -94,7 +71,7 @@ function modeAfterAnswer(
 }
 
 export class SessionService {
-  private runs = new Map<string, SessionRun>();
+  private turns = new Map<string, Turn>();
   private closing = false;
   private drains = new Map<string, Promise<void>>();
   private changingOptions = new Set<string>();
@@ -194,10 +171,10 @@ export class SessionService {
 
   detail(id: string) {
     const data = this.store.toStoredSession(this.store.get(id));
-    const run = this.runs.get(id);
+    const turn = this.turns.get(id);
     // Active messages are replayed from their beginning, never appended twice.
-    if (run && !run.finished)
-      data.messages = data.messages.filter((message) => message.id !== run.assistantId);
+    if (turn && !turn.finished)
+      data.messages = data.messages.filter((message) => message.id !== turn.assistantId);
     return data;
   }
 
@@ -229,7 +206,7 @@ export class SessionService {
     input: Pick<StoredSession, "model" | "permissionMode" | "thinking" | "effort">,
   ) {
     const record = this.store.get(id);
-    const previous = this.runs.get(id);
+    const previous = this.turns.get(id);
     if (previous?.finished) await previous.done;
     if (record.readOnly || this.changingOptions.has(id))
       throw new SessionConflictError(
@@ -241,7 +218,7 @@ export class SessionService {
       await this.validateExecution(record.provider, input, record);
       // A running turn keeps the options it started with; the next turn gets
       // these, and the supervisor replaces the process where they differ.
-      if (this.runs.has(id)) {
+      if (this.turns.has(id)) {
         const changed = (Object.keys(input) as Array<keyof typeof input>).filter(
           (key) => input[key] !== undefined,
         );
@@ -257,78 +234,31 @@ export class SessionService {
     }
   }
 
-  /** What the session's process reports; only the run in progress takes it in. */
+  /** What the session's process reports; only the turn in progress takes it in. */
   private onEvent(id: string, event: ProcessEvent): void {
-    const run = this.runs.get(id);
-    if (run && !run.finished) {
-      const { record } = run;
-      if (event.type === "agent") {
-        const agentEvent = event.event;
-        // The provider's id for the conversation; the next turn resumes it.
-        if (agentEvent.type === "session.started") record.nativeSessionId = agentEvent.sessionId;
-        if (agentEvent.type === "model.resolved") run.metadata.model = agentEvent.model;
-        if (agentEvent.type === "context.usage") record.contextUsage = agentEvent.usage;
-        if (agentEvent.type === "turn.completed") {
-          if (agentEvent.usage) run.metadata.usage = agentEvent.usage;
-          if (agentEvent.contextWindow) run.metadata.contextWindow = agentEvent.contextWindow;
-        }
-        run.writer.write(agentEvent);
-        if (agentEvent.type === "turn.completed") void this.finish(run, agentEvent.error);
-      } else if (event.type === "state-change") {
-        record.pendingInput =
-          event.state.type === "waiting-input"
-            ? { ...event.state.request, sessionId: id }
-            : undefined;
-        record.state = record.pendingInput ? "waiting-input" : "running";
-        this.broadcast(run, {
-          type: "data-session-state",
-          data: { state: record.state, pendingInput: record.pendingInput },
-          transient: true,
-        });
-        this.checkpoint(run);
-      } else if (event.type === "terminated") {
-        if (run.interrupted) void this.finish(run, "Generation stopped.", true);
-        else
-          void this.finish(
-            run,
-            event.error?.message ?? "The CLI run has ended. Send a new message to continue.",
-          );
-      }
+    const turn = this.turns.get(id);
+    if (!turn || turn.finished) return;
+    const { record } = turn;
+    if (event.type === "agent") {
+      const agentEvent = event.event;
+      // The provider's id for the conversation; the next turn resumes it.
+      if (agentEvent.type === "session.started") record.nativeSessionId = agentEvent.sessionId;
+      if (agentEvent.type === "context.usage") record.contextUsage = agentEvent.usage;
+      turn.accept(agentEvent);
+    } else if (event.type === "state-change") {
+      record.pendingInput =
+        event.state.type === "waiting-input"
+          ? { ...event.state.request, sessionId: id }
+          : undefined;
+      record.state = record.pendingInput ? "waiting-input" : "running";
+      turn.showState();
+    } else if (turn.interrupted) {
+      void turn.finish("Generation stopped.", true);
+    } else {
+      void turn.finish(
+        event.error?.message ?? "The CLI run has ended. Send a new message to continue.",
+      );
     }
-  }
-
-  private emit(run: SessionRun, chunk: UIMessageChunk): void {
-    appendReplayChunk(run.chunks, chunk);
-    run.controller.enqueue(chunk);
-    this.broadcast(run, chunk);
-  }
-
-  /**
-   * Send a transient chunk to the browsers attached now. It is not replayed to
-   * later attachments (they read the same state from the session snapshot) and
-   * not written into the stored message.
-   */
-  private broadcast(run: SessionRun, chunk: UIMessageChunk): void {
-    for (const listener of run.listeners) {
-      try {
-        listener(chunk);
-      } catch (error) {
-        // One broken browser stream must not starve the others or the run.
-        log().error({ err: error, sessionId: run.record.id }, "Stream listener failed");
-        run.listeners.delete(listener);
-      }
-    }
-  }
-
-  private checkpoint(run: SessionRun): void {
-    if (run.timer || run.finished) return;
-    run.timer = setTimeout(() => {
-      run.timer = undefined;
-      void this.store.save(run.record).catch((error) => {
-        log().error({ err: error, sessionId: run.record.id }, "Checkpoint failed");
-        void this.finish(run, "Unable to save the session. Check available disk space.");
-      });
-    }, CHECKPOINT_INTERVAL_MS);
   }
 
   async enqueue(id: string, input: SessionInput) {
@@ -369,13 +299,13 @@ export class SessionService {
     if (current) return current;
     const pending = (async () => {
       const record = this.store.get(id);
-      if (this.closing || record.queuePaused || this.runs.has(id)) return;
+      if (this.closing || record.queuePaused || this.turns.has(id)) return;
       const input = record.queuedMessages?.[0];
       if (!input) return;
       try {
         await this.send(id, input, true);
       } catch (error) {
-        if (error instanceof SessionConflictError && this.runs.has(id)) return;
+        if (error instanceof SessionConflictError && this.turns.has(id)) return;
         record.queuePaused = true;
         record.error = error instanceof Error ? error.message : String(error);
         await this.store.save(record);
@@ -405,41 +335,14 @@ export class SessionService {
       (record.queuePaused || !record.queuedMessages?.some((message) => message.id === input.id))
     )
       return;
-    const previous = this.runs.get(id);
+    const previous = this.turns.get(id);
     if (previous?.finished) await previous.done;
-    if (this.runs.has(id))
+    if (this.turns.has(id))
       throw new SessionConflictError("The session is still running.", "SESSION_BUSY");
     if (record.messages.some((message) => message.id === input.id))
       throw new SessionConflictError(
         "This message has already been submitted. Refresh the session.",
       );
-    const assistantId = randomUUID();
-    let controller!: ReadableStreamDefaultController<UIMessageChunk>;
-    const stream = new ReadableStream<UIMessageChunk>({
-      start(value) {
-        controller = value;
-      },
-    });
-    let resolveDone = () => {};
-    const done = new Promise<void>((resolve) => {
-      resolveDone = resolve;
-    });
-    const run: SessionRun = {
-      done,
-      resolveDone,
-      record,
-      assistantId,
-      chunks: [],
-      listeners: new Set(),
-      controller,
-      writer: new UIChunkWriter((chunk) => this.emit(run, chunk)),
-      // A live process reported its model once; a new one reports it again.
-      metadata: { model: this.supervisor.get(id)?.resolvedModel ?? record.model },
-      startedAt: Date.now(),
-      consume: Promise.resolve(),
-      finished: false,
-    };
-    this.runs.set(id, run);
     record.queuedMessages = record.queuedMessages?.filter((message) => message.id !== input.id);
     record.messages.push({
       id: input.id,
@@ -464,21 +367,16 @@ export class SessionService {
         input.text.slice(0, TITLE_LENGTH) ||
         attachments[0]?.visible.filename ||
         UNTITLED_SESSION_TITLE;
-    run.consume = (async () => {
-      for await (const message of readUIMessageStream<SessionMessage>({
-        stream,
-        onError: (error) => log().error({ err: error, sessionId: id }, "Message stream error"),
-      })) {
-        // Each message the stream yields is already a copy of its own.
-        const index = record.messages.findIndex((item) => item.id === assistantId);
-        if (index < 0) record.messages.push(message);
-        else record.messages[index] = message;
-        this.checkpoint(run);
-      }
-    })();
-    this.emit(run, { type: "start", messageId: assistantId });
+    const turn = new Turn(
+      record,
+      randomUUID(),
+      // A live process reported its model once; a new one reports it again.
+      this.supervisor.get(id)?.resolvedModel ?? record.model,
+      { save: (saved) => this.store.save(saved), ended: (turn) => this.ended(turn) },
+    );
+    this.turns.set(id, turn);
     void this.launch(
-      run,
+      turn,
       input,
       attachments.map(({ file }) => file),
     );
@@ -560,20 +458,20 @@ export class SessionService {
   }
 
   private async launch(
-    run: SessionRun,
+    turn: Turn,
     input: SessionInput,
     attachments: UploadedFile[],
   ): Promise<void> {
-    const { record } = run;
+    const { record } = turn;
     const id = record.id;
     try {
       await this.store.save(record);
       const context = await this.libraryContext(record, input.text);
-      if (run.finished) return;
+      if (turn.finished) return;
       if (context) {
-        this.emit(run, { type: "data-citations", id: "citations", data: context.citations });
+        turn.emit({ type: "data-citations", id: "citations", data: context.citations });
         if (context.truncated)
-          this.emit(run, {
+          turn.emit({
             type: "data-notice",
             id: "context",
             data: {
@@ -586,7 +484,7 @@ export class SessionService {
       const text = agentPrompt(input.text, skill, context);
       const projectPath = await this.workingDirectory(record);
       // Stopped while the prompt was being prepared: nothing to send.
-      if (run.finished) return;
+      if (turn.finished) return;
       const process = await this.supervisor.send({
         sessionId: id,
         nativeSessionId: record.nativeSessionId,
@@ -600,10 +498,10 @@ export class SessionService {
           ...(record.effort ? { effort: record.effort } : {}),
         },
       });
-      // Stopped while the process was starting: stop that one, not a later run's.
-      if (run.finished) this.supervisor.release(id, "Application run already stopped", process);
+      // Stopped while the process was starting: stop that one, not a later turn's.
+      if (turn.finished) this.supervisor.release(id, "Application run already stopped", process);
     } catch (error) {
-      await this.finish(run, error instanceof Error ? error.message : String(error));
+      await turn.finish(error instanceof Error ? error.message : String(error));
     }
   }
 
@@ -612,11 +510,11 @@ export class SessionService {
    * turns follow it. Only an idle, writable session can be cut.
    */
   private async turnAt(record: SessionRecord, messageId: string) {
-    const previous = this.runs.get(record.id);
+    const previous = this.turns.get(record.id);
     if (previous?.finished) await previous.done;
     if (record.readOnly)
       throw new SessionConflictError("Imported historical sessions cannot be edited or forked.");
-    if (this.runs.has(record.id) || this.changingOptions.has(record.id))
+    if (this.turns.has(record.id) || this.changingOptions.has(record.id))
       throw new SessionConflictError(
         "The session is still running. Try again after it ends.",
         "SESSION_BUSY",
@@ -724,96 +622,26 @@ export class SessionService {
    */
   stream(id: string, signal: AbortSignal): ReadableStream<UIMessageChunk> | null {
     this.store.get(id);
-    const run = this.runs.get(id);
-    if (!run) return null;
-    let dispose = () => {};
-    return new ReadableStream<UIMessageChunk>({
-      start(controller) {
-        const close = () => {
-          dispose();
-          controller.close();
-        };
-        const listener = (chunk: UIMessageChunk | null) => {
-          if (chunk) controller.enqueue(chunk);
-          else close();
-        };
-        dispose = () => {
-          run.listeners.delete(listener);
-          signal.removeEventListener("abort", close);
-        };
-        if (signal.aborted) {
-          controller.close();
-          return;
-        }
-        for (const chunk of run.chunks) controller.enqueue(chunk);
-        if (run.finished) controller.close();
-        else {
-          // The state may have changed after the snapshot this browser holds
-          // (a question asked in between); state chunks are not replayed.
-          const { state, pendingInput } = run.record;
-          controller.enqueue({
-            type: "data-session-state",
-            data: { state, pendingInput },
-            transient: true,
-          });
-          run.listeners.add(listener);
-          signal.addEventListener("abort", close, { once: true });
-        }
-      },
-      cancel() {
-        dispose();
-      },
-    });
+    return this.turns.get(id)?.attach(signal) ?? null;
   }
 
-  private async finish(run: SessionRun, error?: string, interrupted = false): Promise<void> {
-    if (run.finished) return run.done;
-    run.finished = true;
-    clearTimeout(run.timer);
-    run.record.state = interrupted || run.interrupted ? "interrupted" : error ? "error" : "idle";
-    if (run.record.state !== "idle") run.record.queuePaused = true;
-    run.record.error = error;
-    run.record.pendingInput = undefined;
-    run.writer.close();
-    run.metadata.durationMs = Date.now() - run.startedAt;
-    run.metadata.finishedAt = new Date().toISOString();
-    const metadata = Object.fromEntries(
-      Object.entries(run.metadata).filter(([, value]) => value !== undefined),
-    ) as SessionMessageMetadata;
-    if (Object.keys(metadata).length) {
-      this.emit(run, { type: "message-metadata", messageMetadata: metadata });
-    }
-    if (error) {
-      this.emit(run, { type: "data-notice", id: "error", data: { level: "error", text: error } });
-    }
-    this.emit(run, { type: "finish", finishReason: error ? "error" : "stop" });
-    run.controller.close();
-    for (const listener of [...run.listeners]) listener(null);
-    run.listeners.clear();
-    try {
-      await run.consume;
-      await this.store.save(run.record);
-    } catch (saveError) {
-      run.record.state = "error";
-      run.record.error = "Unable to save this turn. Check available disk space and try again.";
-      log().error({ err: saveError, sessionId: run.record.id }, "Final save failed");
-    } finally {
-      if (this.runs.get(run.record.id) === run) this.runs.delete(run.record.id);
-      run.resolveDone();
-    }
-    if (run.record.state === "idle") void this.drain(run.record.id);
+  /** A turn has ended: the session is free, and an idle one sends what is queued. */
+  private ended(turn: Turn): void {
+    const { id } = turn.record;
+    if (this.turns.get(id) === turn) this.turns.delete(id);
+    if (turn.record.state === "idle") void this.drain(id);
   }
 
   async stop(id: string): Promise<void> {
     const record = this.store.get(id);
     record.queuePaused = true;
     await this.store.save(record);
-    const run = this.runs.get(id);
-    if (!run || run.finished) return;
-    run.interrupted = true;
+    const turn = this.turns.get(id);
+    if (!turn || turn.finished) return;
+    turn.interrupted = true;
     const process = this.supervisor.get(id);
-    // An idle process has not been handed this run's message yet: there is no
-    // turn to interrupt, and the run's launch sees it finished and sends nothing.
+    // An idle process has not been handed this turn's message yet: there is no
+    // turn to interrupt, and the turn's launch sees it finished and sends nothing.
     if (process && process.state.type !== "idle") {
       // Interrupt the turn and let it settle, so the worker stays for the next
       // message. One that cannot interrupt, or does not settle in time, is
@@ -821,13 +649,13 @@ export class SessionService {
       const settled = await resolvesWithin(
         process.interrupt().then((supported) => {
           if (!supported) throw new Error("interrupt unsupported");
-          return run.done;
+          return turn.done;
         }),
         STOP_SETTLE_MS,
       );
       if (!settled) this.supervisor.release(id, "User interrupted application run");
     }
-    await this.finish(run, "Generation stopped.", true);
+    await turn.finish("Generation stopped.", true);
   }
 
   /**
@@ -863,8 +691,8 @@ export class SessionService {
   async close(): Promise<void> {
     this.closing = true;
     await Promise.all(this.drains.values());
-    for (const run of this.runs.values())
-      await this.finish(run, "The run was interrupted by service shutdown.", true);
+    for (const turn of this.turns.values())
+      await turn.finish("The run was interrupted by service shutdown.", true);
     this.unsubscribe();
   }
 }

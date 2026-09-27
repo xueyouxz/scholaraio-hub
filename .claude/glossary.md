@@ -15,11 +15,12 @@ commits, and instructions so humans and agents mean the same thing.
   provider processes, one per session keyed by our own session id. It is the one place that
   decides whether a live process still matches what a session asks for (provider, native
   conversation, model, thinking, effort) and replaces it otherwise; it reaps stale ones.
-  `SessionService` owns it and is the only consumer of its process events.
+  The composition root creates it; `SessionService` is the only consumer of its process
+  events for sessions (the usage display also listens, for rate limits).
 - **Watcher** — A file-system watcher that observes on-disk changes and emits updates; the
   library service's project watcher lives in `packages/scholaraio/scholaraio/hub/watcher.py`.
 - **Subscription** — A registered interest in a stream of updates (a session run's listeners
-  in `packages/server/src/sessions/SessionService.ts`). Subscriptions must
+  in `packages/server/src/sessions/Turn.ts`). Subscriptions must
   be released when the client disconnects (see
   [`topics/resource-lifecycle.md`](topics/resource-lifecycle.md)).
 - **Session stream** — A run's UI message stream: the client reads it through
@@ -28,8 +29,9 @@ commits, and instructions so humans and agents mean the same thing.
 - **Turn** — One request/response cycle within a session. Process state is `in-turn` while
   a turn is active; the session is `running` (or `waiting-input`). See
   [`topics/session-state.md`](topics/session-state.md).
-- **Run** — The server-side record of one turn in `SessionService`: its stream chunks,
-  listeners and how it ended (`idle`, `interrupted`, `error`).
+- **Run** — The server side of one turn, a `Turn` (`packages/server/src/sessions/Turn.ts`)
+  that `SessionService` starts: its stream chunks, listeners, checkpoints and how it ended
+  (`idle`, `interrupted`, `error`).
 - **Compaction** — Provider-side context compression; the composer reports when it will
   happen (`autoCompactThreshold`).
 - **Project / Workspace** — A literature workspace (`LiteratureProject` in

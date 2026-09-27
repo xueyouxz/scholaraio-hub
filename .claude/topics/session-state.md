@@ -8,11 +8,11 @@
 
 | Layer | Where | States |
 | --- | --- | --- |
-| **Process** (one live CLI worker) | `ProcessState` in `packages/server/src/supervisor/types.ts` | `idle`, `in-turn`, `waiting-input`, `terminated` |
+| **Process** (one live CLI worker) | `ProcessState` in `packages/server/src/supervisor/AgentProcess.ts` | `idle`, `in-turn`, `waiting-input`, `terminated` |
 | **Session** (what is stored and shown) | `StoredSession.state` in `packages/shared/src/session/StoredSession.ts` | `idle`, `running`, `waiting-input`, `interrupted`, `error` |
 
-`SessionService` is the only consumer of process events and the only writer of session
-state. A process `state-change` sets the session to `waiting-input` while a pending input
+`SessionService` is the only consumer of process events for a session, and it and the
+`Turn` it runs are the only writers of session state. A process `state-change` sets the session to `waiting-input` while a pending input
 request exists, else `running`; the run's end sets `idle`, `interrupted` or `error`.
 Anything other than `idle` pauses the session's message queue (`queuePaused`).
 
@@ -68,6 +68,7 @@ signals (an open stream, a recent poll):
 - `packages/server/src/supervisor/` — `Supervisor` (one process per session, replacement
   when launch settings differ, stale reaping) and `AgentProcess` (state, queue,
   interrupt, approvals).
-- `packages/server/src/sessions/SessionService.ts` — runs, state, queue, stop, streams.
+- `packages/server/src/sessions/SessionService.ts` — runs, state, queue, stop.
+- `packages/server/src/sessions/Turn.ts` — one run: its stream, replay, checkpoints, ending.
 - `packages/client/src/features/session/` — `hooks/useSessionChat.ts`,
   `composer/ui/SendActionButton.tsx`, `components/InputRequestPrompt.tsx`.

@@ -33,8 +33,9 @@ Before merging changes that touch loops, timers, watches, or transport, verify:
 
 ## Where this lives in the codebase
 
-- `packages/server/src/sessions/SessionService.ts` — session runs, their stream listeners and
-  process subscriptions
+- `packages/server/src/sessions/Turn.ts` — a run's stream listeners and checkpoint timer
+- `packages/server/src/sessions/SessionService.ts` — the runs in progress and the
+  supervisor subscription
 - `packages/scholaraio/scholaraio/hub/watcher.py` — project directory watcher (library service)
 - `packages/server/src/supervisor/` — session supervision / lifecycle
 - Client session stream (`packages/client/src/features/session/hooks/useSessionChat.ts`)

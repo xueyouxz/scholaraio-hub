@@ -6,8 +6,8 @@ paths:
 # Server Rules (`packages/server`)
 
 Scope: Hono API (`src/routes/`), session supervision (`src/supervisor/`), session runs and
-their stream subscribers (`src/sessions/SessionService.ts`, `src/sessions/Turn.ts`), and provider integrations
-(`src/providers/`).
+their stream subscribers (`src/sessions/SessionService.ts`, `src/sessions/Turn.ts`), and
+provider integrations (`src/providers/`).
 Terms used here are defined in [`../glossary.md`](../glossary.md).
 
 ## Error Handling

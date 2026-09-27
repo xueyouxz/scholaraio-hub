@@ -14,6 +14,7 @@ import { loggerFor } from "../logging/logger.js";
 import type { AgentEvent } from "../providers/events.js";
 import type { SessionRecord } from "./SessionStore.js";
 import { UIChunkWriter, appendReplayChunk } from "./UIChunkWriter.js";
+import { endTurn, turnNotSaved } from "./session-record.js";
 
 const log = () => loggerFor("session");
 
@@ -157,10 +158,7 @@ export class Turn {
     this.ended = true;
     clearTimeout(this.timer);
     const { record } = this;
-    record.state = interrupted || this.interrupted ? "interrupted" : error ? "error" : "idle";
-    if (record.state !== "idle") record.queuePaused = true;
-    record.error = error;
-    record.pendingInput = undefined;
+    endTurn(record, { error, interrupted: interrupted || this.interrupted });
     this.writer.close();
     this.metadata.durationMs = Date.now() - this.startedAt;
     this.metadata.finishedAt = new Date().toISOString();
@@ -181,8 +179,7 @@ export class Turn {
       await this.consume;
       await this.hooks.save(record);
     } catch (saveError) {
-      record.state = "error";
-      record.error = "Unable to save this turn. Check available disk space and try again.";
+      turnNotSaved(record);
       log().error({ err: saveError, sessionId: record.id }, "Final save failed");
     } finally {
       this.hooks.ended(this);

@@ -3,7 +3,6 @@ import { mkdir } from "node:fs/promises";
 import path from "node:path";
 import type {
   CreateSessionSchema,
-  LibraryContext,
   LiteratureProject,
   NewSessionDefaults,
   ProviderName,
@@ -11,7 +10,7 @@ import type {
   StoredSession,
   UploadedFile,
 } from "@scholaraio-hub/shared";
-import { UNTITLED_SESSION_TITLE, thinkingModeToConfig } from "@scholaraio-hub/shared";
+import { thinkingModeToConfig } from "@scholaraio-hub/shared";
 import type { UIMessageChunk } from "ai";
 import type { z } from "zod";
 import { type LibraryClient, LibraryRequestError } from "../lib/LibraryClient.js";
@@ -25,8 +24,15 @@ import { resolvesWithin } from "../utils/timeout.js";
 import type { SessionAttachments } from "./SessionAttachments.js";
 import type { SessionRecord, SessionStore } from "./SessionStore.js";
 import { Turn } from "./Turn.js";
-import { agentPrompt, requestedSkill } from "./agent-prompt.js";
+import { prepareAgentPrompt } from "./agent-prompt.js";
 import { SessionConflictError, SessionInputError } from "./errors.js";
+import {
+  type SessionOptions,
+  changeOptions,
+  rewindTo,
+  setPendingInput,
+  startTurn,
+} from "./session-record.js";
 
 const log = () => loggerFor("session");
 
@@ -34,10 +40,6 @@ const log = () => loggerFor("session");
 const STOP_SETTLE_MS = 3000;
 /** How many messages may wait behind a running turn. */
 const MAX_QUEUED_MESSAGES = 20;
-/** How much of the first message becomes the session's title. */
-const TITLE_LENGTH = 60;
-/** How much of a question is sent to the library to find passages for it. */
-const CONTEXT_QUERY_LENGTH = 20_000;
 
 type ExecutionInput = Partial<Pick<StoredSession, "model" | "thinking" | "effort">>;
 
@@ -201,13 +203,9 @@ export class SessionService {
       throw new SessionInputError(`${model.name} does not support reasoning effort ${effort}`);
   }
 
-  async updateOptions(
-    id: string,
-    input: Pick<StoredSession, "model" | "permissionMode" | "thinking" | "effort">,
-  ) {
+  async updateOptions(id: string, input: SessionOptions) {
     const record = this.store.get(id);
-    const previous = this.turns.get(id);
-    if (previous?.finished) await previous.done;
+    await this.settled(id);
     if (record.readOnly || this.changingOptions.has(id))
       throw new SessionConflictError(
         "Session is busy. Try changing settings later.",
@@ -216,17 +214,8 @@ export class SessionService {
     this.changingOptions.add(id);
     try {
       await this.validateExecution(record.provider, input, record);
-      // A running turn keeps the options it started with; the next turn gets
-      // these, and the supervisor replaces the process where they differ.
-      if (this.turns.has(id)) {
-        const changed = (Object.keys(input) as Array<keyof typeof input>).filter(
-          (key) => input[key] !== undefined,
-        );
-        record.pendingOptions = [...new Set([...(record.pendingOptions ?? []), ...changed])];
-      }
-      Object.assign(record, input);
-      if (input.model === "") record.model = undefined;
-      if (input.effort === "") record.effort = undefined;
+      // The supervisor replaces the process where the next turn's options differ.
+      changeOptions(record, input, this.turns.has(id));
       await this.store.save(record);
       return this.store.toStoredSession(record);
     } finally {
@@ -246,11 +235,11 @@ export class SessionService {
       if (agentEvent.type === "context.usage") record.contextUsage = agentEvent.usage;
       turn.accept(agentEvent);
     } else if (event.type === "state-change") {
-      record.pendingInput =
-        event.state.type === "waiting-input"
-          ? { ...event.state.request, sessionId: id }
-          : undefined;
-      record.state = record.pendingInput ? "waiting-input" : "running";
+      const { state } = event;
+      setPendingInput(
+        record,
+        state.type === "waiting-input" ? { ...state.request, sessionId: id } : undefined,
+      );
       turn.showState();
     } else if (turn.interrupted) {
       void turn.finish("Generation stopped.", true);
@@ -335,38 +324,18 @@ export class SessionService {
       (record.queuePaused || !record.queuedMessages?.some((message) => message.id === input.id))
     )
       return;
-    const previous = this.turns.get(id);
-    if (previous?.finished) await previous.done;
+    await this.settled(id);
     if (this.turns.has(id))
       throw new SessionConflictError("The session is still running.", "SESSION_BUSY");
     if (record.messages.some((message) => message.id === input.id))
       throw new SessionConflictError(
         "This message has already been submitted. Refresh the session.",
       );
-    record.queuedMessages = record.queuedMessages?.filter((message) => message.id !== input.id);
-    record.messages.push({
-      id: input.id,
-      role: "user",
-      parts: [
-        ...(input.text ? [{ type: "text" as const, text: input.text }] : []),
-        ...attachments.map(({ visible }) => ({
-          type: "file" as const,
-          mediaType: visible.mediaType,
-          filename: visible.filename,
-          url: visible.url,
-        })),
-      ],
-    });
-    record.state = "running";
-    record.error = undefined;
-    record.pendingInput = undefined;
-    // This turn starts with the options changed during the last one.
-    record.pendingOptions = undefined;
-    if (record.title === UNTITLED_SESSION_TITLE)
-      record.title =
-        input.text.slice(0, TITLE_LENGTH) ||
-        attachments[0]?.visible.filename ||
-        UNTITLED_SESSION_TITLE;
+    startTurn(
+      record,
+      input,
+      attachments.map(({ visible }) => visible),
+    );
     const turn = new Turn(
       record,
       randomUUID(),
@@ -440,23 +409,6 @@ export class SessionService {
     return changed;
   }
 
-  /**
-   * Passages for the question from the session's workspace or chosen papers.
-   * A session with neither (the default workspace) gets none: the whole
-   * library is not its scope.
-   */
-  private async libraryContext(
-    record: SessionRecord,
-    question: string,
-  ): Promise<LibraryContext | undefined> {
-    if (!record.projectId && record.paperIds.length === 0) return undefined;
-    return this.library.context({
-      query: question.slice(0, CONTEXT_QUERY_LENGTH),
-      paperIds: record.paperIds,
-      projectId: record.projectId,
-    });
-  }
-
   private async launch(
     turn: Turn,
     input: SessionInput,
@@ -466,7 +418,8 @@ export class SessionService {
     const id = record.id;
     try {
       await this.store.save(record);
-      const context = await this.libraryContext(record, input.text);
+      const prompt = await prepareAgentPrompt(this.library, this.skillsDir, record, input.text);
+      const { context } = prompt;
       if (turn.finished) return;
       if (context) {
         turn.emit({ type: "data-citations", id: "citations", data: context.citations });
@@ -480,8 +433,6 @@ export class SessionService {
             },
           });
       }
-      const skill = await requestedSkill(input.text, this.skillsDir);
-      const text = agentPrompt(input.text, skill, context);
       const projectPath = await this.workingDirectory(record);
       // Stopped while the prompt was being prepared: nothing to send.
       if (turn.finished) return;
@@ -489,7 +440,7 @@ export class SessionService {
         sessionId: id,
         nativeSessionId: record.nativeSessionId,
         projectPath,
-        message: { text, attachments },
+        message: { text: prompt.text, attachments },
         permissionMode: record.permissionMode ?? "default",
         settings: {
           providerName: record.provider,
@@ -510,8 +461,7 @@ export class SessionService {
    * turns follow it. Only an idle, writable session can be cut.
    */
   private async turnAt(record: SessionRecord, messageId: string) {
-    const previous = this.turns.get(record.id);
-    if (previous?.finished) await previous.done;
+    await this.settled(record.id);
     if (record.readOnly)
       throw new SessionConflictError("Imported historical sessions cannot be edited or forked.");
     if (this.turns.has(record.id) || this.changingOptions.has(record.id))
@@ -590,11 +540,7 @@ export class SessionService {
     // The next turn resumes the fork; the supervisor sees the live process
     // holds a different conversation and replaces it.
     const nativeSessionId = await this.forkNative(record, later + 1, keepsAny);
-    record.messages = record.messages.slice(0, index);
-    record.nativeSessionId = nativeSessionId;
-    record.contextUsage = undefined;
-    record.error = undefined;
-    record.state = "idle";
+    rewindTo(record, index, nativeSessionId);
     await this.store.save(record);
     return this.detail(id);
   }
@@ -623,6 +569,12 @@ export class SessionService {
   stream(id: string, signal: AbortSignal): ReadableStream<UIMessageChunk> | null {
     this.store.get(id);
     return this.turns.get(id)?.attach(signal) ?? null;
+  }
+
+  /** A turn that is ending holds the session until its record is saved. */
+  private async settled(id: string): Promise<void> {
+    const turn = this.turns.get(id);
+    if (turn?.finished) await turn.done;
   }
 
   /** A turn has ended: the session is free, and an idle one sends what is queued. */

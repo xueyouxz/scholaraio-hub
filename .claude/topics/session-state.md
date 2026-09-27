@@ -11,8 +11,9 @@
 | **Process** (one live CLI worker) | `ProcessState` in `packages/server/src/supervisor/AgentProcess.ts` | `idle`, `in-turn`, `waiting-input`, `terminated` |
 | **Session** (what is stored and shown) | `StoredSession.state` in `packages/shared/src/session/StoredSession.ts` | `idle`, `running`, `waiting-input`, `interrupted`, `error` |
 
-`SessionService` is the only consumer of process events for a session, and it and the
-`Turn` it runs are the only writers of session state. A process `state-change` sets the session to `waiting-input` while a pending input
+`SessionService` is the only consumer of process events for a session. Every change to
+session state goes through the rules in `packages/server/src/sessions/session-record.ts`
+(turn start and end, pending input, restart recovery, rewind, options). A process `state-change` sets the session to `waiting-input` while a pending input
 request exists, else `running`; the run's end sets `idle`, `interrupted` or `error`.
 Anything other than `idle` pauses the session's message queue (`queuePaused`).
 

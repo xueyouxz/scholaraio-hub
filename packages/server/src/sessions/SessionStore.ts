@@ -5,6 +5,7 @@ import { type StoredSession, isProviderName, readLegacyThinking } from "@scholar
 import { loggerFor } from "../logging/logger.js";
 import { writeFileAtomic } from "../utils/write-file-atomic.js";
 import { SessionNotFoundError } from "./errors.js";
+import { recoverAfterRestart } from "./session-record.js";
 
 const log = () => loggerFor("session-store");
 
@@ -46,17 +47,7 @@ export class SessionStore {
         Object.assign(data, readLegacyThinking(data.thinking));
         await this.save(data);
       }
-      if (data.queuedMessages?.length) {
-        data.queuePaused = true;
-        await this.save(data);
-      }
-      if (data.state === "running" || data.state === "waiting-input") {
-        data.state = "interrupted";
-        data.pendingInput = undefined;
-        data.error =
-          "The previous turn was interrupted by a service restart. Send a new message to continue.";
-        await this.save(data);
-      }
+      if (recoverAfterRestart(data)) await this.save(data);
     }
   }
 

@@ -15,6 +15,19 @@ import { type AgentEvent, assertNever } from "../providers/events.js";
  * The final tool result carries the full output.
  */
 const MAX_PARTIAL_OUTPUT = 32 * 1024;
+/**
+ * The most often a running tool's preview is sent. Each one carries the whole
+ * tail, so a command printing thousands of lines must not send one per line.
+ */
+const PARTIAL_OUTPUT_INTERVAL_MS = 250;
+
+interface PartialOutput {
+  content: string;
+  /** When the preview was last sent. */
+  sentAt: number;
+  /** Sends the latest preview once the interval has passed. */
+  timer?: ReturnType<typeof setTimeout>;
+}
 
 /**
  * Where nested (subagent) parts say which call they belong to: tool parts in
@@ -30,7 +43,7 @@ export class UIChunkWriter {
   /** Calls whose arguments are streaming, so the start chunk is sent once. */
   private inputStarted = new Set<string>();
   /** Output accumulated so far for tools that are still running. */
-  private partialOutput = new Map<string, string>();
+  private partialOutput = new Map<string, PartialOutput>();
 
   constructor(private readonly emit: (chunk: UIMessageChunk) => void) {}
 
@@ -85,22 +98,19 @@ export class UIChunkWriter {
         });
         return;
       case "tool.output.delta": {
-        // AI SDK preliminary outputs replace each other, so send the whole
-        // accumulated output each time; the final result replaces the last one.
-        let content = (this.partialOutput.get(event.callId) ?? "") + event.delta;
-        if (content.length > MAX_PARTIAL_OUTPUT) content = `…${content.slice(-MAX_PARTIAL_OUTPUT)}`;
-        this.partialOutput.set(event.callId, content);
-        const output: ToolOutput = { content, isError: false };
-        this.emit({
-          type: "tool-output-available",
-          toolCallId: event.callId,
-          output,
-          dynamic: true,
-          preliminary: true,
-        });
+        const partial = this.partialOutput.get(event.callId) ?? { content: "", sentAt: 0 };
+        partial.content += event.delta;
+        if (partial.content.length > MAX_PARTIAL_OUTPUT)
+          partial.content = `…${partial.content.slice(-MAX_PARTIAL_OUTPUT)}`;
+        this.partialOutput.set(event.callId, partial);
+        const wait = partial.sentAt + PARTIAL_OUTPUT_INTERVAL_MS - Date.now();
+        if (wait <= 0) this.sendPartialOutput(event.callId, partial);
+        else
+          partial.timer ??= setTimeout(() => this.sendPartialOutput(event.callId, partial), wait);
         return;
       }
       case "tool.result": {
+        clearTimeout(this.partialOutput.get(event.callId)?.timer);
         this.partialOutput.delete(event.callId);
         // Always an output part, failures included, so the browser keeps the
         // failed command's output and structured detail (see ToolOutput).
@@ -140,10 +150,33 @@ export class UIChunkWriter {
     }
   }
 
-  /** Close every open block. Safe to call more than once. */
+  /**
+   * Close every open block and drop running tools' previews, pending ones
+   * included: nothing is sent after this. Safe to call more than once.
+   */
   close(): void {
     for (const [id, kind] of this.open) this.emit({ type: `${kind}-end`, id });
     this.open.clear();
+    for (const partial of this.partialOutput.values()) clearTimeout(partial.timer);
+    this.partialOutput.clear();
+  }
+
+  /**
+   * AI SDK preliminary outputs replace each other, so each one carries the
+   * whole accumulated output; the final result replaces the last one.
+   */
+  private sendPartialOutput(callId: string, partial: PartialOutput): void {
+    clearTimeout(partial.timer);
+    partial.timer = undefined;
+    partial.sentAt = Date.now();
+    const output: ToolOutput = { content: partial.content, isError: false };
+    this.emit({
+      type: "tool-output-available",
+      toolCallId: callId,
+      output,
+      dynamic: true,
+      preliminary: true,
+    });
   }
 
   private delta(
@@ -170,8 +203,20 @@ export class UIChunkWriter {
  * Append a chunk to a run's replay buffer. A preliminary tool output supersedes
  * the previous one for the same call, so a reconnecting client only replays the
  * latest and the buffer does not grow with every line a long command prints.
+ * A text or reasoning delta that continues the block of the last chunk is
+ * joined to it: a reconnect replays blocks, not every token.
  */
 export function appendReplayChunk(chunks: UIMessageChunk[], chunk: UIMessageChunk): void {
+  const last = chunks.at(-1);
+  if (
+    (chunk.type === "text-delta" || chunk.type === "reasoning-delta") &&
+    last?.type === chunk.type &&
+    last.id === chunk.id
+  ) {
+    // A new chunk: the one sent live is not changed after the fact.
+    chunks[chunks.length - 1] = { ...last, delta: last.delta + chunk.delta };
+    return;
+  }
   if (chunk.type === "tool-output-available" && chunk.preliminary) {
     for (let index = chunks.length - 1; index >= 0; index--) {
       const previous = chunks[index];

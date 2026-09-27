@@ -648,6 +648,23 @@ describe.each(["claude", "codex"] as const)("%s application sessions", (name) =>
     const stored = server.sessions.detail(id).messages.flatMap((message) => message.parts);
     expect(stored.some((part) => part.type === "data-session-state")).toBe(false);
   });
+  it("tells a stream that attaches later about the question already waiting", async () => {
+    const id = await create();
+    const response = await send(id, "approval");
+    await expect.poll(() => server.sessions.detail(id).pendingInput?.id).toBeTruthy();
+    const pending = server.sessions.detail(id).pendingInput;
+    const attached = await server.app.request(`/api/sessions/${id}/stream`);
+    await server.app.request(`/api/sessions/${id}/input`, {
+      method: "POST",
+      headers,
+      body: JSON.stringify({ requestId: pending?.id, decision: "deny" }),
+    });
+    await response.text();
+    const text = await attached.text();
+    const state = text.indexOf('"state":"waiting-input"');
+    expect(state).toBeGreaterThan(-1);
+    expect(text.slice(state)).toContain(`"id":"${pending?.id}"`);
+  });
   it("approves and switches to accept-edits like the original approval panel", async () => {
     const id = await create();
     const response = await send(id, "approval");

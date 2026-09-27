@@ -304,7 +304,7 @@ export class SessionService {
   private emit(run: SessionRun, chunk: UIMessageChunk): void {
     appendReplayChunk(run.chunks, chunk);
     run.controller.enqueue(chunk);
-    for (const listener of run.listeners) listener(chunk);
+    this.broadcast(run, chunk);
   }
 
   /**
@@ -313,7 +313,15 @@ export class SessionService {
    * not written into the stored message.
    */
   private broadcast(run: SessionRun, chunk: UIMessageChunk): void {
-    for (const listener of run.listeners) listener(chunk);
+    for (const listener of run.listeners) {
+      try {
+        listener(chunk);
+      } catch (error) {
+        // One broken browser stream must not starve the others or the run.
+        log().error({ err: error, sessionId: run.record.id }, "Stream listener failed");
+        run.listeners.delete(listener);
+      }
+    }
   }
 
   private checkpoint(run: SessionRun): void {
@@ -465,10 +473,10 @@ export class SessionService {
         stream,
         onError: (error) => log().error({ err: error, sessionId: id }, "Message stream error"),
       })) {
+        // Each message the stream yields is already a copy of its own.
         const index = record.messages.findIndex((item) => item.id === assistantId);
-        const snapshot = structuredClone(message);
-        if (index < 0) record.messages.push(snapshot);
-        else record.messages[index] = snapshot;
+        if (index < 0) record.messages.push(message);
+        else record.messages[index] = message;
         this.checkpoint(run);
       }
     })();
@@ -748,6 +756,14 @@ export class SessionService {
         for (const chunk of run.chunks) controller.enqueue(chunk);
         if (run.finished) controller.close();
         else {
+          // The state may have changed after the snapshot this browser holds
+          // (a question asked in between); state chunks are not replayed.
+          const { state, pendingInput } = run.record;
+          controller.enqueue({
+            type: "data-session-state",
+            data: { state, pendingInput },
+            transient: true,
+          });
           run.listeners.add(listener);
           signal.addEventListener("abort", close, { once: true });
         }

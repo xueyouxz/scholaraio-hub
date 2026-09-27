@@ -143,16 +143,6 @@
         "content": "running 3 tests\n3 passed\n",
         "isError": false
       },
-      "dynamic": true,
-      "preliminary": true
-    },
-    {
-      "type": "tool-output-available",
-      "toolCallId": "item-test",
-      "output": {
-        "content": "running 3 tests\n3 passed\n",
-        "isError": false
-      },
       "dynamic": true
     },
     {

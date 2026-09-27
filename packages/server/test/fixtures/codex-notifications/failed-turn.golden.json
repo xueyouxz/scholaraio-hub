@@ -19,12 +19,6 @@
       "isError": true
     },
     {
-      "type": "notice",
-      "key": "item-error-turn-3",
-      "level": "error",
-      "text": "模型调用超时"
-    },
-    {
       "type": "turn.completed",
       "error": "Codex turn aborted"
     }
@@ -47,14 +41,6 @@
         "isError": true
       },
       "dynamic": true
-    },
-    {
-      "type": "data-notice",
-      "id": "item-error-turn-3",
-      "data": {
-        "level": "error",
-        "text": "模型调用超时"
-      }
     }
   ]
 }

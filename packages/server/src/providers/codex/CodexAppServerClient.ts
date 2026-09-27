@@ -12,6 +12,10 @@ const log = () => loggerFor("codex-app-server");
 
 /** How long a terminating app-server gets before SIGKILL. */
 const APP_SERVER_SHUTDOWN_GRACE_MS = 1500;
+/** How much of the app-server's stderr is kept to explain an exit. */
+const STDERR_TAIL_CHARS = 4096;
+/** How long an exited app-server's remaining output may take to arrive. */
+const EXIT_FLUSH_MS = 500;
 
 export type JsonRpcId = string | number;
 
@@ -95,6 +99,9 @@ export class CodexAppServerClient {
   private readonly notifications = new AsyncQueue<JsonRpcNotification>();
   private onServerRequest: AppServerRequestHandler | null = null;
   private closed = false;
+  /** The last of the app-server's stderr, for the error that reports its exit. */
+  private stderrTail = "";
+  private readonly closeListeners = new Set<(error: Error) => void>();
 
   constructor(
     private readonly command: string,
@@ -104,6 +111,15 @@ export class CodexAppServerClient {
 
   setServerRequestHandler(handler: AppServerRequestHandler): void {
     this.onServerRequest = handler;
+  }
+
+  /**
+   * Hear the app-server go away on its own (exit, spawn or pipe failure); a
+   * `close()` of ours is not reported. Returns the unsubscribe.
+   */
+  onClose(listener: (error: Error) => void): () => void {
+    this.closeListeners.add(listener);
+    return () => this.closeListeners.delete(listener);
   }
 
   /** Start the app-server and complete the JSON-RPC initialize handshake. */
@@ -143,7 +159,9 @@ export class CodexAppServerClient {
     });
 
     child.stderr?.on("data", (chunk: Buffer) => {
-      const stderr = chunk.toString("utf-8").trim();
+      const text = chunk.toString("utf-8");
+      this.stderrTail = (this.stderrTail + text).slice(-STDERR_TAIL_CHARS);
+      const stderr = text.trim();
       if (stderr) {
         log().debug({ stderr }, "codex app-server stderr");
       }
@@ -154,9 +172,21 @@ export class CodexAppServerClient {
     });
 
     child.on("exit", (code, signal) => {
-      this.handleProcessClose(
-        new Error(`Codex app-server exited (code=${code ?? "null"}, signal=${signal ?? "null"})`),
-      );
+      // Output written just before the exit may still be in the pipe: read it
+      // first, so its last notifications (often the reason) are not lost.
+      const report = () => {
+        clearTimeout(timer);
+        const tail = this.stderrTail.trim();
+        this.handleProcessClose(
+          new Error(
+            `Codex app-server exited (code=${code ?? "null"}, signal=${signal ?? "null"})${tail ? `: ${tail}` : ""}`,
+          ),
+        );
+      };
+      const timer = setTimeout(report, EXIT_FLUSH_MS);
+      timer.unref();
+      if (!child.stdout || child.stdout.readableEnded) report();
+      else child.stdout.once("end", report);
     });
 
     await new Promise<void>((resolve, reject) => {
@@ -309,6 +339,7 @@ export class CodexAppServerClient {
     }
     this.pendingRequests.clear();
     this.notifications.close(closeError);
+    this.closeListeners.clear();
 
     const child = this.process;
     this.process = null;
@@ -323,9 +354,12 @@ export class CodexAppServerClient {
       pending.reject(error);
     }
     this.pendingRequests.clear();
-    // Readers see the close as this error, which ends the session.
-    this.notifications.close(error);
+    // Readers get the notifications already received, then this error, which
+    // ends the session.
+    this.notifications.end(error);
     this.process = null;
+    for (const listener of this.closeListeners) listener(error);
+    this.closeListeners.clear();
   }
 
   private sendRaw(payload: Record<string, unknown>): void {

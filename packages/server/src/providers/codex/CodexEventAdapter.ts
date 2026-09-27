@@ -72,12 +72,7 @@ export type NormalizedThreadItem =
       status: string;
     }
   | { id: string; type: "web_search"; query: string }
-  | {
-      id: string;
-      type: "todo_list";
-      items: Array<{ text: string; completed: boolean }>;
-    }
-  | { id: string; type: "error"; message: string }
+  | { id: string; type: "context_compaction" }
   | {
       id: string;
       type: "collab_agent";
@@ -233,29 +228,8 @@ export function normalizeThreadItem(
       };
     }
 
-    case "todo_list": {
-      const items = Array.isArray(itemRecord.items)
-        ? itemRecord.items
-            .map((entry: unknown) => {
-              if (!entry || typeof entry !== "object") return null;
-              const record = entry as Record<string, unknown>;
-              const text = getOptionalString(record.text);
-              if (!text) return null;
-              return {
-                text,
-                completed: record.completed === true,
-              };
-            })
-            .filter(
-              (entry: unknown): entry is { text: string; completed: boolean } => entry !== null,
-            )
-        : [];
-      return {
-        id,
-        type: "todo_list",
-        items,
-      };
-    }
+    case "context_compaction":
+      return { id, type: "context_compaction" };
 
     case "image_view": {
       const imagePath = getOptionalString(itemRecord.path) ?? "";
@@ -290,38 +264,24 @@ export function normalizeThreadItem(
       };
     }
 
-    case "error": {
-      const message = getOptionalString(itemRecord.message) ?? "Codex error";
-      return {
-        id,
-        type: "error",
-        message,
-      };
-    }
-
     default:
       return null;
   }
 }
 
+/**
+ * What the user sees of a reasoning item: its summary, which is also what
+ * streams as summary deltas; the raw content only when there is no summary.
+ */
 export function getReasoningText(item: Record<string, unknown>): string {
   const text = getOptionalString(item.text);
   if (text) return text;
-
-  const content = Array.isArray(item.content)
-    ? item.content.filter((part): part is string => typeof part === "string")
-    : [];
-  if (content.length > 0) {
-    return content.join("\n");
+  for (const parts of [item.summary, item.content]) {
+    const lines = Array.isArray(parts)
+      ? parts.filter((part): part is string => typeof part === "string")
+      : [];
+    if (lines.length > 0) return lines.join("\n");
   }
-
-  const summary = Array.isArray(item.summary)
-    ? item.summary.filter((part): part is string => typeof part === "string")
-    : [];
-  if (summary.length > 0) {
-    return summary.join("\n");
-  }
-
   return "";
 }
 
@@ -573,6 +533,8 @@ export class CodexEventAdapter {
   private spawnedBy = new Map<string, string>();
   private usageByTurnId = new Map<string, TokenUsageSnapshot>();
   private activeTurnId: string | null = null;
+  /** A failure Codex will not retry; the turn still ends on `turn/completed`. */
+  private turnError: string | undefined;
   /** Plan updates so far this turn; each becomes its own TodoWrite call. */
   private planUpdates = 0;
 
@@ -593,6 +555,11 @@ export class CodexEventAdapter {
     return this.activeTurnId;
   }
 
+  /** Why the open turn failed, once Codex said so but before the turn has ended. */
+  get failure(): string | undefined {
+    return this.turnError;
+  }
+
   /** End the open turn (if any). The first caller wins; later calls are no-ops. */
   completeTurn(error?: string): AgentEvent[] {
     if (this.activeTurnId === null) return [];
@@ -606,6 +573,7 @@ export class CodexEventAdapter {
         }
       : undefined;
     this.activeTurnId = null;
+    this.turnError = undefined;
     this.usageByTurnId.delete(turnId);
     this.root = newScope();
     for (const [thread, scope] of this.children)
@@ -630,7 +598,7 @@ export class CodexEventAdapter {
       case "item/agentMessage/delta":
       case "item/plan/delta": {
         const params = asDeltaParams(notification.params);
-        const scope = params && this.scopeFor(params.threadId);
+        const scope = params && this.scopeFor(params.threadId, params.turnId);
         if (!params || !scope) return [];
         return inSubagent(
           scope.turn.textDelta("text", itemKey(params.itemId, params.turnId), params.delta),
@@ -640,7 +608,7 @@ export class CodexEventAdapter {
 
       case "item/reasoning/summaryTextDelta": {
         const params = asDeltaParams(notification.params);
-        const scope = params && this.scopeFor(params.threadId);
+        const scope = params && this.scopeFor(params.threadId, params.turnId);
         if (!params || !scope) return [];
         const key = itemKey(params.itemId, params.turnId);
         const index = params.summaryIndex ?? 0;
@@ -657,7 +625,7 @@ export class CodexEventAdapter {
       case "item/commandExecution/outputDelta":
       case "item/fileChange/outputDelta": {
         const params = asDeltaParams(notification.params);
-        const scope = params && this.scopeFor(params.threadId);
+        const scope = params && this.scopeFor(params.threadId, params.turnId);
         if (!params || !scope) return [];
         return inSubagent(
           scope.turn.toolOutputDelta(params.itemId, params.delta),
@@ -705,7 +673,9 @@ export class CodexEventAdapter {
         if (!params || params.turn.id !== this.activeTurnId) return [];
         const failed = params.turn.status === "failed";
         return this.completeTurn(
-          failed ? (params.turn.error?.message ?? "Codex turn failed") : undefined,
+          failed
+            ? (params.turn.error?.message ?? this.turnError ?? "Codex turn failed")
+            : this.turnError,
         );
       }
 
@@ -723,7 +693,10 @@ export class CodexEventAdapter {
             },
           ];
         }
-        return this.completeTurn(params.error.message || "Codex turn failed");
+        // The turn is over, but Codex still reports how it ended: wait for
+        // `turn/completed`, so its late items do not land in the next turn.
+        this.turnError = params.error.message || "Codex turn failed";
+        return [];
       }
 
       case "item/started":
@@ -732,7 +705,7 @@ export class CodexEventAdapter {
           notification.method === "item/started"
             ? asItemStartedNotification(notification.params)
             : asItemCompletedNotification(notification.params);
-        const scope = params && this.scopeFor(params.threadId);
+        const scope = params && this.scopeFor(params.threadId, params.turnId);
         if (!params || !scope) return [];
         const item = normalizeThreadItem(params.item);
         if (!item) return [];
@@ -748,9 +721,13 @@ export class CodexEventAdapter {
     }
   }
 
-  /** The session's own thread, a known child thread, or null for anything else. */
-  private scopeFor(threadId: string): ThreadScope | null {
-    if (threadId === this.sessionId) return this.root;
+  /**
+   * Where a thread's item belongs: the session's own thread while `turnId` is
+   * its open turn, a known child thread (whose turns are its own), or null —
+   * an earlier turn's late item, or a thread that is not ours.
+   */
+  private scopeFor(threadId: string, turnId: string): ThreadScope | null {
+    if (threadId === this.sessionId) return turnId === this.activeTurnId ? this.root : null;
     return this.children.get(threadId) ?? null;
   }
 
@@ -873,24 +850,9 @@ export class CodexEventAdapter {
       case "collab_agent":
         return this.collab(scope, item, complete);
 
-      case "error":
-        // A non-fatal error reported inside the turn; the turn keeps going.
-        return [{ type: "notice", key, level: "error", text: item.message }];
-
-      case "todo_list": {
-        // The list can change between started and completed; report the final one.
+      case "context_compaction":
         if (!complete) return [];
-        const input = todoWriteInput(
-          item.items.map((entry) => ({
-            content: entry.text,
-            status: entry.completed ? "completed" : "pending",
-          })),
-        );
-        return [
-          ...turn.toolCall(item.id, "TodoWrite", input),
-          ...turn.toolResult(item.id, "Plan updated", false),
-        ];
-      }
+        return [{ type: "notice", key, level: "info", text: "Context compacted" }];
 
       default:
         return [];

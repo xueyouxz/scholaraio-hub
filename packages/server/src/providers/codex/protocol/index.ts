@@ -2,6 +2,7 @@
 
 export type { AskForApproval } from "./generated/v2/AskForApproval.js";
 export type { SandboxMode } from "./generated/v2/SandboxMode.js";
+export type { SandboxPolicy } from "./generated/v2/SandboxPolicy.js";
 export type { ThreadStartParams } from "./generated/v2/ThreadStartParams.js";
 export type { ThreadResumeParams } from "./generated/v2/ThreadResumeParams.js";
 export type { TurnStartParams } from "./generated/v2/TurnStartParams.js";

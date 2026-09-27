@@ -14,13 +14,17 @@ const threadId = "native-fixture-thread";
 let turn = 0;
 let activeTurn;
 let approval;
-const complete = () => {
+let unsupported;
+/** The sandbox the last turn asked for, when it asked for one. */
+let turnSandbox;
+const complete = (note) => {
+  const notes = [note, turnSandbox].filter(Boolean).map((text) => ` (${text})`);
   send({
     method: "item/completed",
     params: {
       threadId,
       turnId: activeTurn,
-      item: { id: `item-${turn}`, type: "agentMessage", text: "Fixture reply" },
+      item: { id: `item-${turn}`, type: "agentMessage", text: `Fixture reply${notes.join("")}` },
     },
   });
   send({
@@ -32,7 +36,13 @@ for await (const line of lines) {
   const message = JSON.parse(line);
   const reply = (result) => send({ id: message.id, result });
   if (approval !== undefined && message.id === approval) {
-    complete();
+    approval = undefined;
+    complete(message.result.decision === "cancel" ? "cancel" : undefined);
+    continue;
+  }
+  if (unsupported !== undefined && message.id === unsupported) {
+    unsupported = undefined;
+    complete(message.error ? "error reply" : "empty reply");
     continue;
   }
   if (message.method === "initialize") {
@@ -45,9 +55,21 @@ for await (const line of lines) {
       message.params.sandbox !== "workspace-write"
     )
       throw new Error("Permission defaults changed");
-    reply({ thread: { id: threadId, turns: [] } });
+    reply({
+      thread: { id: threadId, turns: [] },
+      sandbox: {
+        type: "workspaceWrite",
+        writableRoots: ["/fixture-root"],
+        readOnlyAccess: { type: "fullAccess" },
+        networkAccess: false,
+        excludeTmpdirEnvVar: false,
+        excludeSlashTmp: false,
+      },
+    });
   } else if (message.method === "turn/start") {
     activeTurn = `turn-${++turn}`;
+    const policy = message.params.sandboxPolicy;
+    turnSandbox = policy && [policy.type, ...(policy.writableRoots ?? [])].join(" ");
     reply({ turn: { id: activeTurn, status: "inProgress", items: [] } });
     send({
       method: "item/agentMessage/delta",
@@ -68,6 +90,15 @@ for await (const line of lines) {
           reason: "test approval",
         },
       });
+    } else if (text.includes("unsupported")) {
+      unsupported = "unsupported-request";
+      send({ id: unsupported, method: "item/tool/call", params: { threadId, turnId: activeTurn } });
+    } else if (text.includes("crash")) {
+      process.stderr.write("fatal: fixture crashed\n");
+      process.exit(3);
+    } else if (text.includes("exit after")) {
+      complete();
+      setTimeout(() => process.exit(0), 20);
     } else if (!text.includes("slow")) complete();
   } else if (message.method === "turn/interrupt") {
     reply({});

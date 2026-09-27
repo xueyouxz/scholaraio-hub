@@ -61,31 +61,6 @@
     },
     {
       "type": "tool.call",
-      "callId": "item-todo",
-      "name": "TodoWrite",
-      "input": {
-        "todos": [
-          {
-            "content": "读论文",
-            "status": "completed",
-            "activeForm": "读论文"
-          },
-          {
-            "content": "写总结",
-            "status": "pending",
-            "activeForm": "写总结"
-          }
-        ]
-      }
-    },
-    {
-      "type": "tool.result",
-      "callId": "item-todo",
-      "output": "Plan updated",
-      "isError": false
-    },
-    {
-      "type": "tool.call",
       "callId": "item-search",
       "name": "WebSearch",
       "input": {
@@ -171,35 +146,6 @@
       "toolCallId": "item-mcp",
       "output": {
         "content": "{\"hits\":2}",
-        "isError": false
-      },
-      "dynamic": true
-    },
-    {
-      "type": "tool-input-available",
-      "toolCallId": "item-todo",
-      "toolName": "TodoWrite",
-      "input": {
-        "todos": [
-          {
-            "content": "读论文",
-            "status": "completed",
-            "activeForm": "读论文"
-          },
-          {
-            "content": "写总结",
-            "status": "pending",
-            "activeForm": "写总结"
-          }
-        ]
-      },
-      "dynamic": true
-    },
-    {
-      "type": "tool-output-available",
-      "toolCallId": "item-todo",
-      "output": {
-        "content": "Plan updated",
         "isError": false
       },
       "dynamic": true

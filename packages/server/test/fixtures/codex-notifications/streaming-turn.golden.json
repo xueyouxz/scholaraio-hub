@@ -64,29 +64,10 @@
       "isError": false
     },
     {
-      "type": "tool.call",
-      "callId": "item-todo",
-      "name": "TodoWrite",
-      "input": {
-        "todos": [
-          {
-            "content": "运行测试",
-            "status": "completed",
-            "activeForm": "运行测试"
-          },
-          {
-            "content": "修复失败",
-            "status": "pending",
-            "activeForm": "修复失败"
-          }
-        ]
-      }
-    },
-    {
-      "type": "tool.result",
-      "callId": "item-todo",
-      "output": "Plan updated",
-      "isError": false
+      "type": "notice",
+      "key": "item-compact-turn-4",
+      "level": "info",
+      "text": "Context compacted"
     },
     {
       "type": "turn.completed"
@@ -175,33 +156,12 @@
       "dynamic": true
     },
     {
-      "type": "tool-input-available",
-      "toolCallId": "item-todo",
-      "toolName": "TodoWrite",
-      "input": {
-        "todos": [
-          {
-            "content": "运行测试",
-            "status": "completed",
-            "activeForm": "运行测试"
-          },
-          {
-            "content": "修复失败",
-            "status": "pending",
-            "activeForm": "修复失败"
-          }
-        ]
-      },
-      "dynamic": true
-    },
-    {
-      "type": "tool-output-available",
-      "toolCallId": "item-todo",
-      "output": {
-        "content": "Plan updated",
-        "isError": false
-      },
-      "dynamic": true
+      "type": "data-notice",
+      "id": "item-compact-turn-4",
+      "data": {
+        "level": "info",
+        "text": "Context compacted"
+      }
     },
     {
       "type": "reasoning-end",

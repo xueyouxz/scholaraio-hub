@@ -1,6 +1,7 @@
 /**
  * A queue whose readers wait for the next item. Closing it wakes every waiting
- * reader with the close error; items still queued are dropped.
+ * reader with the close error; items still queued are dropped. Ending it keeps
+ * them: readers get what was queued, then the error.
  */
 export class AsyncQueue<T> {
   private items: T[] = [];
@@ -30,8 +31,14 @@ export class AsyncQueue<T> {
   }
 
   close(error?: Error): void {
+    this.end(error);
+    this.items = [];
+  }
+
+  end(error?: Error): void {
     if (this.closedError) return;
     this.closedError = error ?? new Error("Queue closed");
+    // Waiters exist only while nothing is queued.
     for (const waiter of this.waiters) {
       if (waiter.signal && waiter.onAbort) {
         waiter.signal.removeEventListener("abort", waiter.onAbort);
@@ -39,7 +46,6 @@ export class AsyncQueue<T> {
       waiter.reject(this.closedError);
     }
     this.waiters = [];
-    this.items = [];
   }
 
   async shift(signal?: AbortSignal): Promise<T> {

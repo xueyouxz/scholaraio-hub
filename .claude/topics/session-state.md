@@ -31,8 +31,12 @@ signals (an open stream, a recent poll):
 | `waiting-input` | the pending question/approval (`InputRequestPrompt`) | stop |
 | read-only session | none | sessions imported by earlier versions |
 
-- **Queue vs steer**: `AgentProcess.queueMessage` steers the running turn when the provider
-  session implements `steer` (Codex) and falls back to the queue otherwise or on failure.
+- **Queue, no steering**: a session runs one turn at a time. A message sent while a run is
+  in progress is kept in the session's persisted queue (`SessionService.enqueue`) and sent
+  when the run ends; nothing is added to a running turn.
+- **Permission mode**: a change reaches the live process (`AgentProcess.setPermissionMode`),
+  which also applies it on the provider's side where it has one — Codex sends the matching
+  sandbox with its next turn.
 - **Stop**: `SessionService.stop` asks the process to `interrupt` and waits briefly; a
   process that cannot interrupt or does not settle is released, and the next message
   resumes its native session.
@@ -62,7 +66,7 @@ signals (an open stream, a recent poll):
 ## Where this lives
 
 - `packages/server/src/supervisor/` — `Supervisor` (one process per session, replacement
-  when launch settings differ, stale reaping) and `AgentProcess` (state, queue/steer,
+  when launch settings differ, stale reaping) and `AgentProcess` (state, queue,
   interrupt, approvals).
 - `packages/server/src/sessions/SessionService.ts` — runs, state, queue, stop, streams.
 - `packages/client/src/features/session/` — `hooks/useSessionChat.ts`,

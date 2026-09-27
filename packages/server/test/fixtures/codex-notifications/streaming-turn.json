@@ -101,14 +101,7 @@
       "params": {
         "threadId": "thread-golden",
         "turnId": "turn-4",
-        "item": {
-          "id": "item-todo",
-          "type": "todoList",
-          "items": [
-            { "text": "运行测试", "completed": true },
-            { "text": "修复失败", "completed": false }
-          ]
-        }
+        "item": { "id": "item-compact", "type": "contextCompaction" }
       }
     },
     {

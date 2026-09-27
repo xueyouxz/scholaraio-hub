@@ -113,9 +113,14 @@ export class AgentProcess {
     return this._permissionMode;
   }
 
-  /** Update the permission mode for this process's future tool approvals. */
+  /**
+   * Update the permission mode for this process's future tool approvals, and
+   * the provider's own side of it (its sandbox, its prompt) where it has one.
+   */
   setPermissionMode(mode: PermissionMode): void {
+    if (mode === this._permissionMode) return;
     this._permissionMode = mode;
+    this.session.setPermissionMode?.(mode);
   }
 
   get thinking(): ThinkingConfig | undefined {
@@ -164,45 +169,17 @@ export class AgentProcess {
     return true;
   }
 
-  /**
-   * Hand a message to the provider: steer the running turn when it can,
-   * otherwise queue it for the next turn. Fails only once the process ended.
-   */
+  /** Hand a message to the provider for its next turn. Fails only once the process ended. */
   queueMessage(message: UserMessage): { success: boolean; error?: string } {
     if (this._state.type === "terminated") {
       return { success: false, error: `Process terminated: ${this._state.reason}` };
     }
-    // The same UUID reaches the provider and our own record of the message.
-    const withUuid: UserMessage = { ...message, uuid: randomUUID() };
-
-    if (this._state.type === "in-turn" && this.session.steer) {
-      // The provider turns attachments into its own input, as it does for queued messages.
-      void this.session
-        .steer(withUuid)
-        .then((steered) => {
-          if (!steered) this.session.queue.push(withUuid);
-        })
-        .catch((error) => {
-          loggerFor("agent-process").warn(
-            {
-              event: "process_steer_failed",
-              sessionId: this.sessionId,
-              processId: this.id,
-              provider: this.provider,
-              error: error instanceof Error ? error.message : String(error),
-            },
-            "Steer failed; falling back to queued message",
-          );
-          this.session.queue.push(withUuid);
-        });
-      return { success: true };
-    }
-
     if (this._state.type === "idle") {
       this.clearIdleTimer();
       this.setState({ type: "in-turn" });
     }
-    this.session.queue.push(withUuid);
+    // The same UUID reaches the provider and our own record of the message.
+    this.session.queue.push({ ...message, uuid: randomUUID() });
     return { success: true };
   }
 

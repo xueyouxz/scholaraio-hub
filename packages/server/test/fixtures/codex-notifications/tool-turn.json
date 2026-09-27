@@ -69,21 +69,6 @@
       "params": {
         "threadId": "thread-golden",
         "turnId": "turn-2",
-        "item": {
-          "id": "item-todo",
-          "type": "todoList",
-          "items": [
-            { "text": "读论文", "completed": true },
-            { "text": "写总结", "completed": false }
-          ]
-        }
-      }
-    },
-    {
-      "method": "item/completed",
-      "params": {
-        "threadId": "thread-golden",
-        "turnId": "turn-2",
         "item": { "id": "item-search", "type": "webSearch", "query": "codex app-server" }
       }
     },

@@ -19,6 +19,7 @@ import {
 import type {
   AskForApproval,
   SandboxMode,
+  SandboxPolicy,
   ThreadResumeParams,
   ThreadResumeResponse,
   ThreadStartParams,
@@ -51,6 +52,31 @@ export function codexThreadPolicy(mode: PermissionMode | undefined): {
   return { approvalPolicy: "on-request", sandbox };
 }
 
+/**
+ * The sandbox policy a turn sends for a mode it switches to. Workspace-write
+ * reuses the thread's own policy when the thread started with one, so its
+ * writable roots are kept.
+ */
+function turnSandboxPolicy(sandbox: SandboxMode, threadPolicy: SandboxPolicy): SandboxPolicy {
+  if (sandbox === "danger-full-access") return { type: "dangerFullAccess" };
+  if (sandbox === "read-only") return { type: "readOnly", access: { type: "fullAccess" } };
+  if (threadPolicy.type === "workspaceWrite") return threadPolicy;
+  return {
+    type: "workspaceWrite",
+    writableRoots: [],
+    readOnlyAccess: { type: "fullAccess" },
+    networkAccess: false,
+    excludeTmpdirEnvVar: false,
+    excludeSlashTmp: false,
+  };
+}
+
+/**
+ * How long a turn Codex reported as failed may take to send `turn/completed`
+ * before it is ended here.
+ */
+const FAILED_TURN_GRACE_MS = 10_000;
+
 const REASONING_EFFORTS = ["none", "minimal", "low", "medium", "high", "xhigh"] as const;
 
 /** Codex has no thinking switch; its effort ids are passed through as the app-server names them. */
@@ -61,7 +87,7 @@ function toReasoningEffort(effort?: string): (typeof REASONING_EFFORTS)[number] 
 /**
  * One Codex conversation on one `codex app-server`: it owns the client, the
  * thread, and — through its event adapter — which turn is running, so
- * interrupting and steering always act on the turn the events describe.
+ * interrupting always acts on the turn the events describe.
  */
 export class CodexSession implements AgentSession {
   readonly queue = new MessageQueue();
@@ -71,6 +97,8 @@ export class CodexSession implements AgentSession {
   private readonly adapter: CodexEventAdapter;
   /** The thread this session runs, once the app-server has started or resumed it. */
   private threadId: string | undefined;
+  /** The mode the next turn runs under; a change reaches Codex with that turn. */
+  private permissionMode: PermissionMode | undefined;
 
   constructor(
     private readonly options: StartSessionOptions,
@@ -82,8 +110,19 @@ export class CodexSession implements AgentSession {
       handleCodexServerRequest(request, options.onToolApproval, this.aborted.signal),
     );
     this.adapter = new CodexEventAdapter(options.resumeSessionId ?? "");
+    this.permissionMode = options.permissionMode;
+    // An app-server that dies between turns ends the session now, rather than
+    // failing the next message; that message then resumes the thread anew.
+    this.client.onClose((error) => {
+      log().warn({ threadId: this.threadId, err: error }, "Codex app-server went away");
+      this.queue.close();
+    });
     if (options.initialMessage) this.queue.push(options.initialMessage);
     this.events = this.run();
+  }
+
+  setPermissionMode(mode: PermissionMode): void {
+    this.permissionMode = mode;
   }
 
   abort(): void {
@@ -108,30 +147,6 @@ export class CodexSession implements AgentSession {
       return;
     }
     await this.client.request("turn/interrupt", { threadId: this.threadId, turnId });
-  }
-
-  /** Add a message to the running turn; false when there is none, so the caller queues it. */
-  async steer(message: UserMessage): Promise<boolean> {
-    const turnId = this.adapter.activeTurn;
-    if (!this.threadId || !turnId) return false;
-    try {
-      await this.client.request<{ turnId: string }>("turn/steer", {
-        threadId: this.threadId,
-        input: await this.input(message),
-        expectedTurnId: turnId,
-      });
-      return true;
-    } catch (error) {
-      log().warn(
-        {
-          threadId: this.threadId,
-          turnId,
-          error: error instanceof Error ? error.message : String(error),
-        },
-        "Codex turn/steer failed; caller should queue message instead",
-      );
-      return false;
-    }
   }
 
   /** A hub message as a turn's input: text naming every file, images, mentioned skills. */
@@ -170,6 +185,7 @@ export class CodexSession implements AgentSession {
       }
       const threadId = thread.thread.id;
       this.threadId = threadId;
+      let appliedMode = options.permissionMode;
       log().info(
         {
           threadId,
@@ -183,18 +199,29 @@ export class CodexSession implements AgentSession {
 
       for await (const message of this.queue.messages()) {
         if (signal.aborted) break;
+        const mode = this.permissionMode;
+        const turnPolicy = codexThreadPolicy(mode);
         const params: TurnStartParams = {
           threadId,
           input: await this.input(message),
           effort: toReasoningEffort(options.effort),
+          // The policy holds for later turns too; send it only when it changes.
+          ...(mode === appliedMode
+            ? {}
+            : {
+                approvalPolicy: turnPolicy.approvalPolicy,
+                sandboxPolicy: turnSandboxPolicy(turnPolicy.sandbox, thread.sandbox),
+              }),
         };
         const { turn } = await client.request<TurnStartResponse>("turn/start", params);
+        appliedMode = mode;
         adapter.beginTurn(turn.id);
         log().info({ threadId, turnId: turn.id, turnStatus: turn.status }, "Started Codex turn");
         // The adapter closes the turn on its terminal notification.
         if (turn.status === "inProgress") {
           while (adapter.activeTurn && !signal.aborted) {
-            const notification = await client.nextNotification(signal);
+            const notification = await this.nextNotification(signal);
+            if (!notification) break;
             traceProviderMessage("codex", threadId, notification);
             yield* adapter.notification(notification);
           }
@@ -202,7 +229,7 @@ export class CodexSession implements AgentSession {
         // A turn that failed at turn/start, or one we stopped waiting on, still
         // ends here; a no-op when a notification already ended it.
         yield* adapter.completeTurn(
-          turn.status === "failed" ? (turn.error?.message ?? "Codex turn failed") : undefined,
+          turn.status === "failed" ? (turn.error?.message ?? "Codex turn failed") : adapter.failure,
         );
       }
     } catch (error) {
@@ -212,6 +239,21 @@ export class CodexSession implements AgentSession {
       }
     } finally {
       client.close();
+    }
+  }
+
+  /**
+   * The next notification; none once a turn Codex reported as failed has gone
+   * `FAILED_TURN_GRACE_MS` without its `turn/completed`.
+   */
+  private async nextNotification(signal: AbortSignal) {
+    if (!this.adapter.failure) return this.client.nextNotification(signal);
+    const grace = AbortSignal.any([signal, AbortSignal.timeout(FAILED_TURN_GRACE_MS)]);
+    try {
+      return await this.client.nextNotification(grace);
+    } catch (error) {
+      if (grace.aborted && !signal.aborted) return undefined;
+      throw error;
     }
   }
 }
@@ -320,16 +362,26 @@ export async function handleCodexServerRequest(
       }
     }
 
+    // Neither is put to the user yet; each gets the answer that grants nothing.
+    case "item/permissions/requestApproval":
+      log().warn({ requestId: request.id }, "Codex permission request declined");
+      return { permissions: {}, scope: "turn" };
+
+    case "mcpServer/elicitation/request":
+      log().warn({ requestId: request.id }, "Codex MCP elicitation declined");
+      return { action: "decline", content: null, _meta: null };
+
     default:
+      // An error reply, not an empty result Codex cannot read as an answer.
       log().warn(
         { method: request.method, requestId: request.id },
         "Unhandled codex server request",
       );
-      return {};
+      throw new Error(`Unsupported request: ${request.method}`);
   }
 }
 
-/** Put an approval to the user; command and file-change decisions share these two answers. */
+/** Put an approval to the user; command and file-change decisions share these answers. */
 async function approve(
   onToolApproval: CanUseTool | undefined,
   toolName: string,
@@ -337,14 +389,16 @@ async function approve(
   signal: AbortSignal,
   /** The item being approved, so the request can be shown on its row. */
   toolUseID: string,
-): Promise<"accept" | "decline"> {
+): Promise<"accept" | "decline" | "cancel"> {
   if (!onToolApproval) {
     log().warn({ toolName }, "No approval handler; declining Codex approval request");
     return "decline";
   }
   try {
     const result = await onToolApproval(toolName, input, { signal, toolUseID });
-    return result.behavior === "allow" ? "accept" : "decline";
+    if (result.behavior === "allow") return "accept";
+    // A denial that stops the turn (as the user's "no" does) is Codex's cancel.
+    return result.interrupt ? "cancel" : "decline";
   } catch (error) {
     log().warn(
       { toolName, err: error },

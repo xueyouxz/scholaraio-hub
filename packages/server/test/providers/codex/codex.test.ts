@@ -326,7 +326,35 @@ describe("CodexProvider Event Normalization", () => {
           error: { message, codexErrorInfo: "usageLimitExceeded" },
         },
       }),
+    ).toEqual([]);
+    // Codex still closes the turn; what arrives until then belongs to it.
+    expect(adapter.failure).toBe(message);
+    expect(
+      adapter.notification({
+        method: "turn/completed",
+        params: {
+          threadId: "thread-1",
+          turn: { id: "turn-1", status: "failed", items: [], error: null },
+        },
+      }),
     ).toEqual([{ type: "turn.completed", error: message }]);
+    expect(adapter.failure).toBeUndefined();
+  });
+
+  it("drops an earlier turn's late items instead of adding them to the open turn", () => {
+    const adapter = new CodexEventAdapter("thread-1");
+    adapter.beginTurn("turn-2");
+    const item = (turnId: string) =>
+      adapter.notification({
+        method: "item/completed",
+        params: {
+          threadId: "thread-1",
+          turnId,
+          item: { id: "msg", type: "agentMessage", text: "hello" },
+        },
+      });
+    expect(item("turn-1")).toEqual([]);
+    expect(item("turn-2")).not.toEqual([]);
   });
 });
 

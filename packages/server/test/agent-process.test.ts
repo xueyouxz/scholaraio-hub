@@ -114,29 +114,10 @@ describe("AgentProcess", () => {
       expect((await sent.next()).value?.text).toBe("second");
     });
 
-    it("steers a running turn when the provider can, attachments included", () => {
-      const steer = vi.fn(async () => true);
-      const { process } = start({ session: { steer } });
-      const image = {
-        id: "a1",
-        originalName: "plot.png",
-        name: "plot.png",
-        path: "/tmp/plot.png",
-        size: 3,
-        mimeType: "image/png",
-      };
-      expect(process.queueMessage({ text: "steer me", attachments: [image] }).success).toBe(true);
-      // The provider builds its own input from the attachments, images included.
-      expect(steer).toHaveBeenCalledWith(
-        expect.objectContaining({ text: "steer me", attachments: [image] }),
-      );
-    });
-
-    it("queues the message when the provider declines to steer", async () => {
-      const steer = vi.fn(async () => false);
-      const { process, session } = start({ session: { steer } });
-      expect(process.queueMessage({ text: "fallback me" }).success).toBe(true);
-      expect((await session.queue.messages().next()).value?.text).toBe("fallback me");
+    it("queues a message sent while the provider is still in its turn", async () => {
+      const { process, session } = start();
+      expect(process.queueMessage({ text: "next" }).success).toBe(true);
+      expect((await session.queue.messages().next()).value?.text).toBe("next");
     });
   });
 
@@ -168,6 +149,15 @@ describe("AgentProcess", () => {
       expect(process.permissionMode).toBe("default");
       process.setPermissionMode("plan");
       expect(process.permissionMode).toBe("plan");
+    });
+
+    it("tells the provider about a new mode once", () => {
+      const setPermissionMode = vi.fn();
+      const { process } = start({ session: { setPermissionMode } });
+      process.setPermissionMode("acceptEdits");
+      process.setPermissionMode("acceptEdits");
+      expect(setPermissionMode).toHaveBeenCalledOnce();
+      expect(setPermissionMode).toHaveBeenCalledWith("acceptEdits");
     });
 
     it("auto-approves everything in bypassPermissions mode", async () => {

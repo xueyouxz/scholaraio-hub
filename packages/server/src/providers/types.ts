@@ -112,11 +112,8 @@ export interface AgentSession {
   abort: () => void;
   /** Check if the underlying CLI process is still alive (undefined = not available) */
   isProcessAlive?: () => boolean;
-  /**
-   * Steer an active turn with additional user input.
-   * Returns true when steered immediately, false when caller should enqueue instead.
-   */
-  steer?: (message: UserMessage) => Promise<boolean>;
+  /** Apply a new permission mode to the provider's own side from its next action on. */
+  setPermissionMode?: (mode: PermissionMode) => void;
   /** Switch thinking without restarting the session; undefined is the provider default. */
   setThinking?: (thinking: ThinkingConfig | undefined) => Promise<void>;
   /**

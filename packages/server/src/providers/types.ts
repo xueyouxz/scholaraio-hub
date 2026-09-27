@@ -139,6 +139,11 @@ export interface AgentProvider {
   readonly displayName: string;
   /** What this provider can do, declared in one place. */
   readonly capabilities: import("@scholaraio-hub/shared").ProviderCapabilities;
+  /**
+   * How long a turn may go without events before the supervisor suspects the
+   * CLI died silently; undefined is the supervisor's default.
+   */
+  readonly silentTurnLimitMs?: number;
 
   /**
    * Get detailed authentication status.

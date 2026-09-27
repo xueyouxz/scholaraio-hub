@@ -1,4 +1,3 @@
-import { randomUUID } from "node:crypto";
 import type { ProviderName, ThinkingConfig } from "@scholaraio-hub/shared";
 import { loggerFor } from "../logging/logger.js";
 import type { ProviderRegistry } from "../providers/ProviderRegistry.js";
@@ -8,21 +7,13 @@ import { AgentProcess, type ProcessEvent } from "./AgentProcess.js";
 /** How often to check for stale processes (60 seconds) */
 const STALE_CHECK_INTERVAL_MS = 60 * 1000;
 
-/** Default in-turn stale threshold for providers with frequent heartbeat/tool events. */
-const DEFAULT_STALE_IN_TURN_THRESHOLD_MS = 5 * 60 * 1000;
-/** Codex sessions can be silent for long periods during backend retries/reconnects. */
-const CODEX_STALE_IN_TURN_THRESHOLD_MS = 60 * 60 * 1000;
+/** How long a turn may go without events, unless its provider says otherwise. */
+const DEFAULT_SILENT_TURN_LIMIT_MS = 5 * 60 * 1000;
 /**
  * How long a process may wait on an approval or question nobody answers. The
  * session keeps its native id, so the next message resumes where it stopped.
  */
 const DEFAULT_UNANSWERED_INPUT_TIMEOUT_MS = 30 * 60 * 1000;
-
-function getStaleInTurnThresholdMs(provider: ProviderName): number {
-  return provider === "codex"
-    ? CODEX_STALE_IN_TURN_THRESHOLD_MS
-    : DEFAULT_STALE_IN_TURN_THRESHOLD_MS;
-}
 
 /** How a session's worker must run; a live one that differs is replaced. */
 export interface LaunchSettings {
@@ -196,38 +187,18 @@ export class Supervisor {
   }
 
   private async launch(request: SessionMessageRequest): Promise<AgentProcess> {
-    const { sessionId, nativeSessionId, projectPath, message } = request;
     const settings = request.settings ?? {};
-    const provider = this.providers.get(settings.providerName);
-    const permissionMode = request.permissionMode ?? "default";
-    // The approval callback is handed over before the process exists.
-    const holder: { process?: AgentProcess } = {};
-    const session = await provider.startSession({
-      cwd: projectPath,
-      // The same UUID reaches the provider and our own record of the message.
-      initialMessage: { ...message, uuid: randomUUID() },
-      resumeSessionId: nativeSessionId,
-      permissionMode,
-      model: settings.model,
-      thinking: settings.thinking,
-      effort: settings.effort,
-      onToolApproval: async (toolName, input, opts) => {
-        if (!holder.process) return { behavior: "deny", message: "Process not ready" };
-        return holder.process.handleToolApproval(toolName, input, opts);
-      },
-    });
-    const process = new AgentProcess(session, {
-      sessionId,
-      nativeSessionId,
-      projectPath,
-      provider: provider.name,
-      permissionMode,
+    const process = await AgentProcess.launch(this.providers.get(settings.providerName), {
+      sessionId: request.sessionId,
+      nativeSessionId: request.nativeSessionId,
+      projectPath: request.projectPath,
+      message: request.message,
+      permissionMode: request.permissionMode ?? "default",
       model: settings.model,
       thinking: settings.thinking,
       effort: settings.effort,
       idleTimeoutMs: this.idleTimeoutMs,
     });
-    holder.process = process;
     if (this.closed) {
       await process.stop("Server closing");
       throw new Error("The server is shutting down");
@@ -307,7 +278,8 @@ export class Supervisor {
         continue;
       }
       if (process.state.type !== "in-turn") continue;
-      const staleThresholdMs = getStaleInTurnThresholdMs(process.provider);
+      const staleThresholdMs =
+        this.providers.get(process.provider).silentTurnLimitMs ?? DEFAULT_SILENT_TURN_LIMIT_MS;
       const silentMs = now - process.lastMessageTime.getTime();
       if (silentMs < staleThresholdMs) continue;
       const alive = process.isProcessAlive;

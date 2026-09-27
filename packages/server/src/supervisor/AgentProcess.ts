@@ -2,8 +2,13 @@ import { randomUUID } from "node:crypto";
 import type { InputRequest, ProviderName, ThinkingConfig } from "@scholaraio-hub/shared";
 import { loggerFor } from "../logging/logger.js";
 import type { AgentEvent } from "../providers/events.js";
-import type { AgentSession } from "../providers/types.js";
-import type { PermissionMode, ToolApprovalResult, UserMessage } from "../providers/types.js";
+import type {
+  AgentProvider,
+  AgentSession,
+  PermissionMode,
+  ToolApprovalResult,
+  UserMessage,
+} from "../providers/types.js";
 import { ApprovalQueue } from "./ApprovalQueue.js";
 import { decidePermission } from "./permission-policy.js";
 
@@ -80,6 +85,35 @@ export class AgentProcess {
       }),
     onDrained: () => this.setState({ type: "in-turn" }),
   });
+
+  /**
+   * Start `provider`'s session for `message` and the process that drives it.
+   * The provider gets the process's approval handler before the process
+   * exists; an approval asked for in between is denied.
+   */
+  static async launch(
+    provider: AgentProvider,
+    options: Omit<AgentProcessOptions, "provider"> & { message: UserMessage },
+  ): Promise<AgentProcess> {
+    const { message, ...processOptions } = options;
+    const created: { process?: AgentProcess } = {};
+    const session = await provider.startSession({
+      cwd: options.projectPath,
+      // The same UUID reaches the provider and our own record of the message.
+      initialMessage: { ...message, uuid: randomUUID() },
+      resumeSessionId: options.nativeSessionId,
+      permissionMode: options.permissionMode,
+      model: options.model,
+      thinking: options.thinking,
+      effort: options.effort,
+      onToolApproval: async (toolName, input, approval) =>
+        created.process
+          ? created.process.handleToolApproval(toolName, input, approval)
+          : { behavior: "deny", message: "Process not ready" },
+    });
+    created.process = new AgentProcess(session, { ...processOptions, provider: provider.name });
+    return created.process;
+  }
 
   constructor(
     private readonly session: AgentSession,

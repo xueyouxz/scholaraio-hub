@@ -61,6 +61,8 @@ export interface AppServerModel {
 export class CodexProvider implements AgentProvider {
   readonly name = "codex" as const;
   readonly displayName = "Codex";
+  /** Codex can be silent for a long time while its backend retries or reconnects. */
+  readonly silentTurnLimitMs = 60 * 60 * 1000;
   readonly capabilities: ProviderCapabilities = {
     // Codex's approval presets; each is the sandbox codexThreadPolicy() gives that mode.
     permissionModes: [

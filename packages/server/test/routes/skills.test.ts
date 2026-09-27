@@ -2,6 +2,7 @@ import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { handleApiError } from "../../src/http.js";
 import { createSkillsRoutes } from "../../src/routes/skills.js";
 import { invalidateScholaraioSkillsCache } from "../../src/skills/scholaraioSkills.js";
 
@@ -31,9 +32,10 @@ describe("Skills Routes", () => {
     await makeSkill(tmp, "totally-new", "uncategorized");
 
     const routes = createSkillsRoutes({ scholaraioSkillsDir: tmp });
+    routes.onError(handleApiError);
     const res = await routes.request("/scholaraio");
     expect(res.status).toBe(200);
-    const data = (await res.json()) as {
+    const data = (await res.json().then((body) => body.data)) as {
       categories: Array<{ id: string }>;
       skills: Array<{ name: string; category: string; source: string }>;
     };
@@ -50,29 +52,36 @@ describe("Skills Routes", () => {
     await makeSkill(tmp, "search", "search desc", "# Hello\nbody text");
 
     const routes = createSkillsRoutes({ scholaraioSkillsDir: tmp });
+    routes.onError(handleApiError);
     const res = await routes.request("/scholaraio/search");
     expect(res.status).toBe(200);
-    const data = (await res.json()) as { body: string; path: string };
+    const data = (await res.json().then((body) => body.data)) as { body: string; path: string };
     expect(data.body).toContain("# Hello");
     expect(data.path.endsWith("/search/SKILL.md")).toBe(true);
   });
 
   it("404s unknown skill", async () => {
     const routes = createSkillsRoutes({ scholaraioSkillsDir: tmp });
+    routes.onError(handleApiError);
     const res = await routes.request("/scholaraio/missing");
     expect(res.status).toBe(404);
   });
 
   it("refresh invalidates cache and rescans", async () => {
     const routes = createSkillsRoutes({ scholaraioSkillsDir: tmp });
+    routes.onError(handleApiError);
     let res = await routes.request("/scholaraio");
-    expect(((await res.json()) as { skills: unknown[] }).skills).toHaveLength(0);
+    expect(
+      ((await res.json().then((body) => body.data)) as { skills: unknown[] }).skills,
+    ).toHaveLength(0);
 
     await makeSkill(tmp, "search", "search desc");
     const refresh = await routes.request("/scholaraio/refresh", { method: "POST" });
     expect(refresh.status).toBe(200);
 
     res = await routes.request("/scholaraio");
-    expect(((await res.json()) as { skills: unknown[] }).skills).toHaveLength(1);
+    expect(
+      ((await res.json().then((body) => body.data)) as { skills: unknown[] }).skills,
+    ).toHaveLength(1);
   });
 });

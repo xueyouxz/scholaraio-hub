@@ -6,6 +6,7 @@ config loader merges on top. Keys are stored but never read back out: the
 browser only learns whether one is configured, and how long it is, so the
 field can show a mask of the right length instead of looking empty.
 """
+
 from __future__ import annotations
 
 from pathlib import Path
@@ -64,8 +65,7 @@ class SettingsService:
         with self.runtime.lock:
             cfg = self.runtime.cfg
             settings = {
-                field: str(getattr(getattr(cfg, section), key) or "")
-                for field, (section, key, _) in FIELDS.items()
+                field: str(getattr(getattr(cfg, section), key) or "") for field, (section, key, _) in FIELDS.items()
             }
             mineru_key = cfg.resolved_mineru_api_key().strip()
             llm_key = cfg.resolved_api_key().strip()
@@ -91,7 +91,7 @@ class SettingsService:
         """
         checks = {"mineru": self.check_mineru, "llm": self.check_llm, "embed": self.check_embed}
         if target not in checks:
-            raise InvalidRequest(f"未知的检查项：{target}")
+            raise InvalidRequest(f"Unknown check target: {target}")
         level, message = checks[target]()
         return {"target": target, "ok": level != "error", "level": level, "message": message}
 
@@ -103,7 +103,7 @@ class SettingsService:
         cfg = self.runtime.cfg
         token = cfg.resolved_mineru_api_key()
         if not token:
-            return "error", "尚未填写 MinerU Token，导入时会降级为本地解析"
+            return "error", "MinerU token is missing. Imports will use local parsing"
         try:
             response = requests.get(
                 f"{MINERU_CLOUD_API}/extract/task/{MINERU_PROBE_TASK}",
@@ -111,19 +111,19 @@ class SettingsService:
                 timeout=CHECK_TIMEOUT_SECONDS,
             )
         except requests.RequestException as error:
-            return "error", f"无法连接 MinerU：{error}"
+            return "error", f"Unable to connect to MinerU: {error}"
         if response.status_code in (401, 403) or "token" in response.text.casefold()[:400]:
-            return "error", "MinerU 拒绝了该 Token，请确认复制完整且未过期"
+            return "error", "MinerU rejected the token. Verify that it is complete and has not expired"
         if shutil.which("mineru-open-api") is None:
-            return "warning", "Token 可用，但本机未安装 mineru-open-api，云端解析暂不可用"
-        return "ok", "Token 可用，导入时使用 MinerU 云端解析"
+            return "warning", "Token is valid, but mineru-open-api is not installed. Cloud parsing is unavailable"
+        return "ok", "Token is valid. Imports will use MinerU cloud parsing"
 
     def check_llm(self) -> tuple[str, str]:
         from scholaraio.services.metrics import call_llm
 
         cfg = self.runtime.cfg
         if not cfg.resolved_api_key():
-            return "error", "尚未填写 API Key，元数据按规则提取，深度解析不可用"
+            return "error", "API key is missing. Metadata uses rule-based extraction and deep parsing is unavailable"
         try:
             result = call_llm(
                 "Reply with OK.",
@@ -134,20 +134,23 @@ class SettingsService:
                 purpose="settings.check",
             )
         except Exception as error:  # any backend failure is what the user needs to read
-            return "error", f"调用失败：{error}"
-        return "ok", f"{result.model or cfg.llm.model} 响应正常"
+            return "error", f"Request failed: {error}"
+        return "ok", f"{result.model or cfg.llm.model} is responding"
 
     def check_embed(self) -> tuple[str, str]:
         from scholaraio.services import vectors
 
         cfg = self.runtime.cfg
         if vectors.embedding_provider(cfg) == "none":
-            return "error", "配置中关闭了向量嵌入"
+            return "error", "Vector embeddings are disabled in the configuration"
         if not vectors.runtime_available():
-            return "warning", "语义检索运行时尚未安装，可在文献库分析页一键安装"
+            return "warning", "Semantic search runtime is not installed. Install it from the library analytics page"
         if not vectors.model_available(cfg):
-            return "warning", f"{cfg.embed.model} 尚未下载，首次准备语义检索时自动下载"
-        return "ok", f"{cfg.embed.model} 已就绪"
+            return (
+                "warning",
+                f"{cfg.embed.model} is not downloaded. It will be downloaded when semantic search is prepared",
+            )
+        return "ok", f"{cfg.embed.model} is ready"
 
     def update(self, fields: dict) -> dict:
         """Apply a settings change and reload the configuration it describes."""
@@ -158,14 +161,14 @@ class SettingsService:
                 changes.setdefault(section, {})[key] = str(value).strip()
                 continue
             if field not in FIELDS:
-                raise InvalidRequest(f"无法修改该配置项：{field}")
+                raise InvalidRequest(f"Cannot modify setting: {field}")
             section, key, allowed = FIELDS[field]
             text = str(value).strip()
             if allowed is not None and text not in allowed:
-                raise InvalidRequest(f"{field} 只能是：{'、'.join(sorted(allowed))}")
+                raise InvalidRequest(f"{field} must be one of: {', '.join(sorted(allowed))}")
             changes.setdefault(section, {})[key] = text
         if not changes:
-            raise InvalidRequest("没有要修改的配置项")
+            raise InvalidRequest("No settings to update")
         self.normalize(changes)
         with self.runtime.lock:
             self.write(changes)
@@ -191,7 +194,7 @@ class SettingsService:
             loaded = yaml.safe_load(self.path.read_text(encoding="utf-8"))
             if loaded is not None and not isinstance(loaded, dict):
                 # Exists but unreadable: a storage fault the user must fix by hand.
-                raise RuntimeError(f"config.local.yaml 格式无效，请手动检查：{self.path}")
+                raise RuntimeError(f"Invalid config.local.yaml. Check the file: {self.path}")
             current = loaded or {}
         for section, values in changes.items():
             existing = current.get(section)

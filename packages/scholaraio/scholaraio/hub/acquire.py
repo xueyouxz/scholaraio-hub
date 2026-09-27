@@ -4,6 +4,7 @@ A DOI, an arXiv id, a patent number, a landing page or a direct PDF link all
 end the same way: a file staged for the import queue, which then runs the
 ordinary ingest pipeline over it.
 """
+
 from __future__ import annotations
 
 import re
@@ -49,7 +50,7 @@ class AcquireService:
         """Download what this locator names and queue it for import."""
         locator = locator.strip()
         if not locator:
-            raise InvalidRequest("请填写 DOI、arXiv 编号、专利号或论文链接")
+            raise InvalidRequest("Provide a DOI, arXiv ID, patent number, or paper URL")
         downloaded, source = self.download(locator, self.work)
         job = self.imports.enqueue([self.stage(downloaded)], project_id, title=title)
         return {**job, "source": source}
@@ -69,7 +70,7 @@ class AcquireService:
 
             path = download_patent_pdf(locator, output_dir=work, cfg=self.runtime.cfg)
             if path is None:
-                raise InvalidRequest(f"未能下载该专利：{locator}")
+                raise InvalidRequest(f"Unable to download patent: {locator}")
             return Path(path), "patent"
         return self.download_url(locator, work), "doi"
 
@@ -81,9 +82,9 @@ class AcquireService:
         try:
             result = fetch_pdf(locator, work)
         except (PdfFetchError, requests.RequestException) as error:
-            raise InvalidRequest(f"未能获取 PDF：{error}") from error
+            raise InvalidRequest(f"Unable to retrieve PDF: {error}") from error
         if result.path is None:
-            raise InvalidRequest(f"未能获取 PDF：{result.message or locator}")
+            raise InvalidRequest(f"Unable to retrieve PDF: {result.message or locator}")
         return result.path
 
 

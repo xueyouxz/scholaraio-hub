@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { handleApiError } from "../../src/http.js";
 import { createSettingsRoutes } from "../../src/routes/settings.js";
 import type {
   ServerSettings,
@@ -26,6 +27,7 @@ describe("Settings Routes", () => {
       const routes = createSettingsRoutes({
         serverSettingsService: mockServerSettingsService,
       });
+      routes.onError(handleApiError);
 
       const response = await routes.request("/", {
         method: "PUT",
@@ -53,6 +55,7 @@ describe("Settings Routes", () => {
       const routes = createSettingsRoutes({
         serverSettingsService: mockServerSettingsService,
       });
+      routes.onError(handleApiError);
 
       const response = await routes.request("/", {
         method: "PUT",
@@ -64,15 +67,16 @@ describe("Settings Routes", () => {
         }),
       });
 
-      expect(response.status).toBe(400);
+      expect(response.status).toBe(422);
       const json = await response.json();
-      expect(json.error).toBe("新会话默认设置无效");
+      expect(json.code).toBe("VALIDATION_FAILED");
     });
 
     it("treats blank fields as absent and clears the defaults when none are left", async () => {
       const routes = createSettingsRoutes({
         serverSettingsService: mockServerSettingsService,
       });
+      routes.onError(handleApiError);
       const put = (body: unknown) =>
         routes.request("/", {
           method: "PUT",
@@ -89,8 +93,8 @@ describe("Settings Routes", () => {
         expect(settings.newSessionDefaults).toBeUndefined();
       }
       const missing = await put({});
-      expect(missing.status).toBe(400);
-      expect((await missing.json()).error).toBe("请至少提供一项设置");
+      expect(missing.status).toBe(422);
+      expect((await missing.json()).message).toBe("Provide at least one setting.");
     });
   });
 });

@@ -10,11 +10,10 @@ import { existsSync } from "node:fs";
 import path from "node:path";
 import { HUB_ENV_KEYS } from "../env.js";
 import { loggerFor } from "../logging/logger.js";
-import { pythonRuntime } from "../runtime/python.js";
 
-/** What every agent process of this server starts with. */
-export function agentEnv(): Record<string, string | undefined> {
-  return withScholaraioCli(filterEnvForChildProcess());
+/** agent 进程启动时的环境：用户环境去掉 Hub 自己的变量，再指向 `library`（若有）。 */
+export function agentEnv(library?: AgentLibrary): Record<string, string | undefined> {
+  return withScholaraioCli(filterEnvForChildProcess(), library);
 }
 
 /** Prefixes to exclude from child process environment */
@@ -70,21 +69,14 @@ export function filterEnvForChildProcess(
   return filtered;
 }
 
-/** The library agents work on, and the Hub API their write commands go through. */
+/** The library agents work on, as the launcher describes it, and the API their writes go through. */
 export interface AgentLibrary {
-  dataDir: string;
-  /** Where this server listens, so the CLI does not edit the library behind its back. */
-  apiBaseUrl?: string;
-}
-
-let bound: AgentLibrary | undefined;
-
-/**
- * Name the library for every agent this process starts. The server's entry
- * point binds it once; providers are shared singletons and cannot ask their app.
- */
-export function bindAgentLibrary(library: AgentLibrary | undefined): void {
-  bound = library;
+  /** The library's `config.yaml`, which the CLI resolves the library from. */
+  configFile?: string;
+  /** The directory holding the library runtime's `scholaraio` CLI. */
+  cliBinDir?: string;
+  /** The library service, which the CLI asks to write rather than edit the library behind its back. */
+  libraryUrl?: string;
 }
 
 /**
@@ -96,30 +88,33 @@ export function bindAgentLibrary(library: AgentLibrary | undefined): void {
  */
 export function withScholaraioCli(
   env: Record<string, string | undefined>,
-  library: AgentLibrary | undefined = bound,
+  library: AgentLibrary | undefined,
 ): Record<string, string | undefined> {
-  // Nothing bound: no Hub library to point at (a test, or a `pnpm hub` command).
-  if (!library) return env;
-  const { dataDir, apiBaseUrl } = library;
-  const config = path.join(dataDir, "config.yaml");
+  // No library: nothing to point at (a test, or the doctor).
+  if (!library?.configFile) return env;
+  const { configFile, cliBinDir, libraryUrl } = library;
   // A missing config would make the CLI treat the agent's project directory as
   // a library root and write a stray one there. The library service creates the
   // file on startup, so this only guards a degraded start.
-  if (!existsSync(config)) {
-    warnOnce(`未找到 ${config}，本次未向 agent 注入文献库 CLI 环境。`);
+  if (!existsSync(configFile)) {
+    warnOnce(`未找到 ${configFile}，本次未向 agent 注入文献库 CLI 环境。`);
     return env;
   }
-  const result: Record<string, string | undefined> = { ...env, SCHOLARAIO_CONFIG: config };
-  if (apiBaseUrl) result.SCHOLARAIO_HUB_API = apiBaseUrl;
-  const runtime = pythonRuntime(dataDir);
-  const executable = runtime.command("scholaraio");
-  if (!existsSync(executable)) {
-    warnOnce(`未找到 ${executable}，agent 将使用 PATH 上已有的 scholaraio。`);
+  const result: Record<string, string | undefined> = { ...env, SCHOLARAIO_CONFIG: configFile };
+  if (libraryUrl) result.SCHOLARAIO_LIBRARY_API = libraryUrl;
+  const executable = cliBinDir && path.join(cliBinDir, cliName("scholaraio"));
+  if (!cliBinDir || !executable || !existsSync(executable)) {
+    warnOnce(`未找到 ${executable ?? "文献库 CLI"}，agent 将使用 PATH 上已有的 scholaraio。`);
     return result;
   }
   // Only the PATH entry: an agent's own Python work must not run inside the Hub's venv.
-  result.PATH = [runtime.binDir, env.PATH].filter(Boolean).join(path.delimiter);
+  result.PATH = [cliBinDir, env.PATH].filter(Boolean).join(path.delimiter);
   return result;
+}
+
+/** A console script's file name on this platform. */
+function cliName(name: string): string {
+  return process.platform === "win32" ? `${name}.exe` : name;
 }
 
 const warned = new Set<string>();

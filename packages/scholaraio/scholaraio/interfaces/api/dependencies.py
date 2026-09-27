@@ -14,6 +14,7 @@ from scholaraio.hub import HubLibrary
 from scholaraio.hub.acquire import AcquireService
 from scholaraio.hub.analytics import AnalyticsService
 from scholaraio.hub.citations import CitationService
+from scholaraio.hub.directories import DirectoryService
 from scholaraio.hub.discover import DiscoverService
 from scholaraio.hub.events import EventBus
 from scholaraio.hub.exports import ExportService
@@ -22,6 +23,7 @@ from scholaraio.hub.metadata import MetadataService
 from scholaraio.hub.papers import PaperService
 from scholaraio.hub.projects import ProjectService
 from scholaraio.hub.retrieval import RetrievalService
+from scholaraio.hub.runtime_install import RuntimeInstaller
 from scholaraio.hub.search import SearchService
 from scholaraio.hub.settings import SettingsService
 from scholaraio.hub.status import LibraryStatus
@@ -46,10 +48,12 @@ def _service(name: str):
 Acquire = Annotated[AcquireService, _service("acquire")]
 Analytics = Annotated[AnalyticsService, _service("analytics")]
 Citations = Annotated[CitationService, _service("citations")]
+Directories = Annotated[DirectoryService, _service("directories")]
 Discover = Annotated[DiscoverService, _service("discover")]
 Events = Annotated[EventBus, _service("events")]
 Exports = Annotated[ExportService, _service("exports")]
 Imports = Annotated[ImportQueue, _service("imports")]
+Installer = Annotated[RuntimeInstaller, _service("installer")]
 Metadata = Annotated[MetadataService, _service("metadata")]
 Papers = Annotated[PaperService, _service("papers")]
 Projects = Annotated[ProjectService, _service("projects")]

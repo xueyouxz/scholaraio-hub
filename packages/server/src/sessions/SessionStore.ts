@@ -53,7 +53,8 @@ export class SessionStore {
       if (data.state === "running" || data.state === "waiting-input") {
         data.state = "interrupted";
         data.pendingInput = undefined;
-        data.error = "服务重启中断了上一轮，可发送新消息继续。";
+        data.error =
+          "The previous turn was interrupted by a service restart. Send a new message to continue.";
         await this.save(data);
       }
     }
@@ -139,19 +140,6 @@ export class SessionStore {
     await this.save(record);
     this.records.set(record.id, record);
     return record;
-  }
-
-  /**
-   * Point every session at a renamed project, or detach them from a removed
-   * one. Returns how many sessions changed.
-   */
-  async retargetProject(projectId: string, replacement?: string): Promise<number> {
-    const affected = [...this.records.values()].filter((record) => record.projectId === projectId);
-    for (const record of affected) {
-      record.projectId = replacement;
-      await this.save(record);
-    }
-    return affected.length;
   }
 
   /**

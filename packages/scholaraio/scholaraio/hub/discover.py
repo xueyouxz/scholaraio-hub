@@ -5,6 +5,7 @@ at the same time and answers with one list. Every result carries the locator
 the import queue already understands (a DOI, an arXiv id or an open-access
 link), so adding a result is the same fetch a pasted identifier would start.
 """
+
 from __future__ import annotations
 
 import logging
@@ -40,9 +41,12 @@ class DiscoverService:
         if not query:
             return {"results": [], "errors": []}
         if len(query) > QUERY_LIMIT:
-            raise InvalidRequest(f"检索词不能超过 {QUERY_LIMIT} 个字符")
+            raise InvalidRequest(f"Search query must not exceed {QUERY_LIMIT} characters")
         if lookups_disabled():
-            return {"results": [], "errors": [{"source": "web", "error": "当前实例关闭了外部检索"}]}
+            return {
+                "results": [],
+                "errors": [{"source": "web", "error": "External search is disabled for this instance"}],
+            }
         limit = min(max(limit, 1), MAX_LIMIT)
         sources: dict[str, Callable[[str, int], list[dict]]] = {
             "openalex": self.openalex,

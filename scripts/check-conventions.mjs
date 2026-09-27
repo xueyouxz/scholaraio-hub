@@ -3,8 +3,8 @@
 // for every contributor and every coding agent:
 //   - no suppression comments (fix the type or lint error instead)
 //   - no empty catch callbacks that swallow errors (log them with context)
-//   - tests live where the package expects them (client: __tests__/, server and
-//     shared: test/)
+//   - tests live where the package expects them (client: __tests__/, server,
+//     cli and shared: test/)
 //
 //   node scripts/check-conventions.mjs            # every tracked file (pnpm lint)
 //   node scripts/check-conventions.mjs <files…>   # just these (lint-staged, agent hooks)
@@ -31,8 +31,8 @@ function testLocationProblem(file) {
   if (!/\.test\.tsx?$/.test(file)) return undefined;
   if (file.startsWith("packages/client/") && !file.includes("/__tests__/"))
     return "client tests live in a sibling __tests__/ directory (e.g. src/core/__tests__/)";
-  if (/^packages\/(server|shared)\//.test(file) && !file.includes("/test/"))
-    return "server and shared tests live under the package's test/ directory";
+  if (/^packages\/(server|cli|shared)\//.test(file) && !file.includes("/test/"))
+    return "server, cli and shared tests live under the package's test/ directory";
   return undefined;
 }
 

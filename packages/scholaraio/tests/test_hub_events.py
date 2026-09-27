@@ -8,7 +8,7 @@ import time
 import pytest
 
 from scholaraio.hub import HubLibrary, watcher
-from scholaraio.hub.events import EventBus
+from scholaraio.hub.events import CLOSED, EventBus
 
 
 def test_a_change_on_a_worker_thread_reaches_a_stream():
@@ -30,6 +30,22 @@ def test_a_stream_that_left_stops_receiving():
     events.publish("tasks")
 
     assert queue.empty()
+
+
+def test_closing_the_bus_ends_every_stream_even_a_full_one():
+    async def main():
+        events = EventBus()
+        events.bind(asyncio.get_running_loop())
+        idle, full = events.subscribe(), events.subscribe()
+        for _ in range(full.maxsize):
+            full.put_nowait({"type": "papers"})
+        await asyncio.to_thread(events.close)
+        await asyncio.sleep(0)
+        drained = [full.get_nowait() for _ in range(full.qsize())]
+        late = events.subscribe()
+        return await asyncio.wait_for(idle.get(), timeout=5), drained[-1], late.get_nowait()
+
+    assert asyncio.run(main()) == (CLOSED, CLOSED, CLOSED)
 
 
 @pytest.fixture

@@ -1,6 +1,8 @@
 import { ALL_PERMISSION_MODES } from "@scholaraio-hub/shared";
 import { describe, expect, it } from "vitest";
-import { claudeProvider } from "../../src/providers/claude/ClaudeProvider.js";
+import { ClaudeProvider } from "../../src/providers/claude/ClaudeProvider.js";
+
+const claudeProvider = new ClaudeProvider();
 import { CodexProvider } from "../../src/providers/codex/CodexProvider.js";
 import { codexThreadPolicy } from "../../src/providers/codex/CodexSession.js";
 

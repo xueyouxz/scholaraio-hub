@@ -7,7 +7,8 @@
  * through `static.ts` instead.
  */
 import type { IncomingMessage, RequestListener, Server, ServerResponse } from "node:http";
-import type { ConfigEnv, UserConfigExport, ViteDevServer } from "vite";
+import type { ConfigEnv, PluginOption, UserConfigExport, ViteDevServer } from "vite";
+import { withLibraryPort } from "./library-port.js";
 
 type CreateServer = (options: object, listener: RequestListener) => Server;
 
@@ -22,6 +23,9 @@ function isServerPath(url: string | undefined): boolean {
 export class DevFrontend {
   private vite?: ViteDevServer;
   private starting?: Promise<ViteDevServer>;
+
+  /** `libraryPort`: the library service's port, written into the page. */
+  constructor(private readonly libraryPort: number) {}
 
   /**
    * Wrap the server factory so the Hono listener only sees server paths.
@@ -60,8 +64,13 @@ export class DevFrontend {
         isPreview: false,
       };
       const config = await (typeof exported === "function" ? exported(env) : exported);
+      const libraryPort: PluginOption = {
+        name: "scholaraio-library-port",
+        transformIndexHtml: (html) => withLibraryPort(html, this.libraryPort),
+      };
       return createServer({
         ...config,
+        plugins: [...(config.plugins ?? []), libraryPort],
         configFile: false,
         appType: "spa",
         server: { ...config.server, middlewareMode: true, hmr: { server } },

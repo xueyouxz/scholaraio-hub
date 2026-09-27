@@ -5,15 +5,20 @@
 
 ## 职责
 
-`packages/client` / `server` / `shared` 三个 TypeScript 包，加同仓库的 Python 包 `packages/scholaraio`。
+`packages/client` / `server` / `cli` / `shared` 四个 TypeScript 包，加同仓库的 Python 包 `packages/scholaraio`。
 
 - **client**：`app/` 是文献库、阅读器、会话、设置的导航外壳；`features/library` 负责导入、检索和阅读，
   `features/session` 负责会话显示与输入；`shared/components/Markdown.tsx` 统一 Streamdown 渲染。
-- **server/routes**：校验、响应、二进制文件流和订阅连接。只挂载 `/api/library`、`/api/sessions` 等应用接口。
-- **LibraryService**：启动 Python、就绪检查、内部令牌、HTTP 代理、关闭子进程。浏览器不能直接配置或访问 Python。
+- **server/routes**：校验、响应、二进制文件流和订阅连接。挂载 `/api/sessions`、`/api/providers` 等应用接口；浏览器直接调用 Python 文献接口。
+- **启动器**（`packages/cli`）：解析 profile，先启动 Python 文献服务并等它就绪，再启动 server；负责两者的
+  重启与关闭。server 不启动、不重启、不配置 Python。
+- **LibraryClient**（`server/src/lib/`）：server 调用文献服务 API 的客户端（会话范围、上下文、项目目录），
+  地址来自启动器传入的 `LIBRARY_URL`。
 - **Python HubLibrary**（`scholaraio/hub/`）：文件、元数据、哈希去重、解析任务、索引和检索，复用上游
   stores 与 chunks/index 服务。业务代码与运行数据完全分离。分层见下节。
 - **SessionStore**：应用自己的会话 ID、关联文献、显示消息和私有的原生 ID，每个会话一个 JSON，原子写入。
+  会话按项目 id 关联文献项目。项目 id 是项目目录里标识文件中的 UUID，改名不变；文献服务独自改名、归档项目，
+  会话下次使用时跟上（旧记录里的项目名换成 id，项目已归档则回到会话自己的目录），server 启动时也会一次性对齐。
 - **SessionService**：组织文献上下文与本轮输入、防重复提交、持久化运行、流订阅、排队与审批。
 - **Supervisor / Provider**：CLI 协议、进程生命周期、登录、原生恢复、中断与权限。
 
@@ -26,7 +31,7 @@
 
 - `interfaces/api/routes/*`：按领域拆分的薄控制器，只解析参数、调用一个服务、返回结果；通过
   `dependencies.py` 取服务，不读 `app.state`，不导入 stores。`schemas.py` 定义请求体（属性 snake_case，
-  线上字段 camelCase）；`errors.py` 统一 `{"error": ...}` 响应。
+  线上字段 camelCase）；`errors.py` 统一 `{id, code, message, data}` 响应，具体约定见 [HTTP 接口约定](http-api.md)。
 - `hub/*` 服务：`PaperService`、`SearchService`、`RetrievalService`、`DiscoverService`、`ProjectService`、
   `CitationService`、`MetadataService`、`ExportService`、`SettingsService`、`AnalyticsService`、
   `LibraryStatus`；后台为 `ImportQueue`、`AcquireService`、`TaskRunner`（通用执行器）+
@@ -34,8 +39,8 @@
   与所用的兄弟服务，不回引 `HubLibrary`。
 - `hub/runtime.py`：配置、写锁、`PaperRepository`、`EventBus`、重建索引等共享基础设施。
 - `hub/repository.py` 与 `hub/views.py`：磁盘上的论文（按 UUID 寻址）及其对浏览器的行结构；其他模块不再各自遍历目录或拼装行。
-- `hub/errors.py`：`InvalidRequest`(400)、`NotFound`(404)、`TooLarge`(413)。上游沿用
-  `ValueError` = 拒绝请求、`RuntimeError` = 数据损坏(500)；普通 `KeyError` 视为缺陷，返回 500 而不是 404。
+- `hub/errors.py`：`InvalidRequest`(422)、`NotFound`(404)、`TooLarge`(413)。上游沿用
+  `ValueError` = 拒绝请求(422)、`RuntimeError` = 数据损坏(500)；普通 `KeyError` 视为缺陷，返回 500 而不是 404。
 - `hub/library.py`：组合根，唯一负责装配与生命周期。
 
 ## 会话消息与恢复
@@ -68,12 +73,18 @@ PDF 原件先入库，再提取和索引。任务、逐项错误和重试信息�
 入口按 profile 解析数据根目录并注入各服务（规则见 README「入口与 profile」）。CLI 凭据和原生历史由各
 CLI 自己管理，不参与应用数据迁移。
 
-Node 管理数据根目录下 `runtime/python` 中的 uv 环境，只安装锁定的 hub 依赖；语义检索运行时按需另装。
-Python 绑定 loopback 动态端口，使用每次启动生成的内部令牌。setup、doctor、migrate 与启动共用同一配置模块。
+`pnpm hub setup` 在数据根目录下的 `runtime/python` 中建 uv 环境，只安装锁定的 hub 依赖；语义检索运行时
+由文献服务按需装进自己的环境（`POST /runtime/semantic`），装完以退出码 75 退出，启动器随即重启它。
+各能力对应的 extras 记在 `packages/scholaraio/runtime-capabilities.json`，setup 与文献服务共用。
+
+文献服务监听 profile 给定的端口（`LIBRARY_PORT`，默认 Hub 端口 + 1），与 Hub 同一套访问规则：Host 白名单、
+修改请求必带 `ScholarAIO-Hub` 头、CORS 只放行 Hub 页面的来源；不再有内部令牌。它自己写日志
+（生产环境另写 `<数据目录>/logs/library.log`）。setup、doctor、migrate 与启动共用启动器的 profile 模块。
 开发时使用专用的 `scholaraio-source` 导出条件，避免通用 `source` 条件误选第三方依赖的未编译源码。
 
-Node 给 Python 保留一条专用 stdin 管道并传入 `--watch-stdin`。热重载、进程退出或崩溃导致管道 EOF 时，
-Python 主动关闭；清理超时则强制退出，未完成的导入在下次启动时标记为可重试。单独启动 Python 时默认不监听 stdin。
+启动器给 Python 保留一条专用 stdin 管道并传入 `--watch-stdin`。启动器退出或被杀导致管道 EOF 时，
+Python 主动关闭；清理超时则强制退出，未完成的导入在下次启动时标记为可重试。server 热重载不影响 Python。
+Python 意外退出时启动器重启它（5 分钟内至多 3 次）。单独启动 Python 时默认不监听 stdin。
 
 ## CLI 集成要点
 
@@ -85,6 +96,8 @@ Python 主动关闭；清理超时则强制退出，未完成的导入在下次�
   [`providers/codex/protocol/README.md`](../packages/server/src/providers/codex/protocol/README.md)。
 - 两者都只传本轮新增输入，权限审批在 Supervisor 中处理。服务端内部环境变量不传给子进程
   （`providers/agent-env.ts`），CLI 自身的认证与代理配置保留。
+- agent 里的 `scholaraio` CLI 由 server 注入 `SCHOLARAIO_CONFIG`（本库配置）、库运行环境的 bin 目录和
+  `SCHOLARAIO_LIBRARY_API`（文献服务地址）；它的写操作直接交给文献服务执行，不经 server。
 - CLI 检测会实际运行 `--version`，不能仅因 PATH 里有脚本就判定可用；本地登录状态也不能保证远端令牌仍然有效。
 
 ## 迁移与恢复

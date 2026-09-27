@@ -9,6 +9,8 @@ process.exitCode = withLibraryPython(["hub", "hub-test"], (python) => {
       "pytest",
       "tests/test_hub_library.py",
       "tests/test_hub_lifecycle.py",
+      "tests/test_hub_access.py",
+      "tests/test_hub_runtime_install.py",
       "tests/test_hub_migration.py",
       "tests/test_hub_cli_routing.py",
       "tests/test_hub_import.py",

@@ -111,12 +111,12 @@ def delegate(args: argparse.Namespace) -> str | None:
     locators = _locators(args)
     if locators:
         for locator in locators:
-            hub_client.request("POST", "/api/library/imports/fetch", {"locator": locator})
+            hub_client.request("POST", "/imports/fetch", {"locator": locator})
         return f"已交给 Hub 获取并入库（{len(locators)} 项），可在前端查看导入进度。"
     kind = _task(args)
     if kind is None:
         return None
-    hub_client.request("POST", f"/api/library/tasks/{kind}")
+    hub_client.request("POST", f"/tasks/{kind}")
     return f"已在 Hub 中启动 {kind} 任务，可在前端查看进度。"
 
 

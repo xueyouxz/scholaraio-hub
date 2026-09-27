@@ -1,16 +1,18 @@
 """Bringing papers in: uploaded files, identifiers, retries."""
+
 from __future__ import annotations
 
 from pathlib import Path
 from typing import Annotated
 
-from fastapi import APIRouter, File, Form, UploadFile
+from fastapi import APIRouter, Depends, File, Form, Request, UploadFile
 
 from scholaraio.hub.errors import InvalidRequest, TooLarge
 from scholaraio.hub.imports import ImportQueue
 from scholaraio.hub.projects import NAME_LIMIT
 from scholaraio.interfaces.api.dependencies import Acquire, Imports
-from scholaraio.interfaces.api.responses import FetchedImportJob, ImportJob, ImportJobList
+from scholaraio.interfaces.api.errors import require_json, require_multipart, success
+from scholaraio.interfaces.api.responses import ApiSuccess, FetchedImportJob, ImportJob, ImportJobList
 from scholaraio.interfaces.api.schemas import AcquireInput
 
 MAX_FILES = 500
@@ -20,17 +22,26 @@ BLOCK_BYTES = 1024 * 1024
 router = APIRouter(prefix="/imports", tags=["imports"])
 
 
-@router.get("", response_model=ImportJobList, response_model_exclude_unset=True)
-def list_jobs(imports: Imports):
-    return {"jobs": imports.list()}
+@router.get("", response_model=ApiSuccess[ImportJobList], response_model_exclude_unset=True)
+def list_jobs(request: Request, imports: Imports):
+    """查询文献导入任务。"""
+    return success(request, {"jobs": imports.list()})
 
 
-@router.post("", status_code=202, response_model=ImportJob, response_model_exclude_unset=True)
+@router.post(
+    "",
+    status_code=202,
+    response_model=ApiSuccess[ImportJob],
+    response_model_exclude_unset=True,
+    dependencies=[Depends(require_multipart)],
+)
 async def upload(
+    request: Request,
     imports: Imports,
     files: Annotated[list[UploadFile], File()],
     project_id: Annotated[str | None, Form(alias="projectId", max_length=NAME_LIMIT)] = None,
 ):
+    """接收 PDF 文件并创建导入任务。"""
     if len(files) > MAX_FILES:
         raise InvalidRequest(f"Import at most {MAX_FILES} PDFs per batch")
     try:
@@ -39,14 +50,14 @@ async def upload(
         for file in files:
             await file.close()
     try:
-        return imports.enqueue(staged, project_id or None)
+        return success(request, imports.enqueue(staged, project_id or None))
     except BaseException:
         discard(staged)
         raise
 
 
 async def receive_pdfs(imports: ImportQueue, files: list[UploadFile]) -> list[tuple[Path, str]]:
-    """Write every upload to staging, or none of them."""
+    """接收上传文件至暂存目录，失败时清理本批次文件。"""
     staged: list[tuple[Path, str]] = []
     total = 0
     try:
@@ -68,15 +79,26 @@ async def receive_pdfs(imports: ImportQueue, files: list[UploadFile]) -> list[tu
 
 
 def discard(staged: list[tuple[Path, str]]) -> None:
+    """删除本批次暂存的上传文件。"""
     for destination, _ in staged:
         destination.unlink(missing_ok=True)
 
 
-@router.post("/fetch", status_code=202, response_model=FetchedImportJob, response_model_exclude_unset=True)
-def fetch(body: AcquireInput, acquire: Acquire):
-    return acquire.fetch(body.locator, body.project_id, body.title)
+@router.post(
+    "/fetch",
+    status_code=202,
+    response_model=ApiSuccess[FetchedImportJob],
+    response_model_exclude_unset=True,
+    dependencies=[Depends(require_json)],
+)
+def fetch(request: Request, body: AcquireInput, acquire: Acquire):
+    """根据文献标识创建获取任务。"""
+    return success(request, acquire.fetch(body.locator, body.project_id, body.title))
 
 
-@router.post("/{job_id}/retry", status_code=202, response_model=ImportJob, response_model_exclude_unset=True)
-def retry(job_id: str, imports: Imports):
-    return imports.retry(job_id)
+@router.post(
+    "/{job_id}/retry", status_code=202, response_model=ApiSuccess[ImportJob], response_model_exclude_unset=True
+)
+def retry(request: Request, job_id: str, imports: Imports):
+    """重新执行失败的导入任务。"""
+    return success(request, imports.retry(job_id))

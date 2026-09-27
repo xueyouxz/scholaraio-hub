@@ -30,12 +30,7 @@ export type LibrarySearchResponse = Schemas["LibrarySearchResponse"];
 export type ArchivedProject = Schemas["ArchivedProject"];
 export type ExportFile = Schemas["ExportFile"];
 
-/** How the optional embedding packages install is going. The Hub serves this itself. */
-export interface VectorRuntimeStatus {
-  state: "idle" | "installing" | "ready" | "failed";
-  /** Tail of the installer's output, so the browser can show what it is doing. */
-  log: string[];
-  error?: string;
-  startedAt?: string;
-  finishedAt?: string;
-}
+/** How installing the optional embedding packages is going. */
+export type VectorRuntimeStatus = Schemas["RuntimeInstallStatus"];
+
+export type { paths as LibraryPaths } from "./generated/library-api.js";

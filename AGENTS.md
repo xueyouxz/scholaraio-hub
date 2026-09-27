@@ -8,12 +8,15 @@ index; the rules it points to live in `.claude/` and apply to every agent.
 ## Project map
 
 - `packages/client` — Vite + React 19 frontend (`src/`).
-- `packages/server` — Hono API (`src/routes/`), session supervision (`src/supervisor/`),
+- `packages/server` — composition root (`src/container.ts`), Hono API (`src/routes/`),
+  session supervision (`src/supervisor/`),
   session runs (`src/sessions/`), provider integrations (`src/providers/`, one directory per
-  provider), runtime profile and Python environment (`src/runtime/`), commands behind
-  `pnpm hub` (`src/cli/`).
+  provider), the library service's client (`src/lib/LibraryClient.ts`).
+- `packages/cli` — the launcher behind `pnpm dev` / `pnpm start` (starts the library service
+  and the server side by side) and the `pnpm hub` commands; profile, env files and the
+  Python runtime live here.
 - `packages/shared` — types, Zod schemas, profile/port rules consumed by both apps.
-- `packages/scholaraio` — the Python library service the server runs as a sidecar
+- `packages/scholaraio` — the Python library service the launcher runs beside the server
   (`scholaraio/hub/`, `interfaces/api/`); the rest is upstream code (see its `README.md`).
 - `e2e/` — Playwright tests · `scripts/` — the `hub.mjs` entry, CI and convention checks ·
   `docs/architecture.md` — architecture for humans · `.design/DESIGN.md` — UI source of truth.
@@ -46,7 +49,7 @@ repeating numbers.
   functions and variables, `UPPER_SNAKE_CASE` for module-level constants. Rename a file
   when you are changing it anyway, not in bulk.
 - **Single source of truth**: don't restate volatile facts. The profile decides data
-  directory and port (`packages/shared/src/ports.ts`, `packages/server/src/runtime/profile.ts`);
+  directory and ports (`packages/shared/src/ports.ts`, `packages/cli/src/profile.ts`);
   env vars are documented in `.env.example` (review `packages/server/src/config.ts` /
   `env.ts` before adding new ones).
 - **Reachable, not merely tested**: code no production path reaches is dead even when

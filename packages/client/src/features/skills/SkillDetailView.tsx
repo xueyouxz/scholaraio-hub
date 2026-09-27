@@ -7,7 +7,7 @@ import { Link } from "react-router-dom";
 import rehypeKatex from "rehype-katex";
 import remarkGfm from "remark-gfm";
 import remarkMath from "remark-math";
-import { skillQuery } from "../../core/settings";
+import { skillQuery } from "../../core/skills";
 
 interface Props {
   skillName: string;

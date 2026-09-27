@@ -131,17 +131,17 @@ def _resolve_paper_ids(paper_refs: list[str], cfg) -> list[str]:
 def _hub_project(name: str) -> dict:
     """Return the Hub project, creating it when it does not exist yet."""
     try:
-        return hub_client.request("GET", f"/api/library/projects/{quote(name, safe='')}")
+        return hub_client.request("GET", f"/projects/{quote(name, safe='')}")
     except hub_client.HubUnavailable as error:
         if "(404)" not in str(error):
             raise
-    return hub_client.request("POST", "/api/library/projects", {"name": name})
+    return hub_client.request("POST", "/projects", {"name": name})
 
 
 def _hub_update_papers(name: str, paper_ids: list[str], action: str) -> dict:
     return hub_client.request(
         "POST",
-        f"/api/library/projects/{quote(name, safe='')}/papers",
+        f"/projects/{quote(name, safe='')}/papers",
         {"paperIds": paper_ids, "action": action},
     )
 
@@ -378,16 +378,13 @@ def cmd_ws(args: argparse.Namespace, cfg) -> None:
 
     elif action == "rename":
         if hub_client.active():
-            # Renaming also moves the sessions that work in this directory,
-            # which only the Hub can do.
+            # The Hub keeps the project's id, which its sessions refer to.
             result = hub_client.request(
                 "POST",
-                f"/api/library/projects/{quote(args.old_name, safe='')}/rename",
+                f"/projects/{quote(args.old_name, safe='')}/rename",
                 {"name": args.new_name},
             )
-            _ui(f"Workspace renamed via Hub: {args.old_name} -> {result['project']['name']}")
-            if result.get("sessions"):
-                _ui(f"  {result['sessions']} 个会话已指向新名称")
+            _ui(f"Workspace renamed via Hub: {args.old_name} -> {result['name']}")
             return
         try:
             workspace_mod.rename(ws_root, args.old_name, args.new_name)

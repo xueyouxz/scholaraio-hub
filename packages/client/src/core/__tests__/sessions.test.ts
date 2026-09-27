@@ -28,7 +28,7 @@ describe("first session message recovery", () => {
         .fn()
         .mockRejectedValueOnce(new Error("connection lost"))
         .mockResolvedValueOnce(
-          Response.json({ messages: [{ id: "message-1", role: "user", parts: [] }] }),
+          apiResponse({ messages: [{ id: "message-1", role: "user", parts: [] }] }),
         ),
     );
     await expect(sessionApi.sendFirstMessage("session-1", input)).resolves.toBeUndefined();
@@ -42,9 +42,12 @@ describe("first session message recovery", () => {
       vi
         .fn()
         .mockResolvedValueOnce(new Response("unavailable", { status: 503 }))
-        .mockResolvedValueOnce(Response.json({ messages: [] })),
+        .mockResolvedValueOnce(apiResponse({ messages: [] })),
     );
-    await expect(sessionApi.sendFirstMessage("session-1", input)).rejects.toThrow("503");
+    await expect(sessionApi.sendFirstMessage("session-1", input)).rejects.toMatchObject({
+      status: 503,
+      code: "INVALID_RESPONSE",
+    });
     expect(fetch).toHaveBeenCalledTimes(2);
   });
 });
@@ -65,3 +68,8 @@ describe("sessionInput", () => {
     ).toEqual({ id: "m1", text: "总结\n本文", attachmentIds: ["a1"] });
   });
 });
+
+/** 构造成功的 API JSON 响应。 */
+function apiResponse(data: unknown) {
+  return Response.json({ id: "request-test", code: "success", message: "success", data });
+}

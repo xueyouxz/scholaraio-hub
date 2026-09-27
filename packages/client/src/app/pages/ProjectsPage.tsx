@@ -32,9 +32,10 @@ export function ProjectsPage() {
   });
 
   const archiveProject = useMutation({
-    mutationFn: (id: string) => libraryApi.archiveProject(id),
-    onSuccess: ({ sessions }) => {
-      setError(sessions ? `项目已归档，${sessions} 个会话已解除关联。` : "");
+    mutationFn: ({ id }: { id: string; sessionCount: number }) => libraryApi.archiveProject(id),
+    onSuccess: (_archived, { sessionCount }) => {
+      // Its sessions continue in their own directories the next time they run.
+      setError(sessionCount ? `项目已归档，${sessionCount} 个会话已解除关联。` : "");
       queryClient.invalidateQueries({ queryKey: ["library", "projects"] });
       queryClient.invalidateQueries({ queryKey: sessionsQuery.queryKey });
     },
@@ -166,7 +167,8 @@ export function ProjectsPage() {
                 const warning = project.sessionCount
                   ? `归档「${project.name}」？${project.sessionCount} 个会话将解除项目关联，之后在各自目录中继续。`
                   : `归档「${project.name}」？目录会移入回收区，可在数据目录中找回。`;
-                if (window.confirm(warning)) archiveProject.mutate(project.id);
+                if (window.confirm(warning))
+                  archiveProject.mutate({ id: project.id, sessionCount: project.sessionCount });
               }}
             >
               <Archive className="w-4 h-4" />

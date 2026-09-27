@@ -6,12 +6,14 @@ or looks them up through this object.
 """
 from __future__ import annotations
 
+from collections.abc import Callable
 from pathlib import Path
 
 from scholaraio.hub.acquire import AcquireService
 from scholaraio.hub.analytics import AnalyticsService
 from scholaraio.hub.artifacts import AnalysisArtifacts
 from scholaraio.hub.citations import CitationService
+from scholaraio.hub.directories import DirectoryService
 from scholaraio.hub.discover import DiscoverService
 from scholaraio.hub.events import EventBus
 from scholaraio.hub.exports import ExportService
@@ -22,6 +24,7 @@ from scholaraio.hub.papers import PaperService
 from scholaraio.hub.projects import ProjectService
 from scholaraio.hub.retrieval import RetrievalService
 from scholaraio.hub.runtime import LibraryRuntime
+from scholaraio.hub.runtime_install import RuntimeInstaller
 from scholaraio.hub.search import SearchService
 from scholaraio.hub.settings import SettingsService
 from scholaraio.hub.status import LibraryStatus
@@ -30,7 +33,8 @@ from scholaraio.hub.watcher import ProjectWatcher
 
 
 class HubLibrary:
-    def __init__(self, root: Path):
+    def __init__(self, root: Path, request_restart: Callable[[], None] = lambda: None):
+        """``request_restart`` asks whoever runs the library for a new process."""
         self.runtime = runtime = LibraryRuntime(root)
         artifacts = AnalysisArtifacts(runtime.cfg.state_root, runtime.root)
         tasks_root = runtime.cfg.state_root / "tasks"
@@ -46,6 +50,8 @@ class HubLibrary:
         self.exports = ExportService(runtime, self.projects)
         self.settings = SettingsService(runtime)
         self.discover = DiscoverService(runtime)
+        self.directories = DirectoryService(runtime)
+        self.installer = RuntimeInstaller(runtime, request_restart)
 
         # Background work, each on its own single worker thread.
         self.imports = ImportQueue(runtime, self.projects)
@@ -58,6 +64,7 @@ class HubLibrary:
         runtime.reindex()
 
     def close(self) -> None:
+        self.installer.close()
         self.watcher.close()
         self.imports.close()
         self.tasks.close()

@@ -17,7 +17,8 @@ import {
   sessionUrl,
   sessionsQuery,
 } from "../../core/sessions";
-import { appSettingsQuery, skillsQuery } from "../../core/settings";
+import { appSettingsQuery } from "../../core/settings";
+import { skillsQuery } from "../../core/skills";
 import { WorkspaceSwitcher } from "./components/WorkspaceSwitcher";
 import { useProviders } from "./composer/hooks/useProviders";
 import { initialOptions, optionsForProvider } from "./composer/model/options";

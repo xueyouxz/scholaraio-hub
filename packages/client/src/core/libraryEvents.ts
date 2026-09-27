@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { libraryUrl } from "./http";
 import { queryClient } from "./queryClient";
 
 /** What changed in the library, as published by the library service. */
@@ -45,7 +46,7 @@ function announce(update: LibraryUpdate): void {
 export function subscribeLibraryEvents(listener: Listener): () => void {
   listeners.add(listener);
   if (!source) {
-    source = new EventSource("/api/library/events");
+    source = new EventSource(libraryUrl("/events"));
     source.onopen = () => announce({ connected: true });
     source.onmessage = (message) => {
       let event: LibraryEvent;

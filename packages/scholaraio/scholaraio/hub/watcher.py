@@ -57,7 +57,7 @@ class ProjectWatcher:
             )
             self.state = current
             if changed:
-                self.events.publish("projects", projects=changed)
+                self.events.publish("projects")
                 # A project's membership decides what search and context return.
                 self.events.publish("papers")
 

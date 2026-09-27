@@ -2,12 +2,13 @@ import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
-import { createApp } from "../src/app.js";
+import { createTestApp } from "./helpers/app.js";
+import { offlineLibrary } from "./helpers/library.js";
 import { createScriptedProvider } from "./helpers/scriptedProvider.js";
 
 describe("App frontend integration", () => {
   const tempDirs: string[] = [];
-  const apps: ReturnType<typeof createApp>[] = [];
+  const apps: ReturnType<typeof createTestApp>[] = [];
 
   afterEach(async () => {
     for (const server of apps) {
@@ -28,10 +29,11 @@ describe("App frontend integration", () => {
       "utf-8",
     );
 
-    const server = createApp({
+    const server = createTestApp({
       dataDir: distDir,
       frontendDistPath: distDir,
       provider: createScriptedProvider(),
+      library: offlineLibrary(),
     });
 
     apps.push(server);
@@ -40,6 +42,24 @@ describe("App frontend integration", () => {
 
     expect(res.status).toBe(200);
     expect(html).toContain("client");
+    // The browser calls the library service itself, on the port the page names.
+    expect(html).toContain(`<meta name="scholaraio-library-port" content="9" />`);
+    const direct = await server.app.request("/index.html");
+    expect(await direct.text()).toContain("scholaraio-library-port");
+  });
+
+  it("no longer relays the library API", async () => {
+    const distDir = await mkdtemp(join(tmpdir(), "client-dist-"));
+    tempDirs.push(distDir);
+    await writeFile(join(distDir, "index.html"), "<!doctype html>", "utf-8");
+    const server = createTestApp({
+      dataDir: distDir,
+      frontendDistPath: distDir,
+      provider: createScriptedProvider(),
+      library: offlineLibrary(),
+    });
+    apps.push(server);
+    expect((await server.app.request("/api/library/papers")).status).toBe(404);
   });
 
   it("caches hashed assets for good and never the page", async () => {
@@ -48,10 +68,11 @@ describe("App frontend integration", () => {
     await writeFile(join(distDir, "index.html"), "<!doctype html><title>client</title>", "utf-8");
     await mkdir(join(distDir, "assets"));
     await writeFile(join(distDir, "assets", "index-BrUm1Kv-.js"), "export {};", "utf-8");
-    const server = createApp({
+    const server = createTestApp({
       dataDir: distDir,
       frontendDistPath: distDir,
       provider: createScriptedProvider(),
+      library: offlineLibrary(),
     });
     apps.push(server);
 

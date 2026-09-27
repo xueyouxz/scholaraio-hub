@@ -1,4 +1,5 @@
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { LIBRARY_PORT_META } from "@scholaraio-hub/shared";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { type LibraryUpdate, subscribeLibraryEvents } from "../libraryEvents";
 import { queryClient } from "../queryClient";
 
@@ -23,7 +24,16 @@ function useFakeStream() {
 }
 
 describe("library change stream", () => {
-  afterEach(() => vi.unstubAllGlobals());
+  beforeEach(() => {
+    const meta = document.createElement("meta");
+    meta.name = LIBRARY_PORT_META;
+    meta.content = "3501";
+    document.head.append(meta);
+  });
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    document.querySelector(`meta[name="${LIBRARY_PORT_META}"]`)?.remove();
+  });
 
   it("opens one connection for every listener and closes it with the last", () => {
     const instances = useFakeStream();

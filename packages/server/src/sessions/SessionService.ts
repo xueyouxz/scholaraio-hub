@@ -14,17 +14,13 @@ import type {
   StoredSession,
   UploadedFile,
 } from "@scholaraio-hub/shared";
-import {
-  DEFAULT_PROVIDER,
-  UNTITLED_SESSION_TITLE,
-  thinkingModeToConfig,
-} from "@scholaraio-hub/shared";
+import { UNTITLED_SESSION_TITLE, thinkingModeToConfig } from "@scholaraio-hub/shared";
 import { type UIMessageChunk, readUIMessageStream } from "ai";
 import type { z } from "zod";
+import { type LibraryClient, LibraryRequestError } from "../lib/LibraryClient.js";
 import { loggerFor } from "../logging/logger.js";
-import type { AgentProvider } from "../providers/types.js";
+import { type ProviderRegistry, ProviderUnavailableError } from "../providers/ProviderRegistry.js";
 import type { PermissionMode } from "../providers/types.js";
-import { LibraryRequestError, type LibraryService } from "../services/LibraryService.js";
 import { researchSlashCommands } from "../skills/scholaraioSkills.js";
 import { Supervisor } from "../supervisor/Supervisor.js";
 import type { ProcessEvent } from "../supervisor/types.js";
@@ -75,8 +71,8 @@ export type NewSessionInput = Omit<z.output<typeof CreateSessionSchema>, "provid
 };
 
 export interface SessionServiceOptions {
-  /** Agent provider used when a session does not name one. */
-  provider: AgentProvider;
+  /** The providers this server runs; a session that does not name one gets the default. */
+  providers: ProviderRegistry;
   idleTimeoutMs?: number;
   /** Research skills, offered as commands and expanded into prompts. */
   skillsDir?: string;
@@ -103,19 +99,21 @@ export class SessionService {
   private changingOptions = new Set<string>();
   /** The provider processes serving these sessions, one per session. */
   private readonly supervisor: Supervisor;
+  private readonly providers: ProviderRegistry;
   private readonly skillsDir?: string;
   private readonly onUsageLimits?: (limits: ProviderUsageLimits) => void;
   readonly attachments: SessionAttachments;
   constructor(
     readonly store: SessionStore,
-    private library: LibraryService,
+    private library: LibraryClient,
     options: SessionServiceOptions,
   ) {
     this.attachments = new SessionAttachments(store);
     this.skillsDir = options.skillsDir;
     this.onUsageLimits = options.onUsageLimits;
+    this.providers = options.providers;
     this.supervisor = new Supervisor({
-      provider: options.provider,
+      providers: options.providers,
       idleTimeoutMs: options.idleTimeoutMs,
       onEvent: (id, event) => this.onEvent(id, event),
     });
@@ -126,7 +124,8 @@ export class SessionService {
    * new-session defaults; draft uploads named in the request move into it.
    */
   async create(input: NewSessionInput, defaults?: NewSessionDefaults): Promise<StoredSession> {
-    const provider = input.provider ?? defaults?.provider ?? DEFAULT_PROVIDER;
+    const provider = input.provider ?? defaults?.provider ?? this.providers.defaultProvider.name;
+    this.enabled(provider, SessionInputError);
     const model =
       input.model === ""
         ? undefined
@@ -145,7 +144,7 @@ export class SessionService {
    * for this session's workspace), then the hub's research skills, which the
    * hub itself expands when a message starts with one.
    */
-  async commands(id?: string, provider: ProviderName = DEFAULT_PROVIDER) {
+  async commands(id?: string, provider?: ProviderName) {
     const record = id ? this.store.get(id) : undefined;
     const workspace = record
       ? await this.workingDirectory(record)
@@ -163,6 +162,19 @@ export class SessionService {
       seen.add(key);
       return true;
     });
+  }
+
+  /** 拒绝未启用的 Provider：新建会话时是输入错误，已有会话继续运行时是状态冲突。 */
+  private enabled(
+    provider: ProviderName,
+    refusal: typeof SessionInputError | typeof SessionConflictError,
+  ): void {
+    try {
+      this.providers.get(provider);
+    } catch (error) {
+      if (!(error instanceof ProviderUnavailableError)) throw error;
+      throw new refusal(error.message);
+    }
   }
 
   /** Refuse papers or a project the library does not have. */
@@ -211,7 +223,7 @@ export class SessionService {
       : models.find((candidate) => candidate.isDefault);
     if (!model) return;
     if (!model.efforts?.some((option) => option.id === effort))
-      throw new SessionInputError(`${model.name} 不支持推理强度 ${effort}`);
+      throw new SessionInputError(`${model.name} does not support reasoning effort ${effort}`);
   }
 
   async updateOptions(
@@ -222,7 +234,10 @@ export class SessionService {
     const previous = this.runs.get(id);
     if (previous?.finished) await previous.done;
     if (record.readOnly || this.changingOptions.has(id))
-      throw new SessionConflictError("请稍后再调整会话设置。");
+      throw new SessionConflictError(
+        "Session is busy. Try changing settings later.",
+        "SESSION_BUSY",
+      );
     this.changingOptions.add(id);
     try {
       await this.validateExecution(record.provider, input, record);
@@ -276,8 +291,12 @@ export class SessionService {
         });
         this.checkpoint(run);
       } else if (event.type === "terminated") {
-        if (run.interrupted) void this.finish(run, "已停止生成。", true);
-        else void this.finish(run, event.error?.message ?? "CLI 运行已结束，可发送新消息继续。");
+        if (run.interrupted) void this.finish(run, "Generation stopped.", true);
+        else
+          void this.finish(
+            run,
+            event.error?.message ?? "The CLI run has ended. Send a new message to continue.",
+          );
       }
     }
   }
@@ -303,7 +322,7 @@ export class SessionService {
       run.timer = undefined;
       void this.store.save(run.record).catch((error) => {
         log().error({ err: error, sessionId: run.record.id }, "Checkpoint failed");
-        void this.finish(run, "无法保存会话，请检查磁盘空间。");
+        void this.finish(run, "Unable to save the session. Check available disk space.");
       });
     }, CHECKPOINT_INTERVAL_MS);
   }
@@ -313,7 +332,8 @@ export class SessionService {
       input.attachmentIds.map((attachmentId) => this.attachments.resolve(id, attachmentId)),
     );
     const record = this.store.get(id);
-    if (record.readOnly || this.closing) throw new SessionConflictError("当前会话无法排队");
+    if (record.readOnly || this.closing)
+      throw new SessionConflictError("Cannot queue messages in the current session");
     record.queuedMessages ??= [];
     const queue = record.queuedMessages;
     if (
@@ -322,7 +342,7 @@ export class SessionService {
     )
       return this.detail(id);
     if (queue.length >= MAX_QUEUED_MESSAGES)
-      throw new SessionConflictError(`最多排队 ${MAX_QUEUED_MESSAGES} 条消息`);
+      throw new SessionConflictError(`At most ${MAX_QUEUED_MESSAGES} messages can be queued`);
     queue.push(input);
     await this.store.save(record);
     void this.drain(id);
@@ -331,7 +351,7 @@ export class SessionService {
 
   async editQueue(id: string, action: "resume" | "remove", messageId?: string) {
     const record = this.store.get(id);
-    if (record.readOnly) throw new SessionConflictError("历史会话只读");
+    if (record.readOnly) throw new SessionConflictError("Historical sessions are read-only");
     if (action === "remove")
       record.queuedMessages = record.queuedMessages?.filter((message) => message.id !== messageId);
     else record.queuePaused = false;
@@ -368,9 +388,14 @@ export class SessionService {
       input.attachmentIds.map((attachmentId) => this.attachments.resolve(id, attachmentId)),
     );
     if (this.changingOptions.has(id))
-      throw new SessionConflictError("正在保存会话设置，请稍后发送。");
+      throw new SessionConflictError(
+        "Session settings are being saved. Try sending later.",
+        "SESSION_BUSY",
+      );
     const record = this.store.get(id);
-    if (record.readOnly || this.closing) throw new SessionConflictError("当前会话不能发送消息。");
+    if (record.readOnly || this.closing)
+      throw new SessionConflictError("Cannot send messages in the current session.");
+    this.enabled(record.provider, SessionConflictError);
     if (
       queued &&
       (record.queuePaused || !record.queuedMessages?.some((message) => message.id === input.id))
@@ -378,9 +403,12 @@ export class SessionService {
       return;
     const previous = this.runs.get(id);
     if (previous?.finished) await previous.done;
-    if (this.runs.has(id)) throw new SessionConflictError("当前会话仍在运行。");
+    if (this.runs.has(id))
+      throw new SessionConflictError("The session is still running.", "SESSION_BUSY");
     if (record.messages.some((message) => message.id === input.id))
-      throw new SessionConflictError("此消息已提交，请刷新会话。");
+      throw new SessionConflictError(
+        "This message has already been submitted. Refresh the session.",
+      );
     const assistantId = randomUUID();
     let controller!: ReadableStreamDefaultController<UIMessageChunk>;
     const stream = new ReadableStream<UIMessageChunk>({
@@ -458,12 +486,61 @@ export class SessionService {
    */
   async workingDirectory(session: string | SessionRecord): Promise<string> {
     const record = typeof session === "string" ? this.store.get(session) : session;
-    if (!record.projectId) return this.store.workspace(record);
-    const project = await this.library.json<LiteratureProject>(
-      `/projects/${encodeURIComponent(record.projectId)}`,
-    );
-    if (!project.path) throw new Error("文献项目缺少目录信息，请更新文献服务。");
+    const project = record.projectId ? await this.project(record) : undefined;
+    if (!project) return this.store.workspace(record);
+    if (!project.path)
+      throw new Error("Library project directory is missing. Update the library service.");
     return project.path;
+  }
+
+  /**
+   * The session's project as the library knows it now. The library renames and
+   * archives projects on its own; the session follows. A session that names its
+   * project by name (as sessions did before projects had ids) moves to the id,
+   * and one whose project is gone continues in its own workspace, like a session
+   * started without a project.
+   */
+  private async project(record: SessionRecord): Promise<LiteratureProject | undefined> {
+    const reference = record.projectId;
+    if (!reference) return undefined;
+    let project: LiteratureProject;
+    try {
+      project = await this.library.json<LiteratureProject>(
+        `/projects/${encodeURIComponent(reference)}`,
+      );
+    } catch (error) {
+      if (!(error instanceof LibraryRequestError && error.status === 404)) throw error;
+      log().info({ sessionId: record.id, projectId: reference }, "Project gone; session detached");
+      record.projectId = undefined;
+      await this.store.save(record);
+      return undefined;
+    }
+    if (project.id !== reference) {
+      record.projectId = project.id;
+      await this.store.save(record);
+    }
+    return project;
+  }
+
+  /**
+   * Bring every session up to the library's projects at once: sessions that
+   * name a project by name move to its id, those whose project is gone are
+   * detached. The server runs this once the library answers; `project` does
+   * the same for one session whenever it is used. Returns how many changed.
+   */
+  async reconcileProjects(): Promise<number> {
+    const { projects } = await this.library.json<{ projects: LiteratureProject[] }>("/projects");
+    const ids = new Set(projects.map((project) => project.id));
+    const byName = new Map(projects.map((project) => [project.name, project.id]));
+    let changed = 0;
+    for (const { id } of this.store.list()) {
+      const record = this.store.get(id);
+      if (!record.projectId || ids.has(record.projectId)) continue;
+      record.projectId = byName.get(record.projectId);
+      await this.store.save(record);
+      changed += 1;
+    }
+    return changed;
   }
 
   /**
@@ -504,7 +581,10 @@ export class SessionService {
           this.emit(run, {
             type: "data-notice",
             id: "context",
-            data: { level: "info", text: "已按上下文长度截取文献片段。" },
+            data: {
+              level: "info",
+              text: "Library excerpts were truncated to fit the context limit.",
+            },
           });
       }
       const skill = await requestedSkill(input.text, this.skillsDir);
@@ -535,13 +615,17 @@ export class SessionService {
   private async turnAt(record: SessionRecord, messageId: string) {
     const previous = this.runs.get(record.id);
     if (previous?.finished) await previous.done;
-    if (record.readOnly) throw new SessionConflictError("导入的历史会话不能编辑或分叉。");
+    if (record.readOnly)
+      throw new SessionConflictError("Imported historical sessions cannot be edited or forked.");
     if (this.runs.has(record.id) || this.changingOptions.has(record.id))
-      throw new SessionConflictError("当前会话仍在运行，请结束后再试。");
+      throw new SessionConflictError(
+        "The session is still running. Try again after it ends.",
+        "SESSION_BUSY",
+      );
     const index = record.messages.findIndex(
       (message) => message.id === messageId && message.role === "user",
     );
-    if (index < 0) throw new SessionConflictError("找不到这条消息，请刷新会话。");
+    if (index < 0) throw new SessionConflictError("Message not found. Refresh the session.");
     const later = record.messages.slice(index + 1).filter((message) => message.role === "user");
     return { index, later: later.length };
   }
@@ -554,7 +638,8 @@ export class SessionService {
   ): Promise<string | undefined> {
     if (!record.nativeSessionId || !keepsAny) return undefined;
     const provider = this.supervisor.providerFor(record.provider);
-    if (!provider.forkSession) throw new SessionConflictError("该 AI 工具不支持分叉会话。");
+    if (!provider.forkSession)
+      throw new SessionConflictError("This AI provider does not support session forking.");
     return provider.forkSession({
       sessionId: record.nativeSessionId,
       cwd: await this.workingDirectory(record),
@@ -572,7 +657,7 @@ export class SessionService {
     // Without a turn named, the whole conversation is copied.
     const lastPrompt = source.messages.filter((message) => message.role === "user").at(-1)?.id;
     const through = messageId ?? lastPrompt;
-    if (!through) throw new SessionConflictError("会话还没有内容，无需分叉。");
+    if (!through) throw new SessionConflictError("The session has no content to fork.");
     const { index, later } = await this.turnAt(source, through);
     const nextUser = source.messages.findIndex(
       (message, position) => position > index && message.role === "user",
@@ -698,7 +783,7 @@ export class SessionService {
       await this.store.save(run.record);
     } catch (saveError) {
       run.record.state = "error";
-      run.record.error = "本轮消息未能保存，请检查磁盘空间后重试。";
+      run.record.error = "Unable to save this turn. Check available disk space and try again.";
       log().error({ err: saveError, sessionId: run.record.id }, "Final save failed");
     } finally {
       if (this.runs.get(run.record.id) === run) this.runs.delete(run.record.id);
@@ -728,7 +813,7 @@ export class SessionService {
       );
       if (!settled) this.supervisor.release(id, "User interrupted application run");
     }
-    await this.finish(run, "已停止生成。", true);
+    await this.finish(run, "Generation stopped.", true);
   }
 
   /**
@@ -764,7 +849,8 @@ export class SessionService {
   async close(): Promise<void> {
     this.closing = true;
     await Promise.all(this.drains.values());
-    for (const run of this.runs.values()) await this.finish(run, "服务关闭中断了运行。", true);
+    for (const run of this.runs.values())
+      await this.finish(run, "The run was interrupted by service shutdown.", true);
     this.supervisor.close();
     await this.store.flush();
   }

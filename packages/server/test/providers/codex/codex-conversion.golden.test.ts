@@ -125,7 +125,7 @@ describe("codex notification conversion", () => {
       ...adapter.completeTurn(),
     ];
     expect(events).toEqual([
-      { type: "notice", key: "retry-turn-1", level: "info", text: "overloaded（正在重试）" },
+      { type: "notice", key: "retry-turn-1", level: "info", text: "overloaded (retrying)" },
       { type: "turn.completed", error: "boom" },
     ]);
   });

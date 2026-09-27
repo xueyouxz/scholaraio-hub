@@ -1,5 +1,6 @@
 import type { LibraryPaper } from "@scholaraio-hub/shared";
 import { queryOptions } from "@tanstack/react-query";
+import { libraryUrl } from "../../core/http";
 import { libraryApi } from "../../core/library";
 
 /** Where a paper is in ingestion: full text ready, PDF waiting to be parsed, or metadata only. */
@@ -80,5 +81,7 @@ export function sortPapers(papers: readonly PaperSummary[], sort: PaperSort): Pa
 /** The API URL of a file in the paper's directory (`images/…` as paper.md names them). */
 export function paperAssetUrl(paperId: string, filename: string): string {
   const relative = filename.startsWith("images/") ? filename : `images/${filename}`;
-  return `/api/library/papers/${encodeURIComponent(paperId)}/attachments/${relative.split("/").map(encodeURIComponent).join("/")}`;
+  return libraryUrl(
+    `/papers/${encodeURIComponent(paperId)}/attachments/${relative.split("/").map(encodeURIComponent).join("/")}`,
+  );
 }

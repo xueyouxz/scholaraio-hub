@@ -71,7 +71,7 @@ export class ProviderUsageLimitService {
           provider: provider.name,
           available: false,
           windows: [],
-          error: "用量数据要等这个工具自己报告后才有。",
+          error: "Usage data is available after the provider reports it.",
         }
       );
     }
@@ -91,7 +91,7 @@ export class ProviderUsageLimitService {
   private async fetch(provider: AgentProvider): Promise<ProviderUsageLimits> {
     try {
       const limits = await provider.getUsageLimits?.();
-      if (!limits) throw new Error("用量数据暂不可用。");
+      if (!limits) throw new Error("Usage data is temporarily unavailable.");
       this.record(limits);
       this.fetchedAt.set(provider.name, Date.now());
       return limits;
@@ -105,7 +105,7 @@ export class ProviderUsageLimitService {
         provider: provider.name,
         available: false,
         windows: [],
-        error: error instanceof Error ? error.message : "无法获取用量数据。",
+        error: error instanceof Error ? error.message : "Unable to retrieve usage data.",
       };
     }
   }

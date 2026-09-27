@@ -5,12 +5,15 @@
 import { readFile } from "node:fs/promises";
 import path from "node:path";
 import { serveStatic } from "@hono/node-server/serve-static";
-import { Hono } from "hono";
+import { type Context, Hono } from "hono";
 import { loggerFor } from "../logging/logger.js";
+import { withLibraryPort } from "./library-port.js";
 
 export interface StaticServeOptions {
   /** Path to the built client dist directory (startup has checked it exists). */
   distPath: string;
+  /** The library service's port, written into the page. */
+  libraryPort: number;
 }
 
 /**
@@ -42,6 +45,16 @@ export function createStaticRoutes(options: StaticServeOptions): Hono {
   const indexPath = path.join(root, "index.html");
   const app = new Hono();
 
+  // The page, read on each request so a rebuild shows without restarting the server.
+  const page = async (c: Context) => {
+    try {
+      return c.html(withLibraryPort(await readFile(indexPath, "utf-8"), options.libraryPort));
+    } catch (error) {
+      loggerFor("static").error({ err: error, indexPath }, "Cannot read the client page");
+      return c.text("Not found. Did you run 'pnpm build' to build the client?", 404);
+    }
+  };
+
   // Headers go on after the response is made: serveStatic's onFound runs too late to add any.
   app.get("*", async (c, next) => {
     await next();
@@ -55,17 +68,11 @@ export function createStaticRoutes(options: StaticServeOptions): Hono {
           : "public, max-age=0, must-revalidate",
       );
   });
+  // The page itself is never served as a plain file: it carries the library's port.
+  app.get("/", page);
+  app.get("/index.html", page);
   app.get("*", serveStatic({ root }));
-
-  // Read on each request, so a rebuild shows without restarting the server.
-  app.get("*", async (c) => {
-    try {
-      return c.html(await readFile(indexPath, "utf-8"));
-    } catch (error) {
-      loggerFor("static").error({ err: error, indexPath }, "Cannot read the client page");
-      return c.text("Not found. Did you run 'pnpm build' to build the client?", 404);
-    }
-  });
+  app.get("*", page);
 
   return app;
 }

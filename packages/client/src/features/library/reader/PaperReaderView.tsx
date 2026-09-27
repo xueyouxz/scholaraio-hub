@@ -3,6 +3,7 @@ import { useMutation, useQuery } from "@tanstack/react-query";
 import { MessageSquare, X } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
+import { libraryUrl } from "../../../core/http";
 import { libraryApi } from "../../../core/library";
 import { newSessionUrl } from "../../../core/sessions";
 import { toPaperSummary } from "../paperSummary";
@@ -173,7 +174,7 @@ function Reader({
       ) : mode === "pdf" ? (
         <>
           <PdfViewer
-            url={`/api/library/papers/${encodeURIComponent(paper.id)}/pdf`}
+            url={libraryUrl(`/papers/${encodeURIComponent(paper.id)}/pdf`)}
             initialPage={saved.page}
             onPageChange={setPage}
           />

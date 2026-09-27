@@ -57,7 +57,7 @@ def test_clearing_a_field_returns_to_the_underlying_configuration(library):
 def test_a_value_the_pipeline_cannot_use_is_refused(library):
     with pytest.raises(ValueError, match="extractor"):
         library.settings.update({"extractor": "magic"})
-    with pytest.raises(ValueError, match="无法修改"):
+    with pytest.raises(ValueError, match="Cannot modify"):
         library.settings.update({"papersDir": "/tmp"})
     assert not library.settings.path.exists()
 
@@ -82,7 +82,7 @@ def test_checking_the_llm_calls_it_once_and_reports_the_answer(library, monkeypa
     monkeypatch.setattr(metrics, "call_llm", answer)
     result = library.settings.check("llm")
 
-    assert result == {"target": "llm", "ok": True, "level": "ok", "message": "deepseek-chat 响应正常"}
+    assert result == {"target": "llm", "ok": True, "level": "ok", "message": "deepseek-chat is responding"}
     assert asked[0]["max_tokens"] <= 16
 
 
@@ -114,9 +114,9 @@ def test_a_refused_mineru_token_is_reported(library, monkeypatch):
     result = library.settings.check("mineru")
 
     assert result["level"] == "error"
-    assert "Token" in result["message"]
+    assert "token" in result["message"]
 
 
 def test_an_unknown_check_is_refused(library):
-    with pytest.raises(ValueError, match="检查项"):
+    with pytest.raises(ValueError, match="check target"):
         library.settings.check("disk")

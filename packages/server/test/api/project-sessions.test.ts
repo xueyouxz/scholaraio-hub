@@ -2,31 +2,30 @@ import { mkdir, mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { createApp } from "../../src/app.js";
-import { LibraryService } from "../../src/services/LibraryService.js";
+import { LibraryClient } from "../../src/lib/LibraryClient.js";
 import { WorkbenchProvider } from "../helpers/WorkbenchProvider.js";
+import { createTestApp } from "../helpers/app.js";
+import { libraryResponse } from "../helpers/library.js";
+import { TEST_LIBRARY_URL } from "../helpers/library.js";
 
 const headers = { "Content-Type": "application/json", "ScholarAIO-Hub": "true" };
 
 /** A library whose project "review" is a real directory on disk. */
-class ProjectLibrary extends LibraryService {
-  constructor(
-    dataDir: string,
-    readonly projectPath: string,
-  ) {
-    super(dataDir);
+class ProjectLibrary extends LibraryClient {
+  constructor(readonly projectPath: string) {
+    super(TEST_LIBRARY_URL);
   }
   override async request(resource: string) {
     if (resource.startsWith("/projects/"))
-      return Response.json({
+      return libraryResponse({
         id: "review",
         name: "review",
         path: this.projectPath,
         paperIds: ["paper-1"],
         paperCount: 1,
       });
-    if (resource.startsWith("/scope")) return Response.json({ paperIds: ["paper-1"] });
-    return Response.json({ citations: [], truncated: false });
+    if (resource.startsWith("/scope")) return libraryResponse({ paperIds: ["paper-1"] });
+    return libraryResponse({ citations: [], truncated: false });
   }
 }
 
@@ -34,17 +33,17 @@ describe("sessions in a literature project", () => {
   let root: string;
   let projectPath: string;
   let provider: WorkbenchProvider;
-  let server: ReturnType<typeof createApp>;
+  let server: ReturnType<typeof createTestApp>;
 
   beforeEach(async () => {
     root = await mkdtemp(join(tmpdir(), "hub-project-sessions-"));
     projectPath = join(root, "workspace", "review");
     await mkdir(projectPath, { recursive: true });
     provider = new WorkbenchProvider("claude");
-    server = createApp({
+    server = createTestApp({
       dataDir: root,
       provider,
-      libraryService: new ProjectLibrary(root, projectPath),
+      library: new ProjectLibrary(projectPath),
     });
     await server.ready;
   });
@@ -61,7 +60,7 @@ describe("sessions in a literature project", () => {
       body: JSON.stringify({ provider: "claude", paperIds: [], projectId }),
     });
     expect(response.status).toBe(201);
-    return (await response.json()).id as string;
+    return (await response.json().then((body) => body.data)).id as string;
   }
 
   const send = (id: string, text: string) =>

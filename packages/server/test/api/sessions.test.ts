@@ -2,14 +2,16 @@ import { mkdir, mkdtemp, readFile, rm, symlink, unlink, writeFile } from "node:f
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { createApp } from "../../src/app.js";
-import { LibraryService } from "../../src/services/LibraryService.js";
+import { LibraryClient } from "../../src/lib/LibraryClient.js";
 import { SessionStore } from "../../src/sessions/SessionStore.js";
 import { WorkbenchProvider } from "../helpers/WorkbenchProvider.js";
+import { createTestApp } from "../helpers/app.js";
+import { libraryResponse } from "../helpers/library.js";
+import { TEST_LIBRARY_URL } from "../helpers/library.js";
 
-class TestLibrary extends LibraryService {
+class TestLibrary extends LibraryClient {
   override async request() {
-    return Response.json({
+    return libraryResponse({
       citations: [
         {
           id: "ref-1",
@@ -29,7 +31,7 @@ const headers = { "Content-Type": "application/json", "ScholarAIO-Hub": "true" }
 describe.each(["claude", "codex"] as const)("%s application sessions", (name) => {
   let root: string;
   let provider: WorkbenchProvider;
-  let server: ReturnType<typeof createApp>;
+  let server: ReturnType<typeof createTestApp>;
   beforeEach(async () => {
     root = await mkdtemp(join(tmpdir(), "hub-sessions-"));
     const skillsDir = join(root, "skills");
@@ -39,10 +41,10 @@ describe.each(["claude", "codex"] as const)("%s application sessions", (name) =>
       "---\nname: review-fixture\ndescription: Test research skill\n---\nRESEARCH_SKILL_INSTRUCTIONS $ARGUMENTS",
     );
     provider = new WorkbenchProvider(name);
-    server = createApp({
+    server = createTestApp({
       dataDir: root,
       provider,
-      libraryService: new TestLibrary(root),
+      library: new TestLibrary(TEST_LIBRARY_URL),
       scholaraioSkillsDir: join(root, "skills"),
     });
     await server.ready;
@@ -58,7 +60,7 @@ describe.each(["claude", "codex"] as const)("%s application sessions", (name) =>
       body: JSON.stringify({ provider: name, paperIds: ["paper-1"] }),
     });
     expect(response.status).toBe(201);
-    return (await response.json()).id as string;
+    return (await response.json().then((body) => body.data)).id as string;
   }
   const send = (id: string, text: string, messageId = crypto.randomUUID()) =>
     server.app.request(`/api/sessions/${id}/messages`, {
@@ -77,7 +79,7 @@ describe.each(["claude", "codex"] as const)("%s application sessions", (name) =>
       body: form,
     });
     expect(upload.status).toBe(201);
-    const attachment = await upload.json();
+    const attachment = await upload.json().then((body) => body.data);
     expect(attachment).not.toHaveProperty("path");
     expect((await server.app.request(attachment.url)).headers.get("content-disposition")).toContain(
       "attachment;",
@@ -88,7 +90,7 @@ describe.each(["claude", "codex"] as const)("%s application sessions", (name) =>
         headers,
         body: JSON.stringify({ id: "attached", text: "", attachmentIds: [attachment.id] }),
       });
-    expect((await post(foreign)).status).toBe(400);
+    expect((await post(foreign)).status).toBe(404);
     expect(provider.calls).toHaveLength(0);
     await (await post(id)).text();
     await expect.poll(() => server.sessions.detail(id).state).toBe("idle");
@@ -100,17 +102,17 @@ describe.each(["claude", "codex"] as const)("%s application sessions", (name) =>
       expect.objectContaining({ type: "file", filename: "研究资料.pdf", url: attachment.url }),
     ]);
     await server.close();
-    server = createApp({
+    server = createTestApp({
       dataDir: root,
       provider,
-      libraryService: new TestLibrary(root),
+      library: new TestLibrary(TEST_LIBRARY_URL),
       scholaraioSkillsDir: join(root, "skills"),
     });
     await server.ready;
     expect(await (await server.app.request(attachment.url)).text()).toBe("paper attachment");
     await unlink(uploaded?.path ?? "");
     await symlink(join(root, "sessions", id, "session.json"), uploaded?.path ?? "");
-    expect((await server.app.request(attachment.url)).status).toBe(400);
+    expect((await server.app.request(attachment.url)).status).toBe(422);
   });
 
   it("keeps the worker when a stopped turn settles, so the next message reuses it", async () => {
@@ -154,10 +156,10 @@ describe.each(["claude", "codex"] as const)("%s application sessions", (name) =>
     await stopped.text();
     expect(server.sessions.detail(id).queuePaused).toBe(true);
     await server.close();
-    server = createApp({
+    server = createTestApp({
       dataDir: root,
       provider,
-      libraryService: new TestLibrary(root),
+      library: new TestLibrary(TEST_LIBRARY_URL),
       scholaraioSkillsDir: join(root, "skills"),
     });
     await server.ready;
@@ -177,16 +179,18 @@ describe.each(["claude", "codex"] as const)("%s application sessions", (name) =>
     await writeFile(join(root, "outside.txt"), "private");
     await symlink(join(root, "outside.txt"), join(workspace, "outside-link"));
     const tree = await server.app.request(`/api/sessions/${id}/fs/browse`);
-    expect((await tree.json()).entries.map((entry: { name: string }) => entry.name)).toEqual([
-      "result.md",
-    ]);
+    expect(
+      (await tree.json().then((body) => body.data)).entries.map(
+        (entry: { name: string }) => entry.name,
+      ),
+    ).toEqual(["result.md"]);
     const preview = await server.app.request(`/api/sessions/${id}/fs/file?path=result.md`);
-    expect((await preview.json()).content).toContain("真实输出");
+    expect((await preview.json().then((body) => body.data)).content).toContain("真实输出");
     for (const path of ["../session.json", "outside-link", join(root, "outside.txt")]) {
       expect(
         (await server.app.request(`/api/sessions/${id}/fs/file?path=${encodeURIComponent(path)}`))
           .status,
-      ).toBe(400);
+      ).toBe(422);
     }
     await (await send(id, "/review-fixture 分析论文")).text();
     await expect.poll(() => server.sessions.detail(id).state).toBe("idle");
@@ -237,7 +241,7 @@ describe.each(["claude", "codex"] as const)("%s application sessions", (name) =>
     const callsBefore = provider.calls.length;
     const changed = await options({ model: "during-run", permissionMode: "plan" });
     expect(changed.status).toBe(200);
-    expect(await changed.json()).toMatchObject({
+    expect(await changed.json().then((body) => body.data)).toMatchObject({
       model: "during-run",
       pendingOptions: ["model", "permissionMode"],
     });
@@ -260,7 +264,7 @@ describe.each(["claude", "codex"] as const)("%s application sessions", (name) =>
       body: form,
     });
     expect(upload.status).toBe(201);
-    const draft = await upload.json();
+    const draft = await upload.json().then((body) => body.data);
     expect(draft.url).toBe(`/api/sessions/draft-attachments/${draft.id}`);
 
     const created = await server.app.request("/api/sessions", {
@@ -269,7 +273,7 @@ describe.each(["claude", "codex"] as const)("%s application sessions", (name) =>
       body: JSON.stringify({ provider: name, paperIds: [], attachmentIds: [draft.id] }),
     });
     expect(created.status).toBe(201);
-    const session = await created.json();
+    const session = await created.json().then((body) => body.data);
     expect(session).not.toHaveProperty("attachmentIds");
     const read = await server.app.request(`/api/sessions/${session.id}/attachments/${draft.id}`, {
       headers,
@@ -280,7 +284,7 @@ describe.each(["claude", "codex"] as const)("%s application sessions", (name) =>
       method: "DELETE",
       headers,
     });
-    expect(again.status).toBe(400);
+    expect(again.status).toBe(404);
 
     await (
       await server.app.request(`/api/sessions/${session.id}/messages`, {
@@ -307,7 +311,7 @@ describe.each(["claude", "codex"] as const)("%s application sessions", (name) =>
         headers: { "ScholarAIO-Hub": "true" },
         body: form,
       });
-      return (await response.json()).id as string;
+      return (await response.json().then((body) => body.data)).id as string;
     };
     const unsent = await upload("unsent");
     const sent = await upload("sent");
@@ -319,7 +323,7 @@ describe.each(["claude", "codex"] as const)("%s application sessions", (name) =>
     expect((await remove(unsent)).status).toBe(204);
     expect(
       (await server.app.request(`/api/sessions/${id}/attachments/${unsent}`, { headers })).status,
-    ).toBe(400);
+    ).toBe(404);
     await (
       await server.app.request(`/api/sessions/${id}/messages`, {
         method: "POST",
@@ -328,7 +332,7 @@ describe.each(["claude", "codex"] as const)("%s application sessions", (name) =>
       })
     ).text();
     await expect.poll(() => server.sessions.detail(id).state).toBe("idle");
-    expect((await remove(sent)).status).toBe(400);
+    expect((await remove(sent)).status).toBe(409);
   });
 
   it("sweeps draft uploads nobody claimed within a day", async () => {
@@ -336,7 +340,9 @@ describe.each(["claude", "codex"] as const)("%s application sessions", (name) =>
       new File(["old"], "old.txt", { type: "text/plain" }),
     );
     await server.sessions.attachments.sweepDrafts(Date.now() + 25 * 60 * 60 * 1000);
-    await expect(server.sessions.attachments.removeDraft(draft.id)).rejects.toThrow("已被移除");
+    await expect(server.sessions.attachments.removeDraft(draft.id)).rejects.toThrow(
+      "has been removed",
+    );
   });
 
   it("lists the provider's own commands for the workspace, then research skills", async () => {
@@ -359,7 +365,7 @@ describe.each(["claude", "codex"] as const)("%s application sessions", (name) =>
     const id = await create();
     const response = await server.app.request(`/api/sessions/${id}/commands`, { headers });
     expect(response.status).toBe(200);
-    const { commands } = await response.json();
+    const { commands } = await response.json().then((body) => body.data);
     expect(commands).toEqual([
       ...provider.commands,
       {
@@ -406,18 +412,18 @@ describe.each(["claude", "codex"] as const)("%s application sessions", (name) =>
         headers,
         body: JSON.stringify(value),
       });
-    expect((await options({ effort: "xhigh" })).status).toBe(400);
+    expect((await options({ effort: "xhigh" })).status).toBe(422);
     expect((await options({ model: "deep", effort: "xhigh" })).status).toBe(200);
-    expect((await options({ model: "fast" })).status).toBe(400);
+    expect((await options({ model: "fast" })).status).toBe(422);
     expect((await options({ effort: "" })).status).toBe(200);
     expect(server.sessions.detail(id).effort).toBeUndefined();
-    expect((await options({ thinking: "on:high" })).status).toBe(400);
+    expect((await options({ thinking: "on:high" })).status).toBe(422);
     const created = await server.app.request("/api/sessions", {
       method: "POST",
       headers,
       body: JSON.stringify({ provider: name, paperIds: [], effort: "xhigh" }),
     });
-    expect(created.status).toBe(400);
+    expect(created.status).toBe(422);
   });
 
   it("reads the combined thinking value of sessions stored before effort was separate", async () => {
@@ -426,10 +432,10 @@ describe.each(["claude", "codex"] as const)("%s application sessions", (name) =>
     await server.close();
     const file = join(root, "sessions", id, "session.json");
     await writeFile(file, JSON.stringify({ ...record, thinking: "on:max" }));
-    server = createApp({
+    server = createTestApp({
       dataDir: root,
       provider,
-      libraryService: new TestLibrary(root),
+      library: new TestLibrary(TEST_LIBRARY_URL),
       scholaraioSkillsDir: join(root, "skills"),
     });
     await server.ready;
@@ -457,10 +463,10 @@ describe.each(["claude", "codex"] as const)("%s application sessions", (name) =>
     expect(provider.inputs[1]).not.toContain("第一问");
     expect(server.sessions.detail(id).messages).toHaveLength(4);
     await server.close();
-    server = createApp({
+    server = createTestApp({
       dataDir: root,
       provider,
-      libraryService: new TestLibrary(root),
+      library: new TestLibrary(TEST_LIBRARY_URL),
       scholaraioSkillsDir: join(root, "skills"),
     });
     await server.ready;
@@ -481,7 +487,7 @@ describe.each(["claude", "codex"] as const)("%s application sessions", (name) =>
       body: JSON.stringify({ messageId: "u1" }),
     });
     expect(response.status).toBe(201);
-    const fork = await response.json();
+    const fork = await response.json().then((body) => body.data);
     expect(fork.id).not.toBe(id);
     expect(fork).not.toHaveProperty("nativeSessionId");
     expect(fork.messages.map((message: { role: string }) => message.role)).toEqual([
@@ -541,13 +547,13 @@ describe.each(["claude", "codex"] as const)("%s application sessions", (name) =>
       headers,
       body: JSON.stringify({ title: "  新标题 " }),
     });
-    expect((await rename.json()).title).toBe("新标题");
+    expect((await rename.json().then((body) => body.data)).title).toBe("新标题");
     const forked = await server.app.request(`/api/sessions/${id}/fork`, {
       method: "POST",
       headers,
     });
     expect(forked.status).toBe(201);
-    const fork = await forked.json();
+    const fork = await forked.json().then((body) => body.data);
     expect(fork.messages).toHaveLength(2);
     expect(provider.forks.at(-1)?.dropTurns).toBe(0);
 
@@ -561,10 +567,10 @@ describe.each(["claude", "codex"] as const)("%s application sessions", (name) =>
       expect(error.code).toBe("EEXIST"),
     );
     await server.close();
-    server = createApp({
+    server = createTestApp({
       dataDir: root,
       provider,
-      libraryService: new TestLibrary(root),
+      library: new TestLibrary(TEST_LIBRARY_URL),
       scholaraioSkillsDir: join(root, "skills"),
     });
     await server.ready;
@@ -581,7 +587,7 @@ describe.each(["claude", "codex"] as const)("%s application sessions", (name) =>
       headers,
       body: JSON.stringify({ provider: name }),
     });
-    const id = (await response.json()).id as string;
+    const id = (await response.json().then((body) => body.data)).id as string;
     const events = await (await send(id, "你好")).text();
     await expect.poll(() => server.sessions.detail(id).state).toBe("idle");
     expect(events).not.toContain("data-citations");
@@ -620,7 +626,9 @@ describe.each(["claude", "codex"] as const)("%s application sessions", (name) =>
     expect(decision.status).toBe(200);
     await response.text();
     expect(provider.approvals).toEqual(["deny"]);
-    expect((await (await server.app.request("/api/sessions")).json()).sessions).toHaveLength(1);
+    expect(
+      (await (await server.app.request("/api/sessions")).json().then((body) => body.data)).sessions,
+    ).toHaveLength(1);
     expect((await server.app.request("/api/projects")).status).toBe(404);
   });
   it("pushes the pending decision to the open stream without storing it", async () => {
@@ -677,17 +685,17 @@ describe("workbench project and settings contract", () => {
     const projectDir = join(root, "projects", "p1");
     await mkdir(projectDir, { recursive: true });
     await writeFile(join(projectDir, "notes.md"), "# 项目笔记");
-    class ProjectLibrary extends LibraryService {
+    class ProjectLibrary extends LibraryClient {
       override async request(resource: string) {
         if (resource === "/projects/p1")
-          return Response.json({ id: "p1", name: "P1", path: projectDir, paperIds: [] });
-        return Response.json({ paperIds: [] });
+          return libraryResponse({ id: "p1", name: "P1", path: projectDir, paperIds: [] });
+        return libraryResponse({ paperIds: [] });
       }
     }
-    const server = createApp({
+    const server = createTestApp({
       dataDir: root,
       provider: new WorkbenchProvider("claude"),
-      libraryService: new ProjectLibrary(root),
+      library: new ProjectLibrary(TEST_LIBRARY_URL),
     });
     try {
       await server.ready;
@@ -696,13 +704,18 @@ describe("workbench project and settings contract", () => {
         headers,
         body: JSON.stringify({ provider: "claude", projectId: "p1" }),
       });
-      const { id } = await created.json();
+      const { id } = await created.json().then((body) => body.data);
       const tree = await server.app.request(`/api/sessions/${id}/fs/browse`);
-      expect((await tree.json()).entries.map((entry: { name: string }) => entry.name)).toEqual([
-        "notes.md",
-      ]);
+      expect(
+        (await tree.json().then((body) => body.data)).entries.map(
+          (entry: { name: string }) => entry.name,
+        ),
+      ).toEqual(["notes.md"]);
       const preview = await server.app.request(`/api/sessions/${id}/fs/file?path=notes.md`);
-      expect(await preview.json()).toMatchObject({ content: "# 项目笔记", truncated: false });
+      expect(await preview.json().then((body) => body.data)).toMatchObject({
+        content: "# 项目笔记",
+        truncated: false,
+      });
     } finally {
       await server.close();
       await rm(root, { recursive: true, force: true });
@@ -713,13 +726,15 @@ describe("workbench project and settings contract", () => {
     const { ServerSettingsService } = await import("../../src/services/ServerSettingsService.js");
     const root = await mkdtemp(join(tmpdir(), "hub-project-contract-"));
     const calls: { resource: string; input: Record<string, unknown> }[] = [];
-    class ScopedLibrary extends LibraryService {
+    class ScopedLibrary extends LibraryClient {
       override async request(resource: string, init?: RequestInit) {
         const input = JSON.parse(String(init?.body ?? "{}"));
         calls.push({ resource, input });
         if (input.projectId === "outside")
-          return Response.json({ error: "invalid project" }, { status: 400 });
-        return Response.json(
+          return libraryResponse({ error: "invalid project" }, { status: 400 });
+        if (resource.startsWith("/projects/"))
+          return libraryResponse({ id: "内部项目", name: "内部项目", path: root, paperIds: [] });
+        return libraryResponse(
           resource === "/scope" ? { paperIds: [] } : { citations: [], truncated: false },
         );
       }
@@ -729,10 +744,10 @@ describe("workbench project and settings contract", () => {
     await settings.updateSettings({
       newSessionDefaults: { provider: "codex", model: "codex-model" },
     });
-    const server = createApp({
+    const server = createTestApp({
       dataDir: root,
-      provider: new WorkbenchProvider("codex"),
-      libraryService: new ScopedLibrary(root),
+      providers: [new WorkbenchProvider("codex"), new WorkbenchProvider("claude")],
+      library: new ScopedLibrary(TEST_LIBRARY_URL),
       serverSettingsService: settings,
     });
     try {
@@ -745,7 +760,7 @@ describe("workbench project and settings contract", () => {
         });
       const response = await create({ projectId: "内部项目" });
       expect(response.status).toBe(201);
-      const session = await response.json();
+      const session = await response.json().then((body) => body.data);
       expect(session).toMatchObject({
         projectId: "内部项目",
         provider: "codex",
@@ -762,9 +777,13 @@ describe("workbench project and settings contract", () => {
         resource: "/context",
         input: { query: "summarize", paperIds: [], projectId: "内部项目" },
       });
-      expect((await create({ projectId: "outside" })).status).toBe(400);
-      expect(await (await create({ provider: "claude" })).json()).not.toHaveProperty("model");
-      expect(await (await create({ model: "" })).json()).not.toHaveProperty("model");
+      expect((await create({ projectId: "outside" })).status).toBe(422);
+      expect(
+        await (await create({ provider: "claude" })).json().then((body) => body.data),
+      ).not.toHaveProperty("model");
+      expect(
+        await (await create({ model: "" })).json().then((body) => body.data),
+      ).not.toHaveProperty("model");
       await settings.updateSettings({ newSessionDefaults: { provider: "claude" } });
       expect(server.sessions.detail(session.id).provider).toBe("codex");
       const restored = new SessionStore(root);

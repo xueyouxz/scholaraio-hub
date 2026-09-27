@@ -58,12 +58,12 @@ def test_a_locator_that_yields_no_pdf_says_so(library, monkeypatch):
 
     monkeypatch.setattr("scholaraio.services.pdf_fetch.fetch_pdf", refuse)
 
-    with pytest.raises(ValueError, match="未能获取 PDF"):
+    with pytest.raises(ValueError, match="Unable to retrieve PDF"):
         library.acquire.fetch("10.1038/unreachable")
 
 
 def test_an_empty_locator_is_refused_before_any_request(library):
-    with pytest.raises(ValueError, match="请填写"):
+    with pytest.raises(ValueError, match="Provide"):
         library.acquire.fetch("   ")
 
 
@@ -74,10 +74,11 @@ def test_a_fetched_paper_is_listed_by_the_title_it_was_found_under(library, monk
         return path
 
     monkeypatch.setattr(hub_acquire.AcquireService, "download_url", download)
-    library.projects.create("Drag review")
+    project = library.projects.create("Drag review")
 
     job = library.acquire.fetch("10.1/abc", "Drag review", "Model-based design of riblets")
 
-    assert job["projectId"] == "Drag review"
+    # The job keeps the project's id, whatever name it was asked by.
+    assert job["projectId"] == project["id"]
     assert job["items"][0]["name"] == "200201671.pdf"
     assert job["items"][0]["title"] == "Model-based design of riblets"

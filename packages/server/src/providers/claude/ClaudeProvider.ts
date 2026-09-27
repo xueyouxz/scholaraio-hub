@@ -26,7 +26,7 @@ import { loggerFor } from "../../logging/logger.js";
 import { outboundFetch } from "../../utils/outboundFetch.js";
 import { withTimeout } from "../../utils/timeout.js";
 import { MessageQueue, describeAttachments, isInlineImage } from "../MessageQueue.js";
-import { agentEnv } from "../agent-env.js";
+import { type AgentLibrary, agentEnv } from "../agent-env.js";
 import type { AgentEvent } from "../events.js";
 import { traceProviderMessage } from "../trace.js";
 import type {
@@ -96,7 +96,7 @@ const USAGE_LIMITS_TIMEOUT_MS = 8000;
  * native binary package → `claude` on `PATH`. `undefined` lets the SDK fall back
  * to its own default (preserving prior behavior when nothing is found).
  */
-let cachedLocalClaudeCodeExecutable: string | null | undefined;
+const resolvedExecutables = new Map<string, string | null>();
 
 function isExecutableFile(filePath: string | undefined): filePath is string {
   if (!filePath) return false;
@@ -161,18 +161,28 @@ function resolveClaudeSdkNativeExecutable(): string | undefined {
   return undefined;
 }
 
-export function resolveLocalClaudeCodeExecutable(): string | undefined {
-  if (cachedLocalClaudeCodeExecutable !== undefined) {
-    return cachedLocalClaudeCodeExecutable ?? undefined;
-  }
-
-  const envExecutable = process.env.CLAUDE_CODE_EXECUTABLE ?? process.env.CLAUDE_CODE_PATH;
-  const executable = envExecutable
-    ? resolvePathExecutable(envExecutable)
+/** 解析要运行的 Claude Code 可执行文件：`configured`（配置指定）优先，结果按配置缓存。 */
+export function resolveLocalClaudeCodeExecutable(configured?: string): string | undefined {
+  const key = configured ?? "";
+  const cached = resolvedExecutables.get(key);
+  if (cached !== undefined) return cached ?? undefined;
+  const executable = configured
+    ? resolvePathExecutable(configured)
     : (resolveClaudeSdkNativeExecutable() ?? resolvePathExecutable("claude"));
-
-  cachedLocalClaudeCodeExecutable = executable ?? null;
+  resolvedExecutables.set(key, executable ?? null);
   return executable;
+}
+
+/** Claude Provider 的配置；取值来自 server 配置（`CLAUDE_*` 环境变量）。 */
+export interface ClaudeProviderConfig {
+  /** `CLAUDE_CODE_EXECUTABLE` / `CLAUDE_CODE_PATH`：指定的 Claude Code 可执行文件。 */
+  executable?: string;
+  /** `CLAUDE_CODE_KEYCHAIN_SERVICE`：macOS 钥匙串中登录凭据的服务名。 */
+  keychainService?: string;
+  /** `CLAUDE_OAUTH_USAGE_URL`：调试用的用量接口地址。 */
+  usageUrl?: string;
+  /** agent 中 `scholaraio` CLI 使用的文献库。 */
+  agentLibrary?: AgentLibrary;
 }
 
 /** A model exactly as the Claude CLI describes it; efforts only when it supports them. */
@@ -246,6 +256,8 @@ const PROBE_RETRY_MS = 60_000;
  * - Tool approval callbacks
  */
 export class ClaudeProvider implements AgentProvider {
+  constructor(private readonly config: ClaudeProviderConfig = {}) {}
+
   private authStatus?: { value: Promise<AuthStatus>; expiresAt: number };
   private models?: { value: ModelInfo[]; expiresAt: number };
   /** The probe in flight, shared by concurrent callers. */
@@ -338,7 +350,7 @@ export class ClaudeProvider implements AgentProvider {
    */
   private async getCliAuthStatus(): Promise<AuthStatus | null> {
     try {
-      const claudePath = resolveLocalClaudeCodeExecutable();
+      const claudePath = resolveLocalClaudeCodeExecutable(this.config.executable);
       if (!claudePath) return null;
       const { stdout } = await execFileAsync(claudePath, ["auth", "status"], {
         encoding: "utf-8",
@@ -381,7 +393,7 @@ export class ClaudeProvider implements AgentProvider {
     try {
       let raw: string;
       if (process.platform === "darwin") {
-        const service = process.env.CLAUDE_CODE_KEYCHAIN_SERVICE ?? CLAUDE_CODE_KEYCHAIN_SERVICE;
+        const service = this.config.keychainService ?? CLAUDE_CODE_KEYCHAIN_SERVICE;
         const { stdout } = await execFileAsync(
           "security",
           ["find-generic-password", "-s", service, "-w"],
@@ -416,7 +428,7 @@ export class ClaudeProvider implements AgentProvider {
    * Resolve with the same precedence used to start a session, then execute it.
    */
   private async isClaudeCliInstalled(): Promise<boolean> {
-    const executable = resolveLocalClaudeCodeExecutable();
+    const executable = resolveLocalClaudeCodeExecutable(this.config.executable);
     if (!executable) return false;
     try {
       await execFileAsync(executable, ["--version"], {
@@ -481,11 +493,11 @@ export class ClaudeProvider implements AgentProvider {
     const credentials = await this.readClaudeOAuthCredentials();
     const accessToken = credentials?.accessToken;
     if (typeof accessToken !== "string" || accessToken.length === 0) {
-      throw new Error("未找到 Claude Code 的登录凭据，请先在终端运行 claude auth login。");
+      throw new Error("Claude Code credentials not found. Run claude auth login in a terminal.");
     }
     // An expired token is refused by the API; saying so beats an opaque 401.
     if (credentials?.expiresAt && credentials.expiresAt <= Date.now()) {
-      throw new Error("Claude Code 的登录凭据已过期，请重新登录后再查看用量。");
+      throw new Error("Claude Code credentials have expired. Sign in again to view usage.");
     }
     return accessToken;
   }
@@ -496,35 +508,34 @@ export class ClaudeProvider implements AgentProvider {
 
     try {
       // Through the proxy the environment names: direct, this endpoint answers 403.
-      const response = await outboundFetch(
-        process.env.CLAUDE_OAUTH_USAGE_URL ?? CLAUDE_OAUTH_USAGE_URL,
-        {
-          headers: {
-            accept: "application/json",
-            "anthropic-beta": CLAUDE_OAUTH_BETA_HEADER,
-            authorization: `Bearer ${accessToken}`,
-            "user-agent": "scholaraio-hub-claude-usage",
-          },
-          signal: controller.signal,
+      const response = await outboundFetch(this.config.usageUrl ?? CLAUDE_OAUTH_USAGE_URL, {
+        headers: {
+          accept: "application/json",
+          "anthropic-beta": CLAUDE_OAUTH_BETA_HEADER,
+          authorization: `Bearer ${accessToken}`,
+          "user-agent": "scholaraio-hub-claude-usage",
         },
-      );
+        signal: controller.signal,
+      });
 
       if (!response.ok) {
         // The endpoint rate-limits polling, and refuses tokens that lost the
         // scope. Both read as "no data" to the caller, so name which it was.
         if (response.status === 429) {
-          throw new Error("用量接口暂时限流，稍后会自动重试。");
+          throw new Error("The usage API is rate limited. It will be retried later.");
         }
         if (response.status === 401) {
-          throw new Error("当前登录凭据无权读取用量，请重新登录 Claude Code。");
+          throw new Error(
+            "The current credentials cannot read usage. Sign in to Claude Code again.",
+          );
         }
         // Also what a direct connection from a region Anthropic does not serve gets.
         if (response.status === 403) {
           throw new Error(
-            "用量接口拒绝了请求（HTTP 403）；若本机需经代理访问，请设置 HTTPS_PROXY。",
+            "The usage API rejected the request (HTTP 403). Set HTTPS_PROXY if a proxy is required.",
           );
         }
-        throw new Error(`用量接口返回 HTTP ${response.status}。`);
+        throw new Error(`The usage API returned HTTP ${response.status}.`);
       }
 
       return await response.json();
@@ -535,7 +546,7 @@ export class ClaudeProvider implements AgentProvider {
 
   /** The environment an agent's CLI starts with (see agent-env.ts). */
   private getEnv(): Record<string, string | undefined> {
-    return agentEnv();
+    return agentEnv(this.config.agentLibrary);
   }
 
   /**
@@ -567,7 +578,7 @@ export class ClaudeProvider implements AgentProvider {
           persistSession: false,
           // Same sources as a real session, so project commands and skills are listed.
           settingSources: ["user", "project", "local"],
-          pathToClaudeCodeExecutable: resolveLocalClaudeCodeExecutable(),
+          pathToClaudeCodeExecutable: resolveLocalClaudeCodeExecutable(this.config.executable),
           env: this.getEnv(),
         },
       });
@@ -624,7 +635,8 @@ export class ClaudeProvider implements AgentProvider {
       const prompts = messages.flatMap((message, index) => (isUserPrompt(message) ? [index] : []));
       const cut = prompts[prompts.length - dropTurns];
       upToMessageId = cut === undefined ? undefined : messages[cut - 1]?.uuid;
-      if (!upToMessageId) throw new Error("Claude 会话记录中找不到这条消息之前的内容");
+      if (!upToMessageId)
+        throw new Error("No content before this message was found in the Claude session history");
     }
     const fork = await forkSession(sessionId, { dir: cwd, upToMessageId });
     return fork.sessionId;
@@ -714,7 +726,7 @@ export class ClaudeProvider implements AgentProvider {
           effort: toClaudeEffort(options.effort),
           // Filter env to exclude npm_*, scholaraio-hub specific, and other irrelevant vars
           env: this.getEnv(),
-          pathToClaudeCodeExecutable: resolveLocalClaudeCodeExecutable(),
+          pathToClaudeCodeExecutable: resolveLocalClaudeCodeExecutable(this.config.executable),
           spawnClaudeCodeProcess,
         },
       });
@@ -727,7 +739,7 @@ export class ClaudeProvider implements AgentProvider {
           );
         }
         if (error.message.includes("SPAWN") || error.message.includes("spawn")) {
-          throw new Error(`无法启动 Claude CLI：${error.message}`);
+          throw new Error(`Unable to start Claude CLI: ${error.message}`);
         }
       }
       throw error;
@@ -779,8 +791,6 @@ export class ClaudeProvider implements AgentProvider {
     }
   }
 }
-
-export const claudeProvider = new ClaudeProvider();
 
 const CLAUDE_EFFORTS = ["low", "medium", "high", "max"] as const;
 

@@ -146,7 +146,7 @@ def test_an_import_started_from_a_workspace_lands_in_it(library, tmp_path, monke
     monkeypatch.setattr(
         "scholaraio.services.ingest_metadata.enrich_metadata", lambda meta: meta, raising=False
     )
-    library.projects.create("Drag review")
+    project = library.projects.create("Drag review")
     source = tmp_path / "paper.pdf"
     paper_pdf(source)
 
@@ -154,7 +154,7 @@ def test_an_import_started_from_a_workspace_lands_in_it(library, tmp_path, monke
     finished = wait_for_job(library, job["id"])
     paper_id = finished["items"][0]["paperId"]
 
-    assert finished["projectId"] == "Drag review"
+    assert finished["projectId"] == project["id"]
     assert library.projects.get("Drag review")["paperIds"] == [paper_id]
 
 

@@ -56,7 +56,7 @@ def test_preparing_semantic_search_downloads_the_model_then_embeds(library, monk
 
     assert downloads == [library.runtime.cfg.embed.model]
     assert task["status"] == "completed"
-    assert task["summary"] == "新增 2 篇论文的向量"
+    assert task["summary"] == "Added embeddings for 2 papers"
     assert (task["done"], task["total"]) == (2, 2)
 
 
@@ -87,7 +87,7 @@ def test_one_task_of_a_kind_runs_at_a_time(library, monkeypatch):
     monkeypatch.setattr(vectors, "build_vectors", lambda *a, **k: 0)
 
     library.tasks.start("semantic")
-    with pytest.raises(ValueError, match="已在运行"):
+    with pytest.raises(ValueError, match="already running"):
         library.tasks.start("semantic")
     wait_for(library, "semantic")
 
@@ -109,7 +109,7 @@ def test_semantic_search_says_when_its_packages_are_missing(library, monkeypatch
     task = wait_for(library, "semantic")
 
     assert task["status"] == "failed"
-    assert "向量依赖" in task["error"]
+    assert "Vector dependencies" in task["error"]
     assert library.status.readiness()["vectorRuntimeReady"] is False
 
 
@@ -123,7 +123,7 @@ def test_deep_processing_needs_a_key_and_counts_what_is_pending(library, monkeyp
     library.tasks.start("deep")
     task = wait_for(library, "deep")
     assert task["status"] == "failed"
-    assert "LLM API Key" in task["error"]
+    assert "LLM API key" in task["error"]
 
 
 def test_status_describes_what_the_library_can_already_do(library, monkeypatch):
@@ -154,7 +154,7 @@ def test_an_interrupted_task_is_restartable_after_a_restart(library, tmp_path):
         restarted.close()
 
     assert task["status"] == "failed"
-    assert "可重新开始" in task["error"]
+    assert "can be restarted" in task["error"]
 
 
 def hold_semantic(monkeypatch) -> tuple:
@@ -217,6 +217,6 @@ def test_quality_fills_only_missing_abstracts_one_paper_at_a_time(library, monke
 
     assert asked == []  # the paper that has an abstract is not fetched again
     assert (task["done"], task["total"]) == (1, 1)
-    assert task["summary"] == "补全 1 篇摘要"
+    assert task["summary"] == "Completed 1 abstracts"
     assert json.loads((library.runtime.cfg.papers_dir / "missing" / "meta.json").read_text())["abstract"] == "From the text."
     assert json.loads(present.read_text())["abstract"] == "Kept."

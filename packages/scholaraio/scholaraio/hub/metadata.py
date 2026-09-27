@@ -5,6 +5,7 @@ stays marked incomplete until someone fills the gap here or an API lookup does.
 Both paths end the same way: write the metadata, then rebuild the index so
 search and the citation views agree with it.
 """
+
 from __future__ import annotations
 
 from typing import Any
@@ -27,10 +28,10 @@ class MetadataService:
 
     def update(self, paper_id: str, fields: dict[str, Any]):
         if not fields:
-            raise InvalidRequest("没有要修改的字段")
+            raise InvalidRequest("No fields to update")
         unknown = set(fields) - set(EDITABLE)
         if unknown:
-            raise InvalidRequest(f"不可修改的字段：{', '.join(sorted(unknown))}")
+            raise InvalidRequest(f"Fields cannot be modified: {', '.join(sorted(unknown))}")
         with self.runtime.lock:
             record = self.runtime.papers.find(paper_id)
             for field, value in fields.items():
@@ -44,7 +45,7 @@ class MetadataService:
         with self.runtime.lock:
             record = self.runtime.papers.find(paper_id)
             if not (record.meta.get("doi") or "").strip():
-                raise InvalidRequest("该文献没有 DOI，请先补充 DOI 再重新查询")
+                raise InvalidRequest("This paper has no DOI. Add a DOI before refreshing metadata")
             changed = refetch_metadata(record.directory / "meta.json")
             record = self._commit(self.runtime.papers.reload(record))
             return {"changed": bool(changed), "paper": paper_row(record)}
@@ -59,7 +60,7 @@ class MetadataService:
 def normalize(field: str, value: Any):
     if field == "authors":
         if not isinstance(value, list) or any(not isinstance(item, str) for item in value):
-            raise InvalidRequest("作者必须是字符串列表")
+            raise InvalidRequest("Authors must be a list of strings")
         return [item.strip() for item in value if item.strip()]
     if field == "year":
         if value in (None, ""):
@@ -67,9 +68,9 @@ def normalize(field: str, value: Any):
         try:
             return int(value)
         except (TypeError, ValueError) as error:
-            raise InvalidRequest("年份必须是数字") from error
+            raise InvalidRequest("Year must be a number") from error
     if not isinstance(value, str):
-        raise InvalidRequest(f"{field} 必须是字符串")
+        raise InvalidRequest(f"{field} must be a string")
     return value.strip()
 
 

@@ -2,15 +2,17 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { createApp } from "../../src/app.js";
+import { LibraryClient } from "../../src/lib/LibraryClient.js";
 import { MessageQueue } from "../../src/providers/MessageQueue.js";
 import type { AgentEvent } from "../../src/providers/events.js";
-import { LibraryService } from "../../src/services/LibraryService.js";
+import { createTestApp } from "../helpers/app.js";
+import { libraryResponse } from "../helpers/library.js";
+import { TEST_LIBRARY_URL } from "../helpers/library.js";
 import { providerFromSessionFactory } from "../helpers/scriptedProvider.js";
 
-class NoLibrary extends LibraryService {
+class NoLibrary extends LibraryClient {
   override async request() {
-    return Response.json({ citations: [], truncated: false });
+    return libraryResponse({ citations: [], truncated: false });
   }
 }
 
@@ -18,7 +20,7 @@ const headers = { "Content-Type": "application/json", "ScholarAIO-Hub": "true" }
 
 describe("assistant turn metadata", () => {
   let root: string;
-  let server: ReturnType<typeof createApp>;
+  let server: ReturnType<typeof createTestApp>;
 
   beforeEach(async () => {
     root = await mkdtemp(join(tmpdir(), "hub-metadata-"));
@@ -39,7 +41,7 @@ describe("assistant turn metadata", () => {
       }
       return { events: events(), queue, abort: () => queue.close() };
     });
-    server = createApp({ dataDir: root, provider, libraryService: new NoLibrary(root) });
+    server = createTestApp({ dataDir: root, provider, library: new NoLibrary(TEST_LIBRARY_URL) });
     await server.ready;
   });
 
@@ -54,7 +56,7 @@ describe("assistant turn metadata", () => {
       headers,
       body: JSON.stringify({ provider: "claude" }),
     });
-    const { id } = (await created.json()) as { id: string };
+    const { id } = (await created.json().then((body) => body.data)) as { id: string };
     const response = await server.app.request(`/api/sessions/${id}/messages`, {
       method: "POST",
       headers,

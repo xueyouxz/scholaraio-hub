@@ -1,0 +1,56 @@
+{
+  "events": [
+    {
+      "type": "session.started",
+      "sessionId": "native-golden"
+    },
+    {
+      "type": "notice",
+      "key": "api-retry",
+      "level": "info",
+      "text": "The API request failed (529); retry 1/10 in 2s."
+    },
+    {
+      "type": "notice",
+      "key": "compact-1",
+      "level": "info",
+      "text": "Context compacted on request."
+    },
+    {
+      "type": "notice",
+      "key": "local-1",
+      "level": "info",
+      "text": "Total cost: $0.12"
+    },
+    {
+      "type": "turn.completed",
+      "error": "The Claude usage limit has been reached.\nClaude AI usage limit reached"
+    }
+  ],
+  "chunks": [
+    {
+      "type": "data-notice",
+      "id": "api-retry",
+      "data": {
+        "level": "info",
+        "text": "The API request failed (529); retry 1/10 in 2s."
+      }
+    },
+    {
+      "type": "data-notice",
+      "id": "compact-1",
+      "data": {
+        "level": "info",
+        "text": "Context compacted on request."
+      }
+    },
+    {
+      "type": "data-notice",
+      "id": "local-1",
+      "data": {
+        "level": "info",
+        "text": "Total cost: $0.12"
+      }
+    }
+  ]
+}

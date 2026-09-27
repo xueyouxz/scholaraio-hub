@@ -37,6 +37,20 @@ instead of discovering them one CI round at a time.
 > Note: `pnpm ci:local` lints your working tree, including untracked files; CI lints a
 > clean checkout. Keep the worktree clean so the two agree.
 
+## Server tests without a real agent
+
+- **Hermetic by default.** `packages/server/test/setup/hermetic-env.ts` gives every test
+  file a throwaway `HOME` and removes the Hub's variables and provider credentials, so no
+  unit test reads the developer's `~/.claude` or `~/.codex`. Only the opt-in `REAL_*`
+  suites keep the real environment.
+- **Provider conversion is pinned by goldens**: Codex notifications in
+  `test/fixtures/codex-notifications/`, Claude SDK messages in `test/fixtures/claude-sdk/`,
+  each checked through AgentEvent to UI chunks. Fixtures use only message shapes the
+  provider really sends (regenerate its protocol or record a session with
+  `LOG_SDK_MESSAGES` to check); a shape no protocol has is dead code, not coverage.
+- **Timing in tests**: drive timers with `vi.useFakeTimers()` where the code under test
+  owns them; a real wait needs a comment saying why and how long it measured.
+
 ## Failure modes this repo has actually hit
 
 Real regressions the pipeline surfaced — check for them when builds break:

@@ -1,0 +1,147 @@
+{
+  "events": [
+    {
+      "type": "session.started",
+      "sessionId": "native-golden"
+    },
+    {
+      "type": "text.delta",
+      "blockId": "msg-1:1",
+      "delta": "I'll read "
+    },
+    {
+      "type": "text.delta",
+      "blockId": "msg-1:1",
+      "delta": "the paper."
+    },
+    {
+      "type": "tool.input.delta",
+      "callId": "toolu-read",
+      "name": "Read",
+      "delta": ""
+    },
+    {
+      "type": "tool.input.delta",
+      "callId": "toolu-read",
+      "name": "Read",
+      "delta": "{\"file_path\":"
+    },
+    {
+      "type": "tool.input.delta",
+      "callId": "toolu-read",
+      "name": "Read",
+      "delta": "\"paper.md\"}"
+    },
+    {
+      "type": "tool.call",
+      "callId": "toolu-read",
+      "name": "Read",
+      "input": {
+        "file_path": "paper.md"
+      }
+    },
+    {
+      "type": "model.resolved",
+      "model": "claude-opus-5"
+    },
+    {
+      "type": "tool.result",
+      "callId": "toolu-read",
+      "output": "# Diffusion models",
+      "isError": false,
+      "detail": {
+        "type": "text",
+        "file": {
+          "filePath": "paper.md"
+        }
+      }
+    },
+    {
+      "type": "text.delta",
+      "blockId": "msg-2:0",
+      "delta": "It is about diffusion."
+    },
+    {
+      "type": "turn.completed",
+      "usage": {
+        "inputTokens": 1200,
+        "outputTokens": 40,
+        "cachedInputTokens": 800
+      },
+      "contextWindow": 200000
+    }
+  ],
+  "chunks": [
+    {
+      "type": "text-start",
+      "id": "msg-1:1"
+    },
+    {
+      "type": "text-delta",
+      "id": "msg-1:1",
+      "delta": "I'll read "
+    },
+    {
+      "type": "text-delta",
+      "id": "msg-1:1",
+      "delta": "the paper."
+    },
+    {
+      "type": "tool-input-start",
+      "toolCallId": "toolu-read",
+      "toolName": "Read",
+      "dynamic": true
+    },
+    {
+      "type": "tool-input-delta",
+      "toolCallId": "toolu-read",
+      "inputTextDelta": "{\"file_path\":"
+    },
+    {
+      "type": "tool-input-delta",
+      "toolCallId": "toolu-read",
+      "inputTextDelta": "\"paper.md\"}"
+    },
+    {
+      "type": "tool-input-available",
+      "toolCallId": "toolu-read",
+      "toolName": "Read",
+      "input": {
+        "file_path": "paper.md"
+      },
+      "dynamic": true
+    },
+    {
+      "type": "tool-output-available",
+      "toolCallId": "toolu-read",
+      "output": {
+        "content": "# Diffusion models",
+        "isError": false,
+        "detail": {
+          "type": "text",
+          "file": {
+            "filePath": "paper.md"
+          }
+        }
+      },
+      "dynamic": true
+    },
+    {
+      "type": "text-start",
+      "id": "msg-2:0"
+    },
+    {
+      "type": "text-delta",
+      "id": "msg-2:0",
+      "delta": "It is about diffusion."
+    },
+    {
+      "type": "text-end",
+      "id": "msg-1:1"
+    },
+    {
+      "type": "text-end",
+      "id": "msg-2:0"
+    }
+  ]
+}

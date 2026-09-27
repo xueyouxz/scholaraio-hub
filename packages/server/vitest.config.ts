@@ -9,6 +9,7 @@ export default defineConfig({
   },
   test: {
     exclude: ["node_modules/**", "dist/**"],
+    setupFiles: ["test/setup/hermetic-env.ts"],
     passWithNoTests: true,
     maxWorkers: 4,
     minWorkers: 1,

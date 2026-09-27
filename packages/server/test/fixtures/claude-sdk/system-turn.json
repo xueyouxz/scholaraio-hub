@@ -1,0 +1,60 @@
+{
+  "messages": [
+    {
+      "type": "system",
+      "subtype": "init",
+      "session_id": "native-golden"
+    },
+    {
+      "type": "system",
+      "subtype": "api_retry",
+      "attempt": 1,
+      "max_retries": 10,
+      "retry_delay_ms": 2000,
+      "error_status": 529,
+      "error": "server_error",
+      "uuid": "retry-1"
+    },
+    {
+      "type": "system",
+      "subtype": "compact_boundary",
+      "compact_metadata": {
+        "trigger": "manual",
+        "pre_tokens": 90000
+      },
+      "uuid": "compact-1"
+    },
+    {
+      "type": "system",
+      "subtype": "local_command_output",
+      "content": "Total cost: $0.12",
+      "uuid": "local-1"
+    },
+    {
+      "type": "system",
+      "subtype": "status",
+      "status": "compacting",
+      "uuid": "status-1"
+    },
+    {
+      "type": "assistant",
+      "error": "rate_limit",
+      "message": {
+        "id": "synthetic-1",
+        "model": "<synthetic>",
+        "content": [
+          {
+            "type": "text",
+            "text": "Claude AI usage limit reached"
+          }
+        ]
+      }
+    },
+    {
+      "type": "result",
+      "subtype": "success",
+      "is_error": true,
+      "result": "Claude AI usage limit reached"
+    }
+  ]
+}

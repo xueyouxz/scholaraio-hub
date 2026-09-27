@@ -1,0 +1,251 @@
+{
+  "messages": [
+    {
+      "type": "system",
+      "subtype": "init",
+      "session_id": "native-golden",
+      "model": "claude-opus-5"
+    },
+    {
+      "type": "stream_event",
+      "event": {
+        "type": "message_start",
+        "message": {
+          "id": "msg-1"
+        }
+      }
+    },
+    {
+      "type": "stream_event",
+      "event": {
+        "type": "content_block_start",
+        "index": 0,
+        "content_block": {
+          "type": "thinking",
+          "thinking": ""
+        }
+      }
+    },
+    {
+      "type": "stream_event",
+      "event": {
+        "type": "content_block_stop",
+        "index": 0
+      }
+    },
+    {
+      "type": "stream_event",
+      "event": {
+        "type": "content_block_start",
+        "index": 1,
+        "content_block": {
+          "type": "text",
+          "text": ""
+        }
+      }
+    },
+    {
+      "type": "stream_event",
+      "event": {
+        "type": "content_block_delta",
+        "index": 1,
+        "delta": {
+          "type": "text_delta",
+          "text": "I'll read "
+        }
+      }
+    },
+    {
+      "type": "stream_event",
+      "event": {
+        "type": "content_block_delta",
+        "index": 1,
+        "delta": {
+          "type": "text_delta",
+          "text": "the paper."
+        }
+      }
+    },
+    {
+      "type": "stream_event",
+      "event": {
+        "type": "content_block_stop",
+        "index": 1
+      }
+    },
+    {
+      "type": "stream_event",
+      "event": {
+        "type": "content_block_start",
+        "index": 2,
+        "content_block": {
+          "type": "tool_use",
+          "id": "toolu-read",
+          "name": "Read"
+        }
+      }
+    },
+    {
+      "type": "stream_event",
+      "event": {
+        "type": "content_block_delta",
+        "index": 2,
+        "delta": {
+          "type": "input_json_delta",
+          "partial_json": "{\"file_path\":"
+        }
+      }
+    },
+    {
+      "type": "stream_event",
+      "event": {
+        "type": "content_block_delta",
+        "index": 2,
+        "delta": {
+          "type": "input_json_delta",
+          "partial_json": "\"paper.md\"}"
+        }
+      }
+    },
+    {
+      "type": "stream_event",
+      "event": {
+        "type": "content_block_stop",
+        "index": 2
+      }
+    },
+    {
+      "type": "assistant",
+      "message": {
+        "id": "msg-1",
+        "model": "claude-opus-5",
+        "content": [
+          {
+            "type": "thinking",
+            "thinking": ""
+          }
+        ]
+      },
+      "uuid": "u-1"
+    },
+    {
+      "type": "assistant",
+      "message": {
+        "id": "msg-1",
+        "model": "claude-opus-5",
+        "content": [
+          {
+            "type": "text",
+            "text": "I'll read the paper."
+          }
+        ]
+      },
+      "uuid": "u-2"
+    },
+    {
+      "type": "assistant",
+      "message": {
+        "id": "msg-1",
+        "model": "claude-opus-5",
+        "content": [
+          {
+            "type": "tool_use",
+            "id": "toolu-read",
+            "name": "Read",
+            "input": {
+              "file_path": "paper.md"
+            }
+          }
+        ]
+      },
+      "uuid": "u-3"
+    },
+    {
+      "type": "user",
+      "message": {
+        "role": "user",
+        "content": [
+          {
+            "type": "tool_result",
+            "tool_use_id": "toolu-read",
+            "content": "# Diffusion models"
+          }
+        ]
+      },
+      "tool_use_result": {
+        "type": "text",
+        "file": {
+          "filePath": "paper.md"
+        }
+      }
+    },
+    {
+      "type": "stream_event",
+      "event": {
+        "type": "message_start",
+        "message": {
+          "id": "msg-2"
+        }
+      }
+    },
+    {
+      "type": "stream_event",
+      "event": {
+        "type": "content_block_start",
+        "index": 0,
+        "content_block": {
+          "type": "text",
+          "text": ""
+        }
+      }
+    },
+    {
+      "type": "stream_event",
+      "event": {
+        "type": "content_block_delta",
+        "index": 0,
+        "delta": {
+          "type": "text_delta",
+          "text": "It is about diffusion."
+        }
+      }
+    },
+    {
+      "type": "stream_event",
+      "event": {
+        "type": "content_block_stop",
+        "index": 0
+      }
+    },
+    {
+      "type": "assistant",
+      "message": {
+        "id": "msg-2",
+        "model": "claude-opus-5",
+        "content": [
+          {
+            "type": "text",
+            "text": "It is about diffusion."
+          }
+        ]
+      },
+      "uuid": "u-4"
+    },
+    {
+      "type": "result",
+      "subtype": "success",
+      "is_error": false,
+      "result": "It is about diffusion.",
+      "usage": {
+        "input_tokens": 1200,
+        "output_tokens": 40,
+        "cache_read_input_tokens": 800
+      },
+      "modelUsage": {
+        "claude-opus-5": {
+          "contextWindow": 200000
+        }
+      }
+    }
+  ]
+}

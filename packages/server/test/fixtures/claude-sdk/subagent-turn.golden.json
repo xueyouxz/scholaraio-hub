@@ -1,0 +1,130 @@
+{
+  "events": [
+    {
+      "type": "model.resolved",
+      "model": "claude-opus-5"
+    },
+    {
+      "type": "tool.call",
+      "callId": "toolu-task",
+      "name": "Task",
+      "input": {
+        "description": "Find sources",
+        "prompt": "Find sources"
+      }
+    },
+    {
+      "type": "text.delta",
+      "blockId": "sub-1:0",
+      "delta": "Searching.",
+      "parentCallId": "toolu-task"
+    },
+    {
+      "type": "tool.call",
+      "callId": "toolu-grep",
+      "name": "Grep",
+      "input": {
+        "pattern": "diffusion"
+      },
+      "parentCallId": "toolu-task"
+    },
+    {
+      "type": "tool.result",
+      "callId": "toolu-grep",
+      "output": "refs.bib",
+      "isError": false,
+      "parentCallId": "toolu-task"
+    },
+    {
+      "type": "tool.result",
+      "callId": "toolu-task",
+      "output": "Found refs.bib",
+      "isError": false
+    },
+    {
+      "type": "text.delta",
+      "blockId": "msg-2:0",
+      "delta": "Sources are in refs.bib."
+    },
+    {
+      "type": "turn.completed",
+      "usage": {
+        "inputTokens": 10,
+        "outputTokens": 5
+      }
+    }
+  ],
+  "chunks": [
+    {
+      "type": "tool-input-available",
+      "toolCallId": "toolu-task",
+      "toolName": "Task",
+      "input": {
+        "description": "Find sources",
+        "prompt": "Find sources"
+      },
+      "dynamic": true
+    },
+    {
+      "type": "text-start",
+      "id": "toolu-task/sub-1:0",
+      "providerMetadata": {
+        "hub": {
+          "parentCallId": "toolu-task"
+        }
+      }
+    },
+    {
+      "type": "text-delta",
+      "id": "toolu-task/sub-1:0",
+      "delta": "Searching."
+    },
+    {
+      "type": "tool-input-available",
+      "toolCallId": "toolu-grep",
+      "toolName": "Grep",
+      "input": {
+        "pattern": "diffusion"
+      },
+      "dynamic": true,
+      "toolMetadata": {
+        "parentCallId": "toolu-task"
+      }
+    },
+    {
+      "type": "tool-output-available",
+      "toolCallId": "toolu-grep",
+      "output": {
+        "content": "refs.bib",
+        "isError": false
+      },
+      "dynamic": true
+    },
+    {
+      "type": "tool-output-available",
+      "toolCallId": "toolu-task",
+      "output": {
+        "content": "Found refs.bib",
+        "isError": false
+      },
+      "dynamic": true
+    },
+    {
+      "type": "text-start",
+      "id": "msg-2:0"
+    },
+    {
+      "type": "text-delta",
+      "id": "msg-2:0",
+      "delta": "Sources are in refs.bib."
+    },
+    {
+      "type": "text-end",
+      "id": "toolu-task/sub-1:0"
+    },
+    {
+      "type": "text-end",
+      "id": "msg-2:0"
+    }
+  ]
+}

@@ -4,8 +4,7 @@ import { loggerFor } from "../logging/logger.js";
 import type { ProviderRegistry } from "../providers/ProviderRegistry.js";
 import type { AgentProvider } from "../providers/types.js";
 import type { PermissionMode, UserMessage } from "../providers/types.js";
-import { AgentProcess } from "./AgentProcess.js";
-import type { ProcessEvent } from "./types.js";
+import { AgentProcess, type ProcessEvent } from "./AgentProcess.js";
 
 /** How often to check for stale processes (60 seconds) */
 const STALE_CHECK_INTERVAL_MS = 60 * 1000;

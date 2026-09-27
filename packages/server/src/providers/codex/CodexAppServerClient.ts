@@ -3,17 +3,12 @@
  * the notification queue. Knows nothing about what the messages mean.
  */
 
-import type { ChildProcess } from "node:child_process";
-import { spawn } from "node:child_process";
 import { loggerFor } from "../../logging/logger.js";
 import { AsyncQueue } from "../AsyncQueue.js";
+import { CliProcess } from "../cli-process.js";
 
 const log = () => loggerFor("codex-app-server");
 
-/** How long a terminating app-server gets before SIGKILL. */
-const APP_SERVER_SHUTDOWN_GRACE_MS = 1500;
-/** How much of the app-server's stderr is kept to explain an exit. */
-const STDERR_TAIL_CHARS = 4096;
 /** How long an exited app-server's remaining output may take to arrive. */
 const EXIT_FLUSH_MS = 500;
 
@@ -40,53 +35,14 @@ export interface JsonRpcServerRequest extends JsonRpcNotification {
   id: JsonRpcId;
 }
 
-export async function terminateChildProcess(
-  child: ChildProcess | null | undefined,
-  graceMs = APP_SERVER_SHUTDOWN_GRACE_MS,
-): Promise<void> {
-  if (!child?.pid || child.killed || child.exitCode !== null) {
-    return;
-  }
-
-  const exited = new Promise<void>((resolve) => {
-    child.once("exit", () => resolve());
-  });
-
-  const killTarget = process.platform !== "win32" && child.pid > 0 ? -child.pid : child.pid;
-
-  try {
-    process.kill(killTarget, "SIGTERM");
-  } catch {
-    return;
-  }
-
-  const timer = setTimeout(() => {
-    if (child.exitCode !== null || child.killed) {
-      return;
-    }
-    try {
-      process.kill(killTarget, "SIGKILL");
-    } catch {
-      // Ignore escalation failures during shutdown.
-    }
-  }, graceMs);
-
-  try {
-    await exited;
-  } finally {
-    clearTimeout(timer);
-  }
-}
-
 export type AppServerRequestHandler = (request: JsonRpcServerRequest) => Promise<unknown>;
 
 export class CodexAppServerClient {
-  private process: ChildProcess | null = null;
+  private process: CliProcess | null = null;
   private stdoutBuffer = "";
 
   isAlive(): boolean {
-    const child = this.process;
-    return Boolean(child?.pid && child.exitCode === null && !child.killed);
+    return this.process?.isAlive() ?? false;
   }
   private nextRequestId = 1;
   private readonly pendingRequests = new Map<
@@ -101,8 +57,6 @@ export class CodexAppServerClient {
   private closed = false;
   /** Settles once a closed app-server has exited. */
   private exited: Promise<void> = Promise.resolve();
-  /** The last of the app-server's stderr, for the error that reports its exit. */
-  private stderrTail = "";
   private readonly closeListeners = new Set<(error: Error) => void>();
 
   constructor(
@@ -139,17 +93,19 @@ export class CodexAppServerClient {
       throw new Error("Codex app-server already connected");
     }
 
-    const child = spawn(this.command, ["app-server", "--listen", "stdio://"], {
+    const cli = CliProcess.spawn(this.command, ["app-server", "--listen", "stdio://"], {
       cwd: this.cwd,
-      detached: process.platform !== "win32",
-      stdio: ["pipe", "pipe", "pipe"],
       env: this.env,
-      shell: process.platform === "win32",
+      group: true,
+      onStderr: (text) => {
+        const stderr = text.trim();
+        if (stderr) log().debug({ stderr }, "codex app-server stderr");
+      },
     });
+    const child = cli.child;
+    this.process = cli;
 
-    this.process = child;
-
-    child.stdout?.on("data", (chunk: Buffer) => {
+    child.stdout.on("data", (chunk: Buffer) => {
       this.stdoutBuffer += chunk.toString("utf-8");
       const lines = this.stdoutBuffer.split("\n");
       this.stdoutBuffer = lines.pop() ?? "";
@@ -157,15 +113,6 @@ export class CodexAppServerClient {
         const line = raw.trim();
         if (!line) continue;
         this.handleJsonRpcLine(line);
-      }
-    });
-
-    child.stderr?.on("data", (chunk: Buffer) => {
-      const text = chunk.toString("utf-8");
-      this.stderrTail = (this.stderrTail + text).slice(-STDERR_TAIL_CHARS);
-      const stderr = text.trim();
-      if (stderr) {
-        log().debug({ stderr }, "codex app-server stderr");
       }
     });
 
@@ -178,7 +125,7 @@ export class CodexAppServerClient {
       // first, so its last notifications (often the reason) are not lost.
       const report = () => {
         clearTimeout(timer);
-        const tail = this.stderrTail.trim();
+        const tail = cli.stderrTail;
         this.handleProcessClose(
           new Error(
             `Codex app-server exited (code=${code ?? "null"}, signal=${signal ?? "null"})${tail ? `: ${tail}` : ""}`,
@@ -187,7 +134,7 @@ export class CodexAppServerClient {
       };
       const timer = setTimeout(report, EXIT_FLUSH_MS);
       timer.unref();
-      if (!child.stdout || child.stdout.readableEnded) report();
+      if (child.stdout.readableEnded) report();
       else child.stdout.once("end", report);
     });
 
@@ -344,9 +291,9 @@ export class CodexAppServerClient {
     this.notifications.close(closeError);
     this.closeListeners.clear();
 
-    const child = this.process;
+    const cli = this.process;
     this.process = null;
-    this.exited = terminateChildProcess(child);
+    this.exited = cli?.terminate() ?? Promise.resolve();
     return this.exited;
   }
 
@@ -367,12 +314,13 @@ export class CodexAppServerClient {
   }
 
   private sendRaw(payload: Record<string, unknown>): void {
-    if (!this.process?.stdin || this.closed) {
+    const stdin = this.process?.child.stdin;
+    if (!stdin || this.closed) {
       return;
     }
 
     try {
-      this.process.stdin.write(`${JSON.stringify(payload)}\n`);
+      stdin.write(`${JSON.stringify(payload)}\n`);
     } catch (error) {
       this.handleProcessClose(
         error instanceof Error ? error : new Error("Failed to write to codex app-server stdin"),

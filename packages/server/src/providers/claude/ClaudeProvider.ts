@@ -1,4 +1,4 @@
-import { type ChildProcess, execFile, spawn } from "node:child_process";
+import { execFile } from "node:child_process";
 import { constants, accessSync, existsSync, readFileSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import { createRequire } from "node:module";
@@ -25,10 +25,12 @@ import {
   type ThinkingConfig,
 } from "@scholaraio-hub/shared";
 import { loggerFor } from "../../logging/logger.js";
+import { AsyncCache } from "../../utils/async-cache.js";
 import { outboundFetch } from "../../utils/outboundFetch.js";
 import { withTimeout } from "../../utils/timeout.js";
 import { MessageQueue, describeAttachments, isInlineImage } from "../MessageQueue.js";
 import { type AgentLibrary, agentEnv } from "../agent-env.js";
+import { CliProcess } from "../cli-process.js";
 import type { AgentEvent } from "../events.js";
 import { traceProviderMessage } from "../trace.js";
 import type {
@@ -241,33 +243,12 @@ function isUserPrompt(message: { type: string; message: unknown }): boolean {
   if (typeof text !== "string") return blocks.length > 0;
   return !NON_PROMPT_PREFIXES.some((prefix) => text.trimStart().startsWith(prefix));
 }
-const commandCache = new Map<string, { commands: SlashCommand[]; expiresAt: number }>();
-
 /** How long a login check stands: each one runs the CLI twice. */
 const AUTH_STATUS_TTL_MS = 30_000;
 /** How long the probed model list stands; a CLI update or new login can change it. */
 const MODEL_CACHE_TTL_MS = 60 * 60 * 1000;
 /** After a failed probe, how long to offer no models before probing again (each costs up to 15s). */
 const PROBE_RETRY_MS = 60_000;
-/** How much of the CLI's stderr is kept to explain a failure. */
-const STDERR_TAIL_CHARS = 4096;
-/** How long an aborted CLI gets to exit before SIGKILL. */
-const EXIT_GRACE_MS = 1500;
-
-/** Settles once `proc` has exited, killing it outright if it outlives the grace. */
-function processExit(proc: ChildProcess): Promise<void> {
-  if (proc.exitCode !== null || proc.signalCode !== null) return Promise.resolve();
-  return new Promise((resolve) => {
-    const timer = setTimeout(() => {
-      if (proc.exitCode === null && proc.signalCode === null) proc.kill("SIGKILL");
-    }, EXIT_GRACE_MS);
-    timer.unref();
-    proc.once("exit", () => {
-      clearTimeout(timer);
-      resolve();
-    });
-  });
-}
 
 /**
  * Claude provider implementation using @anthropic-ai/claude-agent-sdk.
@@ -280,11 +261,18 @@ function processExit(proc: ChildProcess): Promise<void> {
 export class ClaudeProvider implements AgentProvider {
   constructor(private readonly config: ClaudeProviderConfig = {}) {}
 
-  private authStatus?: { value: Promise<AuthStatus>; expiresAt: number };
-  private models?: { value: ModelInfo[]; expiresAt: number };
-  /** The probe in flight, shared by concurrent callers. */
-  private probing?: Promise<ModelInfo[]>;
-  private probeRetryAt = 0;
+  private readonly authStatus = new AsyncCache<"status", AuthStatus>({
+    ttlMs: AUTH_STATUS_TTL_MS,
+  });
+  /** An empty list (no login yet) is asked again; a failed probe only after a while. */
+  private readonly models = new AsyncCache<"models", ModelInfo[]>({
+    ttlMs: MODEL_CACHE_TTL_MS,
+    failureTtlMs: PROBE_RETRY_MS,
+    keep: (models) => models.length > 0,
+  });
+  private readonly commands = new AsyncCache<string, SlashCommand[]>({
+    ttlMs: COMMAND_CACHE_TTL_MS,
+  });
 
   readonly name: ProviderName = "claude";
   readonly displayName: string = "Claude";
@@ -320,15 +308,7 @@ export class ClaudeProvider implements AgentProvider {
    *   3. Stored OAuth credentials (macOS Keychain, else `~/.claude/.credentials.json`).
    */
   getAuthStatus(): Promise<AuthStatus> {
-    const now = Date.now();
-    if (this.authStatus && this.authStatus.expiresAt > now) return this.authStatus.value;
-    const value = this.readAuthStatus();
-    this.authStatus = { value, expiresAt: now + AUTH_STATUS_TTL_MS };
-    // A check that failed is not an answer to keep.
-    value.catch(() => {
-      if (this.authStatus?.value === value) this.authStatus = undefined;
-    });
-    return value;
+    return this.authStatus.get("status", () => this.readAuthStatus());
   }
 
   private async readAuthStatus(): Promise<AuthStatus> {
@@ -469,25 +449,19 @@ export class ClaudeProvider implements AgentProvider {
    * a failed probe none are offered until the next retry, so a broken CLI does
    * not stall every caller for the probe timeout.
    */
-  async getAvailableModels(): Promise<ModelInfo[]> {
-    const now = Date.now();
-    if (this.models && this.models.expiresAt > now) return this.models.value;
-    // An unauthenticated CLI never finishes its handshake; it has no models to offer.
-    if (!(await this.getAuthStatus()).authenticated) return [];
-    if (this.probing) return this.probing;
-    if (now < this.probeRetryAt) return [];
-    this.probing = this.probeModels();
-    try {
-      const value = await this.probing;
-      this.models = { value, expiresAt: Date.now() + MODEL_CACHE_TTL_MS };
-      return value;
-    } catch (error) {
-      this.probeRetryAt = Date.now() + PROBE_RETRY_MS;
-      log().warn({ err: error }, "Failed to probe models; none offered until the next retry");
-      return [];
-    } finally {
-      this.probing = undefined;
-    }
+  getAvailableModels(): Promise<ModelInfo[]> {
+    return this.models
+      .get("models", async () => {
+        // An unauthenticated CLI never finishes its handshake; it has no models to offer.
+        if (!(await this.getAuthStatus()).authenticated) return [];
+        try {
+          return await this.probeModels();
+        } catch (error) {
+          log().warn({ err: error }, "Failed to probe models; none offered until the next retry");
+          throw error;
+        }
+      })
+      .catch(() => []);
   }
 
   async getUsageLimits(): Promise<ProviderUsageLimits> {
@@ -632,17 +606,12 @@ export class ClaudeProvider implements AgentProvider {
    * Slash commands Claude Code offers in `cwd` (built-ins, custom commands,
    * skills), as its `supportedCommands()` lists them. Cached briefly per cwd.
    */
-  async listCommands(cwd: string): Promise<SlashCommand[]> {
-    const cached = commandCache.get(cwd);
-    if (cached && cached.expiresAt > Date.now()) return cached.commands;
-    const commands = (
-      await this.probe(cwd, (sdkQuery) => sdkQuery.supportedCommands(), "Command")
-    ).map(toClaudeCommand);
-    commandCache.set(cwd, {
-      commands,
-      expiresAt: Date.now() + COMMAND_CACHE_TTL_MS,
-    });
-    return commands;
+  listCommands(cwd: string): Promise<SlashCommand[]> {
+    return this.commands.get(cwd, async () =>
+      (await this.probe(cwd, (sdkQuery) => sdkQuery.supportedCommands(), "Command")).map(
+        toClaudeCommand,
+      ),
+    );
   }
 
   /**
@@ -699,35 +668,26 @@ export class ClaudeProvider implements AgentProvider {
       : undefined;
 
     // Spawn the CLI ourselves to keep its handle: stale detection can then tell
-    // "process died silently" from "process is busy with a long tool call".
-    let capturedProcess: ChildProcess | null = null;
-    // The CLI's last stderr: read, so a full pipe never blocks it, and kept to
-    // say why it failed (a resume that no longer exists, a broken config).
-    let stderrTail = "";
+    // "process died silently" from "process is busy with a long tool call", and
+    // its stderr says why it failed (a resume that no longer exists, a broken config).
+    let cli: CliProcess | null = null;
     const spawnClaudeCodeProcess = (
       spawnOpts: import("@anthropic-ai/claude-agent-sdk").SpawnOptions,
     ): SpawnedProcess => {
-      const proc = spawn(spawnOpts.command, spawnOpts.args, {
+      const spawned = CliProcess.spawn(spawnOpts.command, spawnOpts.args, {
         cwd: spawnOpts.cwd,
         env: spawnOpts.env as NodeJS.ProcessEnv,
-        stdio: ["pipe", "pipe", "pipe"],
-        shell: process.platform === "win32",
       });
-      const abortHandler = () => {
-        proc.kill("SIGTERM");
-      };
+      const abortHandler = () => void spawned.terminate();
       spawnOpts.signal.addEventListener("abort", abortHandler);
-      proc.stderr?.on("data", (chunk: Buffer) => {
-        stderrTail = (stderrTail + chunk.toString("utf-8")).slice(-STDERR_TAIL_CHARS);
-      });
-      proc.on("exit", (code, signal) => {
+      spawned.child.on("exit", (code, signal) => {
         spawnOpts.signal.removeEventListener("abort", abortHandler);
         // Our own abort ends it with SIGTERM (exit 143): not worth a warning.
         if (code && !spawnOpts.signal.aborted)
-          log().warn({ code, signal, stderr: stderrTail.trim() }, "Claude CLI exited");
+          log().warn({ code, signal, stderr: spawned.stderrTail }, "Claude CLI exited");
       });
-      capturedProcess = proc;
-      return proc;
+      cli = spawned;
+      return spawned.child;
     };
 
     // Create the SDK query with our message generator
@@ -770,15 +730,14 @@ export class ClaudeProvider implements AgentProvider {
     }
 
     return {
-      events: this.toAgentEvents(sdkQuery, () => stderrTail.trim()),
+      events: this.toAgentEvents(sdkQuery, () => cli?.stderrTail ?? ""),
       queue,
       abort: () => {
         abortController.abort();
         queue.close();
-        return capturedProcess ? processExit(capturedProcess) : Promise.resolve();
+        return cli?.terminate() ?? Promise.resolve();
       },
-      isProcessAlive: () =>
-        capturedProcess !== null && capturedProcess.exitCode === null && !capturedProcess.killed,
+      isProcessAlive: () => cli?.isAlive() ?? false,
       // On adaptive models any non-zero budget means "adaptive" and 0 turns
       // thinking off; null would only clear the limit.
       setThinking: (thinking) =>

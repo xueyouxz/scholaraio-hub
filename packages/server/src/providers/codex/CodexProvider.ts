@@ -17,6 +17,7 @@ import {
   type SlashCommand,
 } from "@scholaraio-hub/shared";
 import { loggerFor } from "../../logging/logger.js";
+import { AsyncCache } from "../../utils/async-cache.js";
 import { withTimeout } from "../../utils/timeout.js";
 import { type AgentLibrary, agentEnv } from "../agent-env.js";
 import type {
@@ -89,7 +90,11 @@ export class CodexProvider implements AgentProvider {
     attachments: ATTACHMENT_LIMITS,
   };
 
-  private modelCache: { models: ModelInfo[]; expiresAt: number } | null = null;
+  /** An empty list (no CLI, a failed query) is asked again next time. */
+  private readonly models = new AsyncCache<"models", ModelInfo[]>({
+    ttlMs: MODEL_CACHE_TTL_MS,
+    keep: (models) => models.length > 0,
+  });
   /** The CLI once found; looking it up spawns `which` and `--version`. */
   private executable: string | undefined;
 
@@ -195,9 +200,11 @@ export class CodexProvider implements AgentProvider {
    * The models app-server `model/list` offers. No list means no models are
    * offered; a failed query is retried next time rather than cached as none.
    */
-  async getAvailableModels(): Promise<ModelInfo[]> {
-    const now = Date.now();
-    if (this.modelCache && this.modelCache.expiresAt > now) return this.modelCache.models;
+  getAvailableModels(): Promise<ModelInfo[]> {
+    return this.models.get("models", () => this.listModels());
+  }
+
+  private async listModels(): Promise<ModelInfo[]> {
     if (!(await this.codexCommand())) return [];
     try {
       const listed = await this.withAppServer(process.cwd(), (client) =>
@@ -207,14 +214,12 @@ export class CodexProvider implements AgentProvider {
           "Timed out querying Codex app-server model list",
         ),
       );
-      const models = toCodexModels(
+      return toCodexModels(
         (listed.data ?? []).filter(
           (item): item is AppServerModel =>
             Boolean(item) && typeof (item as AppServerModel).id === "string",
         ),
       );
-      if (models.length > 0) this.modelCache = { models, expiresAt: now + MODEL_CACHE_TTL_MS };
-      return models;
     } catch (error) {
       log().warn({ err: error }, "Failed to query Codex app-server model list; offering none");
       return [];

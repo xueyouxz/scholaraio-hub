@@ -1,12 +1,26 @@
 import { randomUUID } from "node:crypto";
-import type { ProviderName, ThinkingConfig } from "@scholaraio-hub/shared";
-import type { InputRequest } from "@scholaraio-hub/shared";
+import type { InputRequest, ProviderName, ThinkingConfig } from "@scholaraio-hub/shared";
 import { loggerFor } from "../logging/logger.js";
+import type { AgentEvent } from "../providers/events.js";
 import type { AgentSession } from "../providers/types.js";
 import type { PermissionMode, ToolApprovalResult, UserMessage } from "../providers/types.js";
 import { ApprovalQueue } from "./ApprovalQueue.js";
 import { decidePermission } from "./permission-policy.js";
-import type { ProcessEvent, ProcessState } from "./types.js";
+
+export type ProcessState =
+  | { type: "in-turn" }
+  | { type: "idle" }
+  | { type: "waiting-input"; request: InputRequest }
+  | { type: "terminated"; reason: string; error?: Error };
+
+/**
+ * What a process tells the session it serves: each provider event, each state
+ * change, and — once — that it ended, with the error when one ended it.
+ */
+export type ProcessEvent =
+  | { type: "agent"; event: AgentEvent }
+  | { type: "state-change"; state: ProcessState }
+  | { type: "terminated"; reason: string; error?: Error };
 
 type Listener = (event: ProcessEvent) => void;
 

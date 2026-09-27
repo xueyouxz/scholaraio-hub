@@ -6,8 +6,11 @@ import { MessageQueue } from "../src/providers/MessageQueue.js";
 import { toClaudeUserMessage } from "../src/providers/claude/ClaudeProvider.js";
 import type { AgentEvent } from "../src/providers/events.js";
 import type { AgentSession, UserMessage } from "../src/providers/types.js";
-import { AgentProcess, type AgentProcessOptions } from "../src/supervisor/AgentProcess.js";
-import type { ProcessEvent } from "../src/supervisor/types.js";
+import {
+  AgentProcess,
+  type AgentProcessOptions,
+  type ProcessEvent,
+} from "../src/supervisor/AgentProcess.js";
 
 /** A provider stream that yields `events`, then stays open like a live CLI. */
 function openStream(events: AgentEvent[] = []): AsyncIterableIterator<AgentEvent> {

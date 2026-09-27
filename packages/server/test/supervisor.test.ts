@@ -3,8 +3,8 @@ import { MessageQueue } from "../src/providers/MessageQueue.js";
 import { ProviderRegistry, ProviderUnavailableError } from "../src/providers/ProviderRegistry.js";
 import type { AgentEvent } from "../src/providers/events.js";
 import type { StartSessionOptions } from "../src/providers/types.js";
+import type { ProcessEvent } from "../src/supervisor/AgentProcess.js";
 import { type SessionMessageRequest, Supervisor } from "../src/supervisor/Supervisor.js";
-import type { ProcessEvent } from "../src/supervisor/types.js";
 import { createScriptedProvider, providerFromSessionFactory } from "./helpers/scriptedProvider.js";
 
 /** 只启用一个由会话工厂构造的 Provider。 */

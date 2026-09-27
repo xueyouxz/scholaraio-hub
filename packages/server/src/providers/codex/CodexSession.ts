@@ -258,135 +258,149 @@ export class CodexSession implements AgentSession {
   }
 }
 
+/** What a server request handler answers with: the running session's approval callback and its abort. */
+interface ServerRequestContext {
+  requestId: JsonRpcServerRequest["id"];
+  onToolApproval: CanUseTool | undefined;
+  signal: AbortSignal;
+}
+
+type ServerRequestHandler = (params: unknown, context: ServerRequestContext) => Promise<unknown>;
+
 /**
- * Answer what the app-server asks a running session: command and file-change
- * approvals, and questions for the user (asked through the same AskUserQuestion
- * flow as Claude, so the user sees one kind of prompt whichever agent asks).
+ * What the app-server may ask a running session, by method: command and
+ * file-change approvals, and questions for the user (asked through the same
+ * AskUserQuestion flow as Claude, so the user sees one kind of prompt
+ * whichever agent asks).
  */
+const SERVER_REQUESTS: Record<string, ServerRequestHandler> = {
+  async "item/commandExecution/requestApproval"(raw, context) {
+    const params = asCommandExecutionRequestApprovalParams(raw);
+    if (!params) {
+      log().warn(
+        { requestId: context.requestId },
+        "Codex command approval params invalid; declining",
+      );
+      return { decision: "decline" };
+    }
+    const input = {
+      command: params.command,
+      cwd: params.cwd,
+      reason: params.reason,
+      commandActions: params.commandActions ?? [],
+      proposedExecpolicyAmendment: params.proposedExecpolicyAmendment ?? null,
+      threadId: params.threadId,
+      turnId: params.turnId,
+      itemId: params.itemId,
+    };
+    const decision = await approve(context, "Bash", input, params.itemId);
+    log().info(
+      { requestId: context.requestId, itemId: params.itemId, decision },
+      "Codex command approval",
+    );
+    return { decision };
+  },
+
+  async "item/fileChange/requestApproval"(raw, context) {
+    const params = asFileChangeRequestApprovalParams(raw);
+    if (!params) {
+      log().warn(
+        { requestId: context.requestId },
+        "Codex file-change approval params invalid; declining",
+      );
+      return { decision: "decline" };
+    }
+    const grantRoot = params.grantRoot ?? null;
+    const input = {
+      file_path: grantRoot ?? undefined,
+      reason: params.reason ?? null,
+      grantRoot,
+      threadId: params.threadId,
+      turnId: params.turnId,
+      itemId: params.itemId,
+    };
+    const decision = await approve(context, "Edit", input, params.itemId);
+    log().info(
+      { requestId: context.requestId, itemId: params.itemId, decision },
+      "Codex file-change approval",
+    );
+    return { decision };
+  },
+
+  async "item/tool/requestUserInput"(raw, { requestId, onToolApproval, signal }) {
+    const params = asToolRequestUserInputParams(raw);
+    const questions = params?.questions ?? [];
+    const respond = (given: Record<string, string>): ToolRequestUserInputResponse => ({
+      answers: Object.fromEntries(
+        questions.map((question) => [
+          question.id,
+          { answers: given[question.question] ? [given[question.question] as string] : [] },
+        ]),
+      ),
+    });
+    if (!params || !questions.length || !onToolApproval) return respond({});
+    const input = {
+      questions: questions.map((question) => ({
+        question: question.question,
+        header: question.header,
+        options: (question.options ?? []).map((option) => ({
+          label: option.label,
+          description: option.description,
+        })),
+        multiSelect: false,
+        ...(question.isSecret ? { secret: true } : {}),
+      })),
+    };
+    try {
+      const result = await onToolApproval("AskUserQuestion", input, {
+        signal,
+        toolUseID: params.itemId,
+      });
+      if (result.behavior !== "allow") return respond({});
+      const answers = (result.updatedInput as { answers?: Record<string, string> } | undefined)
+        ?.answers;
+      return respond(answers ?? {});
+    } catch (error) {
+      log().warn({ requestId, err: error }, "Codex user-input prompt failed; answering empty");
+      return respond({});
+    }
+  },
+
+  // Neither is put to the user yet; each gets the answer that grants nothing.
+  async "item/permissions/requestApproval"(_, { requestId }) {
+    log().warn({ requestId }, "Codex permission request declined");
+    return { permissions: {}, scope: "turn" };
+  },
+
+  async "mcpServer/elicitation/request"(_, { requestId }) {
+    log().warn({ requestId }, "Codex MCP elicitation declined");
+    return { action: "decline", content: null, _meta: null };
+  },
+};
+
+/** Answer one app-server request; a method with no handler gets an error reply. */
 export async function handleCodexServerRequest(
   request: JsonRpcServerRequest,
   onToolApproval: CanUseTool | undefined,
   signal: AbortSignal,
 ): Promise<unknown> {
   log().info({ method: request.method, requestId: request.id }, "Codex app-server request");
-  switch (request.method) {
-    case "item/commandExecution/requestApproval": {
-      const params = asCommandExecutionRequestApprovalParams(request.params);
-      if (!params) {
-        log().warn({ requestId: request.id }, "Codex command approval params invalid; declining");
-        return { decision: "decline" };
-      }
-      const input = {
-        command: params.command,
-        cwd: params.cwd,
-        reason: params.reason,
-        commandActions: params.commandActions ?? [],
-        proposedExecpolicyAmendment: params.proposedExecpolicyAmendment ?? null,
-        threadId: params.threadId,
-        turnId: params.turnId,
-        itemId: params.itemId,
-      };
-      const decision = await approve(onToolApproval, "Bash", input, signal, params.itemId);
-      log().info(
-        { requestId: request.id, itemId: params.itemId, decision },
-        "Codex command approval",
-      );
-      return { decision };
-    }
-
-    case "item/fileChange/requestApproval": {
-      const params = asFileChangeRequestApprovalParams(request.params);
-      if (!params) {
-        log().warn(
-          { requestId: request.id },
-          "Codex file-change approval params invalid; declining",
-        );
-        return { decision: "decline" };
-      }
-      const grantRoot = params.grantRoot ?? null;
-      const input = {
-        file_path: grantRoot ?? undefined,
-        reason: params.reason ?? null,
-        grantRoot,
-        threadId: params.threadId,
-        turnId: params.turnId,
-        itemId: params.itemId,
-      };
-      const decision = await approve(onToolApproval, "Edit", input, signal, params.itemId);
-      log().info(
-        { requestId: request.id, itemId: params.itemId, decision },
-        "Codex file-change approval",
-      );
-      return { decision };
-    }
-
-    case "item/tool/requestUserInput": {
-      const params = asToolRequestUserInputParams(request.params);
-      const questions = params?.questions ?? [];
-      const respond = (given: Record<string, string>): ToolRequestUserInputResponse => ({
-        answers: Object.fromEntries(
-          questions.map((question) => [
-            question.id,
-            { answers: given[question.question] ? [given[question.question] as string] : [] },
-          ]),
-        ),
-      });
-      if (!params || !questions.length || !onToolApproval) return respond({});
-      const input = {
-        questions: questions.map((question) => ({
-          question: question.question,
-          header: question.header,
-          options: (question.options ?? []).map((option) => ({
-            label: option.label,
-            description: option.description,
-          })),
-          multiSelect: false,
-          ...(question.isSecret ? { secret: true } : {}),
-        })),
-      };
-      try {
-        const result = await onToolApproval("AskUserQuestion", input, {
-          signal,
-          toolUseID: params.itemId,
-        });
-        if (result.behavior !== "allow") return respond({});
-        const answers = (result.updatedInput as { answers?: Record<string, string> } | undefined)
-          ?.answers;
-        return respond(answers ?? {});
-      } catch (error) {
-        log().warn(
-          { requestId: request.id, err: error },
-          "Codex user-input prompt failed; answering empty",
-        );
-        return respond({});
-      }
-    }
-
-    // Neither is put to the user yet; each gets the answer that grants nothing.
-    case "item/permissions/requestApproval":
-      log().warn({ requestId: request.id }, "Codex permission request declined");
-      return { permissions: {}, scope: "turn" };
-
-    case "mcpServer/elicitation/request":
-      log().warn({ requestId: request.id }, "Codex MCP elicitation declined");
-      return { action: "decline", content: null, _meta: null };
-
-    default:
-      // An error reply, not an empty result Codex cannot read as an answer.
-      log().warn(
-        { method: request.method, requestId: request.id },
-        "Unhandled codex server request",
-      );
-      throw new Error(`Unsupported request: ${request.method}`);
+  const handler = Object.hasOwn(SERVER_REQUESTS, request.method)
+    ? SERVER_REQUESTS[request.method]
+    : undefined;
+  if (!handler) {
+    // An error reply, not an empty result Codex cannot read as an answer.
+    log().warn({ method: request.method, requestId: request.id }, "Unhandled codex server request");
+    throw new Error(`Unsupported request: ${request.method}`);
   }
+  return handler(request.params, { requestId: request.id, onToolApproval, signal });
 }
 
 /** Put an approval to the user; command and file-change decisions share these answers. */
 async function approve(
-  onToolApproval: CanUseTool | undefined,
+  { onToolApproval, signal }: ServerRequestContext,
   toolName: string,
   input: unknown,
-  signal: AbortSignal,
   /** The item being approved, so the request can be shown on its row. */
   toolUseID: string,
 ): Promise<"accept" | "decline" | "cancel"> {

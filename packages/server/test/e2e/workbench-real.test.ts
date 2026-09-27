@@ -31,7 +31,7 @@ describe.skipIf(!enabled)("real application sessions", () => {
         const token = `hub-${randomUUID().slice(0, 8)}`;
         try {
           await server.ready;
-          const record = await server.sessions.store.create({
+          const record = await server.store.create({
             title: "CLI verification",
             provider: name,
             paperIds: [],
@@ -73,7 +73,7 @@ describe.skipIf(!enabled)("real application sessions", () => {
           await expect
             .poll(
               () => {
-                const message = server.sessions.store.get(record.id).messages.at(-1);
+                const message = server.store.get(record.id).messages.at(-1);
                 return (
                   message?.role === "assistant" &&
                   message.parts.some((part) => part.type === "text" && part.text.length > 0)

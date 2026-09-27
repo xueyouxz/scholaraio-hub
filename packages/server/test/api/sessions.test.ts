@@ -336,13 +336,11 @@ describe.each(["claude", "codex"] as const)("%s application sessions", (name) =>
   });
 
   it("sweeps draft uploads nobody claimed within a day", async () => {
-    const draft = await server.sessions.attachments.uploadDraft(
+    const draft = await server.attachments.uploadDraft(
       new File(["old"], "old.txt", { type: "text/plain" }),
     );
-    await server.sessions.attachments.sweepDrafts(Date.now() + 25 * 60 * 60 * 1000);
-    await expect(server.sessions.attachments.removeDraft(draft.id)).rejects.toThrow(
-      "has been removed",
-    );
+    await server.attachments.sweepDrafts(Date.now() + 25 * 60 * 60 * 1000);
+    await expect(server.attachments.removeDraft(draft.id)).rejects.toThrow("has been removed");
   });
 
   it("lists the provider's own commands for the workspace, then research skills", async () => {
@@ -428,7 +426,7 @@ describe.each(["claude", "codex"] as const)("%s application sessions", (name) =>
 
   it("reads the combined thinking value of sessions stored before effort was separate", async () => {
     const id = await create();
-    const record = server.sessions.store.get(id);
+    const record = server.store.get(id);
     await server.close();
     const file = join(root, "sessions", id, "session.json");
     await writeFile(file, JSON.stringify({ ...record, thinking: "on:max" }));
@@ -449,7 +447,7 @@ describe.each(["claude", "codex"] as const)("%s application sessions", (name) =>
     const events = await first.text();
     expect(events).toContain("data-citations");
     await expect.poll(() => server.sessions.detail(id).state).toBe("idle");
-    const firstNative = server.sessions.store.get(id).nativeSessionId;
+    const firstNative = server.store.get(id).nativeSessionId;
     expect(firstNative).toBeTruthy();
     expect(firstNative).not.toBe(id);
     expect(server.sessions.detail(id)).not.toHaveProperty("nativeSessionId");
@@ -496,7 +494,7 @@ describe.each(["claude", "codex"] as const)("%s application sessions", (name) =>
     ]);
     expect(provider.forks).toEqual([
       expect.objectContaining({
-        sessionId: server.sessions.store.get(id).nativeSessionId,
+        sessionId: server.store.get(id).nativeSessionId,
         dropTurns: 1,
         cwd: join(root, "sessions", id, "workspace"),
       }),
@@ -681,14 +679,14 @@ describe.each(["claude", "codex"] as const)("%s application sessions", (name) =>
     expect(server.sessions.detail(id).permissionMode).toBe("acceptEdits");
   });
   it("marks interrupted disk runs without replaying input", async () => {
-    const record = await server.sessions.store.create({
+    const record = await server.store.create({
       title: "interrupted",
       provider: name,
       paperIds: [],
     });
     record.state = "running";
     record.nativeSessionId = "native";
-    await server.sessions.store.save(record);
+    await server.store.save(record);
     const restarted = new SessionStore(root);
     await restarted.initialize();
     expect(restarted.get(record.id).state).toBe("interrupted");

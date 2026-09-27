@@ -66,7 +66,7 @@ describe("统一 HTTP 契约", () => {
     expect(payload.id).toBe(response.headers.get("X-Request-ID"));
     if (code === "VALIDATION_FAILED")
       expect(payload.data.issues[0]).toMatchObject({ location: "body", path: ["provider"] });
-    expect(server.sessions.store.list()).toHaveLength(0);
+    expect(server.store.list()).toHaveLength(0);
   });
 
   it("无请求体的操作接受空流且不要求媒体类型", async () => {
@@ -150,7 +150,7 @@ describe("统一 HTTP 契约", () => {
   });
 
   it("内部解析错误保持 500，审批失效返回独立业务码", async () => {
-    vi.spyOn(server.sessions.store, "list").mockImplementation(() => {
+    vi.spyOn(server.store, "list").mockImplementation(() => {
       throw new SyntaxError("private storage detail");
     });
     const failed = await server.app.request("/api/sessions");

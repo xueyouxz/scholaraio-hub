@@ -19,8 +19,8 @@ import {
   validate,
 } from "../http.js";
 import type { ServerSettingsService } from "../services/ServerSettingsService.js";
-import { MAX_ATTACHMENT_BYTES } from "../sessions/SessionAttachments.js";
-import { SessionFiles } from "../sessions/SessionFiles.js";
+import { MAX_ATTACHMENT_BYTES, type SessionAttachments } from "../sessions/SessionAttachments.js";
+import type { SessionFiles } from "../sessions/SessionFiles.js";
 import type { SessionService } from "../sessions/SessionService.js";
 
 const MULTIPART_OVERHEAD_BYTES = 64 * 1024;
@@ -60,10 +60,22 @@ function downloadDisposition(filename: string): string {
   return `attachment; filename*=UTF-8''${encodeURIComponent(filename)}`;
 }
 
+export interface SessionRoutesDeps {
+  sessions: SessionService;
+  attachments: SessionAttachments;
+  files: SessionFiles;
+  /** 新建会话时的默认 Provider 与模型。 */
+  settings?: ServerSettingsService;
+}
+
 /** 创建会话领域接口，提供记录、执行、交互、历史和文件操作。 */
-export function createSessionRoutes(service: SessionService, settings?: ServerSettingsService) {
+export function createSessionRoutes({
+  sessions: service,
+  attachments,
+  files,
+  settings,
+}: SessionRoutesDeps) {
   const routes = new Hono<AppEnv>();
-  const files = new SessionFiles((id) => service.workingDirectory(id));
 
   // 命令发现：全局命令与会话命令。
   routes.get(
@@ -77,7 +89,7 @@ export function createSessionRoutes(service: SessionService, settings?: ServerSe
   );
 
   // 会话记录：列表、创建、详情、重命名、删除和选项。
-  routes.get("/", (c) => success(c, { sessions: service.store.list() }));
+  routes.get("/", (c) => success(c, { sessions: service.list() }));
   routes.post("/", validate("json", CreateSessionSchema.partial({ provider: true })), async (c) => {
     const defaults = settings?.getSettings().newSessionDefaults;
     const session = await service.create(c.req.valid("json"), defaults);
@@ -103,7 +115,6 @@ export function createSessionRoutes(service: SessionService, settings?: ServerSe
     return createUIMessageStreamResponse({ stream });
   });
   routes.get("/:id/stream", (c) => {
-    service.store.get(c.req.param("id"));
     const stream = service.stream(c.req.param("id"), c.req.raw.signal);
     return stream ? createUIMessageStreamResponse({ stream }) : emptyBody(c);
   });
@@ -159,11 +170,11 @@ export function createSessionRoutes(service: SessionService, settings?: ServerSe
     bodyLimit({ maxSize: MAX_ATTACHMENT_BYTES + MULTIPART_OVERHEAD_BYTES }),
     async (c) => {
       const file = await readUploadedFile(c.req);
-      return created(c, await service.attachments.uploadDraft(file));
+      return created(c, await attachments.uploadDraft(file));
     },
   );
   routes.delete("/draft-attachments/:attachmentId", async (c) => {
-    await service.attachments.removeDraft(c.req.param("attachmentId"));
+    await attachments.removeDraft(c.req.param("attachmentId"));
     return emptyBody(c);
   });
   routes.post(
@@ -171,15 +182,15 @@ export function createSessionRoutes(service: SessionService, settings?: ServerSe
     bodyLimit({ maxSize: MAX_ATTACHMENT_BYTES + MULTIPART_OVERHEAD_BYTES }),
     async (c) => {
       const file = await readUploadedFile(c.req);
-      return created(c, await service.attachments.upload(c.req.param("id"), file));
+      return created(c, await attachments.upload(c.req.param("id"), file));
     },
   );
   routes.delete("/:id/attachments/:attachmentId", async (c) => {
-    await service.attachments.remove(c.req.param("id"), c.req.param("attachmentId"));
+    await attachments.remove(c.req.param("id"), c.req.param("attachmentId"));
     return emptyBody(c);
   });
   routes.get("/:id/attachments/:attachmentId", async (c) => {
-    const { visible, file } = await service.attachments.resolve(
+    const { visible, file } = await attachments.resolve(
       c.req.param("id"),
       c.req.param("attachmentId"),
     );

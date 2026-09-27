@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { MessageQueue } from "../src/providers/MessageQueue.js";
-import { ProviderRegistry, ProviderUnavailableError } from "../src/providers/ProviderRegistry.js";
+import { ProviderRegistry } from "../src/providers/ProviderRegistry.js";
 import type { AgentEvent } from "../src/providers/events.js";
 import type { StartSessionOptions } from "../src/providers/types.js";
 import type { ProcessEvent } from "../src/supervisor/AgentProcess.js";
@@ -29,8 +29,8 @@ describe("Supervisor", () => {
     supervisor = new Supervisor({
       providers: new ProviderRegistry([createScriptedProvider({ startCalls, holdOpen: true })]),
       idleTimeoutMs: 60_000,
-      onEvent: (sessionId, event) => events.push({ sessionId, event }),
     });
+    supervisor.subscribe((sessionId, event) => events.push({ sessionId, event }));
   });
 
   afterEach(() => {
@@ -112,7 +112,6 @@ describe("Supervisor", () => {
         queue: new MessageQueue(),
         abort: () => exited,
       })),
-      onEvent: () => {},
     });
     await closing.send(request());
     let closed = false;
@@ -161,8 +160,8 @@ describe("Supervisor", () => {
         }
         return { events: stream(), queue: new MessageQueue(), abort: () => {} };
       }),
-      onEvent: (sessionId, event) => events.push({ sessionId, event }),
     });
+    dying.subscribe((sessionId, event) => events.push({ sessionId, event }));
     const first = await dying.send(request({ nativeSessionId: "dying-1" }));
     await vi.waitFor(() => expect(first.isTerminated).toBe(true));
     expect(dying.get("app-1")).toBeUndefined();
@@ -185,19 +184,14 @@ describe("Supervisor", () => {
     expect(events.some(({ event }) => event.type === "terminated")).toBe(false);
   });
 
-  it("names the default provider for no name, and refuses one that is not enabled", () => {
-    expect(supervisor.providerFor(undefined).name).toBe("claude");
-    expect(() => supervisor.providerFor("codex")).toThrow(ProviderUnavailableError);
-  });
-
   it("stops a process whose approval nobody answers, saying why", async () => {
     vi.useFakeTimers();
     try {
       const waiting = new Supervisor({
         providers: new ProviderRegistry([createScriptedProvider({ startCalls, holdOpen: true })]),
         unansweredInputTimeoutMs: 1000,
-        onEvent: (sessionId, event) => events.push({ sessionId, event }),
       });
+      waiting.subscribe((sessionId, event) => events.push({ sessionId, event }));
       const process = await waiting.send(request());
       const answer = process.handleToolApproval(
         "Bash",
@@ -242,7 +236,6 @@ describe("Supervisor", () => {
           };
         }),
         idleTimeoutMs: 100,
-        onEvent: () => {},
       });
 
       const process = await idle.send(request({ message: { text: "Keep this session alive" } }));

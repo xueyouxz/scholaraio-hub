@@ -43,6 +43,8 @@ export function createTestApp(options: TestAppOptions) {
   return {
     app,
     sessions: services.sessions,
+    store: services.store,
+    attachments: services.attachments,
     ready,
     close: async () => {
       await ready;

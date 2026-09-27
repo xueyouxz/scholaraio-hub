@@ -2,6 +2,8 @@ import {
   type ApiErrorCode,
   type ApiErrorDetails,
   CSRF_HEADER,
+  type LibraryContext,
+  type LiteratureProject,
   parseApiResponse,
 } from "@scholaraio-hub/shared";
 
@@ -37,6 +39,12 @@ export class LibraryUnavailableError extends Error {
   }
 }
 
+/** The papers and project a session reads from. */
+export interface LibraryScope {
+  projectId?: string;
+  paperIds: string[];
+}
+
 /** 调用独立文献服务并解析其统一响应。 */
 export class LibraryClient {
   constructor(readonly baseUrl: string) {}
@@ -48,7 +56,7 @@ export class LibraryClient {
   }
 
   /** 发送文献服务请求，附加访问标识并处理连接错误。 */
-  async request(resource: string, init: RequestInit = {}): Promise<Response> {
+  protected async request(resource: string, init: RequestInit = {}): Promise<Response> {
     const headers = new Headers(init.headers);
     headers.set(CSRF_HEADER.name, CSRF_HEADER.value);
     try {
@@ -65,7 +73,7 @@ export class LibraryClient {
   }
 
   /** 调用文献 JSON 接口并解包业务数据或抛出业务错误。 */
-  async json<T>(resource: string, init?: RequestInit): Promise<T> {
+  private async json<T>(resource: string, init?: RequestInit): Promise<T> {
     const response = await this.request(resource, init);
     let payload: ReturnType<typeof parseApiResponse>;
     try {
@@ -84,6 +92,30 @@ export class LibraryClient {
     return payload.data as T;
   }
 
+  /** 确认文献库有这些论文与项目；没有时抛出 4xx 的 `LibraryRequestError`。 */
+  async checkScope(scope: LibraryScope): Promise<void> {
+    await this.post("/scope", scope);
+  }
+
+  /** 从范围内的论文中检索与 `query` 相关的段落。 */
+  context(scope: LibraryScope & { query: string }): Promise<LibraryContext> {
+    return this.post<LibraryContext>("/context", scope);
+  }
+
+  /** 按 id（旧会话为名称）取项目；已不存在时为 undefined。 */
+  async project(reference: string): Promise<LiteratureProject | undefined> {
+    try {
+      return await this.json<LiteratureProject>(`/projects/${encodeURIComponent(reference)}`);
+    } catch (error) {
+      if (error instanceof LibraryRequestError && error.status === 404) return undefined;
+      throw error;
+    }
+  }
+
+  async projects(): Promise<LiteratureProject[]> {
+    return (await this.json<{ projects: LiteratureProject[] }>("/projects")).projects;
+  }
+
   /** 检查文献服务当前是否可用。 */
   async available(): Promise<boolean> {
     try {
@@ -95,5 +127,13 @@ export class LibraryClient {
       // Unreachable or too slow: that is the answer, not an error.
       return false;
     }
+  }
+
+  private post<T>(resource: string, body: unknown): Promise<T> {
+    return this.json<T>(resource, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(body),
+    });
   }
 }

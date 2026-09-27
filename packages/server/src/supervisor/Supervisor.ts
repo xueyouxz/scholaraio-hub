@@ -2,7 +2,6 @@ import { randomUUID } from "node:crypto";
 import type { ProviderName, ThinkingConfig } from "@scholaraio-hub/shared";
 import { loggerFor } from "../logging/logger.js";
 import type { ProviderRegistry } from "../providers/ProviderRegistry.js";
-import type { AgentProvider } from "../providers/types.js";
 import type { PermissionMode, UserMessage } from "../providers/types.js";
 import { AgentProcess, type ProcessEvent } from "./AgentProcess.js";
 
@@ -55,12 +54,13 @@ export interface SupervisorOptions {
   idleTimeoutMs?: number;
   /** How long a pending approval or question may go unanswered before the process stops. */
   unansweredInputTimeoutMs?: number;
-  /**
-   * Every event of every live process, with the session it serves. A process
-   * that was released (replaced or deleted) reports nothing more.
-   */
-  onEvent: (sessionId: string, event: ProcessEvent) => void;
 }
+
+/**
+ * Every event of every live process, with the session it serves. A process
+ * that was released (replaced or deleted) reports nothing more.
+ */
+export type SupervisorListener = (sessionId: string, event: ProcessEvent) => void;
 
 /**
  * Owns the provider processes this server runs, one per session and keyed by
@@ -73,7 +73,7 @@ export class Supervisor {
   private readonly providers: ProviderRegistry;
   private readonly idleTimeoutMs?: number;
   private readonly unansweredInputTimeoutMs: number;
-  private readonly onEvent: SupervisorOptions["onEvent"];
+  private readonly listeners = new Set<SupervisorListener>();
   private readonly staleCheckTimer: ReturnType<typeof setInterval>;
   /** The send in progress for each session; the next one waits for it. */
   private readonly sending = new Map<string, Promise<unknown>>();
@@ -84,7 +84,6 @@ export class Supervisor {
     this.idleTimeoutMs = options.idleTimeoutMs;
     this.unansweredInputTimeoutMs =
       options.unansweredInputTimeoutMs ?? DEFAULT_UNANSWERED_INPUT_TIMEOUT_MS;
-    this.onEvent = options.onEvent;
     this.staleCheckTimer = setInterval(
       () => this.terminateStaleProcesses(),
       STALE_CHECK_INTERVAL_MS,
@@ -92,12 +91,10 @@ export class Supervisor {
     this.staleCheckTimer.unref(); // Don't keep process alive for cleanup
   }
 
-  /**
-   * The provider that would run a session for `name`: the one the caller named,
-   * otherwise the default. One that is not enabled throws `ProviderUnavailableError`.
-   */
-  providerFor(name: ProviderName | undefined): AgentProvider {
-    return this.providers.get(name);
+  /** Hear every live process's events until the returned unsubscribe, or `close`. */
+  subscribe(listener: SupervisorListener): () => void {
+    this.listeners.add(listener);
+    return () => this.listeners.delete(listener);
   }
 
   /** The session's live process, if it has one. */
@@ -155,6 +152,7 @@ export class Supervisor {
   async close(): Promise<void> {
     this.closed = true;
     clearInterval(this.staleCheckTimer);
+    this.listeners.clear();
     const processes = [...this.processes.values()];
     this.processes.clear();
     await Promise.all(processes.map((process) => process.stop("Server closing")));
@@ -182,7 +180,7 @@ export class Supervisor {
     settings: LaunchSettings,
   ): Promise<string | undefined> {
     if (process.isTerminated) return "Process already ended";
-    if (this.providerFor(settings.providerName).name !== process.provider)
+    if (this.providers.get(settings.providerName).name !== process.provider)
       return "Provider changed";
     if (nativeSessionId !== process.nativeSessionId)
       return "Session continues a different conversation";
@@ -200,7 +198,7 @@ export class Supervisor {
   private async launch(request: SessionMessageRequest): Promise<AgentProcess> {
     const { sessionId, nativeSessionId, projectPath, message } = request;
     const settings = request.settings ?? {};
-    const provider = this.providerFor(settings.providerName);
+    const provider = this.providers.get(settings.providerName);
     const permissionMode = request.permissionMode ?? "default";
     // The approval callback is handed over before the process exists.
     const holder: { process?: AgentProcess } = {};
@@ -263,7 +261,17 @@ export class Supervisor {
           `Process for session ${sessionId} ended: ${event.reason}`,
         );
       }
-      this.onEvent(sessionId, event);
+      for (const listener of this.listeners) {
+        try {
+          listener(sessionId, event);
+        } catch (error) {
+          // One failing subscriber must not starve the others of the event.
+          loggerFor("supervisor").error(
+            { err: error, sessionId, eventType: event.type },
+            "Supervisor listener failed",
+          );
+        }
+      }
     });
   }
 

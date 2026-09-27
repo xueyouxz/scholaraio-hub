@@ -7,7 +7,6 @@ import type {
   LiteratureProject,
   NewSessionDefaults,
   ProviderName,
-  ProviderUsageLimits,
   SessionInput,
   SessionMessage,
   SessionMessageMetadata,
@@ -23,9 +22,9 @@ import { type ProviderRegistry, ProviderUnavailableError } from "../providers/Pr
 import type { PermissionMode } from "../providers/types.js";
 import { researchSlashCommands } from "../skills/scholaraioSkills.js";
 import type { ProcessEvent } from "../supervisor/AgentProcess.js";
-import { Supervisor } from "../supervisor/Supervisor.js";
+import type { Supervisor } from "../supervisor/Supervisor.js";
 import { resolvesWithin } from "../utils/timeout.js";
-import { SessionAttachments } from "./SessionAttachments.js";
+import type { SessionAttachments } from "./SessionAttachments.js";
 import type { SessionRecord, SessionStore } from "./SessionStore.js";
 import { UIChunkWriter, appendReplayChunk } from "./UIChunkWriter.js";
 import { agentPrompt, requestedSkill } from "./agent-prompt.js";
@@ -71,13 +70,15 @@ export type NewSessionInput = Omit<z.output<typeof CreateSessionSchema>, "provid
 };
 
 export interface SessionServiceOptions {
+  store: SessionStore;
+  library: LibraryClient;
   /** The providers this server runs; a session that does not name one gets the default. */
   providers: ProviderRegistry;
-  idleTimeoutMs?: number;
+  /** The provider processes serving these sessions, one per session. */
+  supervisor: Supervisor;
+  attachments: SessionAttachments;
   /** Research skills, offered as commands and expanded into prompts. */
   skillsDir?: string;
-  /** Usage-limit windows providers report in passing, for the usage display. */
-  onUsageLimits?: (limits: ProviderUsageLimits) => void;
 }
 
 /** The mode an answer moves the session to: plan tools switch it, "accept edits" keeps accepting. */
@@ -97,26 +98,27 @@ export class SessionService {
   private closing = false;
   private drains = new Map<string, Promise<void>>();
   private changingOptions = new Set<string>();
-  /** The provider processes serving these sessions, one per session. */
-  private readonly supervisor: Supervisor;
+  private readonly store: SessionStore;
+  private readonly library: LibraryClient;
   private readonly providers: ProviderRegistry;
+  private readonly supervisor: Supervisor;
+  private readonly attachments: SessionAttachments;
   private readonly skillsDir?: string;
-  private readonly onUsageLimits?: (limits: ProviderUsageLimits) => void;
-  readonly attachments: SessionAttachments;
-  constructor(
-    readonly store: SessionStore,
-    private library: LibraryClient,
-    options: SessionServiceOptions,
-  ) {
-    this.attachments = new SessionAttachments(store);
-    this.skillsDir = options.skillsDir;
-    this.onUsageLimits = options.onUsageLimits;
+  private readonly unsubscribe: () => void;
+
+  constructor(options: SessionServiceOptions) {
+    this.store = options.store;
+    this.library = options.library;
     this.providers = options.providers;
-    this.supervisor = new Supervisor({
-      providers: options.providers,
-      idleTimeoutMs: options.idleTimeoutMs,
-      onEvent: (id, event) => this.onEvent(id, event),
-    });
+    this.supervisor = options.supervisor;
+    this.attachments = options.attachments;
+    this.skillsDir = options.skillsDir;
+    this.unsubscribe = this.supervisor.subscribe((id, event) => this.onEvent(id, event));
+  }
+
+  /** Every session, newest first, without its messages. */
+  list() {
+    return this.store.list();
   }
 
   /**
@@ -150,7 +152,7 @@ export class SessionService {
       ? await this.workingDirectory(record)
       : path.join(this.store.dataDir, "draft-workspace");
     await mkdir(workspace, { recursive: true });
-    const agent = this.supervisor.providerFor(record?.provider ?? provider);
+    const agent = this.providers.get(record?.provider ?? provider);
     const [native, research] = await Promise.all([
       agent.listCommands?.(workspace) ?? [],
       this.skillsDir ? researchSlashCommands(this.skillsDir) : [],
@@ -182,11 +184,7 @@ export class SessionService {
     if (!input.projectId && input.paperIds.length === 0) return;
     const { projectId, paperIds } = input;
     try {
-      await this.library.json("/scope", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ projectId, paperIds }),
-      });
+      await this.library.checkScope({ projectId, paperIds });
     } catch (error) {
       if (error instanceof LibraryRequestError && error.status < 500)
         throw new SessionInputError(error.detail);
@@ -215,7 +213,7 @@ export class SessionService {
   ): Promise<void> {
     const effort = options.effort ?? current.effort;
     if (!effort) return;
-    const models = await this.supervisor.providerFor(provider).getAvailableModels();
+    const models = await this.providers.get(provider).getAvailableModels();
     if (models.length === 0) return;
     const modelId = Object.hasOwn(options, "model") ? options.model : current.model;
     const model = modelId
@@ -261,8 +259,6 @@ export class SessionService {
 
   /** What the session's process reports; only the run in progress takes it in. */
   private onEvent(id: string, event: ProcessEvent): void {
-    if (event.type === "agent" && event.event.type === "rate-limit")
-      this.onUsageLimits?.(event.event.limits);
     const run = this.runs.get(id);
     if (run && !run.finished) {
       const { record } = run;
@@ -511,13 +507,8 @@ export class SessionService {
   private async project(record: SessionRecord): Promise<LiteratureProject | undefined> {
     const reference = record.projectId;
     if (!reference) return undefined;
-    let project: LiteratureProject;
-    try {
-      project = await this.library.json<LiteratureProject>(
-        `/projects/${encodeURIComponent(reference)}`,
-      );
-    } catch (error) {
-      if (!(error instanceof LibraryRequestError && error.status === 404)) throw error;
+    const project = await this.library.project(reference);
+    if (!project) {
       log().info({ sessionId: record.id, projectId: reference }, "Project gone; session detached");
       record.projectId = undefined;
       await this.store.save(record);
@@ -537,7 +528,7 @@ export class SessionService {
    * the same for one session whenever it is used. Returns how many changed.
    */
   async reconcileProjects(): Promise<number> {
-    const { projects } = await this.library.json<{ projects: LiteratureProject[] }>("/projects");
+    const projects = await this.library.projects();
     const ids = new Set(projects.map((project) => project.id));
     const byName = new Map(projects.map((project) => [project.name, project.id]));
     let changed = 0;
@@ -561,14 +552,10 @@ export class SessionService {
     question: string,
   ): Promise<LibraryContext | undefined> {
     if (!record.projectId && record.paperIds.length === 0) return undefined;
-    return this.library.json<LibraryContext>("/context", {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({
-        query: question.slice(0, CONTEXT_QUERY_LENGTH),
-        paperIds: record.paperIds,
-        projectId: record.projectId,
-      }),
+    return this.library.context({
+      query: question.slice(0, CONTEXT_QUERY_LENGTH),
+      paperIds: record.paperIds,
+      projectId: record.projectId,
     });
   }
 
@@ -649,7 +636,7 @@ export class SessionService {
     keepsAny: boolean,
   ): Promise<string | undefined> {
     if (!record.nativeSessionId || !keepsAny) return undefined;
-    const provider = this.supervisor.providerFor(record.provider);
+    const provider = this.providers.get(record.provider);
     if (!provider.forkSession)
       throw new SessionConflictError("This AI provider does not support session forking.");
     return provider.forkSession({
@@ -731,7 +718,12 @@ export class SessionService {
     await this.store.remove(id);
   }
 
+  /**
+   * The turn in progress, replayed from its start and then live; null when the
+   * session is not running one. An unknown session throws.
+   */
   stream(id: string, signal: AbortSignal): ReadableStream<UIMessageChunk> | null {
+    this.store.get(id);
     const run = this.runs.get(id);
     if (!run) return null;
     let dispose = () => {};
@@ -873,7 +865,6 @@ export class SessionService {
     await Promise.all(this.drains.values());
     for (const run of this.runs.values())
       await this.finish(run, "The run was interrupted by service shutdown.", true);
-    await this.supervisor.close();
-    await this.store.flush();
+    this.unsubscribe();
   }
 }

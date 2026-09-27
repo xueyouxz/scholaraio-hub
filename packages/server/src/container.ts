@@ -2,8 +2,11 @@ import type { LibraryClient } from "./lib/LibraryClient.js";
 import type { ProviderRegistry } from "./providers/ProviderRegistry.js";
 import { ProviderUsageLimitService } from "./services/ProviderUsageLimitService.js";
 import { ServerSettingsService } from "./services/ServerSettingsService.js";
+import { SessionAttachments } from "./sessions/SessionAttachments.js";
+import { SessionFiles } from "./sessions/SessionFiles.js";
 import { SessionService } from "./sessions/SessionService.js";
 import { SessionStore } from "./sessions/SessionStore.js";
+import { Supervisor } from "./supervisor/Supervisor.js";
 
 export interface ServiceOptions {
   dataDir: string;
@@ -25,12 +28,15 @@ export interface Services {
   providers: ProviderRegistry;
   skillsDir: string;
   store: SessionStore;
+  supervisor: Supervisor;
   sessions: SessionService;
+  attachments: SessionAttachments;
+  files: SessionFiles;
   settings: ServerSettingsService;
   usage: ProviderUsageLimitService;
   /** 读入持久化状态；完成前不接收请求。 */
   start(): Promise<void>;
-  /** 按创建的逆序释放：先停会话与 agent 进程，再等设置写完。 */
+  /** 按创建的逆序释放：先结束会话的当前轮，再停 agent 进程，最后等会话与设置写完。 */
   close(): Promise<void>;
 }
 
@@ -40,11 +46,21 @@ export function createServices(options: ServiceOptions): Services {
   const settings = options.settings ?? new ServerSettingsService({ dataDir });
   const usage = new ProviderUsageLimitService();
   const store = new SessionStore(dataDir);
-  const sessions = new SessionService(store, library, {
+  const supervisor = new Supervisor({ providers, idleTimeoutMs: options.idleTimeoutMs });
+  const attachments = new SessionAttachments(store);
+  const sessions = new SessionService({
+    store,
+    library,
     providers,
-    idleTimeoutMs: options.idleTimeoutMs,
+    supervisor,
+    attachments,
     skillsDir,
-    onUsageLimits: (limits) => usage.record(limits),
+  });
+  const files = new SessionFiles((id) => sessions.workingDirectory(id));
+  // Providers report usage windows in passing; the usage display keeps them.
+  supervisor.subscribe((_, event) => {
+    if (event.type === "agent" && event.event.type === "rate-limit")
+      usage.record(event.event.limits);
   });
   return {
     dataDir,
@@ -52,7 +68,10 @@ export function createServices(options: ServiceOptions): Services {
     providers,
     skillsDir,
     store,
+    supervisor,
     sessions,
+    attachments,
+    files,
     settings,
     usage,
     async start() {
@@ -60,7 +79,8 @@ export function createServices(options: ServiceOptions): Services {
     },
     async close() {
       await sessions.close();
-      await settings.close();
+      await supervisor.close();
+      await Promise.all([store.flush(), settings.close()]);
     },
   };
 }

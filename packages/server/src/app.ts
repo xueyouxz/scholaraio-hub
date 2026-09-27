@@ -34,7 +34,15 @@ export function createApp(services: Services, options: AppOptions = {}) {
   app.use("/api/*", secureHeaders({ strictTransportSecurity: false }));
   app.use("/api/*", hostCheck(parseAllowedHosts(options.allowedHosts)));
   app.use("/api/*", requireCsrfHeader);
-  app.route("/api/sessions", createSessionRoutes(services.sessions, services.settings));
+  app.route(
+    "/api/sessions",
+    createSessionRoutes({
+      sessions: services.sessions,
+      attachments: services.attachments,
+      files: services.files,
+      settings: services.settings,
+    }),
+  );
   app.route("/api/skills", createSkillsRoutes({ scholaraioSkillsDir: services.skillsDir }));
   app.route(
     "/api/providers",

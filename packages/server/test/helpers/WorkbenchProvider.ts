@@ -9,6 +9,8 @@ import type {
   AgentProvider,
   ForkSessionOptions,
   NativeRewind,
+  NativeSession,
+  NativeTurn,
   StartSessionOptions,
 } from "../../src/providers/types.js";
 import { TEST_CAPABILITIES } from "./scriptedProvider.js";
@@ -70,6 +72,16 @@ export class WorkbenchProvider implements AgentProvider {
     return this.commands;
   }
   /** Native forks asked for; each returns a new native id. */
+  /** What the provider's own history holds, as a test sets it up. */
+  stored: NativeSession[] = [];
+  transcripts = new Map<string, NativeTurn[]>();
+  async listSessions() {
+    return this.stored;
+  }
+  async readSession(id: string) {
+    return this.transcripts.get(id) ?? [];
+  }
+
   readonly forks: Array<ForkSessionOptions & { forkedId: string }> = [];
   async forkSession(options: ForkSessionOptions) {
     const forkedId = `fork-${randomUUID()}`;

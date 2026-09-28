@@ -1,7 +1,12 @@
 import { mkdtempSync } from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
-import { resolveLibraryPort, resolvePort, resolveProfileName } from "@scholaraio-hub/shared";
+import {
+  profileDataDirName,
+  resolveLibraryPort,
+  resolvePort,
+  resolveProfileName,
+} from "@scholaraio-hub/shared";
 import { loadEnvFiles } from "./env-files.js";
 
 type Env = Record<string, string | undefined>;
@@ -26,10 +31,7 @@ function defaultDataDir(name: string): string {
     testDataDir ??= mkdtempSync(path.join(os.tmpdir(), "scholaraio-hub-test-"));
     return testDataDir;
   }
-  return path.join(
-    os.homedir(),
-    name === "production" ? ".scholaraio-hub" : `.scholaraio-hub-${name}`,
-  );
+  return path.join(os.homedir(), profileDataDirName(name));
 }
 
 /**

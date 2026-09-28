@@ -1,6 +1,7 @@
 import { createApp } from "../../src/app.js";
 import { createServices } from "../../src/container.js";
 import type { LibraryClient } from "../../src/lib/LibraryClient.js";
+import type { DirectoryRules } from "../../src/projects/directories.js";
 import { ProviderRegistry } from "../../src/providers/ProviderRegistry.js";
 import type { AgentProvider } from "../../src/providers/types.js";
 import type { ServerSettingsService } from "../../src/services/ServerSettingsService.js";
@@ -20,6 +21,8 @@ export interface TestAppOptions {
   frontendDistPath?: string;
   allowedHosts?: string;
   profile?: string;
+  /** Which directories are projects; by default this machine's rules. */
+  directories?: DirectoryRules;
 }
 
 /** 像入口那样组装服务和应用：`ready` 完成后再发请求，`close` 释放全部服务。 */
@@ -33,6 +36,7 @@ export function createTestApp(options: TestAppOptions) {
     skillsDir: options.scholaraioSkillsDir ?? skillsDirectory(options.dataDir),
     settings: options.serverSettingsService,
     idleTimeoutMs: options.idleTimeoutMs,
+    directories: options.directories,
   });
   const ready = services.start();
   const app = createApp(services, {
@@ -45,6 +49,8 @@ export function createTestApp(options: TestAppOptions) {
     sessions: services.sessions,
     store: services.store,
     attachments: services.attachments,
+    catalog: services.catalog,
+    events: services.events,
     ready,
     close: async () => {
       await ready;

@@ -2,6 +2,8 @@ export { CSRF_HEADER } from "./csrf.js";
 export * from "./http.js";
 export {
   LIBRARY_PORT_META,
+  isProfileDataDirName,
+  profileDataDirName,
   resolveLibraryPort,
   resolvePort,
   resolveProfileName,
@@ -41,3 +43,5 @@ export type { UploadedFile } from "./upload.js";
 
 export * from "./library.js";
 export * from "./session/StoredSession.js";
+
+export type * from "./projects.js";

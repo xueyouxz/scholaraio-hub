@@ -53,6 +53,8 @@ export function createScriptedProvider(options: ScriptedProviderOptions = {}): A
       enabled: true,
     }),
     getAvailableModels: async () => [],
+    listSessions: async () => [],
+    readSession: async () => [],
     startSession: async (startOptions: StartSessionOptions): Promise<AgentSession> => {
       options.startCalls?.push(startOptions);
       const sessionId = startOptions.resumeSessionId ?? `scripted-${nextSession++}`;
@@ -101,6 +103,8 @@ export function providerFromSessionFactory(
       enabled: true,
     }),
     getAvailableModels: async () => [],
+    listSessions: async () => [],
+    readSession: async () => [],
     startSession,
   };
 }

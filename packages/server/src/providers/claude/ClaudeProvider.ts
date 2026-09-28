@@ -9,7 +9,6 @@ import {
   type Query,
   type ModelInfo as SdkModelInfo,
   forkSession,
-  getSessionMessages,
   query,
 } from "@anthropic-ai/claude-agent-sdk";
 import {
@@ -28,9 +27,13 @@ import type {
   AgentSession,
   AuthStatus,
   ForkSessionOptions,
+  HistoryFiles,
   NativeRewind,
+  NativeSession,
+  NativeTurn,
   ProviderCapabilities,
   ProviderName,
+  ReadSessionOptions,
   StartSessionOptions,
 } from "../types.js";
 import { normalizeClaudeOAuthUsage } from "../usage-limits.js";
@@ -41,6 +44,13 @@ import {
   readClaudeOAuthCredentials,
   resolveLocalClaudeCodeExecutable,
 } from "./cli.js";
+import {
+  claudeHistoryFiles,
+  claudeTranscript,
+  claudeTurns,
+  listClaudeSessions,
+  promptOf,
+} from "./history.js";
 
 const log = () => loggerFor("claude-provider");
 
@@ -89,30 +99,6 @@ function toClaudeCommand(command: {
 
 const COMMAND_CACHE_TTL_MS = 60_000;
 
-/** Markers Claude Code writes as user messages that the user did not type. */
-const NON_PROMPT_PREFIXES = [
-  "[Request interrupted",
-  "<local-command",
-  "<command-name>",
-  "<command-message>",
-  "Caveat: The messages below",
-];
-
-/** A message the user sent, as opposed to a tool result or a Claude Code marker. */
-function isUserPrompt(message: { type: string; message: unknown }): boolean {
-  if (message.type !== "user") return false;
-  const content = (message.message as { content?: unknown } | undefined)?.content;
-  const blocks: Array<{ type?: unknown; text?: unknown }> =
-    typeof content === "string"
-      ? [{ type: "text", text: content }]
-      : Array.isArray(content)
-        ? content
-        : [];
-  if (blocks.some((block) => block.type === "tool_result")) return false;
-  const text = blocks.find((block) => block.type === "text")?.text;
-  if (typeof text !== "string") return blocks.length > 0;
-  return !NON_PROMPT_PREFIXES.some((prefix) => text.trimStart().startsWith(prefix));
-}
 /** How long a login check stands: each one runs the CLI twice. */
 const AUTH_STATUS_TTL_MS = 30_000;
 /** How long the probed model list stands; a CLI update or new login can change it. */
@@ -383,20 +369,16 @@ export class ClaudeProvider implements AgentProvider {
 
   /**
    * The Claude session's history up to the first user prompt that is dropped.
-   * It ends at a pending rewind's resume point: the transcript keeps the
-   * dropped turns after it until the next launch resumes there. The transcript
-   * also holds tool results, interrupt markers and local-command echoes as
-   * "user" messages; only prompts count.
+   * It ends at a pending rewind's resume point (see `claudeTranscript`). The
+   * transcript also holds tool results, interrupt markers and local-command
+   * echoes as "user" messages; only prompts count.
    */
   private async historyBefore({ sessionId, cwd, dropTurns, resumeAt }: ForkSessionOptions) {
-    let messages = await getSessionMessages(sessionId, { dir: cwd });
-    if (resumeAt) {
-      const end = messages.findIndex((message) => message.uuid === resumeAt);
-      if (end < 0) throw new Error("The rewind point is no longer in the Claude session history");
-      messages = messages.slice(0, end + 1);
-    }
+    const messages = await claudeTranscript(sessionId, { cwd, resumeAt });
     if (dropTurns === 0) return messages;
-    const prompts = messages.flatMap((message, index) => (isUserPrompt(message) ? [index] : []));
+    const prompts = messages.flatMap((message, index) =>
+      promptOf(message) === undefined ? [] : [index],
+    );
     const cut = prompts[prompts.length - dropTurns];
     const kept = cut === undefined ? [] : messages.slice(0, cut);
     if (kept.length === 0)
@@ -430,5 +412,17 @@ export class ClaudeProvider implements AgentProvider {
 
   async startSession(options: StartSessionOptions): Promise<AgentSession> {
     return new ClaudeSession(options, { executable: this.executable(), env: this.getEnv() });
+  }
+
+  listSessions(): Promise<NativeSession[]> {
+    return listClaudeSessions();
+  }
+
+  async readSession(id: string, options: ReadSessionOptions): Promise<NativeTurn[]> {
+    return claudeTurns(await claudeTranscript(id, options));
+  }
+
+  historyFiles(): HistoryFiles {
+    return claudeHistoryFiles(this.getEnv());
   }
 }

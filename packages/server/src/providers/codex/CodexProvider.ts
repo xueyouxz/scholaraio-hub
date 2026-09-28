@@ -25,14 +25,19 @@ import type {
   AgentSession,
   AuthStatus,
   ForkSessionOptions,
+  HistoryFiles,
   NativeRewind,
+  NativeSession,
+  NativeTurn,
   ProviderCapabilities,
+  ReadSessionOptions,
   StartSessionOptions,
 } from "../types.js";
 import { normalizeCodexRateLimits } from "../usage-limits.js";
 import { CodexAppServerClient } from "./CodexAppServerClient.js";
 import { CodexSession } from "./CodexSession.js";
 import { resolveCodexCli } from "./cli.js";
+import { codexHistoryFiles, listCodexThreads, readCodexThread } from "./history.js";
 import { listCodexSkills, toCodexSkillCommand } from "./skills.js";
 
 const log = () => loggerFor("codex-provider");
@@ -316,6 +321,32 @@ export class CodexProvider implements AgentProvider {
 
   async startSession(options: StartSessionOptions): Promise<AgentSession> {
     return new CodexSession(options, await this.launchCommand(), this.env());
+  }
+
+  /** The threads Codex has stored; none when no Codex CLI is installed here. */
+  async listSessions(): Promise<NativeSession[]> {
+    if (!(await this.codexCommand())) return [];
+    return this.withAppServer(process.cwd(), (client) =>
+      withTimeout(
+        listCodexThreads(client),
+        APP_SERVER_QUERY_TIMEOUT_MS,
+        "Timed out listing Codex threads",
+      ),
+    );
+  }
+
+  readSession(id: string, { cwd }: ReadSessionOptions): Promise<NativeTurn[]> {
+    return this.withAppServer(cwd, (client) =>
+      withTimeout(
+        readCodexThread(client, id),
+        APP_SERVER_QUERY_TIMEOUT_MS,
+        "Timed out reading the Codex thread",
+      ),
+    );
+  }
+
+  historyFiles(): HistoryFiles {
+    return codexHistoryFiles(this.env());
   }
 }
 

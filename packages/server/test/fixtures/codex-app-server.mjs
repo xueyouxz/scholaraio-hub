@@ -20,6 +20,51 @@ const logRequest = (message) => {
       `${JSON.stringify({ method: message.method, params: message.params })}\n`,
     );
 };
+/** A thread as `thread/list` reports one. */
+const storedThread = (id, fields = {}) => ({
+  id,
+  cwd: "/fixture-root",
+  name: "Build fix",
+  preview: "",
+  createdAt: 1790000000,
+  updatedAt: 1790000600,
+  gitInfo: { sha: null, branch: "main", originUrl: null },
+  parentThreadId: null,
+  ephemeral: false,
+  turns: [],
+  ...fields,
+});
+/** What `thread/read` with its turns returns for the stored thread. */
+const storedTurns = [
+  {
+    id: "stored-turn-1",
+    status: "completed",
+    error: null,
+    startedAt: 1790000000,
+    items: [
+      { type: "userMessage", id: "u1", content: [{ type: "text", text: "修复构建" }] },
+      { type: "reasoning", id: "r1", summary: ["看看报错"], content: [] },
+      {
+        type: "commandExecution",
+        id: "c1",
+        command: "pnpm build",
+        cwd: "/fixture-root",
+        status: "completed",
+        aggregatedOutput: "done",
+        exitCode: 0,
+        commandActions: [],
+      },
+      { type: "agentMessage", id: "m1", text: "构建已修复。" },
+    ],
+  },
+  {
+    id: "stored-turn-2",
+    status: "failed",
+    error: { message: "usage limit reached" },
+    startedAt: null,
+    items: [{ type: "userMessage", id: "u2", content: [{ type: "text", text: "继续" }] }],
+  },
+];
 /** The fixture thread's finished turns, newest first. */
 const pastTurns = ["turn-3", "turn-2", "turn-1"];
 let turn = 0;
@@ -75,7 +120,6 @@ for await (const line of lines) {
       sandbox: {
         type: "workspaceWrite",
         writableRoots: ["/fixture-root"],
-        readOnlyAccess: { type: "fullAccess" },
         networkAccess: false,
         excludeTmpdirEnvVar: false,
         excludeSlashTmp: false,
@@ -115,10 +159,25 @@ for await (const line of lines) {
       complete();
       setTimeout(() => process.exit(0), 20);
     } else if (!text.includes("slow")) complete();
+  } else if (message.method === "thread/list") {
+    logRequest(message);
+    // Two pages: a thread and a subagent's, then an ephemeral one.
+    reply(
+      message.params.cursor
+        ? { data: [storedThread("ephemeral-thread", { ephemeral: true })], nextCursor: null }
+        : {
+            data: [
+              storedThread("stored-thread", { name: null, preview: "修复构建" }),
+              storedThread("subagent-thread", { parentThreadId: "stored-thread" }),
+            ],
+            nextCursor: "page-2",
+          },
+    );
   } else if (message.method === "thread/read") {
     logRequest(message);
     const historyMode = process.env.CODEX_FIXTURE_HISTORY ?? "paginated";
-    reply({ thread: { id: message.params.threadId, historyMode, turns: [] } });
+    const turns = message.params.includeTurns ? storedTurns : [];
+    reply({ thread: { id: message.params.threadId, historyMode, turns } });
   } else if (message.method === "thread/turns/list") {
     logRequest(message);
     const turns = pastTurns.slice(0, message.params.limit ?? pastTurns.length);

@@ -98,6 +98,13 @@ export class Supervisor {
     return this.processes.get(sessionId);
   }
 
+  /** Whether a live process here runs this provider conversation. */
+  runs(provider: ProviderName, nativeSessionId: string): boolean {
+    for (const process of this.processes.values())
+      if (process.provider === provider && process.nativeSessionId === nativeSessionId) return true;
+    return false;
+  }
+
   /**
    * Send a message to a session: to its live process when that one still
    * matches the request, otherwise to a new process (resuming the native

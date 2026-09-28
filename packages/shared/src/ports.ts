@@ -27,6 +27,16 @@ export function resolveProfileName(env: PortEnv = {}): string {
   return env.NODE_ENV === "production" ? "production" : "dev";
 }
 
+/** The data directory's name under the home directory, for a profile that does not name its own. */
+export function profileDataDirName(profile: string): string {
+  return profile === "production" ? ".scholaraio-hub" : `.scholaraio-hub-${profile}`;
+}
+
+/** Whether a directory name is one `profileDataDirName` gives, for any profile. */
+export function isProfileDataDirName(name: string): boolean {
+  return name === ".scholaraio-hub" || name.startsWith(".scholaraio-hub-");
+}
+
 /** The application's one port: page, API and, in development, Vite's HMR socket. */
 export function resolvePort(env: PortEnv = {}): number {
   const profile = resolveProfileName(env);

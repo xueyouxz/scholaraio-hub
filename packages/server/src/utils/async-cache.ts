@@ -42,4 +42,9 @@ export class AsyncCache<K, V> {
     );
     return entry.value;
   }
+
+  /** Forget `key`: the next caller loads it anew, even while a load is in flight. */
+  delete(key: K): void {
+    this.entries.delete(key);
+  }
 }

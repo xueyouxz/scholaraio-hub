@@ -25,6 +25,52 @@ describe("Codex app-server compatibility", () => {
     await rm(root, { recursive: true, force: true });
   });
 
+  it("lists stored threads from every page, without subagents or ephemeral ones", async () => {
+    const log = path.join(root, "requests.jsonl");
+    process.env.CODEX_FIXTURE_LOG = log;
+    try {
+      await expect(provider.listSessions()).resolves.toEqual([
+        {
+          id: "stored-thread",
+          cwd: "/fixture-root",
+          title: "修复构建",
+          createdAt: "2026-09-21T14:13:20.000Z",
+          updatedAt: "2026-09-21T14:23:20.000Z",
+          gitBranch: "main",
+        },
+      ]);
+    } finally {
+      Reflect.deleteProperty(process.env, "CODEX_FIXTURE_LOG");
+    }
+    const requests = (await readFile(log, "utf8")).trim().split("\n");
+    expect(JSON.parse(requests[0] ?? "{}").params).toMatchObject({
+      cursor: null,
+      sortKey: "updated_at",
+      // Every model provider, and the Hub's own threads besides interactive ones.
+      modelProviders: [],
+      sourceKinds: ["cli", "vscode", "appServer"],
+      useStateDbOnly: true,
+    });
+    expect(JSON.parse(requests[1] ?? "{}").params).toMatchObject({ cursor: "page-2" });
+  });
+
+  it("reads a stored thread's turns through the live event adapter", async () => {
+    const turns = await provider.readSession("stored-thread", { cwd: root });
+    expect(turns.map(({ id, prompt, at }) => ({ id, prompt, at }))).toEqual([
+      { id: "stored-turn-1", prompt: "修复构建", at: "2026-09-21T14:13:20.000Z" },
+      { id: "stored-turn-2", prompt: "继续", at: undefined },
+    ]);
+    expect(turns[0]?.events.map((event) => event.type)).toEqual([
+      "reasoning.delta",
+      "tool.call",
+      "tool.result",
+      "text.delta",
+      "turn.completed",
+    ]);
+    expect(turns[0]?.events[1]).toMatchObject({ name: "Bash", input: { command: "pnpm build" } });
+    expect(turns[1]?.events).toEqual([{ type: "turn.completed", error: "usage limit reached" }]);
+  });
+
   it("rewinds a paginated thread in place and forks a legacy one without the turns", async () => {
     const log = path.join(root, "requests.jsonl");
     const cut = { sessionId: "native-fixture-thread", cwd: root };

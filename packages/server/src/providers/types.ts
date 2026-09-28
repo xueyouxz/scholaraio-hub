@@ -147,6 +147,53 @@ export interface AgentSession {
 export type { ProviderCapabilities } from "@scholaraio-hub/shared";
 
 /**
+ * A session the provider's own CLI keeps on disk, as the provider's history
+ * lists it. Sessions the Hub starts are among them once the CLI has saved them.
+ */
+export interface NativeSession {
+  /** The provider's id: Claude's session id, Codex's thread id. */
+  id: string;
+  /** The directory the session ran in, as the provider recorded it. */
+  cwd: string;
+  /** The provider's title: a name the user gave it, a summary, or the first prompt. */
+  title: string;
+  /** ISO 8601. */
+  createdAt: string;
+  /** When the session last changed (ISO 8601). */
+  updatedAt: string;
+  gitBranch?: string;
+}
+
+/**
+ * One turn of a stored session: what the user sent, then what the agent did,
+ * in the provider-neutral event model. A turn without a prompt carries only
+ * what the provider recorded before any (a compaction's summary).
+ */
+export interface NativeTurn {
+  /** The provider's id of the prompt: Claude's message uuid, Codex's turn id. */
+  id: string;
+  /** The prompt as the provider recorded it; empty for a turn without one. */
+  prompt: string;
+  /** When the prompt was sent (ISO 8601), when the provider says. */
+  at?: string;
+  events: AgentEvent[];
+}
+
+/** Where a provider's CLI writes its session files, so changes to them can be noticed. */
+export interface HistoryFiles {
+  directory: string;
+  /** The session a changed file (relative to `directory`) belongs to; undefined for any other file. */
+  sessionOf(file: string): string | undefined;
+}
+
+export interface ReadSessionOptions {
+  /** Directory the session runs in; Claude Code files its transcripts by it. */
+  cwd: string;
+  /** A rewind not yet applied (see `NativeRewind.resumeAt`): the history ends here. */
+  resumeAt?: string;
+}
+
+/**
  * Agent provider interface.
  * All supported providers implement this interface.
  */
@@ -207,4 +254,13 @@ export interface AgentProvider {
    * Get account-level usage limits for providers that expose them.
    */
   getUsageLimits?(): Promise<ProviderUsageLimits>;
+
+  /** Every session the provider's CLI has stored, whoever started it. */
+  listSessions(): Promise<NativeSession[]>;
+
+  /** A stored session's conversation, oldest turn first. */
+  readSession(id: string, options: ReadSessionOptions): Promise<NativeTurn[]>;
+
+  /** Where the CLI writes its session files; undefined when there is nothing to watch. */
+  historyFiles?(): HistoryFiles;
 }

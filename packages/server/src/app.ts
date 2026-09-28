@@ -10,6 +10,8 @@ import {
   requestContext,
 } from "./http.js";
 import { hostCheck, parseAllowedHosts, requireCsrfHeader } from "./middleware/security.js";
+import { createEventRoutes } from "./routes/events.js";
+import { createProjectRoutes } from "./routes/projects.js";
 import { createProvidersRoutes } from "./routes/providers.js";
 import { createSessionRoutes } from "./routes/sessions.js";
 import { createSettingsRoutes } from "./routes/settings.js";
@@ -43,6 +45,8 @@ export function createApp(services: Services, options: AppOptions = {}) {
       settings: services.settings,
     }),
   );
+  app.route("/api/projects", createProjectRoutes({ catalog: services.catalog }));
+  app.route("/api/events", createEventRoutes({ events: services.events }));
   app.route("/api/skills", createSkillsRoutes({ scholaraioSkillsDir: services.skillsDir }));
   app.route(
     "/api/providers",

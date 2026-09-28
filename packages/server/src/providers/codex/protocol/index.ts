@@ -22,3 +22,9 @@ export type { TurnCompletedNotification } from "./generated/v2/TurnCompletedNoti
 export type { ErrorNotification } from "./generated/v2/ErrorNotification.js";
 export type { ThreadItem } from "./generated/v2/ThreadItem.js";
 export type { UserInput } from "./generated/v2/UserInput.js";
+export type { Thread } from "./generated/v2/Thread.js";
+export type { ThreadListParams } from "./generated/v2/ThreadListParams.js";
+export type { ThreadListResponse } from "./generated/v2/ThreadListResponse.js";
+export type { ThreadReadParams } from "./generated/v2/ThreadReadParams.js";
+export type { ThreadReadResponse } from "./generated/v2/ThreadReadResponse.js";
+export type { ThreadSourceKind } from "./generated/v2/ThreadSourceKind.js";

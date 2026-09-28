@@ -659,7 +659,8 @@ describe.each(["claude", "codex"] as const)("%s application sessions", (name) =>
     expect(
       (await (await server.app.request("/api/sessions")).json().then((body) => body.data)).sessions,
     ).toHaveLength(1);
-    expect((await server.app.request("/api/projects")).status).toBe(404);
+    // Literature collections are the library service's; the browser asks it directly.
+    expect((await server.app.request("/api/collections")).status).toBe(404);
   });
   it("pushes the pending decision to the open stream without storing it", async () => {
     const id = await create();

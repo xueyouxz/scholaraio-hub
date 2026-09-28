@@ -59,12 +59,11 @@ export function codexThreadPolicy(mode: PermissionMode | undefined): {
  */
 function turnSandboxPolicy(sandbox: SandboxMode, threadPolicy: SandboxPolicy): SandboxPolicy {
   if (sandbox === "danger-full-access") return { type: "dangerFullAccess" };
-  if (sandbox === "read-only") return { type: "readOnly", access: { type: "fullAccess" } };
+  if (sandbox === "read-only") return { type: "readOnly", networkAccess: false };
   if (threadPolicy.type === "workspaceWrite") return threadPolicy;
   return {
     type: "workspaceWrite",
     writableRoots: [],
-    readOnlyAccess: { type: "fullAccess" },
     networkAccess: false,
     excludeTmpdirEnvVar: false,
     excludeSlashTmp: false,

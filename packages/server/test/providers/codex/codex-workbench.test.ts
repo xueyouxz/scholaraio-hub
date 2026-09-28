@@ -1,4 +1,4 @@
-import { chmod, copyFile, mkdtemp, rm } from "node:fs/promises";
+import { chmod, copyFile, mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -23,6 +23,40 @@ describe("Codex app-server compatibility", () => {
   });
   afterEach(async () => {
     await rm(root, { recursive: true, force: true });
+  });
+
+  it("rewinds a paginated thread in place and forks a legacy one without the turns", async () => {
+    const log = path.join(root, "requests.jsonl");
+    const cut = { sessionId: "native-fixture-thread", cwd: root };
+    process.env.CODEX_FIXTURE_LOG = log;
+    try {
+      await expect(provider.rewindSession({ ...cut, dropTurns: 2 })).resolves.toEqual({
+        sessionId: "native-fixture-thread",
+      });
+      process.env.CODEX_FIXTURE_HISTORY = "legacy";
+      await expect(provider.rewindSession({ ...cut, dropTurns: 1 })).resolves.toEqual({
+        sessionId: "forked-fixture-thread",
+      });
+    } finally {
+      Reflect.deleteProperty(process.env, "CODEX_FIXTURE_LOG");
+      Reflect.deleteProperty(process.env, "CODEX_FIXTURE_HISTORY");
+    }
+    const requests = (await readFile(log, "utf8"))
+      .trim()
+      .split("\n")
+      .map((line) => JSON.parse(line) as { method: string; params: unknown });
+    expect(requests).toEqual([
+      { method: "thread/read", params: { threadId: cut.sessionId, includeTurns: false } },
+      { method: "thread/resume", params: { threadId: cut.sessionId, excludeTurns: true } },
+      {
+        method: "thread/turns/list",
+        params: { threadId: cut.sessionId, limit: 2, sortDirection: "desc" },
+      },
+      { method: "thread/revert", params: { threadId: cut.sessionId, beforeTurnId: "turn-2" } },
+      { method: "thread/read", params: { threadId: cut.sessionId, includeTurns: false } },
+      { method: "thread/fork", params: { threadId: cut.sessionId, cwd: root } },
+      { method: "thread/rollback", params: { threadId: "forked-fixture-thread", numTurns: 1 } },
+    ]);
   });
   it("preserves native policies, authentication, tool approval, and delta/snapshot identity", async () => {
     expect(await provider.getAuthStatus()).toMatchObject({ installed: true, authenticated: true });

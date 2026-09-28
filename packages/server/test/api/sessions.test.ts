@@ -506,34 +506,86 @@ describe.each(["claude", "codex"] as const)("%s application sessions", (name) =>
     expect(provider.calls.at(-1)?.cwd).toBe(join(root, "sessions", id, "workspace"));
   });
 
-  it("rewinds to before a turn so an edited prompt replaces it", async () => {
+  it("takes back the last turn in place, resuming the same native session at the cut", async () => {
     const id = await create();
     await (await send(id, "第一问", "u1")).text();
     await expect.poll(() => server.sessions.detail(id).state).toBe("idle");
     await (await send(id, "第二问", "u2")).text();
     await expect.poll(() => server.sessions.detail(id).state).toBe("idle");
+    const native = server.store.get(id).nativeSessionId;
     const rewind = (messageId: string) =>
       server.app.request(`/api/sessions/${id}/rewind`, {
         method: "POST",
         headers,
         body: JSON.stringify({ messageId }),
       });
+    // Only the last turn can be taken back.
+    expect((await rewind("u1")).status).toBe(409);
+    expect(server.sessions.detail(id).messages).toHaveLength(4);
+
     expect((await rewind("u2")).status).toBe(200);
     expect(server.sessions.detail(id).messages).toHaveLength(2);
-    expect(provider.forks.at(-1)?.dropTurns).toBe(1);
-    await (await send(id, "改过的第二问", "u2-edited")).text();
+    expect(provider.forks).toEqual([]);
+    expect(provider.rewinds).toEqual([
+      expect.objectContaining({ sessionId: native, dropTurns: 1, resumeAt: "cut-1" }),
+    ]);
+    // The next turn resumes the same native session at the cut, in a new process.
+    const launches = provider.calls.length;
+    await (await send(id, "新的第二问", "u3")).text();
     await expect.poll(() => server.sessions.detail(id).state).toBe("idle");
-    expect(provider.calls.at(-1)?.resumeSessionId).toBe(provider.forks.at(-1)?.forkedId);
-    expect(provider.inputs.at(-1)).toContain("改过的第二问");
+    expect(provider.calls).toHaveLength(launches + 1);
+    expect(provider.calls.at(-1)).toMatchObject({ resumeSessionId: native, resumeAt: "cut-1" });
+    expect(server.store.get(id).nativeResumeAt).toBeUndefined();
+    expect(provider.inputs.at(-1)).toContain("新的第二问");
 
+    // Taken back twice before resuming, the second cut starts from the first one.
+    expect((await rewind("u3")).status).toBe(200);
+    expect(server.sessions.detail(id).messages.map((message) => message.id)).toEqual([
+      "u1",
+      expect.any(String),
+    ]);
     // Nothing is left before the first turn: the next one starts a fresh native session.
     expect((await rewind("u1")).status).toBe(200);
     expect(server.sessions.detail(id).messages).toEqual([]);
-    expect(provider.forks).toHaveLength(1);
+    expect(provider.rewinds).toHaveLength(2);
     await (await send(id, "重新开始")).text();
     await expect.poll(() => server.sessions.detail(id).state).toBe("idle");
     expect(provider.calls.at(-1)?.resumeSessionId).toBeUndefined();
+    expect(provider.calls.at(-1)?.resumeAt).toBeUndefined();
     expect((await rewind("missing")).status).toBe(409);
+  });
+
+  it("corrects the last prompt in one request that replaces its turn", async () => {
+    const id = await create();
+    await (await send(id, "第一问", "u1")).text();
+    await expect.poll(() => server.sessions.detail(id).state).toBe("idle");
+    await (await send(id, "第二问", "u2")).text();
+    await expect.poll(() => server.sessions.detail(id).state).toBe("idle");
+    const correct = (replaces: string, text: string) =>
+      server.app.request(`/api/sessions/${id}/messages`, {
+        method: "POST",
+        headers,
+        body: JSON.stringify({ id: replaces, text, replaces }),
+      });
+    expect((await correct("u1", "改第一问")).status).toBe(409);
+    expect(provider.rewinds).toEqual([]);
+
+    await (await correct("u2", "改过的第二问")).text();
+    await expect.poll(() => server.sessions.detail(id).state).toBe("idle");
+    const messages = server.sessions.detail(id).messages;
+    expect(messages.map((message) => message.role)).toEqual([
+      "user",
+      "assistant",
+      "user",
+      "assistant",
+    ]);
+    expect(messages[2]).toMatchObject({
+      id: "u2",
+      parts: [{ type: "text", text: "改过的第二问" }],
+    });
+    expect(provider.rewinds).toHaveLength(1);
+    expect(provider.calls.at(-1)?.resumeAt).toBe("cut-1");
+    expect(provider.inputs.at(-1)).toContain("改过的第二问");
   });
 
   it("renames, forks whole and deletes a session, keeping a workspace its fork still uses", async () => {

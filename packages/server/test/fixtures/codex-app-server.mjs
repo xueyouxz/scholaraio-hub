@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import { appendFileSync } from "node:fs";
 import { createInterface } from "node:readline";
 if (process.argv.includes("--version")) {
   console.log("codex-cli fixture");
@@ -11,6 +12,16 @@ if (process.argv.includes("login")) {
 const lines = createInterface({ input: process.stdin });
 const send = (value) => process.stdout.write(`${JSON.stringify({ jsonrpc: "2.0", ...value })}\n`);
 const threadId = "native-fixture-thread";
+/** Thread-history requests, one JSON line each, for tests that check what was asked. */
+const logRequest = (message) => {
+  if (process.env.CODEX_FIXTURE_LOG)
+    appendFileSync(
+      process.env.CODEX_FIXTURE_LOG,
+      `${JSON.stringify({ method: message.method, params: message.params })}\n`,
+    );
+};
+/** The fixture thread's finished turns, newest first. */
+const pastTurns = ["turn-3", "turn-2", "turn-1"];
 let turn = 0;
 let activeTurn;
 let approval;
@@ -49,6 +60,10 @@ for await (const line of lines) {
     if (message.params.clientInfo.name !== "scholaraio-hub")
       throw new Error("Unexpected client identity");
     reply({ userAgent: "fixture" });
+  } else if (message.method === "thread/resume" && message.params.excludeTurns) {
+    // Loaded only to rewind it; the launch that follows resumes it with its policies.
+    logRequest(message);
+    reply({ thread: { id: message.params.threadId, turns: [] } });
   } else if (["thread/start", "thread/resume"].includes(message.method)) {
     if (
       message.params.approvalPolicy !== "on-request" ||
@@ -100,6 +115,28 @@ for await (const line of lines) {
       complete();
       setTimeout(() => process.exit(0), 20);
     } else if (!text.includes("slow")) complete();
+  } else if (message.method === "thread/read") {
+    logRequest(message);
+    const historyMode = process.env.CODEX_FIXTURE_HISTORY ?? "paginated";
+    reply({ thread: { id: message.params.threadId, historyMode, turns: [] } });
+  } else if (message.method === "thread/turns/list") {
+    logRequest(message);
+    const turns = pastTurns.slice(0, message.params.limit ?? pastTurns.length);
+    reply({
+      data: turns.map((id) => ({ id, status: "completed", items: [] })),
+      nextCursor: null,
+      backwardsCursor: null,
+    });
+  } else if (message.method === "thread/revert") {
+    logRequest(message);
+    reply({
+      thread: { id: message.params.threadId, turns: [] },
+      turnsBackwardsCursor: null,
+      itemsBackwardsCursor: null,
+    });
+  } else if (["thread/fork", "thread/rollback"].includes(message.method)) {
+    logRequest(message);
+    reply({ thread: { id: "forked-fixture-thread", turns: [] } });
   } else if (message.method === "turn/interrupt") {
     reply({});
     complete();

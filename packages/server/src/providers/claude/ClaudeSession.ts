@@ -86,6 +86,9 @@ export class ClaudeSession implements AgentSession {
         options: {
           cwd: options.cwd,
           resume: options.resumeSessionId,
+          ...(options.resumeSessionId && options.resumeAt
+            ? { resumeSessionAt: options.resumeAt }
+            : {}),
           abortController: this.abortController,
           permissionMode: toClaudePermissionMode(options.permissionMode),
           canUseTool: options.onToolApproval && toSdkCanUseTool(options.onToolApproval),

@@ -12,6 +12,11 @@ const log = () => loggerFor("session-store");
 export interface SessionRecord extends StoredSession {
   nativeSessionId?: string;
   /**
+   * Where the next launch resumes the native session from, after a rewind the
+   * provider applies on resume. Cleared once a process has resumed there.
+   */
+  nativeResumeAt?: string;
+  /**
    * A fork works in the directory of the session it was forked from: Claude
    * Code files a transcript by its working directory, so the forked native
    * session only resumes there.
@@ -91,6 +96,7 @@ export class SessionStore {
       .map((record) => {
         const {
           nativeSessionId: _native,
+          nativeResumeAt: _resumeAt,
           workspaceSessionId: _workspace,
           messages: _messages,
           ...summary
@@ -100,7 +106,12 @@ export class SessionStore {
   }
 
   toStoredSession(record: SessionRecord): StoredSession {
-    const { nativeSessionId: _native, workspaceSessionId: _workspace, ...visible } = record;
+    const {
+      nativeSessionId: _native,
+      nativeResumeAt: _resumeAt,
+      workspaceSessionId: _workspace,
+      ...visible
+    } = record;
     return structuredClone(visible);
   }
 

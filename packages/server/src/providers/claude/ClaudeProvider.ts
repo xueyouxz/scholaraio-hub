@@ -28,6 +28,7 @@ import type {
   AgentSession,
   AuthStatus,
   ForkSessionOptions,
+  NativeRewind,
   ProviderCapabilities,
   ProviderName,
   StartSessionOptions,
@@ -381,22 +382,50 @@ export class ClaudeProvider implements AgentProvider {
   }
 
   /**
-   * Fork with the SDK's own `forkSession`, cut just before the first user
-   * prompt that is dropped. The transcript also holds tool results, interrupt
-   * markers and local-command echoes as "user" messages; only prompts count.
+   * The Claude session's history up to the first user prompt that is dropped.
+   * It ends at a pending rewind's resume point: the transcript keeps the
+   * dropped turns after it until the next launch resumes there. The transcript
+   * also holds tool results, interrupt markers and local-command echoes as
+   * "user" messages; only prompts count.
    */
-  async forkSession({ sessionId, cwd, dropTurns }: ForkSessionOptions): Promise<string> {
-    let upToMessageId: string | undefined;
-    if (dropTurns > 0) {
-      const messages = await getSessionMessages(sessionId, { dir: cwd });
-      const prompts = messages.flatMap((message, index) => (isUserPrompt(message) ? [index] : []));
-      const cut = prompts[prompts.length - dropTurns];
-      upToMessageId = cut === undefined ? undefined : messages[cut - 1]?.uuid;
-      if (!upToMessageId)
-        throw new Error("No content before this message was found in the Claude session history");
+  private async historyBefore({ sessionId, cwd, dropTurns, resumeAt }: ForkSessionOptions) {
+    let messages = await getSessionMessages(sessionId, { dir: cwd });
+    if (resumeAt) {
+      const end = messages.findIndex((message) => message.uuid === resumeAt);
+      if (end < 0) throw new Error("The rewind point is no longer in the Claude session history");
+      messages = messages.slice(0, end + 1);
     }
-    const fork = await forkSession(sessionId, { dir: cwd, upToMessageId });
+    if (dropTurns === 0) return messages;
+    const prompts = messages.flatMap((message, index) => (isUserPrompt(message) ? [index] : []));
+    const cut = prompts[prompts.length - dropTurns];
+    const kept = cut === undefined ? [] : messages.slice(0, cut);
+    if (kept.length === 0)
+      throw new Error("No content before this message was found in the Claude session history");
+    return kept;
+  }
+
+  /** Fork with the SDK's own `forkSession`, cut just before the first dropped prompt. */
+  async forkSession(options: ForkSessionOptions): Promise<string> {
+    const upToMessageId =
+      options.dropTurns > 0 || options.resumeAt
+        ? (await this.historyBefore(options)).at(-1)?.uuid
+        : undefined;
+    const fork = await forkSession(options.sessionId, { dir: options.cwd, upToMessageId });
     return fork.sessionId;
+  }
+
+  /**
+   * Rewind the way Claude Code resumes a session at an earlier message: the
+   * next launch resumes it at the last reply before the first dropped prompt
+   * (`resumeSessionAt`). The dropped turns stay in the transcript as a dead
+   * branch; the next prompt continues from the cut.
+   */
+  async rewindSession(options: ForkSessionOptions): Promise<NativeRewind> {
+    const kept = await this.historyBefore(options);
+    const resumeAt = kept.filter((message) => message.type === "assistant").at(-1)?.uuid;
+    if (!resumeAt)
+      throw new Error("No reply before this message was found in the Claude session history");
+    return { sessionId: options.sessionId, resumeAt };
   }
 
   async startSession(options: StartSessionOptions): Promise<AgentSession> {

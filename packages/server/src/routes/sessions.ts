@@ -1,5 +1,6 @@
 import { readFile } from "node:fs/promises";
 import {
+  ChatMessageSchema,
   CreateSessionSchema,
   PROVIDER_NAMES,
   SendSessionMessageSchema,
@@ -108,8 +109,9 @@ export function createSessionRoutes({
   );
 
   // 会话执行：发送消息、订阅响应和停止。
-  routes.post("/:id/messages", validate("json", SendSessionMessageSchema), async (c) => {
-    await service.send(c.req.param("id"), c.req.valid("json"));
+  routes.post("/:id/messages", validate("json", ChatMessageSchema), async (c) => {
+    const { replaces, ...input } = c.req.valid("json");
+    await service.send(c.req.param("id"), input, { replaces });
     const stream = service.stream(c.req.param("id"), c.req.raw.signal);
     if (!stream) throw new ApiError("STATE_CONFLICT", "This turn has ended. Refresh the session.");
     return createUIMessageStreamResponse({ stream });

@@ -33,6 +33,11 @@ export interface SessionMessageRequest {
   sessionId: string;
   /** The provider conversation to continue; none starts a new one. */
   nativeSessionId?: string;
+  /**
+   * Where to resume that conversation from after a rewind. A live process
+   * still holds what the rewind dropped, so such a request always gets a new one.
+   */
+  resumeAt?: string;
   projectPath: string;
   message: UserMessage;
   permissionMode?: PermissionMode;
@@ -130,13 +135,14 @@ export class Supervisor {
    * Stop the session's process without reporting its ending: whoever releases
    * it is replacing it or removing the session. With `expected`, only that
    * process: one that has since been replaced belongs to someone else. No-op
-   * when there is none.
+   * when there is none. Resolves once the CLI has exited, for a caller that
+   * must not touch the conversation while it still runs.
    */
-  release(sessionId: string, reason: string, expected?: AgentProcess): void {
+  release(sessionId: string, reason: string, expected?: AgentProcess): Promise<void> {
     const process = this.processes.get(sessionId);
-    if (!process || (expected && process !== expected)) return;
+    if (!process || (expected && process !== expected)) return Promise.resolve();
     this.processes.delete(sessionId);
-    void process.stop(reason);
+    return process.stop(reason);
   }
 
   /** Stop every process and wait for their CLIs to exit; no process starts afterwards. */
@@ -154,7 +160,9 @@ export class Supervisor {
    * in place; any other difference releases the process and returns false.
    */
   private async adopt(process: AgentProcess, request: SessionMessageRequest): Promise<boolean> {
-    const reason = await this.mismatch(process, request.nativeSessionId, request.settings ?? {});
+    const reason = request.resumeAt
+      ? "Session was rewound"
+      : await this.mismatch(process, request.nativeSessionId, request.settings ?? {});
     if (!reason) return true;
     loggerFor("supervisor").info(
       { event: "process_replaced", sessionId: request.sessionId, processId: process.id, reason },
@@ -191,6 +199,7 @@ export class Supervisor {
     const process = await AgentProcess.launch(this.providers.get(settings.providerName), {
       sessionId: request.sessionId,
       nativeSessionId: request.nativeSessionId,
+      resumeAt: request.resumeAt,
       projectPath: request.projectPath,
       message: request.message,
       permissionMode: request.permissionMode ?? "default",

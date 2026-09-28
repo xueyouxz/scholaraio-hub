@@ -13,6 +13,7 @@ import {
   type StoredSession,
   UNTITLED_SESSION_TITLE,
 } from "@scholaraio-hub/shared";
+import type { NativeRewind } from "../providers/types.js";
 import type { SessionRecord } from "./SessionStore.js";
 
 /** How much of the first message becomes the session's title. */
@@ -125,16 +126,17 @@ export function changeOptions(
 }
 
 /**
- * Cut the transcript before the message at `index`, continuing from
- * `nativeSessionId` (a fork of the provider's session that ends there).
+ * Cut the transcript before the message at `index`, continuing the native
+ * session as the provider's rewind says (none: the next turn starts afresh).
  */
 export function rewindTo(
   record: SessionRecord,
   index: number,
-  nativeSessionId: string | undefined,
+  native: NativeRewind | undefined,
 ): void {
   record.messages = record.messages.slice(0, index);
-  record.nativeSessionId = nativeSessionId;
+  record.nativeSessionId = native?.sessionId;
+  record.nativeResumeAt = native?.resumeAt;
   record.contextUsage = undefined;
   record.error = undefined;
   record.state = "idle";

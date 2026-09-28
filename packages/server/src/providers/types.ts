@@ -75,6 +75,11 @@ export interface StartSessionOptions {
   initialMessage?: UserMessage;
   /** Session ID to resume (optional) */
   resumeSessionId?: string;
+  /**
+   * Resume the session from this point of its history, leaving out what came
+   * after it: a rewind the provider applies on resume (see `rewindSession`).
+   */
+  resumeAt?: string;
   /** Permission mode for tool approvals */
   permissionMode?: PermissionMode;
   /** Model to use (e.g., "sonnet", "opus", "haiku") */
@@ -88,12 +93,25 @@ export interface StartSessionOptions {
 }
 
 export interface ForkSessionOptions {
-  /** The native session to copy. */
+  /** The native session to copy, or to cut. */
   sessionId: string;
   /** Directory the session runs in; Claude Code files its transcripts by it. */
   cwd: string;
   /** User turns to leave out, counted from the end. */
   dropTurns: number;
+  /**
+   * A rewind not yet applied (see `NativeRewind.resumeAt`): the session's
+   * history ends here, whatever the provider's transcript still holds after it.
+   */
+  resumeAt?: string;
+}
+
+/** How the next launch continues a native session that was rewound. */
+export interface NativeRewind {
+  /** The native session to resume: the same one, unless the provider had to copy it. */
+  sessionId: string;
+  /** Where to resume it from, when the provider applies the cut on resume. */
+  resumeAt?: string;
 }
 
 /**
@@ -176,6 +194,14 @@ export interface AgentProvider {
    * Returns the new native session id.
    */
   forkSession?(options: ForkSessionOptions): Promise<string>;
+
+  /**
+   * Cut a native session in place so it continues from before its last
+   * `dropTurns` user turns, keeping its id and so the provider's prompt cache.
+   * Only the conversation goes back; files the agent changed stay as they are.
+   * The session must be idle and have no live process.
+   */
+  rewindSession?(options: ForkSessionOptions): Promise<NativeRewind>;
 
   /**
    * Get account-level usage limits for providers that expose them.

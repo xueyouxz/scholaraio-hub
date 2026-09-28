@@ -8,6 +8,7 @@ import type { AgentEvent } from "../../src/providers/events.js";
 import type {
   AgentProvider,
   ForkSessionOptions,
+  NativeRewind,
   StartSessionOptions,
 } from "../../src/providers/types.js";
 import { TEST_CAPABILITIES } from "./scriptedProvider.js";
@@ -74,6 +75,13 @@ export class WorkbenchProvider implements AgentProvider {
     const forkedId = `fork-${randomUUID()}`;
     this.forks.push({ ...options, forkedId });
     return forkedId;
+  }
+  /** In-place rewinds asked for; each resumes the same session at a new point. */
+  readonly rewinds: Array<ForkSessionOptions & { resumeAt: string }> = [];
+  async rewindSession(options: ForkSessionOptions): Promise<NativeRewind> {
+    const resumeAt = `cut-${this.rewinds.length + 1}`;
+    this.rewinds.push({ ...options, resumeAt });
+    return { sessionId: options.sessionId, resumeAt };
   }
   async startSession(options: StartSessionOptions) {
     this.calls.push(options);

@@ -36,6 +36,8 @@ export interface AgentProcessOptions {
   sessionId: string;
   /** The provider's id of the conversation being resumed; a new one reports its own. */
   nativeSessionId?: string;
+  /** Where to resume that conversation from after a rewind; see `StartSessionOptions`. */
+  resumeAt?: string;
   projectPath: string;
   provider: ProviderName;
   permissionMode?: PermissionMode;
@@ -102,6 +104,7 @@ export class AgentProcess {
       // The same UUID reaches the provider and our own record of the message.
       initialMessage: { ...message, uuid: randomUUID() },
       resumeSessionId: options.nativeSessionId,
+      resumeAt: options.resumeAt,
       permissionMode: options.permissionMode,
       model: options.model,
       thinking: options.thinking,

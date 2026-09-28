@@ -35,6 +35,13 @@ signals (an open stream, a recent poll):
 - **Queue, no steering**: a session runs one turn at a time. A message sent while a run is
   in progress is kept in the session's persisted queue (`SessionService.enqueue`) and sent
   when the run ends; nothing is added to a running turn.
+- **Edit and take back**: only the session's last prompt, and only while nothing runs. Take
+  back (`POST /rewind`) removes that turn; a message with `replaces` corrects it, taking the
+  turn back and running the new one in one request. Both cut the provider's own session in
+  place (`AgentProvider.rewindSession`: Claude resumes at the cut with `resumeSessionAt`,
+  Codex uses `thread/revert`), so the native id and its prompt cache stay; only a legacy
+  Codex thread is forked instead. The live process is released first. Files the agent
+  changed are never restored.
 - **Permission mode**: a change reaches the live process (`AgentProcess.setPermissionMode`),
   which also applies it on the provider's side where it has one — Codex sends the matching
   sandbox with its next turn.

@@ -16,7 +16,7 @@ import type { z } from "zod";
 import { type LibraryClient, LibraryRequestError } from "../lib/LibraryClient.js";
 import { loggerFor } from "../logging/logger.js";
 import { type ProviderRegistry, ProviderUnavailableError } from "../providers/ProviderRegistry.js";
-import type { PermissionMode } from "../providers/types.js";
+import type { NativeRewind, PermissionMode } from "../providers/types.js";
 import { researchSlashCommands } from "../skills/scholaraioSkills.js";
 import type { ProcessEvent } from "../supervisor/AgentProcess.js";
 import type { Supervisor } from "../supervisor/Supervisor.js";
@@ -231,7 +231,11 @@ export class SessionService {
     if (event.type === "agent") {
       const agentEvent = event.event;
       // The provider's id for the conversation; the next turn resumes it.
-      if (agentEvent.type === "session.started") record.nativeSessionId = agentEvent.sessionId;
+      if (agentEvent.type === "session.started") {
+        record.nativeSessionId = agentEvent.sessionId;
+        // The process resumed at the rewind's point; what follows now continues from there.
+        record.nativeResumeAt = undefined;
+      }
       if (agentEvent.type === "context.usage") record.contextUsage = agentEvent.usage;
       turn.accept(agentEvent);
     } else if (event.type === "state-change") {
@@ -292,7 +296,7 @@ export class SessionService {
       const input = record.queuedMessages?.[0];
       if (!input) return;
       try {
-        await this.send(id, input, true);
+        await this.send(id, input, { queued: true });
       } catch (error) {
         if (error instanceof SessionConflictError && this.turns.has(id)) return;
         record.queuePaused = true;
@@ -306,7 +310,16 @@ export class SessionService {
     return pending;
   }
 
-  async send(id: string, input: SessionInput, queued = false): Promise<void> {
+  /**
+   * Start a turn with `input`. With `replaces`, the message corrects the
+   * session's last prompt: that turn is taken back (see `rewind`) and this one
+   * runs in its place, in one step.
+   */
+  async send(
+    id: string,
+    input: SessionInput,
+    { queued = false, replaces }: { queued?: boolean; replaces?: string } = {},
+  ): Promise<void> {
     const attachments = await Promise.all(
       input.attachmentIds.map((attachmentId) => this.attachments.resolve(id, attachmentId)),
     );
@@ -327,6 +340,7 @@ export class SessionService {
     await this.settled(id);
     if (this.turns.has(id))
       throw new SessionConflictError("The session is still running.", "SESSION_BUSY");
+    if (replaces) await this.takeBackLastTurn(record, replaces);
     if (record.messages.some((message) => message.id === input.id))
       throw new SessionConflictError(
         "This message has already been submitted. Refresh the session.",
@@ -439,6 +453,7 @@ export class SessionService {
       const process = await this.supervisor.send({
         sessionId: id,
         nativeSessionId: record.nativeSessionId,
+        resumeAt: record.nativeResumeAt,
         projectPath,
         message: { text: prompt.text, attachments },
         permissionMode: record.permissionMode ?? "default",
@@ -491,6 +506,7 @@ export class SessionService {
       sessionId: record.nativeSessionId,
       cwd: await this.workingDirectory(record),
       dropTurns,
+      resumeAt: record.nativeResumeAt,
     });
   }
 
@@ -529,20 +545,46 @@ export class SessionService {
   }
 
   /**
-   * Remove the user turn `messageId` and everything after it, so an edited
-   * version can be sent in its place. The agent resumes a fork of its native
-   * session that ends before that turn; file changes are not undone.
+   * Take back the session's last turn: its prompt `messageId` and the reply go,
+   * and the agent continues from before them. Only the conversation goes back;
+   * files the agent changed stay as they are.
    */
   async rewind(id: string, messageId: string): Promise<StoredSession> {
     const record = this.store.get(id);
-    const { index, later } = await this.turnAt(record, messageId);
-    const keepsAny = record.messages.slice(0, index).some((message) => message.role === "user");
-    // The next turn resumes the fork; the supervisor sees the live process
-    // holds a different conversation and replaces it.
-    const nativeSessionId = await this.forkNative(record, later + 1, keepsAny);
-    rewindTo(record, index, nativeSessionId);
+    await this.takeBackLastTurn(record, messageId);
     await this.store.save(record);
     return this.detail(id);
+  }
+
+  /**
+   * Cut the last turn, which `messageId` must start, in place: the provider
+   * rewinds its own session, keeping its id and prompt cache. The session's
+   * process holds the turn in memory, so it stops before the provider cuts.
+   */
+  private async takeBackLastTurn(record: SessionRecord, messageId: string): Promise<void> {
+    const { index, later } = await this.turnAt(record, messageId);
+    if (later > 0)
+      throw new SessionConflictError("Only the last message can be edited or taken back.");
+    const keepsAny = record.messages.slice(0, index).some((message) => message.role === "user");
+    await this.supervisor.release(record.id, "Session rewound");
+    rewindTo(record, index, await this.rewindNative(record, keepsAny));
+  }
+
+  /** The provider's rewind of its session by one turn; none when no turn is kept. */
+  private async rewindNative(
+    record: SessionRecord,
+    keepsAny: boolean,
+  ): Promise<NativeRewind | undefined> {
+    if (!record.nativeSessionId || !keepsAny) return undefined;
+    const provider = this.providers.get(record.provider);
+    if (!provider.rewindSession)
+      throw new SessionConflictError("This AI provider cannot take back a turn.");
+    return provider.rewindSession({
+      sessionId: record.nativeSessionId,
+      cwd: await this.workingDirectory(record),
+      dropTurns: 1,
+      resumeAt: record.nativeResumeAt,
+    });
   }
 
   async rename(id: string, title: string): Promise<StoredSession> {

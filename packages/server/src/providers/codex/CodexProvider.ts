@@ -25,6 +25,7 @@ import type {
   AgentSession,
   AuthStatus,
   ForkSessionOptions,
+  NativeRewind,
   ProviderCapabilities,
   StartSessionOptions,
 } from "../types.js";
@@ -245,16 +246,53 @@ export class CodexProvider implements AgentProvider {
    * Fork with app-server `thread/fork`, then drop the trailing turns with
    * `thread/rollback` (the pair Yep Anywhere uses). Local file changes stay.
    */
-  async forkSession({ sessionId, cwd, dropTurns }: ForkSessionOptions): Promise<string> {
-    return this.withAppServer(cwd, async (client) => {
-      const fork = await client.request<{ thread?: { id?: string } }>("thread/fork", {
-        threadId: sessionId,
-        cwd,
+  async forkSession(options: ForkSessionOptions): Promise<string> {
+    return this.withAppServer(options.cwd, (client) => this.forkThread(client, options));
+  }
+
+  private async forkThread(
+    client: CodexAppServerClient,
+    { sessionId, cwd, dropTurns }: ForkSessionOptions,
+  ): Promise<string> {
+    const fork = await client.request<{ thread?: { id?: string } }>("thread/fork", {
+      threadId: sessionId,
+      cwd,
+    });
+    const threadId = fork.thread?.id;
+    if (!threadId) throw new Error("Codex thread/fork did not return a new session");
+    if (dropTurns > 0) await client.request("thread/rollback", { threadId, numTurns: dropTurns });
+    return threadId;
+  }
+
+  /**
+   * Rewind in place with app-server `thread/revert`, as Yep Anywhere does: the
+   * thread keeps its id and so its prompt cache, which a fork would start
+   * without. Only threads with paginated history can be reverted; older Codex
+   * CLIs made legacy threads, and those are forked without the turns instead.
+   * Revert only acts on a thread this app-server has loaded (`thread/read`
+   * alone answers "thread not found"), so it resumes the thread first, without
+   * its turns; the cut persists for the process that resumes it next.
+   * Local file changes stay either way.
+   */
+  async rewindSession(options: ForkSessionOptions): Promise<NativeRewind> {
+    const threadId = options.sessionId;
+    return this.withAppServer(options.cwd, async (client) => {
+      const read = await client.request<{ thread?: { historyMode?: string } }>("thread/read", {
+        threadId,
+        includeTurns: false,
       });
-      const threadId = fork.thread?.id;
-      if (!threadId) throw new Error("Codex thread/fork did not return a new session");
-      if (dropTurns > 0) await client.request("thread/rollback", { threadId, numTurns: dropTurns });
-      return threadId;
+      if (read.thread?.historyMode !== "paginated")
+        return { sessionId: await this.forkThread(client, options) };
+      await client.request("thread/resume", { threadId, excludeTurns: true });
+      const turns = await client.request<{ data?: Array<{ id?: string }> }>("thread/turns/list", {
+        threadId,
+        limit: options.dropTurns,
+        sortDirection: "desc",
+      });
+      const beforeTurnId = turns.data?.[options.dropTurns - 1]?.id;
+      if (!beforeTurnId) throw new Error("This message was not found in the Codex thread history");
+      await client.request("thread/revert", { threadId, beforeTurnId });
+      return { sessionId: threadId };
     });
   }
 

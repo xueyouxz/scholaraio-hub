@@ -171,17 +171,26 @@ export const CreateSessionSchema = SessionOptionsSchema.extend({
   /** Draft uploads the new session takes over (see draft attachments). */
   attachmentIds: z.array(z.string().uuid()).max(ATTACHMENT_LIMITS.maxCount).default([]),
 });
-export const SendSessionMessageSchema = z
-  .object({
-    id: z.string().min(1).max(200),
-    text: z.string().trim().max(50000),
-    attachmentIds: z.array(z.string().uuid()).max(ATTACHMENT_LIMITS.maxCount).default([]),
-  })
-  .refine(
-    (input) => input.text.length > 0 || input.attachmentIds.length > 0,
-    "Enter a message or attach a file",
-  );
+const SessionInputFields = z.object({
+  id: z.string().min(1).max(200),
+  text: z.string().trim().max(50000),
+  attachmentIds: z.array(z.string().uuid()).max(ATTACHMENT_LIMITS.maxCount).default([]),
+});
+const hasContent = (input: { text: string; attachmentIds: string[] }) =>
+  input.text.length > 0 || input.attachmentIds.length > 0;
+const EMPTY_MESSAGE = "Enter a message or attach a file";
+
+export const SendSessionMessageSchema = SessionInputFields.refine(hasContent, EMPTY_MESSAGE);
 export type SessionInput = z.infer<typeof SendSessionMessageSchema>;
+
+/**
+ * A message sent to the chat. `replaces` names the session's last prompt when
+ * this message corrects it: that turn is taken back and this one runs instead.
+ */
+export const ChatMessageSchema = SessionInputFields.extend({
+  replaces: z.string().min(1).max(200).optional(),
+}).refine(hasContent, EMPTY_MESSAGE);
+export type ChatMessageInput = z.infer<typeof ChatMessageSchema>;
 
 /**
  * The tool call whose subagent produced this part, or undefined for the main

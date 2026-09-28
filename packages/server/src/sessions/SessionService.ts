@@ -312,8 +312,8 @@ export class SessionService {
 
   /**
    * Start a turn with `input`. With `replaces`, the message corrects the
-   * session's last prompt: that turn is taken back (see `rewind`) and this one
-   * runs in its place, in one step.
+   * session's last prompt: that turn is cut and this one runs in its place, in
+   * one step, as Claude Code's own edit of a sent prompt does.
    */
   async send(
     id: string,
@@ -545,21 +545,10 @@ export class SessionService {
   }
 
   /**
-   * Take back the session's last turn: its prompt `messageId` and the reply go,
-   * and the agent continues from before them. Only the conversation goes back;
-   * files the agent changed stay as they are.
-   */
-  async rewind(id: string, messageId: string): Promise<StoredSession> {
-    const record = this.store.get(id);
-    await this.takeBackLastTurn(record, messageId);
-    await this.store.save(record);
-    return this.detail(id);
-  }
-
-  /**
-   * Cut the last turn, which `messageId` must start, in place: the provider
-   * rewinds its own session, keeping its id and prompt cache. The session's
-   * process holds the turn in memory, so it stops before the provider cuts.
+   * Cut the last turn, which `messageId` must start, for a correction to run
+   * in its place: the provider rewinds its own session, keeping its id and
+   * prompt cache, and files the agent changed stay. The session's process
+   * holds the turn in memory, so it stops before the provider cuts.
    */
   private async takeBackLastTurn(record: SessionRecord, messageId: string): Promise<void> {
     const { index, later } = await this.turnAt(record, messageId);

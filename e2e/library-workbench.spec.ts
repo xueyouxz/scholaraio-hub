@@ -319,7 +319,7 @@ test("composer keeps project drafts, handles IME and recovers failed sends", asy
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
 });
 
-test("the last prompt is corrected in the composer and can be taken back", async ({ page }) => {
+test("the last prompt is corrected in the composer, replacing its turn", async ({ page }) => {
   await page.goto("/sessions");
   const input = page.getByRole("textbox", { name: "Message" });
   const send = page.getByRole("button", { name: "Send", exact: true });
@@ -348,13 +348,14 @@ test("the last prompt is corrected in the composer and can be taken back", async
   await page.reload();
   await expect(prompts).toHaveText(["第一问", "改过的第二问"]);
 
-  // Taking the turn back puts its prompt back in the composer.
-  await page.getByRole("button", { name: "撤销这一轮" }).click();
-  await expect(prompts).toHaveText(["第一问"]);
-  await expect(replies).toHaveCount(1);
+  // Cancelling an edit changes nothing and gives the composer back.
+  await input.fill("未发送的草稿");
+  await edit.click();
   await expect(input).toHaveValue("改过的第二问");
-  await page.reload();
-  await expect(prompts).toHaveText(["第一问"]);
+  await input.press("Escape");
+  await expect(page.getByText("正在编辑上一条消息")).toHaveCount(0);
+  await expect(input).toHaveValue("未发送的草稿");
+  await expect(prompts).toHaveText(["第一问", "改过的第二问"]);
 });
 
 test("composer permission menu uses the provider's modes and saves settings", async ({

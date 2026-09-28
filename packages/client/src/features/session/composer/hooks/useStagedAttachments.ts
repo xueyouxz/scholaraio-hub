@@ -109,11 +109,11 @@ export function useStagedAttachments(target: AttachmentTarget) {
   );
 
   /**
-   * Put files a sent message carried back in the tray, as uploaded. While that
-   * message still stands (it is being corrected) they are `sent`: removing one
-   * leaves the upload alone. Once it was taken back they are plain drafts again.
+   * Put the files a sent prompt carried back in the tray, as uploaded, to
+   * correct it. The prompt still stands until the correction replaces it, so
+   * removing one of them leaves its upload alone.
    */
-  const adopt = useCallback((attachments: SessionAttachment[], sent: boolean) => {
+  const adopt = useCallback((attachments: SessionAttachment[]) => {
     const adopted = attachments.map((attachment): StagedAttachment => {
       const key = `attachment-${nextKey++}`;
       outcomes.current.set(key, attachment);
@@ -123,7 +123,7 @@ export function useStagedAttachments(target: AttachmentTarget) {
         key,
         name,
         mediaType: attachment.mediaType,
-        sent,
+        sent: true,
         kind,
         status: "uploaded",
         progress: 1,

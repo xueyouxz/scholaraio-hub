@@ -40,14 +40,14 @@ export function SessionMessages({
   provider: ProviderName;
   /**
    * Copy is always offered; fork only where the session allows it, and edit
-   * and take back only on the last prompt.
+   * only on the last prompt.
    */
   promptActions?: PromptActions;
   /** The prompt being corrected in the composer; it and its reply are marked. */
   editingId?: string;
 }) {
   const lastPrompt = messages.filter((message) => message.role === "user").at(-1)?.id;
-  const { onEdit, onTakeBack, ...everyPrompt } = promptActions ?? {};
+  const { onEdit, ...everyPrompt } = promptActions ?? {};
   return (
     <div className="message-list">
       {messages.map((message, index) => {
@@ -66,7 +66,7 @@ export function SessionMessages({
               <UserPrompt
                 message={message}
                 {...everyPrompt}
-                {...(message.id === lastPrompt ? { onEdit, onTakeBack } : {})}
+                {...(message.id === lastPrompt ? { onEdit } : {})}
                 editing={message.id === editingId}
               />
             ) : (

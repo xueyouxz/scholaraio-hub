@@ -1,5 +1,5 @@
 import type { SessionMessage } from "@scholaraio-hub/shared";
-import { GitBranch, Pencil, Undo2 } from "lucide-react";
+import { GitBranch, Pencil } from "lucide-react";
 import { memo, useState } from "react";
 import { CopyButton } from "./CopyButton";
 import { FileAttachment } from "./FileAttachment";
@@ -12,23 +12,20 @@ const MAX_CHARS = MAX_LINES * 100;
 export interface PromptActions {
   /** Bring this prompt back into the composer to correct it. */
   onEdit?(message: SessionMessage): void;
-  /** Take this turn back: the prompt and its reply go. */
-  onTakeBack?(message: SessionMessage): void;
   /** Continue from this turn in a new session. */
   onFork?(message: SessionMessage): void;
-  /** Edit, take back and fork wait while a turn runs or one of them is underway. */
+  /** Edit and fork wait while a turn runs or one of them is underway. */
   busy?: boolean;
 }
 
 /**
  * The user's message: its attachments above a right-aligned bubble, and under
- * it copy, edit, take back and fork, shown on hover the way Claude's apps show
- * them. While it is being corrected in the composer it is marked as such.
+ * it copy, edit and fork, shown on hover the way Claude's apps show them.
+ * While it is being corrected in the composer it is marked as such.
  */
 export const UserPrompt = memo(function UserPrompt({
   message,
   onEdit,
-  onTakeBack,
   onFork,
   busy = false,
   editing = false,
@@ -94,22 +91,10 @@ export const UserPrompt = memo(function UserPrompt({
             className="message-action"
             disabled={busy || editing}
             onClick={() => onEdit(message)}
-            title="在输入框中编辑后重新发送（替换这条消息和之后的回复，文件改动不会撤销）"
+            title="在输入框中编辑后重新发送：替换这条消息和它的回复（文件改动不会撤销）"
             aria-label="编辑消息"
           >
             <Pencil size={14} aria-hidden="true" />
-          </button>
-        ) : null}
-        {onTakeBack ? (
-          <button
-            type="button"
-            className="message-action"
-            disabled={busy || editing}
-            onClick={() => onTakeBack(message)}
-            title="撤销这一轮：删除这条消息和它的回复，内容放回输入框（文件改动不会撤销）"
-            aria-label="撤销这一轮"
-          >
-            <Undo2 size={14} aria-hidden="true" />
           </button>
         ) : null}
         {onFork ? (

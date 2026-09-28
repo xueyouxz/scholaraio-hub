@@ -46,18 +46,16 @@ import { VoiceInputButton, type VoiceInputButtonRef } from "./VoiceInputButton";
 
 export { readComposerDraft } from "../hooks/useComposerDraft";
 
-/** A sent prompt brought back into the composer, with the files it carried. */
-export interface RecalledPrompt {
+/**
+ * The session's last prompt brought back to be corrected, with the files it
+ * carried. The composer sets its draft aside and edits this prompt until the
+ * correction is sent (it replaces the prompt and its reply) or cancelled.
+ */
+export interface EditedPrompt {
   /** The prompt's message id. */
   id: string;
   text: string;
   attachments: SessionAttachment[];
-  /**
-   * Correcting it: the composer sets its draft aside and edits this prompt
-   * until the correction is sent or cancelled. Otherwise the prompt was taken
-   * back and joins the draft.
-   */
-  editing: boolean;
 }
 
 /**
@@ -79,7 +77,7 @@ export function Composer({
   controls,
   text: controlledText,
   onTextChange,
-  recalled,
+  editing,
   onEditEnd,
 }: {
   draftKey: string;
@@ -99,9 +97,9 @@ export function Composer({
   controls?: ComposerControls;
   text?: string;
   onTextChange?: Dispatch<SetStateAction<string>>;
-  /** A sent prompt to bring back; a new object each time it is asked for. */
-  recalled?: RecalledPrompt;
-  /** The correction of a recalled prompt was sent or cancelled. */
+  /** The prompt to correct; a new object each time an edit starts. */
+  editing?: EditedPrompt;
+  /** The correction was sent or cancelled; the parent clears `editing`. */
   onEditEnd?: () => void;
 }) {
   const { text, setText, forget } = useComposerDraft(draftKey, {
@@ -150,27 +148,19 @@ export function Composer({
   const submitting = useRef(false);
   const latest = useRef(text);
   latest.current = text;
-  const editing = recalled?.editing ? recalled : undefined;
-  /** The draft set aside while a sent prompt is corrected; it comes back afterwards. */
+  /** The draft set aside while the prompt is corrected; it comes back afterwards. */
   const setAside = useRef<{ text: string; items: StagedAttachment[] }>(undefined);
-  const applied = useRef<RecalledPrompt>(undefined);
+  const started = useRef<EditedPrompt>(undefined);
   const { adopt, swap } = staged;
   useEffect(() => {
-    if (!recalled || applied.current === recalled) return;
-    applied.current = recalled;
-    if (recalled.editing) {
-      setAside.current ??= { text: latest.current, items: swap([]) };
-      latest.current = recalled.text;
-    } else {
-      // Taken back: the prompt joins whatever draft is there, so neither is lost.
-      latest.current = latest.current.trim()
-        ? `${latest.current}\n\n${recalled.text}`
-        : recalled.text;
-    }
-    setText(latest.current);
-    adopt(recalled.attachments, recalled.editing);
+    if (!editing || started.current === editing) return;
+    started.current = editing;
+    setAside.current ??= { text: latest.current, items: swap([]) };
+    latest.current = editing.text;
+    setText(editing.text);
+    adopt(editing.attachments);
     textarea.current?.focus();
-  }, [recalled, adopt, swap, setText]);
+  }, [editing, adopt, swap, setText]);
   /**
    * Leave the correction: the draft set aside comes back. Cancelling also
    * drops the files added for it; the prompt's own files were never touched.

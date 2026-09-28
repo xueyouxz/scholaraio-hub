@@ -35,10 +35,11 @@ signals (an open stream, a recent poll):
 - **Queue, no steering**: a session runs one turn at a time. A message sent while a run is
   in progress is kept in the session's persisted queue (`SessionService.enqueue`) and sent
   when the run ends; nothing is added to a running turn.
-- **Edit and take back**: only the session's last prompt, and only while nothing runs. Take
-  back (`POST /rewind`) removes that turn; a message with `replaces` corrects it, taking the
-  turn back and running the new one in one request. Both cut the provider's own session in
-  place (`AgentProvider.rewindSession`: Claude resumes at the cut with `resumeSessionAt`,
+- **Edit**: only the session's last prompt, and only while nothing runs. The prompt comes
+  back into the composer; sending the correction (a chat message with `replaces`) cuts
+  that turn and runs the new one in its place in one request, as Claude Code's own edit
+  of a sent prompt does. There is no separate undo. The cut is the provider's own, in
+  place (`AgentProvider.rewindSession`: Claude resumes at it with `resumeSessionAt`,
   Codex uses `thread/revert`), so the native id and its prompt cache stay; only a legacy
   Codex thread is forked instead. The live process is released first. Files the agent
   changed are never restored.

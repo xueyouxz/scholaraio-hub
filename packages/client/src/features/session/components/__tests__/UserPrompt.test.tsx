@@ -143,7 +143,7 @@ describe("SessionMessages prompt actions", () => {
     parts: [{ type: "text", text: "ok" }],
   });
   function renderList(editingId?: string) {
-    const actions = { onEdit: vi.fn(), onTakeBack: vi.fn(), onFork: vi.fn() };
+    const actions = { onEdit: vi.fn(), onFork: vi.fn() };
     container = document.createElement("div");
     document.body.append(container);
     root = createRoot(container);
@@ -167,14 +167,14 @@ describe("SessionMessages prompt actions", () => {
       ),
     );
 
-  it("offers edit and take back on the last prompt only; fork on every one", () => {
+  it("offers edit on the last prompt only; fork on every one", () => {
     const { view, actions } = renderList();
     expect(labels(view)).toEqual([
       ["复制消息", "从这里分叉"],
-      ["复制消息", "编辑消息", "撤销这一轮", "从这里分叉"],
+      ["复制消息", "编辑消息", "从这里分叉"],
     ]);
-    click(view.querySelector('button[aria-label="撤销这一轮"]'));
-    expect(actions.onTakeBack).toHaveBeenCalledWith(expect.objectContaining({ id: "u2" }));
+    click(view.querySelector('button[aria-label="编辑消息"]'));
+    expect(actions.onEdit).toHaveBeenCalledWith(expect.objectContaining({ id: "u2" }));
   });
 
   it("marks the prompt being corrected and holds its actions", () => {

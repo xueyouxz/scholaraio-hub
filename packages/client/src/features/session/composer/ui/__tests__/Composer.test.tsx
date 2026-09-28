@@ -849,12 +849,7 @@ describe("Composer correcting a sent prompt", () => {
     size: 0,
     url: `/api/sessions/s1/attachments/sent-${name}`,
   });
-  const recall = (editing: boolean) => ({
-    id: "u2",
-    text: "第二问",
-    attachments: [sentFile("notes.txt")],
-    editing,
-  });
+  const lastPrompt = () => ({ id: "u2", text: "第二问", attachments: [sentFile("notes.txt")] });
   function renderWith(overrides: Partial<Props>) {
     const current = { ...props(), ...overrides };
     act(() =>
@@ -872,7 +867,7 @@ describe("Composer correcting a sent prompt", () => {
     const onEditEnd = vi.fn();
     render();
     type("unsent draft");
-    renderWith({ recalled: recall(true), onEditEnd });
+    renderWith({ editing: lastPrompt(), onEditEnd });
     expect(banner()).toBe(true);
     expect(textarea().value).toBe("第二问");
     expect(chips()).toEqual(["notes.txt"]);
@@ -897,7 +892,7 @@ describe("Composer correcting a sent prompt", () => {
     const onEditEnd = vi.fn();
     const { onSend } = render();
     type("unsent draft");
-    renderWith({ onSend, recalled: recall(true), onEditEnd });
+    renderWith({ onSend, editing: lastPrompt(), onEditEnd });
     type("改过的第二问");
     await press({ key: "Enter" });
     expect(onSend).toHaveBeenCalledWith("改过的第二问", [
@@ -912,23 +907,11 @@ describe("Composer correcting a sent prompt", () => {
     const onEditEnd = vi.fn();
     const onSend = vi.fn(async () => Promise.reject(new Error("Network down")));
     render({ onSend });
-    renderWith({ onSend, recalled: recall(true), onEditEnd });
+    renderWith({ onSend, editing: lastPrompt(), onEditEnd });
     await press({ key: "Enter" });
     expect(onEditEnd).not.toHaveBeenCalled();
     expect(banner()).toBe(true);
     expect(textarea().value).toBe("第二问");
     expect(chips()).toEqual(["notes.txt"]);
-  });
-
-  it("puts a taken-back prompt after the draft, its files as plain drafts", async () => {
-    render();
-    type("unsent draft");
-    renderWith({ recalled: recall(false) });
-    expect(banner()).toBe(false);
-    expect(textarea().value).toBe("unsent draft\n\n第二问");
-    act(() => button("Remove notes.txt")?.click());
-    await flush();
-    // Taken back, the file belongs to no message any more and can go.
-    expect(uploads.removed).toEqual(["sent-notes.txt"]);
   });
 });

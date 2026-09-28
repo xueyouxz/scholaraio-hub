@@ -201,21 +201,6 @@ export function useSessionChat(initial: StoredSession) {
     }
   };
 
-  /**
-   * Take back the last turn: the server removes the prompt and its reply, and
-   * the agent continues from before them. Files it changed stay.
-   */
-  const takeBack = useMutation({
-    mutationFn: (message: SessionMessage) => sessionApi.rewind(id, message.id),
-    onSuccess: (rewound) => {
-      // The snapshot is now the rewound one; do not reconcile back to the old messages.
-      synchronizedVersion.current = rewound.updatedAt;
-      client.setQueryData(snapshotKey, rewound);
-      chat.setMessages(rewound.messages);
-      void client.invalidateQueries({ queryKey: sessionsQuery.queryKey });
-    },
-  });
-
   /** Continue from the turn `messageId` starts, in a new session. */
   const fork = useMutation({
     mutationFn: (messageId: string) => sessionApi.fork(id, messageId),
@@ -255,16 +240,9 @@ export function useSessionChat(initial: StoredSession) {
     running,
     state,
     connection,
-    failure:
-      chat.error ??
-      stop.error ??
-      reconnect.error ??
-      editQueue.error ??
-      fork.error ??
-      takeBack.error,
+    failure: chat.error ?? stop.error ?? reconnect.error ?? editQueue.error ?? fork.error,
     refresh,
     send,
-    takeBack,
     fork,
     enqueue,
     stop,

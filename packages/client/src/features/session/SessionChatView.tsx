@@ -12,7 +12,7 @@ import { SessionMessages } from "./components/SessionMessages";
 import { ResizableWorkspacePapersPanel } from "./components/WorkspacePapersPanel";
 import { useProviders } from "./composer/hooks/useProviders";
 import { rememberComposerChoice } from "./composer/model/preferences";
-import { Composer, type RecalledPrompt } from "./composer/ui/Composer";
+import { Composer, type EditedPrompt } from "./composer/ui/Composer";
 import type { ComposerControls } from "./composer/ui/ComposerOptions";
 import { useSessionChat } from "./hooks/useSessionChat";
 import { useStickToBottom } from "./hooks/useStickToBottom";
@@ -27,15 +27,14 @@ export function SessionChatView({ initial }: { initial: StoredSession }) {
   const navigate = useNavigate();
   const [panel, setPanel] = useState<SessionPanel | undefined>();
   const [selectedPaper, setSelectedPaper] = useState<string | null>(null);
-  /** The last prompt brought back into the composer, to correct it or once taken back. */
-  const [recalled, setRecalled] = useState<RecalledPrompt>();
-  const recall = (message: SessionMessage, editing: boolean): RecalledPrompt => ({
-    id: message.id,
-    text: sessionInput(initial.id, message).text,
-    attachments: ownAttachments(initial.id, message),
-    editing,
-  });
-  const editingId = recalled?.editing ? recalled.id : undefined;
+  /** The last prompt, brought back into the composer to be corrected. */
+  const [editing, setEditing] = useState<EditedPrompt>();
+  const edit = (message: SessionMessage) =>
+    setEditing({
+      id: message.id,
+      text: sessionInput(initial.id, message).text,
+      attachments: ownAttachments(initial.id, message),
+    });
 
   const pending = snapshot?.pendingInput;
   // Ask on the tool call's own row when it is on screen; otherwise (no call id,
@@ -143,20 +142,15 @@ export function SessionChatView({ initial }: { initial: StoredSession }) {
                   initial.readOnly
                     ? undefined
                     : {
-                        busy: running || session.fork.isPending || session.takeBack.isPending,
-                        onEdit: (message) => setRecalled(recall(message, true)),
-                        onTakeBack: (message) =>
-                          session.takeBack.mutate(message, {
-                            // The prompt goes back to the composer, as Claude Code's rewind does.
-                            onSuccess: () => setRecalled(recall(message, false)),
-                          }),
+                        busy: running || session.fork.isPending,
+                        onEdit: edit,
                         onFork: (message) =>
                           session.fork.mutate(message.id, {
                             onSuccess: (fork) => navigate(sessionUrl(fork.id)),
                           }),
                       }
                 }
-                editingId={editingId}
+                editingId={editing?.id}
               />
               {snapshot?.queuePaused ? (
                 <div className="flex justify-center -mt-2 mb-2">
@@ -205,10 +199,10 @@ export function SessionChatView({ initial }: { initial: StoredSession }) {
                   onQueue={session.enqueue}
                   onSend={(text, attachments) => {
                     scroll.scrollToBottom();
-                    return session.send(text, attachments, editingId);
+                    return session.send(text, attachments, editing?.id);
                   }}
-                  recalled={recalled}
-                  onEditEnd={() => setRecalled(undefined)}
+                  editing={editing}
+                  onEditEnd={() => setEditing(undefined)}
                   controls={controls}
                 />
               )}

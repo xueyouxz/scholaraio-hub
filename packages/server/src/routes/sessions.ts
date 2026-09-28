@@ -27,7 +27,6 @@ import type { SessionService } from "../sessions/SessionService.js";
 const MULTIPART_OVERHEAD_BYTES = 64 * 1024;
 const RENAME_SCHEMA = z.object({ title: z.string().trim().min(1).max(200) }).strict();
 const FORK_SCHEMA = z.object({ messageId: z.string().min(1).optional() });
-const REWIND_SCHEMA = z.object({ messageId: z.string().min(1) });
 const QUEUE_SCHEMA = z.discriminatedUnion("action", [
   z.object({ action: z.literal("resume") }),
   z.object({ action: z.literal("remove"), messageId: z.string().min(1) }),
@@ -156,15 +155,12 @@ export function createSessionRoutes({
     return success(c, { accepted });
   });
 
-  // 历史操作：分叉与回退。
+  // 历史操作：分叉。
   routes.post("/:id/fork", async (c) => {
     const { messageId } = await optionalJson(c.req, FORK_SCHEMA);
     const session = await service.fork(c.req.param("id"), messageId);
     return created(c, session, `/api/sessions/${session.id}`);
   });
-  routes.post("/:id/rewind", validate("json", REWIND_SCHEMA), async (c) =>
-    success(c, await service.rewind(c.req.param("id"), c.req.valid("json").messageId)),
-  );
 
   // 附件与文件：草稿上传、附件管理、工作目录浏览和下载。
   routes.post(

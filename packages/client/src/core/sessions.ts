@@ -165,12 +165,6 @@ export const sessionApi = {
     }),
   /** 停止并删除应用会话，保留 Provider 原生记录。 */
   remove: (id: string) => hubHttp.json<void>(`/sessions/${pathSegment(id)}`, { method: "DELETE" }),
-  /** 删除指定用户消息及其后的会话历史。 */
-  rewind: (id: string, messageId: string) =>
-    hubHttp.json<StoredSession>(`/sessions/${pathSegment(id)}/rewind`, {
-      method: "POST",
-      json: { messageId },
-    }),
   stop: (id: string) => hubHttp.json(`/sessions/${pathSegment(id)}/stop`, { method: "POST" }),
   input: (
     id: string,

@@ -31,13 +31,13 @@ import type {
 import { normalizeCodexRateLimits } from "../usage-limits.js";
 import { CodexAppServerClient } from "./CodexAppServerClient.js";
 import { CodexSession } from "./CodexSession.js";
-import { codexVersion, findCodexCli } from "./cli.js";
+import { resolveCodexCli } from "./cli.js";
 import { listCodexSkills, toCodexSkillCommand } from "./skills.js";
 
 const log = () => loggerFor("codex-provider");
 
 export interface CodexProviderConfig {
-  /** Path to codex binary (auto-detected if not specified); tests point it at a fake. */
+  /** `CODEX_EXECUTABLE`; unset picks the newest Codex CLI found. Tests point it at a fake. */
   codexPath?: string;
   /** agent 中 `scholaraio` CLI 使用的文献库。 */
   agentLibrary?: AgentLibrary;
@@ -102,12 +102,10 @@ export class CodexProvider implements AgentProvider {
 
   constructor(private readonly config: CodexProviderConfig = {}) {}
 
-  /** The Codex CLI that runs here — the configured one, else one found — or null. */
+  /** The Codex CLI that runs here — the configured one, else the newest found — or null. */
   private async codexCommand(): Promise<string | null> {
     if (this.executable) return this.executable;
-    const found = this.config.codexPath
-      ? ((await codexVersion(this.config.codexPath)) && this.config.codexPath) || null
-      : ((await findCodexCli())?.path ?? null);
+    const found = (await resolveCodexCli(this.config.codexPath))?.path ?? null;
     if (found) this.executable = found;
     return found;
   }

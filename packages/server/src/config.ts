@@ -34,8 +34,9 @@ export interface Config {
   logSdkMessages: boolean;
   /** What an agent's `scholaraio` CLI needs to work on this Hub's library. */
   agentLibrary: { configFile?: string; cliBinDir?: string };
-  /** 各 Provider 的配置（`CLAUDE_*`）。 */
+  /** 各 Provider 的配置（`CLAUDE_*`、`CODEX_*`）。 */
   claude: ClaudeSettings;
+  codex: CodexSettings;
 }
 
 /** Claude Provider 读取的配置；也供 doctor 在没有启动器变量时使用。 */
@@ -52,6 +53,17 @@ export function loadClaudeSettings(env: RuntimeEnv = loadRuntimeEnv()): ClaudeSe
     keychainService: env.CLAUDE_CODE_KEYCHAIN_SERVICE,
     usageUrl: env.CLAUDE_OAUTH_USAGE_URL,
   };
+}
+
+/** Codex Provider 读取的配置；也供 doctor 在没有启动器变量时使用。 */
+export interface CodexSettings {
+  /** Unset lets the provider pick the newest Codex CLI it finds. */
+  codexPath?: string;
+}
+
+/** 从环境变量读取 Codex Provider 的配置。 */
+export function loadCodexSettings(env: RuntimeEnv = loadRuntimeEnv()): CodexSettings {
+  return { codexPath: env.CODEX_EXECUTABLE };
 }
 
 /** A variable the launcher always sets; without it this is not a launched server. */
@@ -91,6 +103,7 @@ export function loadConfig(): Readonly<Config> {
       cliBinDir: env.SCHOLARAIO_CLI_BIN,
     },
     claude: loadClaudeSettings(env),
+    codex: loadCodexSettings(env),
   });
 }
 

@@ -53,6 +53,7 @@ const services: Services = createServices({
   providers: ProviderRegistry.create({
     enabled: config.enabledProviders,
     claude: config.claude,
+    codex: config.codex,
     agentLibrary: { ...config.agentLibrary, libraryUrl: config.libraryUrl },
   }),
   skillsDir: config.skillsDir,

@@ -8,11 +8,22 @@ const execAsync = promisify(exec);
 const execFileAsync = promisify(execFile);
 
 /**
- * Returns the platform-appropriate command to locate an executable in PATH.
- * Uses `where` on Windows, `which` on Unix.
+ * Every `codex` on PATH, in PATH order: `where` lists them all on Windows,
+ * `which` needs `-a` to go past the first.
  */
-function whichCommand(name: string): string {
-  return isWindows ? `where ${name}` : `which ${name}`;
+async function codexOnPath(): Promise<string[]> {
+  try {
+    const { stdout } = await execAsync(isWindows ? "where codex" : "which -a codex", {
+      encoding: "utf-8",
+    });
+    return stdout
+      .split(/\r?\n/)
+      .map((line) => line.trim())
+      .filter(Boolean);
+  } catch {
+    // Not on PATH; the install locations may still have one.
+    return [];
+  }
 }
 
 /**
@@ -40,24 +51,64 @@ function getCodexCommonPaths(): string[] {
 }
 
 /**
- * The Codex CLI this machine can run: PATH first, then the usual install
- * locations. A candidate counts only if `--version` succeeds. Null when none does.
+ * The Codex CLI this machine can run: of every one on PATH and in the usual
+ * install locations whose `--version` succeeds, the newest. OpenAI serves each
+ * CLI the model catalog its version supports, so an older copy that happens to
+ * come first on PATH would hide newer models. Null when none runs.
  */
 export async function findCodexCli(): Promise<{ path: string; version: string } | null> {
-  const candidates: string[] = [];
-  try {
-    const { stdout } = await execAsync(whichCommand("codex"), { encoding: "utf-8" });
-    const onPath = stdout.split("\n")[0]?.trim();
-    if (onPath) candidates.push(onPath);
-  } catch {
-    // Not on PATH; try the install locations.
+  const candidates = [
+    ...new Set([
+      ...(await codexOnPath()),
+      ...getCodexCommonPaths().filter((path) => existsSync(path)),
+    ]),
+  ];
+  const found = await Promise.all(
+    candidates.map(async (path) => ({ path, version: await codexVersion(path) })),
+  );
+  let newest: { path: string; version: string } | null = null;
+  for (const { path, version } of found) {
+    if (!version) continue;
+    // A tie keeps the earlier candidate: PATH order still decides between equals.
+    if (!newest || compareCodexVersions(version, newest.version) > 0) newest = { path, version };
   }
-  candidates.push(...getCodexCommonPaths().filter((path) => existsSync(path)));
-  for (const path of candidates) {
-    const version = await codexVersion(path);
-    if (version) return { path, version };
+  return newest;
+}
+
+/**
+ * The Codex CLI to run: the configured one — and only it, so a broken setting
+ * shows instead of silently running another — else the newest found.
+ */
+export async function resolveCodexCli(
+  configured?: string,
+): Promise<{ path: string; version: string } | null> {
+  if (!configured) return findCodexCli();
+  const version = await codexVersion(configured);
+  return version ? { path: configured, version } : null;
+}
+
+/**
+ * Order two `codex --version` outputs ("codex-cli 0.155.1", "codex-cli
+ * 0.158.0-alpha.2") by the semver in them; a pre-release comes before its
+ * release, and output without a version sorts first.
+ */
+export function compareCodexVersions(a: string, b: string): number {
+  const parse = (output: string) => {
+    const match = output.match(/(\d+)\.(\d+)\.(\d+)(?:-([\w.]+))?/);
+    return match
+      ? { parts: [Number(match[1]), Number(match[2]), Number(match[3])], pre: match[4] }
+      : { parts: [-1, -1, -1], pre: undefined };
+  };
+  const left = parse(a);
+  const right = parse(b);
+  for (let i = 0; i < 3; i++) {
+    const diff = (left.parts[i] as number) - (right.parts[i] as number);
+    if (diff) return diff;
   }
-  return null;
+  if (left.pre === right.pre) return 0;
+  if (left.pre === undefined) return 1;
+  if (right.pre === undefined) return -1;
+  return left.pre.localeCompare(right.pre, undefined, { numeric: true });
 }
 
 /** The version the Codex CLI at `codexPath` reports, or undefined when it does not run. */

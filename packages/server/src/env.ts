@@ -53,6 +53,8 @@ const RuntimeEnvSchema = z.object({
   CLAUDE_CODE_EXECUTABLE: z.string().optional(),
   CLAUDE_CODE_PATH: z.string().optional(),
   CLAUDE_CODE_KEYCHAIN_SERVICE: z.string().optional(),
+  // Which Codex CLI to run; unset picks the newest one found.
+  CODEX_EXECUTABLE: z.string().optional(),
   // Debug: another usage endpoint for Claude's rate-limit windows.
   CLAUDE_OAUTH_USAGE_URL: z.string().optional(),
 });

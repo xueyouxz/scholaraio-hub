@@ -1,7 +1,7 @@
 import { DEFAULT_PROVIDER, type ProviderName } from "@scholaraio-hub/shared";
 import type { AgentLibrary } from "./agent-env.js";
 import { ClaudeProvider, type ClaudeProviderConfig } from "./claude/ClaudeProvider.js";
-import { CodexProvider } from "./codex/CodexProvider.js";
+import { CodexProvider, type CodexProviderConfig } from "./codex/CodexProvider.js";
 import type { AgentProvider } from "./types.js";
 
 /** 表示请求的 Provider 未启用（`ENABLED_PROVIDERS`）或不存在。 */
@@ -16,6 +16,7 @@ export interface ProviderSettings {
   /** `ENABLED_PROVIDERS`：只运行、只展示这些 Provider。 */
   enabled: readonly ProviderName[];
   claude?: Omit<ClaudeProviderConfig, "agentLibrary">;
+  codex?: Omit<CodexProviderConfig, "agentLibrary">;
   /** agent 中 `scholaraio` CLI 使用的文献库。 */
   agentLibrary?: AgentLibrary;
 }
@@ -37,7 +38,7 @@ export class ProviderRegistry {
     const { agentLibrary } = settings;
     const all: Record<ProviderName, () => AgentProvider> = {
       claude: () => new ClaudeProvider({ ...settings.claude, agentLibrary }),
-      codex: () => new CodexProvider({ agentLibrary }),
+      codex: () => new CodexProvider({ ...settings.codex, agentLibrary }),
     };
     return new ProviderRegistry(settings.enabled.map((name) => all[name]()));
   }

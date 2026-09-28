@@ -10,8 +10,9 @@ index; the rules it points to live in `.claude/` and apply to every agent.
 - `packages/client` — Vite + React 19 frontend (`src/`).
 - `packages/server` — composition root (`src/container.ts`), Hono API (`src/routes/`),
   session supervision (`src/supervisor/`),
-  session runs (`src/sessions/`), provider integrations (`src/providers/`, one directory per
-  provider), the library service's client (`src/lib/LibraryClient.ts`).
+  session runs (`src/sessions/`), projects and the providers' own session lists
+  (`src/projects/`), provider integrations (`src/providers/`, one directory per provider),
+  the library service's client (`src/lib/LibraryClient.ts`).
 - `packages/cli` — the launcher behind `pnpm dev` / `pnpm start` (starts the library service
   and the server side by side) and the `pnpm hub` commands; profile, env files and the
   Python runtime live here.

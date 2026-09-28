@@ -193,8 +193,6 @@ export interface SessionDetail {
   /** Another program (a CLI in a terminal) wrote to it within the last half minute. */
   external?: boolean;
 }
-/** The title a session has until its first message names it. */
-export const UNTITLED_SESSION_TITLE = "新会话";
 
 export const SessionOptionsSchema = z.object({
   model: z.string().max(200).optional(),

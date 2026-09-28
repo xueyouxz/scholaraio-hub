@@ -138,11 +138,6 @@ export class SessionStore {
     return this.records.get(key);
   }
 
-  /** Records of sessions the user archived. */
-  archived(): string[] {
-    return [...this.records.entries()].flatMap(([key, record]) => (record.archived ? [key] : []));
-  }
-
   /** Start keeping a record of a session, or return the one kept already. */
   async create(input: NewSessionRecord): Promise<SessionRecord> {
     const key = sessionKey(input.provider, input.nativeId);

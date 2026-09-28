@@ -155,7 +155,7 @@ export function SettingsPage() {
           {(
             [
               { target: "papers", label: "文献存储目录", path: library.data?.papersDir },
-              { target: "workspaces", label: "工作空间目录", path: library.data?.workspaceDir },
+              { target: "workspaces", label: "文献集合目录", path: library.data?.workspaceDir },
             ] as const
           ).map((row) => (
             <div key={row.target} className="flex items-center gap-3 px-4 py-3">

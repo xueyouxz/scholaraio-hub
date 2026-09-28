@@ -13,8 +13,8 @@ import {
 const PREVIEW_BYTES = 1024 * 1024;
 
 /**
- * Read-only access to the directory a session's agent works in: its project's
- * directory, or its private workspace when it has no project.
+ * Read-only access to the directory a session's agent works in: its project,
+ * or the folder of its own a session without one got.
  */
 export class SessionFiles {
   constructor(private workingDirectory: (id: string) => Promise<string>) {}

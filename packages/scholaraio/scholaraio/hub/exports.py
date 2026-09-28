@@ -1,15 +1,15 @@
 """Take references out of the library.
 
 An export works on the same selection the rest of the browser uses: the papers
-the user ticked, or the open project, or the whole library.
+the user ticked, or the open collection, or the whole library.
 """
 
 from __future__ import annotations
 
 from datetime import datetime, timezone
 
+from scholaraio.hub.collections import CollectionService
 from scholaraio.hub.errors import InvalidRequest
-from scholaraio.hub.projects import ProjectService
 from scholaraio.hub.runtime import LibraryRuntime
 
 FORMATS = {
@@ -21,13 +21,13 @@ STYLES = ("apa", "vancouver", "chicago-author-date", "mla")
 
 
 class ExportService:
-    def __init__(self, runtime: LibraryRuntime, projects: ProjectService):
+    def __init__(self, runtime: LibraryRuntime, collections: CollectionService):
         self.runtime = runtime
-        self.projects = projects
+        self.collections = collections
 
-    def directories(self, paper_ids: list[str], project_id: str | None) -> list[str] | None:
+    def directories(self, paper_ids: list[str], collection_id: str | None) -> list[str] | None:
         """Resolve a selection to paper directory names; None means the whole library."""
-        scoped = self.projects.scope(project_id, paper_ids)
+        scoped = self.collections.scope([collection_id] if collection_id else [], paper_ids)
         if scoped is None:
             return None
         if not scoped:
@@ -37,7 +37,7 @@ class ExportService:
     def export(
         self,
         paper_ids: list[str],
-        project_id: str | None = None,
+        collection_id: str | None = None,
         fmt: str = "bibtex",
         style: str = "apa",
     ) -> dict:
@@ -48,7 +48,7 @@ class ExportService:
         if style not in STYLES:
             raise InvalidRequest(f"Unsupported citation style: {style}")
         with self.runtime.lock:
-            names = self.directories(paper_ids, project_id)
+            names = self.directories(paper_ids, collection_id)
             papers_dir = self.runtime.cfg.papers_dir
             if fmt == "bibtex":
                 content = export_bibtex(papers_dir, paper_ids=names)
@@ -61,7 +61,7 @@ class ExportService:
         suffix, content_type = FORMATS[fmt]
         stamp = datetime.now(timezone.utc).strftime("%Y%m%d")
         return {
-            "filename": f"{self.projects.get(project_id)['name'] if project_id else 'library'}-{stamp}{suffix}",
+            "filename": f"{self.collections.get(collection_id)['name'] if collection_id else 'library'}-{stamp}{suffix}",
             "contentType": content_type,
             "content": content,
         }

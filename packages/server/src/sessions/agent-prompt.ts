@@ -33,9 +33,8 @@ export async function prepareAgentPrompt(
 }
 
 /**
- * Passages for the question from the session's project or chosen papers. A
- * session with neither (its own workspace) gets none: the whole library is
- * not its scope.
+ * Passages for the question from the session's literature collection or chosen
+ * papers. A session with neither gets none: the whole library is not its scope.
  */
 function libraryContext(
   library: LibraryClient,
@@ -46,7 +45,7 @@ function libraryContext(
   return library.context({
     query: question.slice(0, CONTEXT_QUERY_LENGTH),
     paperIds: record.paperIds,
-    projectId: record.projectId,
+    collectionIds: record.projectId ? [record.projectId] : [],
   });
 }
 

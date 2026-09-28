@@ -58,15 +58,15 @@ def watched(tmp_path, monkeypatch):
         library.close()
 
 
-def test_an_edit_to_a_projects_papers_on_disk_is_announced(watched, monkeypatch):
+def test_an_edit_to_a_collections_papers_on_disk_is_announced(watched, monkeypatch):
     published: list[str] = []
     monkeypatch.setattr(watched.events, "publish", lambda kind, **_: published.append(kind))
 
-    watched.projects.create("综述")
+    watched.collections.create("综述")
 
     deadline = time.monotonic() + 5
-    while time.monotonic() < deadline and "projects" not in published:
+    while time.monotonic() < deadline and "collections" not in published:
         time.sleep(0.02)
-    assert "projects" in published
+    assert "collections" in published
     # Membership decides what search returns, so the paper list is stale too.
     assert "papers" in published

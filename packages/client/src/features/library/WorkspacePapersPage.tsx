@@ -68,8 +68,8 @@ export function WorkspacePapersPage({ projectId }: { projectId: string }) {
     );
 
   const project = useQuery({
-    queryKey: ["library", "project", projectId],
-    queryFn: ({ signal }) => libraryApi.project(projectId, signal),
+    queryKey: ["library", "collection", projectId],
+    queryFn: ({ signal }) => libraryApi.collection(projectId, signal),
   });
   useEffect(() => {
     setTitle(project.data?.name ?? projectId);
@@ -97,7 +97,7 @@ export function WorkspacePapersPage({ projectId }: { projectId: string }) {
           query: submitted?.query ?? "",
           mode: submitted?.mode ?? "keyword",
           limit: 200,
-          projectId,
+          collectionId: projectId,
         },
         signal,
       ),
@@ -336,13 +336,13 @@ interface Incoming {
  */
 function incoming(jobs: ImportJob[], projectId: string, present: ReadonlySet<string>): Incoming[] {
   return jobs
-    .filter((job) => job.projectId === projectId)
+    .filter((job) => job.collectionId === projectId)
     .flatMap((job) => job.items.map((item) => ({ job, item })))
     .filter(({ item }) => {
       if (ACTIVE_IMPORT.includes(item.status) || item.status === "failed") return true;
       const held = INGESTED_IMPORT.includes(item.status) || item.status === "duplicate";
       return (
-        held && !item.projectError && Boolean(item.paperId) && !present.has(item.paperId ?? "")
+        held && !item.collectionError && Boolean(item.paperId) && !present.has(item.paperId ?? "")
       );
     });
 }

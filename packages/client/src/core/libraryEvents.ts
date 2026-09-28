@@ -4,8 +4,7 @@ import { queryClient } from "./queryClient";
 
 /** What changed in the library, as published by the library service. */
 export interface LibraryEvent {
-  type: "imports" | "tasks" | "papers" | "projects";
-  projects?: string[];
+  type: "imports" | "tasks" | "papers" | "collections";
 }
 
 /** Query keys each change invalidates. */
@@ -18,10 +17,10 @@ const AFFECTED: Record<LibraryEvent["type"], string[][]> = {
     ["library", "analytics"],
     ["library", "capabilities"],
   ],
-  projects: [
-    ["library", "projects"],
-    // One workspace's detail, which also says which papers are in it.
-    ["library", "project"],
+  collections: [
+    ["library", "collections"],
+    // One collection's detail, which also says which papers are in it.
+    ["library", "collection"],
     ["library", "search"],
   ],
 };

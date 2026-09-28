@@ -20,18 +20,18 @@ describe("library client", () => {
     const { client, fetchMock } = setup();
     await client.request("get", "/papers/{paper_id}/references", {
       path: { paper_id: "paper/1 ?" },
-      query: { projectId: "Project & A" },
+      query: { collectionId: "Project & A" },
     });
     const url = new URL(String(fetchMock.mock.calls[0]?.[0]));
     expect(url.pathname).toBe("/papers/paper%2F1%20%3F/references");
-    expect(url.searchParams.get("projectId")).toBe("Project & A");
-    expect([...url.searchParams.keys()]).toEqual(["projectId"]);
+    expect(url.searchParams.get("collectionId")).toBe("Project & A");
+    expect([...url.searchParams.keys()]).toEqual(["collectionId"]);
   });
 
   it("serializes schema-defined bodies and unwraps results", async () => {
     const { client, fetchMock } = setup();
     await expect(
-      client.request("post", "/projects", { body: { name: "Research" } }),
+      client.request("post", "/collections", { body: { name: "Research" } }),
     ).resolves.toEqual({ id: "result" });
     const options = fetchMock.mock.calls[0]?.[1];
     expect(options?.method).toBe("POST");

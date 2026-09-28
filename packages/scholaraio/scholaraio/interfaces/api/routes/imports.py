@@ -7,9 +7,9 @@ from typing import Annotated
 
 from fastapi import APIRouter, Depends, File, Form, Request, UploadFile
 
+from scholaraio.hub.collections import NAME_LIMIT
 from scholaraio.hub.errors import InvalidRequest, TooLarge
 from scholaraio.hub.imports import ImportQueue
-from scholaraio.hub.projects import NAME_LIMIT
 from scholaraio.interfaces.api.dependencies import Acquire, Imports
 from scholaraio.interfaces.api.errors import require_json, require_multipart, success
 from scholaraio.interfaces.api.responses import ApiSuccess, FetchedImportJob, ImportJob, ImportJobList
@@ -39,7 +39,7 @@ async def upload(
     request: Request,
     imports: Imports,
     files: Annotated[list[UploadFile], File()],
-    project_id: Annotated[str | None, Form(alias="projectId", max_length=NAME_LIMIT)] = None,
+    collection_id: Annotated[str | None, Form(alias="collectionId", max_length=NAME_LIMIT)] = None,
 ):
     """接收 PDF 文件并创建导入任务。"""
     if len(files) > MAX_FILES:
@@ -50,7 +50,7 @@ async def upload(
         for file in files:
             await file.close()
     try:
-        return success(request, imports.enqueue(staged, project_id or None))
+        return success(request, imports.enqueue(staged, collection_id or None))
     except BaseException:
         discard(staged)
         raise
@@ -93,7 +93,7 @@ def discard(staged: list[tuple[Path, str]]) -> None:
 )
 def fetch(request: Request, body: AcquireInput, acquire: Acquire):
     """根据文献标识创建获取任务。"""
-    return success(request, acquire.fetch(body.locator, body.project_id, body.title))
+    return success(request, acquire.fetch(body.locator, body.collection_id, body.title))
 
 
 @router.post(

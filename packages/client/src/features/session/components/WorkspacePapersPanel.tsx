@@ -47,7 +47,7 @@ export function WorkspacePapersPanel({
     queryKey: ["library", "project-papers", projectId],
     queryFn: async ({ signal }) => {
       const [project, library] = await Promise.all([
-        libraryApi.project(projectId, signal),
+        libraryApi.collection(projectId, signal),
         libraryApi.papers(signal),
       ]);
       const ids = new Set(project.paperIds);

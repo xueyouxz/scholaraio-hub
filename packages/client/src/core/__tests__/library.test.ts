@@ -30,15 +30,15 @@ describe("libraryUrl", () => {
 describe("citation views", () => {
   afterEach(() => vi.unstubAllGlobals());
 
-  it("asks for a paper's references within the open project", async () => {
+  it("asks for a paper's references within the open collection", async () => {
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue(apiResponse({ references: [] })));
     await libraryApi.references("paper 1", undefined, "综述 A");
     expect(vi.mocked(fetch).mock.calls[0]?.[0]).toBe(
-      `${LIBRARY}/papers/paper%201/references?projectId=%E7%BB%BC%E8%BF%B0+A`,
+      `${LIBRARY}/papers/paper%201/references?collectionId=%E7%BB%BC%E8%BF%B0+A`,
     );
   });
 
-  it("asks for cited-by across the whole library when no project is open", async () => {
+  it("asks for cited-by across the whole library when no collection is open", async () => {
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue(apiResponse({ citing: [] })));
     await libraryApi.citing("paper-1");
     expect(vi.mocked(fetch).mock.calls[0]?.[0]).toBe(`${LIBRARY}/papers/paper-1/citing`);

@@ -110,8 +110,8 @@ export function Sidebar({
 }: SidebarProps) {
   const sessions = useQuery(sessionsQuery);
   const projects = useQuery({
-    queryKey: ["library", "projects"],
-    queryFn: ({ signal }) => libraryApi.projects(signal),
+    queryKey: ["library", "collections"],
+    queryFn: ({ signal }) => libraryApi.collections(signal),
   });
   const [params] = useSearchParams();
   const location = useLocation();
@@ -131,7 +131,7 @@ export function Sidebar({
     }
     return groups;
   }, [sessions.data]);
-  const known = new Set(projects.data?.projects.map((p) => p.id));
+  const known = new Set(projects.data?.collections.map((p) => p.id));
   const unassigned = [...grouped.entries()]
     .filter(([id]) => !known.has(id))
     .flatMap(([, items]) => items);
@@ -351,7 +351,7 @@ export function Sidebar({
               <>
                 <SidebarSection
                   title="Workspaces"
-                  count={projects.data?.projects.length ?? 0}
+                  count={projects.data?.collections.length ?? 0}
                   open={sectionOpen}
                   onToggle={() => setSectionOpen((v) => !v)}
                   action={
@@ -383,7 +383,7 @@ export function Sidebar({
                       <span className="text-[11.5px]">加载中…</span>
                     </div>
                   ) : null}
-                  {projects.data?.projects.map((project) => (
+                  {projects.data?.collections.map((project) => (
                     <div key={project.id} className="mb-0.5">
                       <div className="flex items-center gap-1 group/header">
                         <button
@@ -437,7 +437,7 @@ export function Sidebar({
                       ) : null}
                     </div>
                   ))}
-                  {projects.data?.projects.length === 0 ? (
+                  {projects.data?.collections.length === 0 ? (
                     <p className="px-2.5 py-1.5 text-[11.5px] text-on-surface-variant/50">
                       还没有文献项目
                     </p>

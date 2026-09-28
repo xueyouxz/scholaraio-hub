@@ -134,63 +134,66 @@ def test_attachment_boundaries_and_batch_results(tmp_path):
         assert {item["status"] for item in job["items"]} == {"duplicate", "failed"}
 
 
-def test_projects_membership_scope_and_restart(tmp_path):
+def test_collections_membership_scope_and_restart(tmp_path):
     root = tmp_path / "app"
     source = tmp_path / "source.pdf"
     pdf_file(source)
     with hub_client(root) as client:
         pid = ingest(client.app.state.library, source, "Paper.pdf")["paperId"]
-        assert client.post("/projects", json={"name": "文献项目"}).status_code == 201
-        assert client.post("/projects", json={"name": "文献项目"}).status_code == 422
-        assert client.post("/context", json={"query": "molecular", "projectId": "文献项目"}).json()["data"]["citations"] == []
-        assert client.post("/scope", json={"projectId": "文献项目", "paperIds": [pid]}).status_code == 422
+        assert client.post("/collections", json={"name": "文献项目"}).status_code == 201
+        assert client.post("/collections", json={"name": "文献项目"}).status_code == 422
+        assert client.post("/context", json={"query": "molecular", "collectionIds": ["文献项目"]}).json()["data"]["citations"] == []
+        # A selection is every paper of its collections plus the papers named.
+        scope = client.post("/scope", json={"collectionIds": ["文献项目"], "paperIds": [pid]})
+        assert scope.json()["data"]["paperIds"] == [pid]
         for _ in range(2):
-            response = client.post("/projects/文献项目/papers", json={"paperIds": [pid], "action": "add"})
+            response = client.post("/collections/文献项目/papers", json={"paperIds": [pid], "action": "add"})
             assert response.status_code == 200
             assert response.json()["data"]["paperCount"] == 1
         refs = root / "workspace/文献项目/refs/papers.json"
         assert refs.exists()
-        context = client.post("/context", json={"query": "总结", "projectId": "文献项目"}).json()["data"]
+        context = client.post("/context", json={"query": "总结", "collectionIds": ["文献项目"]}).json()["data"]
         assert {c["paperId"] for c in context["citations"]} == {pid}
-        assert client.post("/scope", json={"projectId": "missing"}).status_code == 404
+        assert client.post("/scope", json={"collectionIds": ["missing"]}).status_code == 404
+        assert client.post("/scope", json={"paperIds": ["gone"]}).status_code == 422
     with hub_client(root) as client:
-        assert client.get("/projects").json()["data"]["projects"][0]["paperIds"] == [pid]
-        assert client.post("/projects/文献项目/papers", json={"paperIds": [pid], "action": "remove"}).json()["data"]["paperCount"] == 0
-        assert client.post("/context", json={"query": "molecular", "projectId": "文献项目"}).json()["data"]["citations"] == []
+        assert client.get("/collections").json()["data"]["collections"][0]["paperIds"] == [pid]
+        assert client.post("/collections/文献项目/papers", json={"paperIds": [pid], "action": "remove"}).json()["data"]["paperCount"] == 0
+        assert client.post("/context", json={"query": "molecular", "collectionIds": ["文献项目"]}).json()["data"]["citations"] == []
         assert client.post("/context", json={"query": "molecular"}).json()["data"]["citations"]
 
 
-def test_project_boundaries_and_invalid_indexes(tmp_path):
+def test_collection_boundaries_and_invalid_indexes(tmp_path):
     import json
 
     from scholaraio.projects.workspace import create
     root = tmp_path / "app"
     with hub_client(root) as client:
         for name in ["../outside", "a/b", ".hidden", "C:drive", " invalid ", "\n"]:
-            assert client.post("/projects", json={"name": name}).status_code == 422
+            assert client.post("/collections", json={"name": name}).status_code == 422
         external = tmp_path / "external"
         create(external)
         ws_root = client.app.state.library.runtime.cfg.workspace_dir
         ws_root.mkdir(parents=True, exist_ok=True)
         (ws_root / "escape").symlink_to(external, target_is_directory=True)
-        assert client.get("/projects/escape").status_code == 422
+        assert client.get("/collections/escape").status_code == 422
         (ws_root / "escape").unlink()
         legacy = ws_root / "legacy"
         legacy.mkdir()
         (legacy / "papers.json").write_text("[]")
-        assert "refs/papers.json" in client.get("/projects").json()["message"]
+        assert "refs/papers.json" in client.get("/collections").json()["message"]
         (legacy / "papers.json").unlink()
-        assert client.post("/projects", json={"name": "valid"}).status_code == 201
+        assert client.post("/collections", json={"name": "valid"}).status_code == 201
         index = ws_root / "valid/refs/papers.json"
         index.write_text("{broken")
-        assert client.get("/projects/valid").status_code == 500
+        assert client.get("/collections/valid").status_code == 500
         index.write_text(json.dumps(["old-paper-id"]))
-        assert client.get("/projects/valid").json()["data"]["paperIds"] == ["old-paper-id"]
-        # Missing papers in an otherwise valid project never broaden its scope.
-        assert client.post("/context", json={"query": "molecular", "projectId": "valid"}).json()["data"]["citations"] == []
+        assert client.get("/collections/valid").json()["data"]["paperIds"] == ["old-paper-id"]
+        # Missing papers in an otherwise valid collection never broaden its scope.
+        assert client.post("/context", json={"query": "molecular", "collectionIds": ["valid"]}).json()["data"]["citations"] == []
         index.unlink()
         index.symlink_to(external / "refs/papers.json")
-        assert client.get("/projects/valid").status_code == 422
+        assert client.get("/collections/valid").status_code == 422
 
 
 def test_original_search_modes_and_image_gallery_are_scoped(tmp_path, monkeypatch):
@@ -263,58 +266,53 @@ def test_an_existing_configuration_is_never_rewritten(tmp_path):
         library.close()
 
 
-def test_projects_can_be_renamed_and_archived(tmp_path):
+def test_collections_can_be_renamed_and_archived(tmp_path):
     root = tmp_path / "app"
     source = tmp_path / "source.pdf"
     pdf_file(source)
     with hub_client(root) as client:
         library = client.app.state.library
         pid = ingest(library, source, "Paper.pdf")["paperId"]
-        project = client.post("/projects", json={"name": "review"}).json()["data"]
-        client.post("/projects/review/papers", json={"paperIds": [pid], "action": "add"})
+        collection = client.post("/collections", json={"name": "review"}).json()["data"]
+        client.post("/collections/review/papers", json={"paperIds": [pid], "action": "add"})
 
-        renamed = client.post(f"/projects/{project['id']}/rename", json={"name": "survey"})
+        renamed = client.post(f"/collections/{collection['id']}/rename", json={"name": "survey"})
         assert renamed.status_code == 200
-        # A rename keeps the id: everything that refers to the project still does.
-        assert renamed.json()["data"]["id"] == project["id"]
+        # A rename keeps the id: everything that refers to the collection still does.
+        assert renamed.json()["data"]["id"] == collection["id"]
         assert renamed.json()["data"]["paperIds"] == [pid]
-        assert client.get("/projects/review").status_code == 404
-        assert client.get(f"/projects/{project['id']}").json()["data"]["name"] == "survey"
-        assert [p["name"] for p in client.get("/projects").json()["data"]["projects"]] == ["survey"]
+        assert client.get("/collections/review").status_code == 404
+        assert client.get(f"/collections/{collection['id']}").json()["data"]["name"] == "survey"
+        assert [p["name"] for p in client.get("/collections").json()["data"]["collections"]] == ["survey"]
 
-        archived = client.delete(f"/projects/{project['id']}")
+        archived = client.delete(f"/collections/{collection['id']}")
         assert archived.status_code == 200
-        assert archived.json()["data"]["id"] == project["id"]
-        assert client.get(f"/projects/{project['id']}").status_code == 404
-        assert client.get("/projects").json()["data"]["projects"] == []
-        # Archived, not deleted: the agent's work is still on disk.
-        assert Path(archived.json()["data"]["path"]).is_dir()
+        assert archived.json()["data"]["id"] == collection["id"]
+        assert client.get(f"/collections/{collection['id']}").status_code == 404
+        assert client.get("/collections").json()["data"]["collections"] == []
+        # Archived, not deleted: the directory is set aside.
+        assert [d.name.split("-")[0] for d in (library.collections.root / ".trash").iterdir()] == ["survey"]
         assert library.papers.detail(pid)["id"] == pid
 
 
-def test_renaming_onto_an_existing_project_is_refused(tmp_path):
+def test_renaming_onto_an_existing_collection_is_refused(tmp_path):
     with hub_client(tmp_path / "app") as client:
-        client.post("/projects", json={"name": "review"})
-        client.post("/projects", json={"name": "survey"})
-        response = client.post("/projects/review/rename", json={"name": "survey"})
+        client.post("/collections", json={"name": "review"})
+        client.post("/collections", json={"name": "survey"})
+        response = client.post("/collections/review/rename", json={"name": "survey"})
         assert response.status_code == 422
-        assert client.get("/projects/review").status_code == 200
+        assert client.get("/collections/review").status_code == 200
 
 
-def test_a_new_project_tells_an_agent_what_the_directory_is(tmp_path):
+def test_a_new_collection_is_only_a_paper_index(tmp_path):
     library = HubLibrary(tmp_path / "app")
     try:
-        project = library.projects.create("review")
-        directory = Path(project["path"])
-        guide = (directory / "AGENTS.md").read_text(encoding="utf-8")
-        assert "--ws review" in guide
-        assert (directory / "outputs").is_dir()
+        collection = library.collections.create("review")
+        assert "path" not in collection
+        directory = library.collections.root / "review"
+        # No agent works in a collection's directory: nothing but the index and its id.
+        assert sorted(p.name for p in directory.iterdir()) == [".scholaraio-project.json", "refs"]
         assert (directory / "refs" / "papers.json").is_file()
-
-        # The file belongs to the project once it exists.
-        (directory / "AGENTS.md").write_text("我的说明", encoding="utf-8")
-        library.projects.scaffold(directory, "review")
-        assert (directory / "AGENTS.md").read_text(encoding="utf-8") == "我的说明"
     finally:
         library.close()
 
@@ -353,13 +351,13 @@ def test_citation_views_follow_the_relations_ingestion_recorded(tmp_path):
         library.close()
 
 
-def test_citation_views_respect_the_project_scope(tmp_path):
+def test_citation_views_respect_the_collection_scope(tmp_path):
     library = HubLibrary(tmp_path / "app")
     try:
         cited = ingest_with_meta(library, tmp_path, "Foundations", "10.1/foundations")
         citing = ingest_with_meta(library, tmp_path, "FollowUp", "10.1/a", ["10.1/foundations"])
-        library.projects.create("narrow")
-        library.projects.update_papers("narrow", [cited], "add")
+        library.collections.create("narrow")
+        library.collections.update_papers("narrow", [cited], "add")
 
         assert library.citations.citing(cited, "narrow")["citing"] == []
         assert library.citations.citing(cited)["citing"][0]["id"] == citing
@@ -400,22 +398,22 @@ def test_a_paper_without_a_doi_cannot_be_refetched(tmp_path):
         assert "DOI" in response.json()["message"]
 
 
-def test_a_project_from_before_ids_is_given_one_that_lasts(tmp_path):
+def test_a_collection_from_before_ids_is_given_one_that_lasts(tmp_path):
     from scholaraio.projects.workspace import create
 
     root = tmp_path / "app"
     with hub_client(root) as client:
-        # A project an older Hub made: a directory with a paper index and no id.
-        create(client.app.state.library.projects.root / "legacy")
-        listed = client.get("/projects").json()["data"]["projects"]
+        # A collection an older Hub made: a directory with a paper index and no id.
+        create(client.app.state.library.collections.root / "legacy")
+        listed = client.get("/collections").json()["data"]["collections"]
         assert [p["name"] for p in listed] == ["legacy"]
-        project_id = listed[0]["id"]
-        assert client.get("/projects/legacy").json()["data"]["id"] == project_id
+        collection_id = listed[0]["id"]
+        assert client.get("/collections/legacy").json()["data"]["id"] == collection_id
     with hub_client(root) as client:
-        assert client.get(f"/projects/{project_id}").json()["data"]["name"] == "legacy"
+        assert client.get(f"/collections/{collection_id}").json()["data"]["name"] == "legacy"
 
 
-def test_a_project_cannot_be_named_like_an_id(tmp_path):
+def test_a_collection_cannot_be_named_like_an_id(tmp_path):
     with hub_client(tmp_path / "app") as client:
-        response = client.post("/projects", json={"name": "3f2b7c1e-0000-4000-8000-000000000000"})
+        response = client.post("/collections", json={"name": "3f2b7c1e-0000-4000-8000-000000000000"})
         assert response.status_code == 422

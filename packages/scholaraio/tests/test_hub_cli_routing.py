@@ -73,9 +73,9 @@ def test_workspace_writes_go_through_the_hub(tmp_path, hub_session, monkeypatch)
     workspace_cli.cmd_ws(add_arguments("review", ["Smith-2024-Spectroscopy"]), cfg)
 
     assert [(method, path) for method, path, _ in calls] == [
-        ("GET", "/projects/review"),
-        ("POST", "/projects"),
-        ("POST", "/projects/review/papers"),
+        ("GET", "/collections/review"),
+        ("POST", "/collections"),
+        ("POST", "/collections/review/papers"),
     ]
     assert calls[-1][2] == {"paperIds": ["uuid-1"], "action": "add"}
     # The Hub owns the files: nothing was written next to them.
@@ -106,7 +106,7 @@ def test_renaming_a_workspace_goes_through_the_hub(tmp_path, hub_session, monkey
         Config(_root=tmp_path),
     )
 
-    assert calls == [("POST", "/projects/review/rename", {"name": "survey"})]
+    assert calls == [("POST", "/collections/review/rename", {"name": "survey"})]
     assert not (Config(_root=tmp_path).workspace_dir / "survey").exists()
 
 

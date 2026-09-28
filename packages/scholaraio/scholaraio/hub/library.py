@@ -13,6 +13,7 @@ from scholaraio.hub.acquire import AcquireService
 from scholaraio.hub.analytics import AnalyticsService
 from scholaraio.hub.artifacts import AnalysisArtifacts
 from scholaraio.hub.citations import CitationService
+from scholaraio.hub.collections import CollectionService
 from scholaraio.hub.directories import DirectoryService
 from scholaraio.hub.discover import DiscoverService
 from scholaraio.hub.events import EventBus
@@ -21,7 +22,6 @@ from scholaraio.hub.imports import ImportQueue
 from scholaraio.hub.maintenance import MaintenanceJobs
 from scholaraio.hub.metadata import MetadataService
 from scholaraio.hub.papers import PaperService
-from scholaraio.hub.projects import ProjectService
 from scholaraio.hub.retrieval import RetrievalService
 from scholaraio.hub.runtime import LibraryRuntime
 from scholaraio.hub.runtime_install import RuntimeInstaller
@@ -29,7 +29,7 @@ from scholaraio.hub.search import SearchService
 from scholaraio.hub.settings import SettingsService
 from scholaraio.hub.status import LibraryStatus
 from scholaraio.hub.tasks import TaskRunner
-from scholaraio.hub.watcher import ProjectWatcher
+from scholaraio.hub.watcher import CollectionWatcher
 
 
 class HubLibrary:
@@ -40,26 +40,26 @@ class HubLibrary:
         tasks_root = runtime.cfg.state_root / "tasks"
 
         # Queries and edits, answered on the request thread.
-        self.projects = ProjectService(runtime)
+        self.collections = CollectionService(runtime)
         self.papers = PaperService(runtime)
-        self.search = SearchService(runtime, self.projects)
-        self.retrieval = RetrievalService(runtime, self.projects, self.search)
+        self.search = SearchService(runtime, self.collections)
+        self.retrieval = RetrievalService(runtime, self.collections, self.search)
         self.analytics = AnalyticsService(runtime, artifacts)
-        self.citations = CitationService(runtime, self.projects)
+        self.citations = CitationService(runtime, self.collections)
         self.metadata = MetadataService(runtime)
-        self.exports = ExportService(runtime, self.projects)
+        self.exports = ExportService(runtime, self.collections)
         self.settings = SettingsService(runtime)
         self.discover = DiscoverService(runtime)
         self.directories = DirectoryService(runtime)
         self.installer = RuntimeInstaller(runtime, request_restart)
 
         # Background work, each on its own single worker thread.
-        self.imports = ImportQueue(runtime, self.projects)
+        self.imports = ImportQueue(runtime, self.collections)
         self.acquire = AcquireService(runtime, self.imports)
         jobs = MaintenanceJobs(runtime, artifacts, model_dir=tasks_root / "topic-model")
         self.tasks = TaskRunner(runtime, jobs.registry(), root=tasks_root, lanes=jobs.lanes())
         self.status = LibraryStatus(runtime, self.tasks, artifacts)
-        self.watcher = ProjectWatcher(self.projects.root, runtime.events)
+        self.watcher = CollectionWatcher(self.collections.root, runtime.events)
 
         runtime.reindex()
 

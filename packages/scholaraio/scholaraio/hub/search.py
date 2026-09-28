@@ -7,8 +7,8 @@ import re
 from dataclasses import asdict
 from typing import Any
 
+from scholaraio.hub.collections import CollectionService
 from scholaraio.hub.errors import InvalidRequest
-from scholaraio.hub.projects import ProjectService
 from scholaraio.hub.runtime import LibraryRuntime
 from scholaraio.hub.views import paper_row
 from scholaraio.services import index
@@ -29,13 +29,13 @@ def has_cjk(text: str) -> bool:
 
 
 class SearchService:
-    def __init__(self, runtime: LibraryRuntime, projects: ProjectService):
+    def __init__(self, runtime: LibraryRuntime, collections: CollectionService):
         self.runtime = runtime
-        self.projects = projects
+        self.collections = collections
 
-    def query(self, text: str, mode: str, *, limit: int = 50, project_id: str | None = None) -> dict:
+    def query(self, text: str, mode: str, *, limit: int = 50, collection_id: str | None = None) -> dict:
         """One search request as the browser makes it."""
-        scope = self.projects.scope_set(project_id)
+        scope = self.collections.scope_set(collection_id)
         return self.browse(text, mode, clamp_limit(limit), scope)
 
     def keyword(self, text: str, limit: int = 50, paper_ids: set[str] | None = None) -> list[dict[str, Any]]:

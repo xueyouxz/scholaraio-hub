@@ -261,7 +261,7 @@ test("composer keeps project drafts, handles IME and recovers failed sends", asy
 }) => {
   const projectName = `草稿项目-${Date.now()}`;
   await page.goto("/sessions");
-  const projectResponse = await request.post(await libraryEndpoint(page, "/projects"), {
+  const projectResponse = await request.post(await libraryEndpoint(page, "/collections"), {
     headers: { "ScholarAIO-Hub": "true" },
     data: { name: projectName },
   });

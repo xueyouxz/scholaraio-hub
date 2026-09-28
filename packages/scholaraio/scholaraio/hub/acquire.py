@@ -46,13 +46,13 @@ class AcquireService:
         work.mkdir(parents=True, exist_ok=True)
         return work
 
-    def fetch(self, locator: str, project_id: str | None = None, title: str | None = None) -> dict:
+    def fetch(self, locator: str, collection_id: str | None = None, title: str | None = None) -> dict:
         """Download what this locator names and queue it for import."""
         locator = locator.strip()
         if not locator:
             raise InvalidRequest("Provide a DOI, arXiv ID, patent number, or paper URL")
         downloaded, source = self.download(locator, self.work)
-        job = self.imports.enqueue([self.stage(downloaded)], project_id, title=title)
+        job = self.imports.enqueue([self.stage(downloaded)], collection_id, title=title)
         return {**job, "source": source}
 
     def stage(self, downloaded: Path) -> tuple[Path, str]:

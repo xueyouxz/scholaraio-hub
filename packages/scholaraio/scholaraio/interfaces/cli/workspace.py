@@ -128,20 +128,20 @@ def _resolve_paper_ids(paper_refs: list[str], cfg) -> list[str]:
     return ids
 
 
-def _hub_project(name: str) -> dict:
-    """Return the Hub project, creating it when it does not exist yet."""
+def _hub_collection(name: str) -> dict:
+    """Return the Hub literature collection a workspace is, creating it when it does not exist yet."""
     try:
-        return hub_client.request("GET", f"/projects/{quote(name, safe='')}")
+        return hub_client.request("GET", f"/collections/{quote(name, safe='')}")
     except hub_client.HubUnavailable as error:
         if "(404)" not in str(error):
             raise
-    return hub_client.request("POST", "/projects", {"name": name})
+    return hub_client.request("POST", "/collections", {"name": name})
 
 
 def _hub_update_papers(name: str, paper_ids: list[str], action: str) -> dict:
     return hub_client.request(
         "POST",
-        f"/projects/{quote(name, safe='')}/papers",
+        f"/collections/{quote(name, safe='')}/papers",
         {"paperIds": paper_ids, "action": action},
     )
 
@@ -166,8 +166,8 @@ def cmd_ws(args: argparse.Namespace, cfg) -> None:
 
     if action == "init":
         if hub_client.active():
-            project = _hub_project(args.name)
-            _ui(f"Workspace created via Hub: {project['name']}")
+            collection = _hub_collection(args.name)
+            _ui(f"Workspace created via Hub: {collection['name']}")
             return
         ws_dir = ws_root / args.name
         workspace_mod.create(ws_dir)
@@ -176,7 +176,7 @@ def cmd_ws(args: argparse.Namespace, cfg) -> None:
     elif action == "add":
         ws_dir = ws_root / args.name
         if hub_client.active():
-            _hub_project(args.name)
+            _hub_collection(args.name)
         elif not workspace_mod.has_paper_index(ws_dir):
             workspace_mod.create(ws_dir)
 
@@ -204,8 +204,8 @@ def cmd_ws(args: argparse.Namespace, cfg) -> None:
                 _ui("The main library has no papers")
                 return
             if hub_client.active():
-                project = _hub_update_papers(args.name, [r["id"] for r in resolved], "add")
-                _ui(f"workspace {args.name} now has {project['paperCount']} papers")
+                collection = _hub_update_papers(args.name, [r["id"] for r in resolved], "add")
+                _ui(f"workspace {args.name} now has {collection['paperCount']} papers")
                 return
             added = workspace_mod.add(ws_dir, [], cfg.index_db, resolved=resolved)
             _ui(f"Added {len(added)} papers to {args.name}")
@@ -250,8 +250,8 @@ def cmd_ws(args: argparse.Namespace, cfg) -> None:
             return
 
         if hub_client.active():
-            project = _hub_update_papers(args.name, _resolve_paper_ids(paper_refs, cfg), "add")
-            _ui(f"workspace {args.name} now has {project['paperCount']} papers")
+            collection = _hub_update_papers(args.name, _resolve_paper_ids(paper_refs, cfg), "add")
+            _ui(f"workspace {args.name} now has {collection['paperCount']} papers")
             return
         added = workspace_mod.add(ws_dir, paper_refs, cfg.index_db)
         _ui(f"Added {len(added)} papers to {args.name}")
@@ -261,8 +261,8 @@ def cmd_ws(args: argparse.Namespace, cfg) -> None:
     elif action == "remove":
         ws_dir = ws_root / args.name
         if hub_client.active():
-            project = _hub_update_papers(args.name, _resolve_paper_ids(args.paper_refs, cfg), "remove")
-            _ui(f"workspace {args.name} now has {project['paperCount']} papers")
+            collection = _hub_update_papers(args.name, _resolve_paper_ids(args.paper_refs, cfg), "remove")
+            _ui(f"workspace {args.name} now has {collection['paperCount']} papers")
             return
         removed = workspace_mod.remove(ws_dir, args.paper_refs, cfg.index_db)
         _ui(f"Removed {len(removed)} papers")
@@ -378,10 +378,10 @@ def cmd_ws(args: argparse.Namespace, cfg) -> None:
 
     elif action == "rename":
         if hub_client.active():
-            # The Hub keeps the project's id, which its sessions refer to.
+            # The Hub keeps the collection's id, which sessions refer to.
             result = hub_client.request(
                 "POST",
-                f"/projects/{quote(args.old_name, safe='')}/rename",
+                f"/collections/{quote(args.old_name, safe='')}/rename",
                 {"name": args.new_name},
             )
             _ui(f"Workspace renamed via Hub: {args.old_name} -> {result['name']}")

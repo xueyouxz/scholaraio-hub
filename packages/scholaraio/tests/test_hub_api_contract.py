@@ -81,19 +81,19 @@ def test_request_bodies_use_the_browsers_field_names(client):
     assert stored["llm"]["model"] == "model-a"
 
 
-def test_a_query_scoped_to_a_project_uses_its_camel_case_name(client):
-    assert client.post("/projects", json={"name": "empty"}).status_code == 201
+def test_a_query_scoped_to_a_collection_uses_its_camel_case_name(client):
+    assert client.post("/collections", json={"name": "empty"}).status_code == 201
 
     search = {"q": "anything", "mode": "keyword"}
-    assert client.get("/search", params={**search, "projectId": "empty"}).json()["data"] == {"results": []}
-    assert client.get("/search", params={**search, "projectId": "missing"}).status_code == 404
+    assert client.get("/search", params={**search, "collectionId": "empty"}).json()["data"] == {"results": []}
+    assert client.get("/search", params={**search, "collectionId": "missing"}).status_code == 404
 
 
-def test_an_upload_for_a_missing_workspace_is_a_404(client):
+def test_an_upload_for_a_missing_collection_is_a_404(client):
     response = client.post(
         "/imports",
         files=[("files", ("paper.pdf", b"%PDF-1.4\n", "application/pdf"))],
-        data={"projectId": "Nowhere"},
+        data={"collectionId": "Nowhere"},
     )
     assert response.status_code == 404
     assert "Nowhere" in response.json()["message"]
@@ -121,7 +121,7 @@ def test_all_json_routes_describe_the_response_envelope(tmp_path):
 
 
 def test_request_identifier_matches_headers_and_is_not_the_resource_id(client):
-    response = client.post("/projects", json={"name": "contract"})
+    response = client.post("/collections", json={"name": "contract"})
     payload = response.json()
     assert response.status_code == 201
     assert set(payload) == {"id", "code", "message", "data"}
@@ -129,14 +129,14 @@ def test_request_identifier_matches_headers_and_is_not_the_resource_id(client):
     assert payload["message"] == "success"
     assert payload["id"] == response.headers["x-request-id"]
     assert payload["id"] != payload["data"]["id"]
-    assert client.get("/projects").json()["id"] != payload["id"]
+    assert client.get("/collections").json()["id"] != payload["id"]
 
 
 @pytest.mark.parametrize("path,method,status,code", [
     ("/unknown", "get", 404, "ROUTE_NOT_FOUND"),
     ("/health", "delete", 405, "METHOD_NOT_ALLOWED"),
     ("/papers/unknown", "get", 404, "PAPER_NOT_FOUND"),
-    ("/projects/unknown", "get", 404, "PROJECT_NOT_FOUND"),
+    ("/collections/unknown", "get", 404, "COLLECTION_NOT_FOUND"),
 ])
 def test_framework_and_domain_errors_follow_one_contract(client, path, method, status, code):
     response = getattr(client, method)(path)
@@ -148,14 +148,14 @@ def test_framework_and_domain_errors_follow_one_contract(client, path, method, s
 
 
 def test_json_syntax_and_field_validation_are_distinct(client):
-    malformed = client.post("/projects", content="{", headers={"content-type": "application/json"})
+    malformed = client.post("/collections", content="{", headers={"content-type": "application/json"})
     assert malformed.status_code == 400
     assert malformed.json()["code"] == "INVALID_JSON"
-    invalid = client.post("/projects", json={"name": ""})
+    invalid = client.post("/collections", json={"name": ""})
     assert invalid.status_code == 422
     assert invalid.json()["code"] == "VALIDATION_FAILED"
     assert invalid.json()["data"]["issues"][0]["path"] == ["name"]
-    unsupported = client.post("/projects", content='{"name":"plain"}', headers={"content-type": "text/plain"})
+    unsupported = client.post("/collections", content='{"name":"plain"}', headers={"content-type": "text/plain"})
     assert unsupported.status_code == 415
     assert unsupported.json()["code"] == "UNSUPPORTED_MEDIA_TYPE"
 

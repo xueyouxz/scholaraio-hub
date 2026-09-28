@@ -12,11 +12,12 @@ from fastapi import Query
 from pydantic import BaseModel, ConfigDict, Field
 from pydantic.alias_generators import to_camel
 
-from scholaraio.hub.projects import NAME_LIMIT
+from scholaraio.hub.collections import NAME_LIMIT
 
-ProjectId = Annotated[str | None, Field(min_length=1, max_length=NAME_LIMIT)]
-# The same selection given as a query parameter.
-ProjectQuery = Annotated[str | None, Query(alias="projectId")]
+# A collection is named by its id, or by its name (which agents use).
+CollectionId = Annotated[str, Field(min_length=1, max_length=NAME_LIMIT)]
+# One collection that limits a query, given as a query parameter.
+CollectionQuery = Annotated[str | None, Query(alias="collectionId", min_length=1, max_length=NAME_LIMIT)]
 
 
 class CamelModel(BaseModel):
@@ -24,19 +25,21 @@ class CamelModel(BaseModel):
 
 
 class ScopeInput(CamelModel):
+    """Papers to work with: every paper of the collections, plus the papers named."""
+
     paper_ids: list[str] = Field(default_factory=list, max_length=100)
-    project_id: ProjectId = None
+    collection_ids: list[CollectionId] = Field(default_factory=list, max_length=20)
 
 
 class ContextInput(ScopeInput):
     query: str = Field(max_length=20000)
 
 
-class ProjectInput(CamelModel):
+class CollectionInput(CamelModel):
     name: str = Field(min_length=1, max_length=NAME_LIMIT)
 
 
-class ProjectPapersInput(CamelModel):
+class CollectionPapersInput(CamelModel):
     paper_ids: list[str] = Field(max_length=100)
     action: Literal["add", "remove"] = "add"
 
@@ -70,14 +73,14 @@ class SettingsInput(CamelModel):
 
 class ExportInput(CamelModel):
     paper_ids: list[str] = Field(default_factory=list, max_length=1000)
-    project_id: ProjectId = None
+    collection_id: CollectionId | None = None
     format: Literal["bibtex", "ris", "markdown"] = "bibtex"
     style: Literal["apa", "vancouver", "chicago-author-date", "mla"] = "apa"
 
 
 class AcquireInput(CamelModel):
     locator: str = Field(min_length=1, max_length=2000)
-    project_id: ProjectId = None
+    collection_id: CollectionId | None = None
     title: str | None = Field(default=None, max_length=500)
 
 

@@ -48,11 +48,11 @@ def test_a_selection_exports_as_bibtex(library):
     assert "Unrelated Work" not in result["content"]
 
 
-def test_a_project_exports_as_a_markdown_reference_list(library):
+def test_a_collection_exports_as_a_markdown_reference_list(library):
     paper(library, "alpha", "Spectroscopy of Molecules", "Ada Lovelace", 2024)
     library.runtime.reindex()
-    library.projects.create("综述")
-    library.projects.update_papers("综述", ["alpha"], "add")
+    library.collections.create("综述")
+    library.collections.update_papers("综述", ["alpha"], "add")
 
     result = library.exports.export([], "综述", "markdown", "apa")
 

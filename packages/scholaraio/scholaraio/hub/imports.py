@@ -20,8 +20,8 @@ from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from typing import Any
 
+from scholaraio.hub.collections import CollectionService
 from scholaraio.hub.errors import InvalidRequest, NotFound
-from scholaraio.hub.projects import ProjectService
 from scholaraio.hub.runtime import LibraryRuntime
 from scholaraio.hub.storage import atomic_json, content_hash
 from scholaraio.services.ingest import identifiers
@@ -60,9 +60,9 @@ def snapshot(value):
 class ImportQueue:
     """Serial import worker: one job at a time, each item through the pipeline."""
 
-    def __init__(self, runtime: LibraryRuntime, projects: ProjectService):
+    def __init__(self, runtime: LibraryRuntime, collections: CollectionService):
         self.runtime = runtime
-        self.projects = projects
+        self.collections = collections
         self.root = runtime.cfg.state_root / "imports"
         self.staging = self.root / "staging"
         for directory in (self.root, self.staging):
@@ -94,17 +94,17 @@ class ImportQueue:
         with self.runtime.lock:
             return snapshot(list(self.jobs.values()))
 
-    def enqueue(self, files: list[tuple[Path, str]], project_id: str | None = None, *, title: str | None = None):
-        """Queue files for import; with a project, each paper joins it once it is in.
+    def enqueue(self, files: list[tuple[Path, str]], collection_id: str | None = None, *, title: str | None = None):
+        """Queue files for import; with a collection, each paper joins it once it is in.
 
         ``title`` is what the user knows a single fetched file by (a search
         result's title), shown instead of the name the download happened to get.
         """
         with self.runtime.lock:
-            if project_id:
+            if collection_id:
                 # Refuse before anything runs, not after the papers are in; the job
-                # keeps the project's id, which a rename in the meantime does not change.
-                project_id = self.projects.get(project_id)["id"]
+                # keeps the collection's id, which a rename in the meantime does not change.
+                collection_id = self.collections.get(collection_id)["id"]
             pending = {
                 item["source"] for job in self.jobs.values() for item in job["items"] if item["status"] in ACTIVE
             }
@@ -118,8 +118,8 @@ class ImportQueue:
             if title and len(items) == 1:
                 items[0]["title"] = title.strip()[:500]
             job = {"id": uuid.uuid4().hex, "items": items}
-            if project_id:
-                job["projectId"] = project_id
+            if collection_id:
+                job["collectionId"] = collection_id
             self.jobs[job["id"]] = job
             self.save(job)
             self.executor.submit(self.run, job)
@@ -164,7 +164,7 @@ class ImportQueue:
                 result = {"status": "failed", "error": str(exc)}
             with self.runtime.lock:
                 item.update(step=None, **result)
-                self.join_project(job, item)
+                self.join_collection(job, item)
                 self.save(job)
             ingested |= result["status"] in INGESTED
             if result["status"] in HELD:
@@ -174,21 +174,21 @@ class ImportQueue:
             self.runtime.reindex()
             self.runtime.events.publish("papers")
 
-    def join_project(self, job, item) -> None:
-        """Add a finished paper to the workspace its import was started from.
+    def join_collection(self, job, item) -> None:
+        """Add a finished paper to the collection its import was started from.
 
-        A workspace that was renamed or archived meanwhile keeps the paper out
-        of it, and the item says why instead of failing the import.
+        A collection that was archived meanwhile keeps the paper out of it, and
+        the item says why instead of failing the import.
         """
-        project_id = job.get("projectId")
-        if not project_id or item["status"] not in HELD or not item.get("paperId"):
+        collection_id = job.get("collectionId")
+        if not collection_id or item["status"] not in HELD or not item.get("paperId"):
             return
         try:
-            self.projects.update_papers(project_id, [item["paperId"]], "add")
+            self.collections.update_papers(collection_id, [item["paperId"]], "add")
         except (InvalidRequest, NotFound) as error:
-            item["projectError"] = str(error)
+            item["collectionError"] = str(error)
             return
-        self.runtime.events.publish("projects")
+        self.runtime.events.publish("collections")
 
     def record_step(self, job, item, step: str) -> None:
         with self.runtime.lock:

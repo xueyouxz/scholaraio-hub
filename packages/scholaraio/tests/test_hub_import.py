@@ -142,11 +142,11 @@ def test_a_pdf_that_names_itself_keeps_that_title(library, tmp_path):
     assert result["status"] == "completed_incomplete"
 
 
-def test_an_import_started_from_a_workspace_lands_in_it(library, tmp_path, monkeypatch):
+def test_an_import_started_from_a_collection_lands_in_it(library, tmp_path, monkeypatch):
     monkeypatch.setattr(
         "scholaraio.services.ingest_metadata.enrich_metadata", lambda meta: meta, raising=False
     )
-    project = library.projects.create("Drag review")
+    collection = library.collections.create("Drag review")
     source = tmp_path / "paper.pdf"
     paper_pdf(source)
 
@@ -154,11 +154,11 @@ def test_an_import_started_from_a_workspace_lands_in_it(library, tmp_path, monke
     finished = wait_for_job(library, job["id"])
     paper_id = finished["items"][0]["paperId"]
 
-    assert finished["projectId"] == project["id"]
-    assert library.projects.get("Drag review")["paperIds"] == [paper_id]
+    assert finished["collectionId"] == collection["id"]
+    assert library.collections.get("Drag review")["paperIds"] == [paper_id]
 
 
-def test_an_import_for_a_missing_workspace_is_refused_before_it_runs(library, tmp_path):
+def test_an_import_for_a_missing_collection_is_refused_before_it_runs(library, tmp_path):
     source = tmp_path / "paper.pdf"
     paper_pdf(source)
 

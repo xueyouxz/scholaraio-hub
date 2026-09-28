@@ -16,27 +16,28 @@ export function ProjectsPage() {
   const [creating, setCreating] = useState(false);
 
   const projectsQuery = useQuery({
-    queryKey: ["library", "projects"],
-    queryFn: ({ signal }) => libraryApi.projects(signal),
-    select: (data) => data.projects,
+    queryKey: ["library", "collections"],
+    queryFn: ({ signal }) => libraryApi.collections(signal),
+    select: (data) => data.collections,
   });
 
   const renameProject = useMutation({
-    mutationFn: ({ id, name }: { id: string; name: string }) => libraryApi.renameProject(id, name),
+    mutationFn: ({ id, name }: { id: string; name: string }) =>
+      libraryApi.renameCollection(id, name),
     onSuccess: () => {
       setError("");
-      queryClient.invalidateQueries({ queryKey: ["library", "projects"] });
+      queryClient.invalidateQueries({ queryKey: ["library", "collections"] });
       queryClient.invalidateQueries({ queryKey: sessionsQuery.queryKey });
     },
     onError: (err) => setError(err instanceof Error ? err.message : "重命名失败"),
   });
 
   const archiveProject = useMutation({
-    mutationFn: ({ id }: { id: string; sessionCount: number }) => libraryApi.archiveProject(id),
+    mutationFn: ({ id }: { id: string; sessionCount: number }) => libraryApi.archiveCollection(id),
     onSuccess: (_archived, { sessionCount }) => {
       // Its sessions continue in their own directories the next time they run.
       setError(sessionCount ? `项目已归档，${sessionCount} 个会话已解除关联。` : "");
-      queryClient.invalidateQueries({ queryKey: ["library", "projects"] });
+      queryClient.invalidateQueries({ queryKey: ["library", "collections"] });
       queryClient.invalidateQueries({ queryKey: sessionsQuery.queryKey });
     },
     onError: (err) => setError(err instanceof Error ? err.message : "归档失败"),

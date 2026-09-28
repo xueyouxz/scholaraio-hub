@@ -200,7 +200,7 @@ export interface paths {
         };
         /**
          * Search
-         * @description 按项目范围检索本地文献。
+         * @description 检索本地文献，可限定在一个文献集合内。
          */
         get: operations["search_search_get"];
         put?: never;
@@ -262,7 +262,7 @@ export interface paths {
         put?: never;
         /**
          * Scope
-         * @description 解析项目与论文组成的文献范围。
+         * @description 解析文献集合与论文组成的文献范围。
          */
         post: operations["scope_scope_post"];
         delete?: never;
@@ -351,7 +351,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/projects": {
+    "/collections": {
         parameters: {
             query?: never;
             header?: never;
@@ -359,23 +359,23 @@ export interface paths {
             cookie?: never;
         };
         /**
-         * List Projects
-         * @description 查询文献项目列表。
+         * List Collections
+         * @description 查询文献集合列表。
          */
-        get: operations["list_projects_projects_get"];
+        get: operations["list_collections_collections_get"];
         put?: never;
         /**
-         * Create Project
-         * @description 创建文献项目。
+         * Create Collection
+         * @description 创建文献集合。
          */
-        post: operations["create_project_projects_post"];
+        post: operations["create_collection_collections_post"];
         delete?: never;
         options?: never;
         head?: never;
         patch?: never;
         trace?: never;
     };
-    "/projects/{project_id}": {
+    "/collections/{collection_id}": {
         parameters: {
             query?: never;
             header?: never;
@@ -383,23 +383,23 @@ export interface paths {
             cookie?: never;
         };
         /**
-         * Project
-         * @description 查询文献项目详情。
+         * Collection
+         * @description 查询文献集合详情。
          */
-        get: operations["project_projects__project_id__get"];
+        get: operations["collection_collections__collection_id__get"];
         put?: never;
         post?: never;
         /**
-         * Delete Project
-         * @description 归档文献项目。
+         * Delete Collection
+         * @description 归档文献集合。
          */
-        delete: operations["delete_project_projects__project_id__delete"];
+        delete: operations["delete_collection_collections__collection_id__delete"];
         options?: never;
         head?: never;
         patch?: never;
         trace?: never;
     };
-    "/projects/{project_id}/rename": {
+    "/collections/{collection_id}/rename": {
         parameters: {
             query?: never;
             header?: never;
@@ -409,17 +409,17 @@ export interface paths {
         get?: never;
         put?: never;
         /**
-         * Rename Project
-         * @description 更新文献项目名称。
+         * Rename Collection
+         * @description 更新文献集合名称。
          */
-        post: operations["rename_project_projects__project_id__rename_post"];
+        post: operations["rename_collection_collections__collection_id__rename_post"];
         delete?: never;
         options?: never;
         head?: never;
         patch?: never;
         trace?: never;
     };
-    "/projects/{project_id}/papers": {
+    "/collections/{collection_id}/papers": {
         parameters: {
             query?: never;
             header?: never;
@@ -429,10 +429,10 @@ export interface paths {
         get?: never;
         put?: never;
         /**
-         * Update Project Papers
-         * @description 修改文献项目中的论文集合。
+         * Update Collection Papers
+         * @description 修改文献集合中的论文。
          */
-        post: operations["update_project_papers_projects__project_id__papers_post"];
+        post: operations["update_collection_papers_collections__collection_id__papers_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -657,7 +657,7 @@ export interface components {
     schemas: {
         AcquireInput: {
             locator: string;
-            projectId?: string | null;
+            collectionId?: string | null;
             title?: string | null;
         };
         /** @description 可供调用方展示的错误详情。 */
@@ -668,7 +668,7 @@ export interface components {
         ApiFailure: {
             id: string;
             /** @enum {string} */
-            code: "INVALID_JSON" | "INVALID_MULTIPART" | "HOST_NOT_ALLOWED" | "CSRF_REJECTED" | "CORS_REJECTED" | "RESOURCE_NOT_FOUND" | "ROUTE_NOT_FOUND" | "SESSION_NOT_FOUND" | "PAPER_NOT_FOUND" | "PROJECT_NOT_FOUND" | "SKILL_NOT_FOUND" | "METHOD_NOT_ALLOWED" | "STATE_CONFLICT" | "SESSION_BUSY" | "APPROVAL_EXPIRED" | "PAYLOAD_TOO_LARGE" | "UNSUPPORTED_MEDIA_TYPE" | "VALIDATION_FAILED" | "RATE_LIMITED" | "INTERNAL_ERROR" | "UPSTREAM_ERROR" | "LIBRARY_UNAVAILABLE" | "LIBRARY_TIMEOUT";
+            code: "INVALID_JSON" | "INVALID_MULTIPART" | "HOST_NOT_ALLOWED" | "CSRF_REJECTED" | "CORS_REJECTED" | "RESOURCE_NOT_FOUND" | "ROUTE_NOT_FOUND" | "SESSION_NOT_FOUND" | "PAPER_NOT_FOUND" | "COLLECTION_NOT_FOUND" | "SKILL_NOT_FOUND" | "METHOD_NOT_ALLOWED" | "STATE_CONFLICT" | "SESSION_BUSY" | "APPROVAL_EXPIRED" | "PAYLOAD_TOO_LARGE" | "UNSUPPORTED_MEDIA_TYPE" | "VALIDATION_FAILED" | "RATE_LIMITED" | "INTERNAL_ERROR" | "UPSTREAM_ERROR" | "LIBRARY_UNAVAILABLE" | "LIBRARY_TIMEOUT";
             message: string;
             data: components["schemas"]["ApiErrorDetails"] | null;
         };
@@ -679,12 +679,12 @@ export interface components {
             code: string;
             message: string;
         };
-        ApiSuccess_ArchivedProject_: {
+        ApiSuccess_ArchivedCollection_: {
             id: string;
             /** @constant */
             code: "success";
             message: string;
-            data: components["schemas"]["ArchivedProject"];
+            data: components["schemas"]["ArchivedCollection"];
         };
         ApiSuccess_CitingList_: {
             id: string;
@@ -692,6 +692,13 @@ export interface components {
             code: "success";
             message: string;
             data: components["schemas"]["CitingList"];
+        };
+        ApiSuccess_CollectionList_: {
+            id: string;
+            /** @constant */
+            code: "success";
+            message: string;
+            data: components["schemas"]["CollectionList"];
         };
         ApiSuccess_DiscoverResponse_: {
             id: string;
@@ -798,12 +805,12 @@ export interface components {
             message: string;
             data: components["schemas"]["LibraryTask"];
         };
-        ApiSuccess_LiteratureProject_: {
+        ApiSuccess_LiteratureCollection_: {
             id: string;
             /** @constant */
             code: "success";
             message: string;
-            data: components["schemas"]["LiteratureProject"];
+            data: components["schemas"]["LiteratureCollection"];
         };
         ApiSuccess_PaperList_: {
             id: string;
@@ -811,13 +818,6 @@ export interface components {
             code: "success";
             message: string;
             data: components["schemas"]["PaperList"];
-        };
-        ApiSuccess_ProjectList_: {
-            id: string;
-            /** @constant */
-            code: "success";
-            message: string;
-            data: components["schemas"]["ProjectList"];
         };
         ApiSuccess_ReadingPosition_: {
             id: string;
@@ -868,22 +868,34 @@ export interface components {
             message: string;
             data: components["schemas"]["SettingsCheck"];
         };
-        ArchivedProject: {
+        ArchivedCollection: {
             id: string;
             archivedAt: string;
-            /** @description Where the archived project's directory now is. */
-            path: string;
         };
         Body_upload_imports_post: {
             files: string[];
-            projectId?: string | null;
+            collectionId?: string | null;
         };
         CitingList: {
             citing: components["schemas"]["LibraryPaper"][];
         };
+        CollectionInput: {
+            name: string;
+        };
+        CollectionList: {
+            collections: components["schemas"]["LiteratureCollection"][];
+        };
+        CollectionPapersInput: {
+            paperIds: string[];
+            /**
+             * @default add
+             * @enum {string}
+             */
+            action: "add" | "remove";
+        };
         ContextInput: {
             paperIds?: string[];
-            projectId?: string | null;
+            collectionIds?: string[];
             query: string;
         };
         DiscoverError: {
@@ -919,7 +931,7 @@ export interface components {
         };
         ExportInput: {
             paperIds?: string[];
-            projectId?: string | null;
+            collectionId?: string | null;
             /**
              * @default bibtex
              * @enum {string}
@@ -933,8 +945,8 @@ export interface components {
         };
         FetchedImportJob: {
             id: string;
-            /** @description Workspace each paper joins once it is in the library. */
-            projectId?: string | null;
+            /** @description Collection each paper joins once it is in the library. */
+            collectionId?: string | null;
             items: components["schemas"]["ImportItem"][];
             /**
              * @description What the locator was taken for.
@@ -964,13 +976,13 @@ export interface components {
             paperId?: string | null;
             missingMetadata?: string[] | null;
             error?: string | null;
-            /** @description Why a paper that did arrive could not join the job's workspace. */
-            projectError?: string | null;
+            /** @description Why a paper that did arrive could not join the job's collection. */
+            collectionError?: string | null;
         };
         ImportJob: {
             id: string;
-            /** @description Workspace each paper joins once it is in the library. */
-            projectId?: string | null;
+            /** @description Collection each paper joins once it is in the library. */
+            collectionId?: string | null;
             items: components["schemas"]["ImportItem"][];
         };
         ImportJobList: {
@@ -1132,12 +1144,10 @@ export interface components {
             paperCount: number;
             name: string;
         };
-        LiteratureProject: {
+        LiteratureCollection: {
             /** @description Stable across renames; every route also accepts the name. */
             id: string;
             name: string;
-            /** @description Directory the agent works in. */
-            path: string;
             paperIds: string[];
             paperCount: number;
         };
@@ -1152,20 +1162,6 @@ export interface components {
         };
         PaperList: {
             papers: components["schemas"]["LibraryPaper"][];
-        };
-        ProjectInput: {
-            name: string;
-        };
-        ProjectList: {
-            projects: components["schemas"]["LiteratureProject"][];
-        };
-        ProjectPapersInput: {
-            paperIds: string[];
-            /**
-             * @default add
-             * @enum {string}
-             */
-            action: "add" | "remove";
         };
         Projection: {
             built: boolean;
@@ -1222,9 +1218,10 @@ export interface components {
             /** @description None means the whole library. */
             paperIds: string[] | null;
         };
+        /** @description Papers to work with: every paper of the collections, plus the papers named. */
         ScopeInput: {
             paperIds?: string[];
-            projectId?: string | null;
+            collectionIds?: string[];
         };
         SearchResult: {
             paper: components["schemas"]["LibraryPaper"];
@@ -2808,7 +2805,7 @@ export interface operations {
                 mode: string;
                 q?: string;
                 limit?: number;
-                projectId?: string | null;
+                collectionId?: string | null;
             };
             header?: never;
             path?: never;
@@ -3506,7 +3503,7 @@ export interface operations {
     references_papers__paper_id__references_get: {
         parameters: {
             query?: {
-                projectId?: string | null;
+                collectionId?: string | null;
             };
             header?: never;
             path: {
@@ -3647,7 +3644,7 @@ export interface operations {
     citing_papers__paper_id__citing_get: {
         parameters: {
             query?: {
-                projectId?: string | null;
+                collectionId?: string | null;
             };
             header?: never;
             path: {
@@ -3926,7 +3923,7 @@ export interface operations {
             };
         };
     };
-    list_projects_projects_get: {
+    list_collections_collections_get: {
         parameters: {
             query?: never;
             header?: never;
@@ -3941,7 +3938,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["ApiSuccess_ProjectList_"];
+                    "application/json": components["schemas"]["ApiSuccess_CollectionList_"];
                 };
             };
             /** @description Bad Request */
@@ -4063,7 +4060,7 @@ export interface operations {
             };
         };
     };
-    create_project_projects_post: {
+    create_collection_collections_post: {
         parameters: {
             query?: never;
             header?: never;
@@ -4072,7 +4069,7 @@ export interface operations {
         };
         requestBody: {
             content: {
-                "application/json": components["schemas"]["ProjectInput"];
+                "application/json": components["schemas"]["CollectionInput"];
             };
         };
         responses: {
@@ -4082,7 +4079,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["ApiSuccess_LiteratureProject_"];
+                    "application/json": components["schemas"]["ApiSuccess_LiteratureCollection_"];
                 };
             };
             /** @description Bad Request */
@@ -4204,12 +4201,12 @@ export interface operations {
             };
         };
     };
-    project_projects__project_id__get: {
+    collection_collections__collection_id__get: {
         parameters: {
             query?: never;
             header?: never;
             path: {
-                project_id: string;
+                collection_id: string;
             };
             cookie?: never;
         };
@@ -4221,7 +4218,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["ApiSuccess_LiteratureProject_"];
+                    "application/json": components["schemas"]["ApiSuccess_LiteratureCollection_"];
                 };
             };
             /** @description Bad Request */
@@ -4343,12 +4340,12 @@ export interface operations {
             };
         };
     };
-    delete_project_projects__project_id__delete: {
+    delete_collection_collections__collection_id__delete: {
         parameters: {
             query?: never;
             header?: never;
             path: {
-                project_id: string;
+                collection_id: string;
             };
             cookie?: never;
         };
@@ -4360,7 +4357,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["ApiSuccess_ArchivedProject_"];
+                    "application/json": components["schemas"]["ApiSuccess_ArchivedCollection_"];
                 };
             };
             /** @description Bad Request */
@@ -4482,18 +4479,18 @@ export interface operations {
             };
         };
     };
-    rename_project_projects__project_id__rename_post: {
+    rename_collection_collections__collection_id__rename_post: {
         parameters: {
             query?: never;
             header?: never;
             path: {
-                project_id: string;
+                collection_id: string;
             };
             cookie?: never;
         };
         requestBody: {
             content: {
-                "application/json": components["schemas"]["ProjectInput"];
+                "application/json": components["schemas"]["CollectionInput"];
             };
         };
         responses: {
@@ -4503,7 +4500,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["ApiSuccess_LiteratureProject_"];
+                    "application/json": components["schemas"]["ApiSuccess_LiteratureCollection_"];
                 };
             };
             /** @description Bad Request */
@@ -4625,18 +4622,18 @@ export interface operations {
             };
         };
     };
-    update_project_papers_projects__project_id__papers_post: {
+    update_collection_papers_collections__collection_id__papers_post: {
         parameters: {
             query?: never;
             header?: never;
             path: {
-                project_id: string;
+                collection_id: string;
             };
             cookie?: never;
         };
         requestBody: {
             content: {
-                "application/json": components["schemas"]["ProjectPapersInput"];
+                "application/json": components["schemas"]["CollectionPapersInput"];
             };
         };
         responses: {
@@ -4646,7 +4643,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["ApiSuccess_LiteratureProject_"];
+                    "application/json": components["schemas"]["ApiSuccess_LiteratureCollection_"];
                 };
             };
             /** @description Bad Request */

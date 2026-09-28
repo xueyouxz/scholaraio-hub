@@ -1,4 +1,4 @@
-import type { LiteratureProject } from "@scholaraio-hub/shared";
+import type { LiteratureCollection } from "@scholaraio-hub/shared";
 import { Check, ChevronDown, FolderOpen, FolderX } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 
@@ -14,8 +14,8 @@ export function WorkspaceSwitcher({
   disabled,
   onChange,
 }: {
-  projects: LiteratureProject[];
-  current?: LiteratureProject;
+  projects: LiteratureCollection[];
+  current?: LiteratureCollection;
   disabled: boolean;
   onChange: (projectId: string) => void;
 }) {

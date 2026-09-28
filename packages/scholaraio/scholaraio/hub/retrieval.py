@@ -1,7 +1,7 @@
 """Passages an agent receives with a question, cited back to the papers.
 
-Before a message goes to the model, Hub looks up what the selected papers (or
-the open project, or the whole library) say about it and hands the text over
+Before a message goes to the model, Hub looks up what the papers a session
+refers to (single papers and whole collections) say about it and hands the text over
 as numbered citations, within a fixed character budget.
 """
 from __future__ import annotations
@@ -11,7 +11,7 @@ from dataclasses import asdict
 from itertools import zip_longest
 from typing import Any
 
-from scholaraio.hub.projects import ProjectService
+from scholaraio.hub.collections import CollectionService
 from scholaraio.hub.runtime import LibraryRuntime
 from scholaraio.hub.search import SearchService
 from scholaraio.services.chunks import chunk_search, iter_paper_chunks
@@ -27,26 +27,25 @@ STOPWORDS = frozenset({
 
 
 class RetrievalService:
-    def __init__(self, runtime: LibraryRuntime, projects: ProjectService, search: SearchService):
+    def __init__(self, runtime: LibraryRuntime, collections: CollectionService, search: SearchService):
         self.runtime = runtime
-        self.projects = projects
+        self.collections = collections
         self.search = search
 
-    def context(self, query: str, paper_ids: list[str], project_id: str | None = None) -> dict:
-        scoped = self.projects.scope(project_id, paper_ids)
+    def context(self, query: str, paper_ids: list[str], collection_ids: list[str] | None = None) -> dict:
+        """Passages from the papers named, and from every paper of the collections."""
+        scoped = self.collections.scope(collection_ids or [], paper_ids)
         if scoped == []:
             return {"citations": [], "truncated": False}
         scope = set(scoped) if scoped is not None else None
-        selected = set(paper_ids)
         collector = _Passages()
         for result in self.search.keyword(query, CANDIDATES, scope):
-            if not selected or result["paper"]["id"] in selected:
-                collector.extend(result["matches"])
+            collector.extend(result["matches"])
         # Natural questions rarely match every word. Fall back to OR-ranked
-        # keyword chunks, while explicit paper selection stays authoritative.
+        # keyword chunks within the same papers.
         if not collector:
-            collector.extend(c for c in self._any_word(query, scope) if not selected or c["paper_id"] in selected)
-        # Round-robin selected papers for broad requests such as summaries.
+            collector.extend(self._any_word(query, scope))
+        # Round-robin the papers for broad requests such as summaries.
         collector.extend(self._round_robin(scoped or []))
         return cite(collector.chunks)
 

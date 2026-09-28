@@ -1775,7 +1775,7 @@
           "search"
         ],
         "summary": "Search",
-        "description": "按项目范围检索本地文献。",
+        "description": "检索本地文献，可限定在一个文献集合内。",
         "operationId": "search_search_get",
         "parameters": [
           {
@@ -1805,13 +1805,15 @@
             }
           },
           {
-            "name": "projectId",
+            "name": "collectionId",
             "in": "query",
             "required": false,
             "schema": {
               "anyOf": [
                 {
-                  "type": "string"
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 120
                 },
                 {
                   "type": "null"
@@ -2304,7 +2306,7 @@
           "search"
         ],
         "summary": "Scope",
-        "description": "解析项目与论文组成的文献范围。",
+        "description": "解析文献集合与论文组成的文献范围。",
         "operationId": "scope_scope_post",
         "requestBody": {
           "content": {
@@ -2630,13 +2632,15 @@
             }
           },
           {
-            "name": "projectId",
+            "name": "collectionId",
             "in": "query",
             "required": false,
             "schema": {
               "anyOf": [
                 {
-                  "type": "string"
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 120
                 },
                 {
                   "type": "null"
@@ -2807,13 +2811,15 @@
             }
           },
           {
-            "name": "projectId",
+            "name": "collectionId",
             "in": "query",
             "required": false,
             "schema": {
               "anyOf": [
                 {
-                  "type": "string"
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 120
                 },
                 {
                   "type": "null"
@@ -3128,21 +3134,21 @@
         }
       }
     },
-    "/projects": {
+    "/collections": {
       "get": {
         "tags": [
-          "projects"
+          "collections"
         ],
-        "summary": "List Projects",
-        "description": "查询文献项目列表。",
-        "operationId": "list_projects_projects_get",
+        "summary": "List Collections",
+        "description": "查询文献集合列表。",
+        "operationId": "list_collections_collections_get",
         "responses": {
           "200": {
             "description": "Successful Response",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ApiSuccess_ProjectList_"
+                  "$ref": "#/components/schemas/ApiSuccess_CollectionList_"
                 }
               }
             }
@@ -3281,16 +3287,16 @@
       },
       "post": {
         "tags": [
-          "projects"
+          "collections"
         ],
-        "summary": "Create Project",
-        "description": "创建文献项目。",
-        "operationId": "create_project_projects_post",
+        "summary": "Create Collection",
+        "description": "创建文献集合。",
+        "operationId": "create_collection_collections_post",
         "requestBody": {
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/ProjectInput"
+                "$ref": "#/components/schemas/CollectionInput"
               }
             }
           },
@@ -3302,7 +3308,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ApiSuccess_LiteratureProject_"
+                  "$ref": "#/components/schemas/ApiSuccess_LiteratureCollection_"
                 }
               }
             }
@@ -3440,17 +3446,17 @@
         }
       }
     },
-    "/projects/{project_id}": {
+    "/collections/{collection_id}": {
       "get": {
         "tags": [
-          "projects"
+          "collections"
         ],
-        "summary": "Project",
-        "description": "查询文献项目详情。",
-        "operationId": "project_projects__project_id__get",
+        "summary": "Collection",
+        "description": "查询文献集合详情。",
+        "operationId": "collection_collections__collection_id__get",
         "parameters": [
           {
-            "name": "project_id",
+            "name": "collection_id",
             "in": "path",
             "required": true,
             "schema": {
@@ -3464,7 +3470,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ApiSuccess_LiteratureProject_"
+                  "$ref": "#/components/schemas/ApiSuccess_LiteratureCollection_"
                 }
               }
             }
@@ -3603,14 +3609,14 @@
       },
       "delete": {
         "tags": [
-          "projects"
+          "collections"
         ],
-        "summary": "Delete Project",
-        "description": "归档文献项目。",
-        "operationId": "delete_project_projects__project_id__delete",
+        "summary": "Delete Collection",
+        "description": "归档文献集合。",
+        "operationId": "delete_collection_collections__collection_id__delete",
         "parameters": [
           {
-            "name": "project_id",
+            "name": "collection_id",
             "in": "path",
             "required": true,
             "schema": {
@@ -3624,7 +3630,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ApiSuccess_ArchivedProject_"
+                  "$ref": "#/components/schemas/ApiSuccess_ArchivedCollection_"
                 }
               }
             }
@@ -3762,17 +3768,17 @@
         }
       }
     },
-    "/projects/{project_id}/rename": {
+    "/collections/{collection_id}/rename": {
       "post": {
         "tags": [
-          "projects"
+          "collections"
         ],
-        "summary": "Rename Project",
-        "description": "更新文献项目名称。",
-        "operationId": "rename_project_projects__project_id__rename_post",
+        "summary": "Rename Collection",
+        "description": "更新文献集合名称。",
+        "operationId": "rename_collection_collections__collection_id__rename_post",
         "parameters": [
           {
-            "name": "project_id",
+            "name": "collection_id",
             "in": "path",
             "required": true,
             "schema": {
@@ -3785,7 +3791,7 @@
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/ProjectInput"
+                "$ref": "#/components/schemas/CollectionInput"
               }
             }
           }
@@ -3796,7 +3802,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ApiSuccess_LiteratureProject_"
+                  "$ref": "#/components/schemas/ApiSuccess_LiteratureCollection_"
                 }
               }
             }
@@ -3934,17 +3940,17 @@
         }
       }
     },
-    "/projects/{project_id}/papers": {
+    "/collections/{collection_id}/papers": {
       "post": {
         "tags": [
-          "projects"
+          "collections"
         ],
-        "summary": "Update Project Papers",
-        "description": "修改文献项目中的论文集合。",
-        "operationId": "update_project_papers_projects__project_id__papers_post",
+        "summary": "Update Collection Papers",
+        "description": "修改文献集合中的论文。",
+        "operationId": "update_collection_papers_collections__collection_id__papers_post",
         "parameters": [
           {
-            "name": "project_id",
+            "name": "collection_id",
             "in": "path",
             "required": true,
             "schema": {
@@ -3957,7 +3963,7 @@
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/ProjectPapersInput"
+                "$ref": "#/components/schemas/CollectionPapersInput"
               }
             }
           }
@@ -3968,7 +3974,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ApiSuccess_LiteratureProject_"
+                  "$ref": "#/components/schemas/ApiSuccess_LiteratureCollection_"
                 }
               }
             }
@@ -6182,7 +6188,7 @@
             "maxLength": 2000,
             "minLength": 1
           },
-          "projectId": {
+          "collectionId": {
             "anyOf": [
               {
                 "type": "string",
@@ -6243,7 +6249,7 @@
               "ROUTE_NOT_FOUND",
               "SESSION_NOT_FOUND",
               "PAPER_NOT_FOUND",
-              "PROJECT_NOT_FOUND",
+              "COLLECTION_NOT_FOUND",
               "SKILL_NOT_FOUND",
               "METHOD_NOT_ALLOWED",
               "STATE_CONFLICT",
@@ -6316,7 +6322,7 @@
         ],
         "description": "请求字段的校验错误。"
       },
-      "ApiSuccess_ArchivedProject_": {
+      "ApiSuccess_ArchivedCollection_": {
         "properties": {
           "id": {
             "type": "string"
@@ -6329,7 +6335,7 @@
             "type": "string"
           },
           "data": {
-            "$ref": "#/components/schemas/ArchivedProject"
+            "$ref": "#/components/schemas/ArchivedCollection"
           }
         },
         "type": "object",
@@ -6354,6 +6360,30 @@
           },
           "data": {
             "$ref": "#/components/schemas/CitingList"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "code",
+          "message",
+          "data"
+        ]
+      },
+      "ApiSuccess_CollectionList_": {
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "code": {
+            "type": "string",
+            "const": "success"
+          },
+          "message": {
+            "type": "string"
+          },
+          "data": {
+            "$ref": "#/components/schemas/CollectionList"
           }
         },
         "type": "object",
@@ -6724,7 +6754,7 @@
           "data"
         ]
       },
-      "ApiSuccess_LiteratureProject_": {
+      "ApiSuccess_LiteratureCollection_": {
         "properties": {
           "id": {
             "type": "string"
@@ -6737,7 +6767,7 @@
             "type": "string"
           },
           "data": {
-            "$ref": "#/components/schemas/LiteratureProject"
+            "$ref": "#/components/schemas/LiteratureCollection"
           }
         },
         "type": "object",
@@ -6762,30 +6792,6 @@
           },
           "data": {
             "$ref": "#/components/schemas/PaperList"
-          }
-        },
-        "type": "object",
-        "required": [
-          "id",
-          "code",
-          "message",
-          "data"
-        ]
-      },
-      "ApiSuccess_ProjectList_": {
-        "properties": {
-          "id": {
-            "type": "string"
-          },
-          "code": {
-            "type": "string",
-            "const": "success"
-          },
-          "message": {
-            "type": "string"
-          },
-          "data": {
-            "$ref": "#/components/schemas/ProjectList"
           }
         },
         "type": "object",
@@ -6964,24 +6970,19 @@
           "data"
         ]
       },
-      "ArchivedProject": {
+      "ArchivedCollection": {
         "properties": {
           "id": {
             "type": "string"
           },
           "archivedAt": {
             "type": "string"
-          },
-          "path": {
-            "type": "string",
-            "description": "Where the archived project's directory now is."
           }
         },
         "type": "object",
         "required": [
           "id",
-          "archivedAt",
-          "path"
+          "archivedAt"
         ]
       },
       "Body_upload_imports_post": {
@@ -6993,7 +6994,7 @@
             },
             "type": "array"
           },
-          "projectId": {
+          "collectionId": {
             "anyOf": [
               {
                 "type": "string",
@@ -7024,6 +7025,56 @@
           "citing"
         ]
       },
+      "CollectionInput": {
+        "properties": {
+          "name": {
+            "type": "string",
+            "maxLength": 120,
+            "minLength": 1
+          }
+        },
+        "type": "object",
+        "required": [
+          "name"
+        ]
+      },
+      "CollectionList": {
+        "properties": {
+          "collections": {
+            "items": {
+              "$ref": "#/components/schemas/LiteratureCollection"
+            },
+            "type": "array"
+          }
+        },
+        "type": "object",
+        "required": [
+          "collections"
+        ]
+      },
+      "CollectionPapersInput": {
+        "properties": {
+          "paperIds": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "maxItems": 100
+          },
+          "action": {
+            "type": "string",
+            "enum": [
+              "add",
+              "remove"
+            ],
+            "default": "add"
+          }
+        },
+        "type": "object",
+        "required": [
+          "paperIds"
+        ]
+      },
       "ContextInput": {
         "properties": {
           "paperIds": {
@@ -7033,17 +7084,14 @@
             "type": "array",
             "maxItems": 100
           },
-          "projectId": {
-            "anyOf": [
-              {
-                "type": "string",
-                "maxLength": 120,
-                "minLength": 1
-              },
-              {
-                "type": "null"
-              }
-            ]
+          "collectionIds": {
+            "items": {
+              "type": "string",
+              "maxLength": 120,
+              "minLength": 1
+            },
+            "type": "array",
+            "maxItems": 20
           },
           "query": {
             "type": "string",
@@ -7205,7 +7253,7 @@
             "type": "array",
             "maxItems": 1000
           },
-          "projectId": {
+          "collectionId": {
             "anyOf": [
               {
                 "type": "string",
@@ -7244,7 +7292,7 @@
           "id": {
             "type": "string"
           },
-          "projectId": {
+          "collectionId": {
             "anyOf": [
               {
                 "type": "string"
@@ -7253,7 +7301,7 @@
                 "type": "null"
               }
             ],
-            "description": "Workspace each paper joins once it is in the library."
+            "description": "Collection each paper joins once it is in the library."
           },
           "items": {
             "items": {
@@ -7380,7 +7428,7 @@
               }
             ]
           },
-          "projectError": {
+          "collectionError": {
             "anyOf": [
               {
                 "type": "string"
@@ -7389,7 +7437,7 @@
                 "type": "null"
               }
             ],
-            "description": "Why a paper that did arrive could not join the job's workspace."
+            "description": "Why a paper that did arrive could not join the job's collection."
           }
         },
         "type": "object",
@@ -7404,7 +7452,7 @@
           "id": {
             "type": "string"
           },
-          "projectId": {
+          "collectionId": {
             "anyOf": [
               {
                 "type": "string"
@@ -7413,7 +7461,7 @@
                 "type": "null"
               }
             ],
-            "description": "Workspace each paper joins once it is in the library."
+            "description": "Collection each paper joins once it is in the library."
           },
           "items": {
             "items": {
@@ -8110,7 +8158,7 @@
         ],
         "description": "A topic the library's topic map found."
       },
-      "LiteratureProject": {
+      "LiteratureCollection": {
         "properties": {
           "id": {
             "type": "string",
@@ -8118,10 +8166,6 @@
           },
           "name": {
             "type": "string"
-          },
-          "path": {
-            "type": "string",
-            "description": "Directory the agent works in."
           },
           "paperIds": {
             "items": {
@@ -8137,7 +8181,6 @@
         "required": [
           "id",
           "name",
-          "path",
           "paperIds",
           "paperCount"
         ]
@@ -8240,56 +8283,6 @@
         "type": "object",
         "required": [
           "papers"
-        ]
-      },
-      "ProjectInput": {
-        "properties": {
-          "name": {
-            "type": "string",
-            "maxLength": 120,
-            "minLength": 1
-          }
-        },
-        "type": "object",
-        "required": [
-          "name"
-        ]
-      },
-      "ProjectList": {
-        "properties": {
-          "projects": {
-            "items": {
-              "$ref": "#/components/schemas/LiteratureProject"
-            },
-            "type": "array"
-          }
-        },
-        "type": "object",
-        "required": [
-          "projects"
-        ]
-      },
-      "ProjectPapersInput": {
-        "properties": {
-          "paperIds": {
-            "items": {
-              "type": "string"
-            },
-            "type": "array",
-            "maxItems": 100
-          },
-          "action": {
-            "type": "string",
-            "enum": [
-              "add",
-              "remove"
-            ],
-            "default": "add"
-          }
-        },
-        "type": "object",
-        "required": [
-          "paperIds"
         ]
       },
       "Projection": {
@@ -8519,20 +8512,18 @@
             "type": "array",
             "maxItems": 100
           },
-          "projectId": {
-            "anyOf": [
-              {
-                "type": "string",
-                "maxLength": 120,
-                "minLength": 1
-              },
-              {
-                "type": "null"
-              }
-            ]
+          "collectionIds": {
+            "items": {
+              "type": "string",
+              "maxLength": 120,
+              "minLength": 1
+            },
+            "type": "array",
+            "maxItems": 20
           }
         },
-        "type": "object"
+        "type": "object",
+        "description": "Papers to work with: every paper of the collections, plus the papers named."
       },
       "SearchResult": {
         "properties": {

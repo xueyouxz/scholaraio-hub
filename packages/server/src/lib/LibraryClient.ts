@@ -3,7 +3,6 @@ import {
   type ApiErrorDetails,
   CSRF_HEADER,
   type LibraryContext,
-  type LiteratureProject,
   parseApiResponse,
 } from "@scholaraio-hub/shared";
 
@@ -39,9 +38,9 @@ export class LibraryUnavailableError extends Error {
   }
 }
 
-/** The papers and project a session reads from. */
+/** The papers a session reads from: whole literature collections, and single papers. */
 export interface LibraryScope {
-  projectId?: string;
+  collectionIds: string[];
   paperIds: string[];
 }
 
@@ -92,7 +91,7 @@ export class LibraryClient {
     return payload.data as T;
   }
 
-  /** 确认文献库有这些论文与项目；没有时抛出 4xx 的 `LibraryRequestError`。 */
+  /** 确认文献库有这些论文与文献集合；没有时抛出 4xx 的 `LibraryRequestError`。 */
   async checkScope(scope: LibraryScope): Promise<void> {
     await this.post("/scope", scope);
   }
@@ -100,20 +99,6 @@ export class LibraryClient {
   /** 从范围内的论文中检索与 `query` 相关的段落。 */
   context(scope: LibraryScope & { query: string }): Promise<LibraryContext> {
     return this.post<LibraryContext>("/context", scope);
-  }
-
-  /** 按 id（旧会话为名称）取项目；已不存在时为 undefined。 */
-  async project(reference: string): Promise<LiteratureProject | undefined> {
-    try {
-      return await this.json<LiteratureProject>(`/projects/${encodeURIComponent(reference)}`);
-    } catch (error) {
-      if (error instanceof LibraryRequestError && error.status === 404) return undefined;
-      throw error;
-    }
-  }
-
-  async projects(): Promise<LiteratureProject[]> {
-    return (await this.json<{ projects: LiteratureProject[] }>("/projects")).projects;
   }
 
   /** 检查文献服务当前是否可用。 */

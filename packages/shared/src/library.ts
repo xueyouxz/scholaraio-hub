@@ -7,7 +7,7 @@ import type { components } from "./generated/library-api.js";
 
 type Schemas = components["schemas"];
 
-export type LiteratureProject = Schemas["LiteratureProject"];
+export type LiteratureCollection = Schemas["LiteratureCollection"];
 export type LibraryPaper = Schemas["LibraryPaper"];
 export type LibraryPaperDetail = Schemas["LibraryPaperDetail"];
 export type LibraryCitation = Schemas["LibraryCitation"];
@@ -27,7 +27,7 @@ export type LibraryTopic = Schemas["LibraryTopic"];
 export type ProjectionPoint = Schemas["ProjectionPoint"];
 export type LibraryAnalytics = Schemas["LibraryAnalytics"];
 export type LibrarySearchResponse = Schemas["LibrarySearchResponse"];
-export type ArchivedProject = Schemas["ArchivedProject"];
+export type ArchivedCollection = Schemas["ArchivedCollection"];
 export type ExportFile = Schemas["ExportFile"];
 
 /** How installing the optional embedding packages is going. */

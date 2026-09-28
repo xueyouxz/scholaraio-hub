@@ -33,20 +33,21 @@ export function PaperDetailPanel({ paper, projectId, onClose }: Props) {
   const wsRef = useRef<HTMLDivElement>(null);
 
   const workspacesQuery = useQuery({
-    queryKey: ["library", "projects"],
-    queryFn: ({ signal }) => libraryApi.projects(signal),
+    queryKey: ["library", "collections"],
+    queryFn: ({ signal }) => libraryApi.collections(signal),
     enabled: !!paper,
-    select: (res) => res.projects.map((workspace) => ({ id: workspace.id, name: workspace.name })),
+    select: (res) =>
+      res.collections.map((workspace) => ({ id: workspace.id, name: workspace.name })),
   });
 
   const addPaperMutation = useMutation({
     mutationFn: ({ projectId, paperId }: { projectId: string; paperId: string }) =>
-      libraryApi.projectPapers(projectId, [paperId], "add"),
+      libraryApi.collectionPapers(projectId, [paperId], "add"),
     onSuccess: (_res, variables) => {
       setAddedTo((prev) => new Set([...prev, variables.projectId]));
-      queryClient.invalidateQueries({ queryKey: ["library", "projects"] });
+      queryClient.invalidateQueries({ queryKey: ["library", "collections"] });
       queryClient.invalidateQueries({
-        queryKey: ["library", "projects"],
+        queryKey: ["library", "collections"],
       });
     },
   });

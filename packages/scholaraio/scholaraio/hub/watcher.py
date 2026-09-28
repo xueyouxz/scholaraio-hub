@@ -1,4 +1,4 @@
-"""Notice edits an agent makes to a project's paper index on disk.
+"""Notice edits an agent makes to a collection's paper index on disk.
 
 Agents change ``refs/papers.json`` through the CLI without telling Hub. Polling
 the index modification times turns those edits into the same events the
@@ -15,17 +15,17 @@ from scholaraio.projects import workspace
 
 _log = logging.getLogger("scholaraio.hub.watcher")
 
-# How often the project index is checked for edits made outside Hub.
+# How often the collection indexes are checked for edits made outside Hub.
 POLL_SECONDS = 2.0
 
 
-class ProjectWatcher:
+class CollectionWatcher:
     def __init__(self, root: Path, events: Publisher):
         self.root = root
         self.events = events
         self.stop = threading.Event()
         self.state: dict[str, float] = self.snapshot()
-        self.thread = threading.Thread(target=self.run, name="library-projects", daemon=True)
+        self.thread = threading.Thread(target=self.run, name="library-collections", daemon=True)
         self.thread.start()
 
     def close(self) -> None:
@@ -47,8 +47,8 @@ class ProjectWatcher:
         while not self.stop.wait(POLL_SECONDS):
             try:
                 current = self.snapshot()
-            except OSError as error:  # a project moved mid-scan; try again next tick
-                _log.warning("Project scan failed: %s", error)
+            except OSError as error:  # a collection moved mid-scan; try again next tick
+                _log.warning("Collection scan failed: %s", error)
                 continue
             changed = sorted(
                 name
@@ -57,9 +57,9 @@ class ProjectWatcher:
             )
             self.state = current
             if changed:
-                self.events.publish("projects")
-                # A project's membership decides what search and context return.
+                self.events.publish("collections")
+                # A collection's membership decides what search and context return.
                 self.events.publish("papers")
 
 
-__all__ = ["POLL_SECONDS", "ProjectWatcher"]
+__all__ = ["POLL_SECONDS", "CollectionWatcher"]

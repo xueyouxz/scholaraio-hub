@@ -65,7 +65,7 @@ export function ImportProgress({ submission }: { submission: ImportSubmission })
   useEffect(() => {
     if (counted.current === settled) return;
     counted.current = settled;
-    for (const key of ["papers", "projects", "project"])
+    for (const key of ["papers", "collections", "collection"])
       void client.invalidateQueries({ queryKey: ["library", key] });
   }, [settled, client]);
 
@@ -183,7 +183,7 @@ export function ImportRow({
   const state = importState(item);
   const running = item.status === "running";
   const ended = !ACTIVE_IMPORT.includes(item.status);
-  const note = item.error ?? item.projectError;
+  const note = item.error ?? item.collectionError;
   return (
     <li className="flex items-center gap-2.5 rounded-lg bg-surface-container-low px-3 py-2">
       {state.tone === "error" ? (

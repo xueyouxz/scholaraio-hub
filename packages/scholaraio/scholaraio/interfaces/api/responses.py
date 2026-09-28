@@ -61,7 +61,7 @@ class ApiFailure(CamelModel):
         "ROUTE_NOT_FOUND",
         "SESSION_NOT_FOUND",
         "PAPER_NOT_FOUND",
-        "PROJECT_NOT_FOUND",
+        "COLLECTION_NOT_FOUND",
         "SKILL_NOT_FOUND",
         "METHOD_NOT_ALLOWED",
         "STATE_CONFLICT",
@@ -246,25 +246,23 @@ class ExportFile(CamelModel):
     content: str
 
 
-# ---- projects -------------------------------------------------------------
+# ---- collections ----------------------------------------------------------
 
 
-class LiteratureProject(CamelModel):
+class LiteratureCollection(CamelModel):
     id: str = Field(description="Stable across renames; every route also accepts the name.")
     name: str
-    path: str = Field(description="Directory the agent works in.")
     paper_ids: list[str]
     paper_count: int
 
 
-class ProjectList(CamelModel):
-    projects: list[LiteratureProject]
+class CollectionList(CamelModel):
+    collections: list[LiteratureCollection]
 
 
-class ArchivedProject(CamelModel):
+class ArchivedCollection(CamelModel):
     id: str
     archived_at: str
-    path: str = Field(description="Where the archived project's directory now is.")
 
 
 # ---- imports --------------------------------------------------------------
@@ -292,14 +290,16 @@ class ImportItem(CamelModel):
     paper_id: str | None = None
     missing_metadata: list[str] | None = None
     error: str | None = None
-    project_error: str | None = Field(
-        default=None, description="Why a paper that did arrive could not join the job's workspace."
+    collection_error: str | None = Field(
+        default=None, description="Why a paper that did arrive could not join the job's collection."
     )
 
 
 class ImportJob(CamelModel):
     id: str
-    project_id: str | None = Field(default=None, description="Workspace each paper joins once it is in the library.")
+    collection_id: str | None = Field(
+        default=None, description="Collection each paper joins once it is in the library."
+    )
     items: list[ImportItem]
 
 

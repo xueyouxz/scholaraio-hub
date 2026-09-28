@@ -19,28 +19,31 @@ export type ReferenceFormat = NonNullable<ExportInput["format"]>;
 
 const { request } = libraryClient;
 
-/** 提供文献、项目、导入、设置和维护任务的业务请求。 */
+/** 提供文献、文献集合、导入、设置和维护任务的业务请求。 */
 export const libraryApi = {
   revealDirectory: (target: "data" | "papers" | "workspaces") =>
     request("post", "/directories/{target}/reveal", { path: { target } }),
   images: (id: string, signal?: AbortSignal) =>
     request("get", "/papers/{paper_id}/images", { path: { paper_id: id }, signal }),
   analytics: (signal?: AbortSignal) => request("get", "/analytics", { signal }),
-  projects: (signal?: AbortSignal) => request("get", "/projects", { signal }),
-  project: (id: string, signal?: AbortSignal) =>
-    request("get", "/projects/{project_id}", { path: { project_id: id }, signal }),
-  createProject: (name: string) => request("post", "/projects", { body: { name } }),
-  renameProject: (id: string, name: string) =>
-    request("post", "/projects/{project_id}/rename", { path: { project_id: id }, body: { name } }),
-  archiveProject: (id: string) =>
-    request("delete", "/projects/{project_id}", { path: { project_id: id } }),
-  projectPapers: (id: string, paperIds: string[], action: "add" | "remove") =>
-    request("post", "/projects/{project_id}/papers", {
-      path: { project_id: id },
+  collections: (signal?: AbortSignal) => request("get", "/collections", { signal }),
+  collection: (id: string, signal?: AbortSignal) =>
+    request("get", "/collections/{collection_id}", { path: { collection_id: id }, signal }),
+  createCollection: (name: string) => request("post", "/collections", { body: { name } }),
+  renameCollection: (id: string, name: string) =>
+    request("post", "/collections/{collection_id}/rename", {
+      path: { collection_id: id },
+      body: { name },
+    }),
+  archiveCollection: (id: string) =>
+    request("delete", "/collections/{collection_id}", { path: { collection_id: id } }),
+  collectionPapers: (id: string, paperIds: string[], action: "add" | "remove") =>
+    request("post", "/collections/{collection_id}/papers", {
+      path: { collection_id: id },
       body: { paperIds, action },
     }),
   search: (
-    params: { query: string; mode: string; limit: number; projectId?: string },
+    params: { query: string; mode: string; limit: number; collectionId?: string },
     signal?: AbortSignal,
   ) =>
     request("get", "/search", {
@@ -48,7 +51,7 @@ export const libraryApi = {
         q: params.query,
         mode: params.mode,
         limit: params.limit,
-        projectId: params.projectId,
+        collectionId: params.collectionId,
       },
       signal,
     }),
@@ -59,32 +62,32 @@ export const libraryApi = {
     request("patch", "/papers/{paper_id}", { path: { paper_id: id }, body: fields }),
   refetchPaper: (id: string) =>
     request("post", "/papers/{paper_id}/refetch", { path: { paper_id: id } }),
-  references: (id: string, signal?: AbortSignal, projectId?: string) =>
+  references: (id: string, signal?: AbortSignal, collectionId?: string) =>
     request("get", "/papers/{paper_id}/references", {
       path: { paper_id: id },
-      query: { projectId },
+      query: { collectionId },
       signal,
     }),
-  citing: (id: string, signal?: AbortSignal, projectId?: string) =>
+  citing: (id: string, signal?: AbortSignal, collectionId?: string) =>
     request("get", "/papers/{paper_id}/citing", {
       path: { paper_id: id },
-      query: { projectId },
+      query: { collectionId },
       signal,
     }),
   jobs: (signal?: AbortSignal) => request("get", "/imports", { signal }),
   /** 上传文献文件并创建导入任务。 */
-  upload: (files: File[], projectId?: string, signal?: AbortSignal) => {
+  upload: (files: File[], collectionId?: string, signal?: AbortSignal) => {
     const form = new FormData();
     for (const file of files) form.append("files", file);
-    if (projectId) form.append("projectId", projectId);
+    if (collectionId) form.append("collectionId", collectionId);
     return request("post", "/imports", { form, signal, timeoutMs: UPLOAD_TIMEOUT_MS });
   },
   discover: (query: string, signal?: AbortSignal) =>
     request("get", "/discover", { query: { q: query }, signal }),
   exportReferences: (body: Omit<ExportInput, "style"> & { style?: ExportInput["style"] }) =>
     request("post", "/citations/export", { body: { ...body, style: body.style ?? "apa" } }),
-  fetchPaper: (locator: string, projectId?: string, title?: string) =>
-    request("post", "/imports/fetch", { body: { locator, projectId, title } }),
+  fetchPaper: (locator: string, collectionId?: string, title?: string) =>
+    request("post", "/imports/fetch", { body: { locator, collectionId, title } }),
   retry: (id: string) => request("post", "/imports/{job_id}/retry", { path: { job_id: id } }),
   settings: (signal?: AbortSignal) => request("get", "/settings", { signal }),
   saveSettings: (fields: SettingsInput) => request("patch", "/settings", { body: fields }),

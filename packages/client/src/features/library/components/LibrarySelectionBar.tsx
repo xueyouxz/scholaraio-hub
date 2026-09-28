@@ -26,20 +26,20 @@ export function LibrarySelectionBar() {
   const ids = [...selection.selected];
 
   const projects = useQuery({
-    queryKey: ["library", "projects"],
-    queryFn: ({ signal }) => libraryApi.projects(signal),
+    queryKey: ["library", "collections"],
+    queryFn: ({ signal }) => libraryApi.collections(signal),
     enabled: ids.length > 0,
   });
   const invalidate = (project: string) => {
-    void client.invalidateQueries({ queryKey: ["library", "projects"] });
-    void client.invalidateQueries({ queryKey: ["library", "project", project] });
+    void client.invalidateQueries({ queryKey: ["library", "collections"] });
+    void client.invalidateQueries({ queryKey: ["library", "collection", project] });
   };
   const add = useMutation({
     mutationFn: async ({ project, create }: { project: string; create: boolean }) => {
-      if (create) await libraryApi.createProject(project);
-      const before = create ? { paperIds: [] } : await libraryApi.project(project);
+      if (create) await libraryApi.createCollection(project);
+      const before = create ? { paperIds: [] } : await libraryApi.collection(project);
       const existing = new Set(before.paperIds);
-      await libraryApi.projectPapers(project, ids, "add");
+      await libraryApi.collectionPapers(project, ids, "add");
       return {
         added: ids.filter((id) => !existing.has(id)),
         skipped: ids.filter((id) => existing.has(id)).map((id) => ({ id })),
@@ -82,7 +82,7 @@ export function LibrarySelectionBar() {
         询问选中的
       </Link>
       <AddToWorkspaceMenu
-        workspaces={projects.data?.projects.map((p) => ({ id: p.id, name: p.name })) ?? []}
+        workspaces={projects.data?.collections.map((p) => ({ id: p.id, name: p.name })) ?? []}
         pending={add.isPending}
         selectedCount={ids.length}
         onAdd={(project) => add.mutate({ project, create: false })}

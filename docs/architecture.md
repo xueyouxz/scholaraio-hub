@@ -33,10 +33,10 @@
 - `interfaces/api/routes/*`：按领域拆分的薄控制器，只解析参数、调用一个服务、返回结果；通过
   `dependencies.py` 取服务，不读 `app.state`，不导入 stores。`schemas.py` 定义请求体（属性 snake_case，
   线上字段 camelCase）；`errors.py` 统一 `{id, code, message, data}` 响应，具体约定见 [HTTP 接口约定](http-api.md)。
-- `hub/*` 服务：`PaperService`、`SearchService`、`RetrievalService`、`DiscoverService`、`ProjectService`、
+- `hub/*` 服务：`PaperService`、`SearchService`、`RetrievalService`、`DiscoverService`、`CollectionService`、
   `CitationService`、`MetadataService`、`ExportService`、`SettingsService`、`AnalyticsService`、
   `LibraryStatus`；后台为 `ImportQueue`、`AcquireService`、`TaskRunner`（通用执行器）+
-  `MaintenanceJobs`（各任务类型的策略）、`ProjectWatcher`。服务经构造函数接收 `LibraryRuntime`
+  `MaintenanceJobs`（各任务类型的策略）、`CollectionWatcher`。服务经构造函数接收 `LibraryRuntime`
   与所用的兄弟服务，不回引 `HubLibrary`。
 - `hub/runtime.py`：配置、写锁、`PaperRepository`、`EventBus`、重建索引等共享基础设施。
 - `hub/repository.py` 与 `hub/views.py`：磁盘上的论文（按 UUID 寻址）及其对浏览器的行结构；其他模块不再各自遍历目录或拼装行。

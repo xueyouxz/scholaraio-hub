@@ -83,10 +83,10 @@ function NewSessionForm({
   });
   const providers = useProviders();
   const projects = useQuery({
-    queryKey: ["library", "projects"],
-    queryFn: ({ signal }) => libraryApi.projects(signal),
+    queryKey: ["library", "collections"],
+    queryFn: ({ signal }) => libraryApi.collections(signal),
   });
-  const project = projects.data?.projects.find((p) => p.id === projectId);
+  const project = projects.data?.collections.find((p) => p.id === projectId);
   const papers = useQuery({
     queryKey: ["library", "papers"],
     queryFn: ({ signal }) => libraryApi.papers(signal),
@@ -366,7 +366,7 @@ function NewSessionForm({
       <div className="w-full max-w-[830px] mx-auto pb-[max(1rem,env(safe-area-inset-bottom))] px-2">
         <div className="flex flex-wrap items-center gap-1.5 mb-2 px-1">
           <WorkspaceSwitcher
-            projects={projects.data?.projects ?? []}
+            projects={projects.data?.collections ?? []}
             current={project}
             disabled={submitting || projects.isLoading}
             onChange={(id) => navigate(newSessionUrl(id || undefined), { replace: true })}

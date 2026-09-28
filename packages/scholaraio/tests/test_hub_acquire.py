@@ -74,11 +74,11 @@ def test_a_fetched_paper_is_listed_by_the_title_it_was_found_under(library, monk
         return path
 
     monkeypatch.setattr(hub_acquire.AcquireService, "download_url", download)
-    project = library.projects.create("Drag review")
+    collection = library.collections.create("Drag review")
 
     job = library.acquire.fetch("10.1/abc", "Drag review", "Model-based design of riblets")
 
-    # The job keeps the project's id, whatever name it was asked by.
-    assert job["projectId"] == project["id"]
+    # The job keeps the collection's id, whatever name it was asked by.
+    assert job["collectionId"] == collection["id"]
     assert job["items"][0]["name"] == "200201671.pdf"
     assert job["items"][0]["title"] == "Model-based design of riblets"

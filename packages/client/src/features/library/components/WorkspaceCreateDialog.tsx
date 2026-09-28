@@ -1,4 +1,4 @@
-import type { LiteratureProject } from "@scholaraio-hub/shared";
+import type { LiteratureCollection } from "@scholaraio-hub/shared";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Check, CheckCircle2, ChevronDown, Library, Loader2, Search, X } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
@@ -26,13 +26,13 @@ export function WorkspaceCreateDialog({ onClose }: { onClose: () => void }) {
   const [attempted, setAttempted] = useState(false);
   const sources = usePaperSources();
   const submission = useImportSubmission();
-  const [created, setCreated] = useState<LiteratureProject | null>(null);
+  const [created, setCreated] = useState<LiteratureCollection | null>(null);
 
   const create = useMutation({
     mutationFn: async () => {
-      const project = await libraryApi.createProject(name.trim());
+      const project = await libraryApi.createCollection(name.trim());
       if (sources.picked.size)
-        await libraryApi.projectPapers(project.id, [...sources.picked], "add");
+        await libraryApi.collectionPapers(project.id, [...sources.picked], "add");
       return project;
     },
     onSuccess: (project) => {
@@ -135,7 +135,7 @@ export function WorkspaceAddPapersDialog({
   project,
   onClose,
 }: {
-  project: LiteratureProject;
+  project: LiteratureCollection;
   onClose: () => void;
 }) {
   const client = useQueryClient();
@@ -145,7 +145,7 @@ export function WorkspaceAddPapersDialog({
   const add = useMutation({
     mutationFn: async () => {
       if (sources.picked.size)
-        await libraryApi.projectPapers(project.id, [...sources.picked], "add");
+        await libraryApi.collectionPapers(project.id, [...sources.picked], "add");
     },
     onSuccess: () => {
       void client.invalidateQueries({ queryKey: ["library"] });
@@ -199,7 +199,7 @@ function ImportFollowUp({
   submission,
   onClose,
 }: {
-  project: LiteratureProject;
+  project: LiteratureCollection;
   joined: number;
   submission: ReturnType<typeof useImportSubmission>;
   onClose: () => void;

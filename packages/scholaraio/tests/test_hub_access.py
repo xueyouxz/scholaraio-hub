@@ -37,20 +37,20 @@ def test_allowed_hosts_widen_the_loopback_names(tmp_path):
 
 def test_a_mutation_needs_the_csrf_header(client):
     del client.headers[CSRF_HEADER]
-    refused = client.post("/projects", json={"name": "p"})
+    refused = client.post("/collections", json={"name": "p"})
     assert refused.status_code == 403
     assert refused.json()["message"] == "Request is missing a required header."
-    assert client.get("/projects").status_code == 200
-    assert client.post("/projects", json={"name": "p"}, headers={CSRF_HEADER: CSRF_VALUE}).status_code == 201
+    assert client.get("/collections").status_code == 200
+    assert client.post("/collections", json={"name": "p"}, headers={CSRF_HEADER: CSRF_VALUE}).status_code == 201
 
 
 def test_only_the_hub_page_passes_the_preflight(client):
-    granted = client.options("/projects", headers={"origin": HUB_PAGE, **PREFLIGHT})
+    granted = client.options("/collections", headers={"origin": HUB_PAGE, **PREFLIGHT})
     assert granted.status_code == 200
     assert granted.headers["access-control-allow-origin"] == HUB_PAGE
     assert CSRF_HEADER.lower() in granted.headers["access-control-allow-headers"].lower()
     for origin in ("http://evil.example", "http://localhost:9999", "http://localhost:3400.evil.example"):
-        refused = client.options("/projects", headers={"origin": origin, **PREFLIGHT})
+        refused = client.options("/collections", headers={"origin": origin, **PREFLIGHT})
         assert refused.status_code == 403
         assert refused.json()["code"] == "CORS_REJECTED"
         assert "access-control-allow-origin" not in refused.headers
@@ -60,14 +60,14 @@ def test_the_hub_page_can_read_range_responses_and_refusals(client):
     answer = client.get("/health", headers={"origin": HUB_PAGE})
     assert answer.headers["access-control-allow-origin"] == HUB_PAGE
     assert "content-range" in answer.headers["access-control-expose-headers"].lower()
-    refusal = client.post("/projects", json={"name": "p"}, headers={"origin": HUB_PAGE, CSRF_HEADER: "no"})
+    refusal = client.post("/collections", json={"name": "p"}, headers={"origin": HUB_PAGE, CSRF_HEADER: "no"})
     assert refusal.status_code == 403
     assert refusal.headers["access-control-allow-origin"] == HUB_PAGE
 
 
 def test_without_a_hub_port_no_page_may_call_across_origins(tmp_path):
     with hub_client(tmp_path / "app") as client:
-        response = client.options("/projects", headers={"origin": HUB_PAGE, **PREFLIGHT})
+        response = client.options("/collections", headers={"origin": HUB_PAGE, **PREFLIGHT})
         assert "access-control-allow-origin" not in response.headers
 
 

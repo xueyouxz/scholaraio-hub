@@ -726,50 +726,8 @@ describe.each(["claude", "codex"] as const)("%s application sessions", (name) =>
   });
 });
 
-describe("workbench project and settings contract", () => {
-  it("browses the project directory the agent works in, not the private workspace", async () => {
-    const root = await mkdtemp(join(tmpdir(), "hub-project-files-"));
-    const projectDir = join(root, "projects", "p1");
-    await mkdir(projectDir, { recursive: true });
-    await writeFile(join(projectDir, "notes.md"), "# 项目笔记");
-    class ProjectLibrary extends LibraryClient {
-      override async request(resource: string) {
-        if (resource === "/projects/p1")
-          return libraryResponse({ id: "p1", name: "P1", path: projectDir, paperIds: [] });
-        return libraryResponse({ paperIds: [] });
-      }
-    }
-    const server = createTestApp({
-      dataDir: root,
-      provider: new WorkbenchProvider("claude"),
-      library: new ProjectLibrary(TEST_LIBRARY_URL),
-    });
-    try {
-      await server.ready;
-      const created = await server.app.request("/api/sessions", {
-        method: "POST",
-        headers,
-        body: JSON.stringify({ provider: "claude", projectId: "p1" }),
-      });
-      const { id } = await created.json().then((body) => body.data);
-      const tree = await server.app.request(`/api/sessions/${id}/fs/browse`);
-      expect(
-        (await tree.json().then((body) => body.data)).entries.map(
-          (entry: { name: string }) => entry.name,
-        ),
-      ).toEqual(["notes.md"]);
-      const preview = await server.app.request(`/api/sessions/${id}/fs/file?path=notes.md`);
-      expect(await preview.json().then((body) => body.data)).toMatchObject({
-        content: "# 项目笔记",
-        truncated: false,
-      });
-    } finally {
-      await server.close();
-      await rm(root, { recursive: true, force: true });
-    }
-  });
-
-  it("persists project identity, enforces scope, and applies provider-specific defaults", async () => {
+describe("workbench collection and settings contract", () => {
+  it("persists the collection, enforces scope, and applies provider-specific defaults", async () => {
     const { ServerSettingsService } = await import("../../src/services/ServerSettingsService.js");
     const root = await mkdtemp(join(tmpdir(), "hub-project-contract-"));
     const calls: { resource: string; input: Record<string, unknown> }[] = [];
@@ -777,10 +735,8 @@ describe("workbench project and settings contract", () => {
       override async request(resource: string, init?: RequestInit) {
         const input = JSON.parse(String(init?.body ?? "{}"));
         calls.push({ resource, input });
-        if (input.projectId === "outside")
-          return libraryResponse({ error: "invalid project" }, { status: 400 });
-        if (resource.startsWith("/projects/"))
-          return libraryResponse({ id: "内部项目", name: "内部项目", path: root, paperIds: [] });
+        if (input.collectionIds?.includes("outside"))
+          return libraryResponse({ error: "invalid collection" }, { status: 400 });
         return libraryResponse(
           resource === "/scope" ? { paperIds: [] } : { citations: [], truncated: false },
         );
@@ -822,7 +778,7 @@ describe("workbench project and settings contract", () => {
       await turn.text();
       expect(calls).toContainEqual({
         resource: "/context",
-        input: { query: "summarize", paperIds: [], projectId: "内部项目" },
+        input: { query: "summarize", paperIds: [], collectionIds: ["内部项目"] },
       });
       expect((await create({ projectId: "outside" })).status).toBe(422);
       expect(

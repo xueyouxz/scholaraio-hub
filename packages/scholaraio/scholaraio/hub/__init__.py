@@ -5,7 +5,7 @@ Layers, from the bottom up:
 - ``storage``, ``config``, ``errors``, ``events``: primitives with no library state.
 - ``repository``, ``views``, ``artifacts``: the data on disk and how it is shown.
 - ``runtime``: what every service shares (config, lock, repository, events, index).
-- ``papers``, ``search``, ``retrieval``, ``projects``, ``citations``, ``metadata``,
+- ``papers``, ``search``, ``retrieval``, ``collections``, ``citations``, ``metadata``,
   ``exports``, ``settings``, ``analytics``, ``status``: request-time services.
 - ``imports``, ``acquire``, ``tasks``, ``maintenance``, ``watcher``: background work.
 - ``library``: the composition root that wires them together.

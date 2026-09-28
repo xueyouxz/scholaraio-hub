@@ -1,6 +1,6 @@
 """Changes the library pushes to whoever is watching it.
 
-Imports, maintenance tasks and agents editing a project's ``refs/papers.json``
+Imports, maintenance tasks and agents editing a collection's ``refs/papers.json``
 all change what the browser is showing. Publishing those changes lets the
 browser stop asking every second whether anything happened.
 """

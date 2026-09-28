@@ -1,4 +1,4 @@
-import type { SessionDetail, SessionMessage } from "@scholaraio-hub/shared";
+import type { LiteratureRef, SessionDetail, SessionMessage } from "@scholaraio-hub/shared";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { ArrowDown } from "lucide-react";
 import { useState } from "react";
@@ -13,6 +13,7 @@ import {
 } from "../../core/sessions";
 import { PaperReaderView } from "../library/reader/PaperReaderView";
 import { InputRequestPrompt } from "./components/InputRequestPrompt";
+import { ReferenceChips } from "./components/ReferenceChips";
 import { ResizableReferencesPanel } from "./components/ReferencesPanel";
 import { ResizableSessionFilesPanel } from "./components/SessionFilesPanel";
 import { SessionHeader, type SessionPanel } from "./components/SessionHeader";
@@ -34,11 +35,30 @@ export function SessionChatView({ initial }: { initial: SessionDetail }) {
   const navigate = useNavigate();
   const [panel, setPanel] = useState<SessionPanel | undefined>();
   const client = useQueryClient();
-  const references = session.snapshot?.references ?? initial.references;
+  const kept = session.snapshot?.references ?? initial.references;
+  /** Referred to with `@` since the last message; they go with the next one. */
+  const [added, setAdded] = useState<LiteratureRef[]>([]);
+  const same = (a: LiteratureRef, b: LiteratureRef) => a.kind === b.kind && a.id === b.id;
+  const references = [...kept, ...added.filter((ref) => !kept.some((item) => same(item, ref)))];
   const changeReferences = useMutation({
-    mutationFn: (next: typeof references) => sessionApi.setReferences(initial.id, next),
+    mutationFn: (next: LiteratureRef[]) => sessionApi.setReferences(initial.id, next),
     onSuccess: (detail) => client.setQueryData(sessionQuery(initial.id).queryKey, detail),
   });
+  /** Stop referring to one: one not sent yet is simply dropped. */
+  const removeReference = (removed: LiteratureRef) => {
+    if (added.some((ref) => same(ref, removed))) {
+      setAdded((current) => current.filter((ref) => !same(ref, removed)));
+      return;
+    }
+    changeReferences.mutate(kept.filter((ref) => !same(ref, removed)));
+  };
+  /** Send what was added with this message, and forget it once the session has it. */
+  const withReferences = async <T,>(sendIt: (refs: LiteratureRef[]) => Promise<T>) => {
+    const sent = added;
+    const result = await sendIt(sent);
+    setAdded((current) => current.filter((ref) => !sent.some((item) => same(item, ref))));
+    return result;
+  };
   const [selectedPaper, setSelectedPaper] = useState<string | null>(null);
   /** The last prompt, brought back into the composer to be corrected. */
   const [editing, setEditing] = useState<EditedPrompt>();
@@ -67,7 +87,8 @@ export function SessionChatView({ initial }: { initial: SessionDetail }) {
     info: providers.find(initial.provider),
     options: {
       model: snapshot?.model,
-      permissionMode: snapshot?.permissionMode,
+      // A session the Hub has not run yet starts in the default mode, as the server launches it.
+      permissionMode: snapshot?.permissionMode ?? "default",
       thinking: snapshot?.thinking,
       effort: snapshot?.effort,
     },
@@ -196,6 +217,13 @@ export function SessionChatView({ initial }: { initial: SessionDetail }) {
                   另一个程序（如终端里的 CLI）正在使用这个会话；在这里继续可能与它冲突。
                 </p>
               ) : null}
+              <div className="mb-1.5 empty:hidden">
+                <ReferenceChips
+                  references={references}
+                  disabled={changeReferences.isPending}
+                  onRemove={removeReference}
+                />
+              </div>
               {
                 <Composer
                   provider={initial.provider}
@@ -206,11 +234,20 @@ export function SessionChatView({ initial }: { initial: SessionDetail }) {
                   placeholder={running ? "Queue a follow-up message" : "Continue this session"}
                   onStop={() => session.stop.mutate()}
                   stopPending={session.stop.isPending}
-                  onQueue={session.enqueue}
+                  onQueue={(text, attachments) =>
+                    withReferences((refs) => session.enqueue(text, attachments, refs))
+                  }
                   onSend={(text, attachments) => {
                     scroll.scrollToBottom();
-                    return session.send(text, attachments, editing?.id);
+                    return withReferences((refs) =>
+                      session.send(text, attachments, editing?.id, refs),
+                    );
                   }}
+                  onReference={(ref) =>
+                    setAdded((current) =>
+                      references.some((item) => same(item, ref)) ? current : [...current, ref],
+                    )
+                  }
                   editing={editing}
                   onEditEnd={() => setEditing(undefined)}
                   controls={controls}
@@ -234,11 +271,7 @@ export function SessionChatView({ initial }: { initial: SessionDetail }) {
           setSelectedPaper(id);
           if (!isDesktop) setPanel(undefined);
         }}
-        onRemove={(removed) =>
-          changeReferences.mutate(
-            references.filter((ref) => ref.kind !== removed.kind || ref.id !== removed.id),
-          )
-        }
+        onRemove={removeReference}
         disabled={changeReferences.isPending}
         onClose={() => setPanel(undefined)}
       />

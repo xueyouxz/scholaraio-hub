@@ -5,11 +5,9 @@ import {
   type SessionAttachment,
 } from "@scholaraio-hub/shared";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { FileText, Library, X } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { usePageTitle } from "../../app/components/NavigationLayout";
-import { libraryApi } from "../../core/library";
 import { PROJECTS_KEY, projectApi, projectsQuery } from "../../core/projects";
 import {
   type SessionOptions,
@@ -22,6 +20,7 @@ import {
 import { appSettingsQuery } from "../../core/settings";
 import { skillsQuery } from "../../core/skills";
 import { ProjectPicker } from "./components/ProjectPicker";
+import { ReferenceChips } from "./components/ReferenceChips";
 import { useProviders } from "./composer/hooks/useProviders";
 import { initialOptions, optionsForProvider } from "./composer/model/options";
 import { readComposerPreference, rememberComposerChoice } from "./composer/model/preferences";
@@ -85,16 +84,6 @@ function NewSessionForm({
   const projects = useQuery(projectsQuery);
   const project = projects.data?.projects.find((item) => item.id === projectId);
   const paperIds = references.flatMap((ref) => (ref.kind === "paper" ? [ref.id] : []));
-  const papers = useQuery({
-    queryKey: ["library", "papers"],
-    queryFn: ({ signal }) => libraryApi.papers(signal),
-    enabled: paperIds.length > 0,
-  });
-  const collections = useQuery({
-    queryKey: ["library", "collections"],
-    queryFn: ({ signal }) => libraryApi.collections(signal),
-    enabled: references.some((ref) => ref.kind === "collection"),
-  });
   const skills = useQuery({ ...skillsQuery, enabled: paperIds.length > 0 });
   const readingSkills = useMemo(
     () => filterReadingContextSkills(skills.data?.skills ?? []),
@@ -235,14 +224,9 @@ function NewSessionForm({
   const invalidProject = !!projectId && !!projects.data && !project;
   const disabled =
     submitting || defaults.isLoading || !!defaults.error || invalidProject || projects.isLoading;
-  const referenceName = (ref: LiteratureRef) =>
-    ref.kind === "paper"
-      ? (papers.data?.papers.find((paper) => paper.id === ref.id)?.title ?? ref.id)
-      : (collections.data?.collections.find((item) => item.id === ref.id)?.name ?? ref.id);
   const error =
     (invalidProject ? "项目不存在，请重新选择。" : undefined) ??
-    (defaults.error ?? projects.error ?? providers.error ?? papers.error ?? collections.error)
-      ?.message ??
+    (defaults.error ?? projects.error ?? providers.error)?.message ??
     createError;
   return (
     <div className="flex flex-col flex-1 min-h-0 overflow-hidden">
@@ -318,34 +302,15 @@ function NewSessionForm({
             adding={addProject.isPending}
             addError={addProject.error?.message}
           />
-          {references.map((ref) => {
-            const name = referenceName(ref);
-            const Icon = ref.kind === "paper" ? FileText : Library;
-            return (
-              <span
-                key={`${ref.kind}:${ref.id}`}
-                className="inline-flex items-center gap-1.5 max-w-[260px] px-2.5 py-1 rounded-full text-xs bg-surface-container border border-outline-variant/20 text-on-surface-variant"
-              >
-                <Icon size={11} className="shrink-0" aria-hidden="true" />
-                <span className="truncate" title={name}>
-                  {name}
-                </span>
-                <button
-                  type="button"
-                  disabled={submitting}
-                  onClick={() =>
-                    onReferencesChange(
-                      references.filter((item) => item.kind !== ref.kind || item.id !== ref.id),
-                    )
-                  }
-                  aria-label={`不再引用 ${name}`}
-                  className="text-on-surface-variant hover:text-error transition-colors shrink-0"
-                >
-                  <X size={11} />
-                </button>
-              </span>
-            );
-          })}
+          <ReferenceChips
+            references={references}
+            disabled={submitting}
+            onRemove={(removed) =>
+              onReferencesChange(
+                references.filter((item) => item.kind !== removed.kind || item.id !== removed.id),
+              )
+            }
+          />
         </div>
         <Composer
           draftKey={draftKey}
@@ -354,6 +319,10 @@ function NewSessionForm({
           disabled={disabled}
           provider={provider}
           cwd={project?.path}
+          onReference={(ref) => {
+            if (!references.some((item) => item.kind === ref.kind && item.id === ref.id))
+              onReferencesChange([...references, ref]);
+          }}
           onSend={start}
           controls={controls}
         />

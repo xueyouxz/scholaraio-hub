@@ -3,6 +3,7 @@ import {
   type ApiErrorDetails,
   CSRF_HEADER,
   type LibraryContext,
+  type LiteratureCollection,
   parseApiResponse,
 } from "@scholaraio-hub/shared";
 
@@ -99,6 +100,11 @@ export class LibraryClient {
   /** 从范围内的论文中检索与 `query` 相关的段落。 */
   context(scope: LibraryScope & { query: string }): Promise<LibraryContext> {
     return this.post<LibraryContext>("/context", scope);
+  }
+
+  /** 全部文献集合；会话按 id 引用它们，agent 按名称使用它们。 */
+  async collections(): Promise<LiteratureCollection[]> {
+    return (await this.json<{ collections: LiteratureCollection[] }>("/collections")).collections;
   }
 
   /** 检查文献服务当前是否可用。 */

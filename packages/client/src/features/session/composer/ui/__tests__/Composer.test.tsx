@@ -43,6 +43,34 @@ vi.mock("../../../../../core/sessions", () => ({
   },
 }));
 
+/** What the library has for `@`: two collections, and papers a keyword search finds. */
+const library = vi.hoisted(() => ({ searches: [] as string[] }));
+vi.mock("../../../../../core/library", () => ({
+  libraryApi: {
+    collections: async () => ({
+      collections: [
+        { id: "c-review", name: "综述", paperIds: ["p1"], paperCount: 1 },
+        { id: "c-methods", name: "Methods", paperIds: [], paperCount: 0 },
+      ],
+    }),
+    search: async ({ query }: { query: string }) => {
+      library.searches.push(query);
+      return {
+        results: [
+          {
+            paper: {
+              id: "p-spec",
+              title: "Spectroscopy Research",
+              authors: "Ada Lovelace",
+              year: "2024",
+            },
+          },
+        ],
+      };
+    },
+  },
+}));
+
 const uploaded = (name: string) => expect.objectContaining({ id: `id-${name}`, filename: name });
 
 import { Composer, readComposerDraft } from "../Composer";
@@ -502,6 +530,53 @@ describe("Composer slash commands", () => {
     await flush();
     expect(document.querySelector('[role="menu"]')?.textContent).toContain("Opus");
     expect(textarea().value).toBe("");
+  });
+});
+
+describe("Composer @ references", () => {
+  /** Past the menu's search delay (200 ms), so papers are searched for. */
+  const settle = () =>
+    act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 250));
+    });
+
+  it("offers collections by name, then the papers a search finds, and refers to the chosen one", async () => {
+    const onReference = vi.fn();
+    const { onSend } = render({ onReference });
+    await flush();
+    type("对比 @综");
+    await flush();
+    expect(suggestions().map((item) => item.text)).toEqual(["综述文献集合 · 1 篇"]);
+    type("对比 @Spec");
+    await settle();
+    await flush();
+    expect(library.searches).toContain("Spec");
+    expect(suggestions().map((item) => item.text)).toEqual([
+      "Spectroscopy ResearchAda Lovelace · 2024",
+    ]);
+    key({ key: "Enter" });
+    await flush();
+    expect(onSend).not.toHaveBeenCalled();
+    expect(onReference).toHaveBeenCalledWith({ kind: "paper", id: "p-spec" });
+    expect(textarea().value).toBe("对比 @Spectroscopy_Research ");
+    expect(suggestions()).toEqual([]);
+  });
+
+  it("closes the menu with Escape, and offers none where nothing takes references", async () => {
+    render({ onReference: vi.fn() });
+    await flush();
+    type("@");
+    await flush();
+    expect(suggestions()).toHaveLength(2);
+    key({ key: "Escape" });
+    expect(suggestions()).toEqual([]);
+    act(() => root?.unmount());
+    container?.remove();
+    render();
+    await flush();
+    type("@");
+    await flush();
+    expect(suggestions()).toEqual([]);
   });
 });
 

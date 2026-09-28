@@ -195,6 +195,38 @@ test("collection → cards → reading → a session that refers to the paper", 
   expect(errors).toEqual([]);
 });
 
+test("@ refers a chat to a literature collection, and the session keeps it", async ({
+  page,
+  request,
+}) => {
+  const name = `引用集合${Date.now()}`;
+  await page.goto("/sessions");
+  const created = await request.post(await libraryEndpoint(page, "/collections"), {
+    headers: { "ScholarAIO-Hub": "true" },
+    data: { name },
+  });
+  const collection = (await created.json()).data;
+  const input = page.getByRole("textbox", { name: "Message" });
+  await input.fill(`对比 @${name.slice(0, 4)}`);
+  await page.getByRole("button", { name: new RegExp(name) }).click();
+  await expect(input).toHaveValue(`对比 @${name} `);
+  await expect(page.getByRole("button", { name: `不再引用 ${name}` })).toBeVisible();
+  await input.pressSequentially("里的方法");
+  await page.getByRole("button", { name: "Send", exact: true }).click();
+  await expect(page).toHaveURL(/\/sessions\/[\w:.-]+$/);
+  await expect(page.getByText("文献回答", { exact: false })).toBeVisible();
+  const url = `/api${new URL(page.url()).pathname}`;
+  expect((await (await request.get(url)).json()).data.references).toEqual([
+    { kind: "collection", id: collection.id },
+  ]);
+  // In the open session the reference stays, shown above the composer, until removed.
+  await expect(page.getByRole("button", { name: `不再引用 ${name}` })).toBeVisible();
+  await page.getByRole("button", { name: `不再引用 ${name}` }).click();
+  await expect
+    .poll(async () => (await (await request.get(url)).json()).data.references)
+    .toEqual([]);
+});
+
 test("settings persist defaults, sidebar resizes and Skills navigation works on mobile", async ({
   page,
   request,

@@ -1,5 +1,10 @@
 import { useChat } from "@ai-sdk/react";
-import type { SessionAttachment, SessionDetail, SessionMessage } from "@scholaraio-hub/shared";
+import type {
+  LiteratureRef,
+  SessionAttachment,
+  SessionDetail,
+  SessionMessage,
+} from "@scholaraio-hub/shared";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { DefaultChatTransport } from "ai";
 import { useCallback, useEffect, useMemo, useRef } from "react";
@@ -53,11 +58,16 @@ export function useSessionChat(initial: SessionDetail) {
         headers: Object.fromEntries(hubHeaders()),
         // The server keeps history; send only the newest user turn (stable id for idempotency).
         // A replaced message (`sendMessage` with its id) corrects the last prompt.
-        prepareSendMessagesRequest: ({ messages, messageId }) => {
+        prepareSendMessagesRequest: ({ messages, messageId, body }) => {
           const message = messages.at(-1);
           if (!message) return { body: {} };
+          // Literature referred to with `@` in this message; the session keeps it.
+          const references = (body?.references ?? []) as LiteratureRef[];
           return {
-            body: { ...sessionInput(id, message), ...(messageId ? { replaces: messageId } : {}) },
+            body: {
+              ...sessionInput(id, message, references),
+              ...(messageId ? { replaces: messageId } : {}),
+            },
           };
         },
         prepareReconnectToStreamRequest: () => ({ api: chatPaths(id).stream }),
@@ -167,23 +177,31 @@ export function useSessionChat(initial: SessionDetail) {
    * AI SDK swaps that message for this one and drops the reply, and the server
    * takes the turn back and runs this one in its place.
    */
-  const send = async (text: string, attachments: SessionAttachment[], replaces?: string) => {
+  const send = async (
+    text: string,
+    attachments: SessionAttachment[],
+    replaces?: string,
+    references: LiteratureRef[] = [],
+  ) => {
     sendError.current = undefined;
     chat.clearError();
     const taken = new Promise<void>((resolve, reject) => {
       accepted.current = { resolve, reject };
     });
     const streamed = chat
-      .sendMessage({
-        text,
-        files: attachments.map((file) => ({
-          type: "file",
-          mediaType: file.mediaType,
-          filename: file.filename,
-          url: file.url,
-        })),
-        messageId: replaces,
-      })
+      .sendMessage(
+        {
+          text,
+          files: attachments.map((file) => ({
+            type: "file",
+            mediaType: file.mediaType,
+            filename: file.filename,
+            url: file.url,
+          })),
+          messageId: replaces,
+        },
+        { body: { references } },
+      )
       .then(
         () => accepted.current?.resolve(),
         (error: Error) => accepted.current?.reject(error),
@@ -211,7 +229,11 @@ export function useSessionChat(initial: SessionDetail) {
 
   // Reuse the message id when a lost enqueue response is retried with the same content.
   const queueSubmission = useRef<{ signature: string; id: string } | undefined>(undefined);
-  const enqueue = async (text: string, attachments: SessionAttachment[]) => {
+  const enqueue = async (
+    text: string,
+    attachments: SessionAttachment[],
+    references: LiteratureRef[] = [],
+  ) => {
     const attachmentIds = attachments.map((file) => file.id);
     const signature = JSON.stringify([text, attachmentIds]);
     if (queueSubmission.current?.signature !== signature)
@@ -220,7 +242,7 @@ export function useSessionChat(initial: SessionDetail) {
       id: queueSubmission.current.id,
       text,
       attachmentIds,
-      references: [],
+      references,
     });
     queueSubmission.current = undefined;
     refresh();

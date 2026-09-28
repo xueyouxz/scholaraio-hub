@@ -1,4 +1,9 @@
-import type { ProviderName, SessionAttachment, SlashCommand } from "@scholaraio-hub/shared";
+import type {
+  LiteratureRef,
+  ProviderName,
+  SessionAttachment,
+  SlashCommand,
+} from "@scholaraio-hub/shared";
 import { useQuery } from "@tanstack/react-query";
 import { Paperclip, Pencil } from "lucide-react";
 import {
@@ -13,10 +18,12 @@ import {
 } from "react";
 import { sessionApi } from "../../../../core/sessions";
 import { useComposerDraft } from "../hooks/useComposerDraft";
+import { useMentionPicker } from "../hooks/useMentionPicker";
 import { useSlashCommandPicker } from "../hooks/useSlashCommandPicker";
 import { type StagedAttachment, useStagedAttachments } from "../hooks/useStagedAttachments";
 import { rejectAttachments } from "../model/attachments";
 import { type ClientCommandName, clientCommands, isClientCommand } from "../model/clientCommands";
+import { type MentionOption, mentionReplacement } from "../model/mentions";
 import {
   dedupeCommands,
   joinLeadingCommand,
@@ -39,6 +46,7 @@ import {
   type MenuRequest,
   availableMenus,
 } from "./ComposerOptions";
+import { MentionSuggestions } from "./MentionSuggestions";
 import { SendActionButton } from "./SendActionButton";
 import { SlashCommandBadge } from "./SlashCommandBadge";
 import { SlashCommandSuggestions } from "./SlashCommandSuggestions";
@@ -67,6 +75,7 @@ export function Composer({
   provider,
   sessionId,
   cwd,
+  onReference,
   onSend,
   onQueue,
   running = false,
@@ -86,6 +95,11 @@ export function Composer({
   sessionId?: string;
   /** A new chat's directory, whose commands (project skills) it offers. */
   cwd?: string;
+  /**
+   * Refer to literature with `@`: a chosen collection or paper stays in the
+   * message as `@name` and is handed here, to join the session's references.
+   */
+  onReference?: (reference: LiteratureRef) => void;
   /** Receives the uploaded attachments; files upload as soon as they are added. */
   onQueue?: (text: string, attachments: SessionAttachment[]) => Promise<void>;
   onSend: (text: string, attachments: SessionAttachment[]) => Promise<void>;
@@ -138,6 +152,8 @@ export function Composer({
   const [caret, setCaret] = useState<number | null>(null);
   const [menuRequest, setMenuRequest] = useState<MenuRequest>();
   const picker = useSlashCommandPicker(text, commands, caret);
+  const mention = useMentionPicker(picker.messageBody, caret, !!onReference && !picker.showList);
+  const mentioning = mention.show && !picker.showList;
   const fileInput = useRef<HTMLInputElement>(null);
   // A new chat has no session yet; its files go to the draft area until it is created.
   const staged = useStagedAttachments(sessionId ? { sessionId } : "draft");
@@ -212,6 +228,20 @@ export function Composer({
     // A leading command turns into the badge; the caret goes to the start of the body.
     const becomesBadge = token.leading && (command.trigger ?? "/") === "/";
     placeCaret(becomesBadge ? 0 : next.caret);
+  };
+  /** Complete the `@` at the caret: the name stays in the message, the reference joins the session. */
+  const selectMention = (option: MentionOption) => {
+    const token = mention.token;
+    if (!token) return;
+    mention.dismiss();
+    const next = replaceToken(
+      picker.messageBody,
+      { ...token, leading: false },
+      mentionReplacement(option),
+    );
+    setText(joinLeadingCommand(picker.selectedToken, next.text));
+    placeCaret(next.caret);
+    onReference?.(option.ref);
   };
   const addFiles = (incoming: File[]) => {
     if (disabled || sending) return;
@@ -294,6 +324,15 @@ export function Composer({
           onSelect={selectCommand}
         />
       ) : null}
+      {mentioning ? (
+        <MentionSuggestions
+          options={mention.options}
+          loading={mention.loading}
+          activeIndex={mention.activeIndex}
+          onHover={mention.setActiveIndex}
+          onSelect={selectMention}
+        />
+      ) : null}
       {editing ? (
         <div className="mb-1.5 flex items-center justify-between gap-3 px-1 text-xs text-on-surface-variant">
           <span className="flex min-w-0 items-center gap-1.5">
@@ -348,6 +387,7 @@ export function Composer({
           onChange={(e) => {
             setInterim("");
             picker.resume();
+            mention.resume();
             setCaret(e.target.selectionStart);
             const next = e.target.value;
             setText(joinLeadingCommand(picker.selectedToken, next));
@@ -393,6 +433,30 @@ export function Composer({
                 if (command) {
                   e.preventDefault();
                   selectCommand(command);
+                  return;
+                }
+              }
+            }
+            if (mentioning) {
+              const list = mention.options;
+              const count = list.length;
+              if (e.key === "Escape") {
+                e.preventDefault();
+                mention.dismiss();
+                return;
+              }
+              if (count && (e.key === "ArrowDown" || e.key === "ArrowUp")) {
+                e.preventDefault();
+                mention.setActiveIndex(
+                  (index) => (index + (e.key === "ArrowDown" ? 1 : -1) + count) % count,
+                );
+                return;
+              }
+              if ((e.key === "Enter" && !e.shiftKey && !e.ctrlKey) || e.key === "Tab") {
+                const option = list[mention.activeIndex] ?? list[0];
+                if (option) {
+                  e.preventDefault();
+                  selectMention(option);
                   return;
                 }
               }

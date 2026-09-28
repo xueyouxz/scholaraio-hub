@@ -22,9 +22,13 @@ import { TEST_LIBRARY_URL } from "../helpers/library.js";
 
 /** A library that finds one passage for any question, and records what it was asked. */
 class TestLibrary extends LibraryClient {
-  readonly asked: Array<{ resource: string; body: unknown }> = [];
+  readonly asked: Array<{ resource: string; body: { collectionIds?: string[] } | null }> = [];
   override async request(resource: string, init?: RequestInit) {
     this.asked.push({ resource, body: JSON.parse(String(init?.body ?? "null")) });
+    if (resource === "/collections")
+      return libraryResponse({
+        collections: [{ id: "综述", name: "综述集合", paperIds: ["paper-1"], paperCount: 1 }],
+      });
     return libraryResponse({
       citations: [
         {
@@ -650,7 +654,13 @@ describe.each(["claude", "codex"] as const)("%s sessions", (name) => {
     ).text();
     await idle(id);
     expect(provider.inputs[1]).toContain("library_context");
-    expect(library.asked.at(-1)).toMatchObject({
+    // The agent is told which collections by name, which its `scholaraio ws` commands take.
+    expect(provider.inputs[1]).toContain("本会话引用的文献集合：综述集合");
+    expect(
+      library.asked.find(
+        (asked) => asked.resource === "/context" && asked.body?.collectionIds?.length,
+      ),
+    ).toMatchObject({
       resource: "/context",
       body: { collectionIds: ["综述"], paperIds: [] },
     });

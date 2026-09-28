@@ -66,6 +66,7 @@ export function Composer({
   draftKey,
   provider,
   sessionId,
+  cwd,
   onSend,
   onQueue,
   running = false,
@@ -83,6 +84,8 @@ export function Composer({
   draftKey: string;
   provider: ProviderName;
   sessionId?: string;
+  /** A new chat's directory, whose commands (project skills) it offers. */
+  cwd?: string;
   /** Receives the uploaded attachments; files upload as soon as they are added. */
   onQueue?: (text: string, attachments: SessionAttachment[]) => Promise<void>;
   onSend: (text: string, attachments: SessionAttachment[]) => Promise<void>;
@@ -107,8 +110,8 @@ export function Composer({
     onTextChange,
   });
   const commandsQuery = useQuery({
-    queryKey: ["session-commands", provider, sessionId],
-    queryFn: ({ signal }) => sessionApi.commands(provider, sessionId, signal),
+    queryKey: ["session-commands", provider, sessionId, cwd],
+    queryFn: ({ signal }) => sessionApi.commands(provider, sessionId, signal, cwd),
     staleTime: 60000,
   });
   const menus = controls ? availableMenus(controls) : new Set<MenuRequest["menu"]>();

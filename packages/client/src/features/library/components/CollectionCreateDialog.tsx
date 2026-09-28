@@ -3,10 +3,10 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Check, CheckCircle2, ChevronDown, Library, Loader2, Search, X } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
-import { libraryApi, workspaceUrl } from "../../../core/library";
-import { newSessionUrl, sessionsQuery } from "../../../core/sessions";
+import { collectionUrl, libraryApi } from "../../../core/library";
+import { newSessionUrl } from "../../../core/sessions";
 import { Dialog } from "../../../shared/ui/Dialog";
-import { workspaceNameProblem } from "../workspaceName";
+import { collectionNameProblem } from "../collectionName";
 import { ImportProgress } from "./import/ImportProgress";
 import { ImportStaging, type Staged } from "./import/sources";
 import { useImportSubmission } from "./import/submit";
@@ -19,7 +19,7 @@ import { useImportSubmission } from "./import/submit";
  * pipeline until the user leaves; the workspace's own page carries on from
  * there. With nothing to import, creating goes straight to a first chat.
  */
-export function WorkspaceCreateDialog({ onClose }: { onClose: () => void }) {
+export function CollectionCreateDialog({ onClose }: { onClose: () => void }) {
   const client = useQueryClient();
   const navigate = useNavigate();
   const [name, setName] = useState("");
@@ -37,10 +37,9 @@ export function WorkspaceCreateDialog({ onClose }: { onClose: () => void }) {
     },
     onSuccess: (project) => {
       void client.invalidateQueries({ queryKey: ["library"] });
-      void client.invalidateQueries({ queryKey: sessionsQuery.queryKey });
       if (!sources.staged.length) {
         onClose();
-        navigate(newSessionUrl(project.id));
+        navigate(collectionUrl(project.id));
         return;
       }
       setCreated(project);
@@ -48,7 +47,7 @@ export function WorkspaceCreateDialog({ onClose }: { onClose: () => void }) {
     },
   });
 
-  const problem = workspaceNameProblem(name);
+  const problem = collectionNameProblem(name);
   // Said once there is something to judge: an empty box is not yet a mistake.
   const shownProblem = attempted || name ? problem : null;
   const submit = () => {
@@ -60,7 +59,7 @@ export function WorkspaceCreateDialog({ onClose }: { onClose: () => void }) {
     <Dialog
       wide
       tall
-      title={created ? `Workspace「${created.name}」` : "新建 Workspace"}
+      title={created ? `文献集合「${created.name}」` : "新建文献集合"}
       onClose={onClose}
     >
       {created ? (
@@ -79,7 +78,7 @@ export function WorkspaceCreateDialog({ onClose }: { onClose: () => void }) {
             </span>
             <input
               name="workspace-name"
-              aria-label="Workspace 名称"
+              aria-label="文献集合名称"
               autoComplete="off"
               value={name}
               maxLength={120}
@@ -117,11 +116,7 @@ export function WorkspaceCreateDialog({ onClose }: { onClose: () => void }) {
               disabled={create.isPending || Boolean(problem)}
               className="signature-gradient rounded-full px-4 py-2 text-sm font-semibold text-on-primary active:scale-95 disabled:opacity-40"
             >
-              {create.isPending
-                ? "创建中…"
-                : sources.staged.length
-                  ? "创建并导入"
-                  : "创建并开始会话"}
+              {create.isPending ? "创建中…" : sources.staged.length ? "创建并导入" : "创建"}
             </button>
           </div>
         </div>
@@ -131,7 +126,7 @@ export function WorkspaceCreateDialog({ onClose }: { onClose: () => void }) {
 }
 
 /** Adding literature to a workspace that already exists, from its own page. */
-export function WorkspaceAddPapersDialog({
+export function CollectionAddPapersDialog({
   project,
   onClose,
 }: {
@@ -183,7 +178,7 @@ export function WorkspaceAddPapersDialog({
               onClick={() => add.mutate()}
               className="signature-gradient rounded-full px-4 py-2 text-sm font-semibold text-on-primary active:scale-95 disabled:opacity-40"
             >
-              {add.isPending ? "加入中…" : "加入 Workspace"}
+              {add.isPending ? "加入中…" : "加入文献集合"}
             </button>
           </div>
         </div>
@@ -209,7 +204,7 @@ function ImportFollowUp({
       <p className="flex shrink-0 items-center gap-2 text-sm text-on-surface">
         <CheckCircle2 className="w-4 h-4 text-primary" aria-hidden="true" />
         {joined ? `已加入 ${joined} 篇库内文献；` : ""}
-        外部文献入库后会自动加入本 Workspace。
+        外部文献入库后会自动加入本文献集合。
       </p>
       <div className="flex min-h-0 flex-1 flex-col">
         <ImportProgress submission={submission} />
@@ -218,18 +213,18 @@ function ImportFollowUp({
         <span className="text-xs text-on-surface-variant">关闭后导入在后台继续</span>
         <div className="flex-1" />
         <Link
-          to={workspaceUrl(project.id)}
+          to={collectionUrl(project.id)}
           onClick={onClose}
           className="rounded-full bg-surface-container-high px-4 py-2 text-sm font-medium text-on-surface active:scale-95"
         >
-          查看 Workspace 文献
+          查看文献集合
         </Link>
         <Link
-          to={newSessionUrl(project.id)}
+          to={newSessionUrl({ references: [{ kind: "collection", id: project.id }] })}
           onClick={onClose}
           className="signature-gradient rounded-full px-4 py-2 text-sm font-semibold text-on-primary active:scale-95"
         >
-          开始会话
+          在会话中引用
         </Link>
       </div>
     </div>
@@ -268,7 +263,7 @@ function usePaperSources(members: string[] = []) {
     setStaged,
     members: memberSet,
     empty: picked.size === 0 && staged.length === 0,
-    summary: parts.length ? `已选 ${parts.join(" · ")}` : "可以先不选，稍后在 Workspace 中加入",
+    summary: parts.length ? `已选 ${parts.join(" · ")}` : "可以先不选，稍后在文献集合中加入",
   };
 }
 

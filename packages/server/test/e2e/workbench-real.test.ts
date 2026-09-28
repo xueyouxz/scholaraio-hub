@@ -31,20 +31,21 @@ describe.skipIf(!enabled)("real application sessions", () => {
         const token = `hub-${randomUUID().slice(0, 8)}`;
         try {
           await server.ready;
-          const record = await server.store.create({
-            title: "CLI verification",
-            provider: name,
-            paperIds: [],
+          const message = (text: string) => ({
+            id: randomUUID(),
+            text,
+            attachmentIds: [],
+            references: [],
           });
-          const turn = async (text: string) => {
-            await server.sessions.send(record.id, { id: randomUUID(), text });
+          /** The last answer, once the turn has ended. */
+          const answer = async (key: string) => {
             await expect
-              .poll(() => server.sessions.detail(record.id).state, {
+              .poll(async () => (await server.sessions.detail(key)).state, {
                 timeout: 90000,
                 interval: 200,
               })
               .not.toBe("running");
-            const current = server.sessions.detail(record.id);
+            const current = await server.sessions.detail(key);
             expect(current.error).toBeUndefined();
             return (
               current.messages
@@ -54,9 +55,15 @@ describe.skipIf(!enabled)("real application sessions", () => {
                 .join("") ?? ""
             );
           };
-          expect(await turn(`记住本轮口令 ${token}。不要调用工具，只回复该口令。`)).toContain(
-            token,
-          );
+          const created = await server.sessions.create({
+            provider: name,
+            cwd: root,
+            references: [],
+            message: message(`记住本轮口令 ${token}。不要调用工具，只回复该口令。`),
+          });
+          const key = created.id;
+          expect(key.startsWith(`${name}:`)).toBe(true);
+          expect(await answer(key)).toContain(token);
           await server.close();
           server = createTestApp({
             dataDir: root,
@@ -64,27 +71,22 @@ describe.skipIf(!enabled)("real application sessions", () => {
             library: new EmptyLibrary(TEST_LIBRARY_URL),
           });
           await server.ready;
-          expect(await turn("不要调用工具，只回复上一轮我要求记住的口令。")).toContain(token);
-          expect(server.sessions.detail(record.id).messages).toHaveLength(4);
-          await server.sessions.send(record.id, {
-            id: randomUUID(),
-            text: "不要调用工具，连续输出从 1 到 10000 的整数。",
-          });
-          await expect
-            .poll(
-              () => {
-                const message = server.store.get(record.id).messages.at(-1);
-                return (
-                  message?.role === "assistant" &&
-                  message.parts.some((part) => part.type === "text" && part.text.length > 0)
-                );
-              },
-              { timeout: 60000 },
-            )
-            .toBe(true);
-          await server.sessions.stop(record.id);
-          expect(server.sessions.detail(record.id).state).toBe("interrupted");
-          expect(await turn("不要调用工具，只回复第一轮的口令。")).toContain(token);
+          await server.sessions.send(key, message("不要调用工具，只回复上一轮我要求记住的口令。"));
+          expect(await answer(key)).toContain(token);
+          expect((await server.sessions.detail(key)).messages).toHaveLength(4);
+          await server.sessions.send(key, message("不要调用工具，连续输出从 1 到 10000 的整数。"));
+          // Wait for the answer to start streaming, then stop it.
+          const stream = server.sessions.stream(key, new AbortController().signal);
+          const reader = stream?.getReader();
+          for (;;) {
+            const chunk = await reader?.read();
+            if (!chunk || chunk.done || chunk.value.type === "text-delta") break;
+          }
+          await reader?.cancel();
+          await server.sessions.stop(key);
+          expect((await server.sessions.detail(key)).state).toBe("interrupted");
+          await server.sessions.send(key, message("不要调用工具，只回复第一轮的口令。"));
+          expect(await answer(key)).toContain(token);
         } finally {
           await server.close();
           await rm(root, { recursive: true, force: true });

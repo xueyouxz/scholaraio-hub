@@ -105,18 +105,18 @@ export const libraryApi = {
     request("put", "/papers/{paper_id}/position", { path: { paper_id: id }, body: position }),
 };
 
-/** 构造项目工作区页面地址。 */
-export function workspaceUrl(projectId: string): string {
-  return `/workspaces/${encodeURIComponent(projectId)}`;
+/** 构造文献集合页面地址。 */
+export function collectionUrl(collectionId: string): string {
+  return `/library/collections/${encodeURIComponent(collectionId)}`;
 }
 
-/** 构造包含返回页面和项目范围的文献阅读地址。 */
+/** 构造包含返回页面和文献集合范围的文献阅读地址。 */
 export function readerUrl(
   paperId: string,
-  options: { returnTo?: string; projectId?: string } = {},
+  options: { returnTo?: string; collectionId?: string } = {},
 ): string {
   const params = new URLSearchParams({ mode: "overview" });
   if (options.returnTo) params.set("returnTo", options.returnTo);
-  if (options.projectId) params.set("project", options.projectId);
+  if (options.collectionId) params.set("collection", options.collectionId);
   return `/library/${encodeURIComponent(paperId)}?${params}`;
 }

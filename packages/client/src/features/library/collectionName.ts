@@ -4,8 +4,8 @@
  * A workspace is a directory, and its name is the directory's name, so these
  * are the same rules the library applies when it creates one.
  */
-export function workspaceNameProblem(name: string): string | null {
-  if (!name) return "请输入 Workspace 名称";
+export function collectionNameProblem(name: string): string | null {
+  if (!name) return "请输入文献集合名称";
   if (name !== name.trim()) return "名称首尾不能有空格";
   if (name.length > 120) return "名称不能超过 120 个字符";
   if (name === "." || name === "..") return "名称不能是 . 或 ..";

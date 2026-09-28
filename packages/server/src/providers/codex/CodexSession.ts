@@ -215,6 +215,8 @@ export class CodexSession implements AgentSession {
         const { turn } = await client.request<TurnStartResponse>("turn/start", params);
         appliedMode = mode;
         adapter.beginTurn(turn.id);
+        // Codex names the prompt by its turn; the transcript holds it under that id.
+        yield { type: "prompt.recorded", promptId: turn.id };
         log().info({ threadId, turnId: turn.id, turnStatus: turn.status }, "Started Codex turn");
         // The adapter closes the turn on its terminal notification.
         if (turn.status === "inProgress") {

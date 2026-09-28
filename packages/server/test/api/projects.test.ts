@@ -42,7 +42,11 @@ describe("projects from the providers' own histories", () => {
       stored("gone", join(root, "work", "deleted"), "2026-09-09T00:00:00.000Z"),
     ];
     codex.stored = [
-      stored("x1", alpha, "2026-09-04T00:00:00.000Z"),
+      {
+        ...stored("x1", alpha, "2026-09-04T00:00:00.000Z"),
+        // Titled by its first prompt, which carries the library passages the Hub appended.
+        title: "总结这篇\n\n<library_context>\n以下内容是检索得到的文献资料",
+      },
       stored("x2", chat, "2026-09-06T00:00:00.000Z"),
     ];
     server = createTestApp({
@@ -85,18 +89,19 @@ describe("projects from the providers' own histories", () => {
       },
     ]);
     const page = await get(`/api/projects/${projectId(alpha)}/sessions`);
-    expect(
-      page.sessions.map((s: { provider: string; id: string }) => `${s.provider}:${s.id}`),
-    ).toEqual(["codex:x1", "claude:c1"]);
+    expect(page.sessions.map((s: { id: string }) => s.id)).toEqual(["codex:x1", "claude:c1"]);
     expect(page.nextOffset).toBeNull();
+    expect(page.sessions[0].title).toBe("总结这篇");
   });
 
   it("lists folderless sessions apart, and leaves out those whose directory is gone", async () => {
     const page = await get("/api/projects/unassigned/sessions");
-    expect(page.sessions).toMatchObject([{ provider: "codex", id: "x2", cwd: chat }]);
+    expect(page.sessions).toMatchObject([
+      { id: "codex:x2", provider: "codex", nativeId: "x2", cwd: chat },
+    ]);
     expect(page.sessions[0]).not.toHaveProperty("projectId");
     const all = await get(`/api/projects/${projectId(alpha)}/sessions?provider=claude`);
-    expect(all.sessions.map((s: { id: string }) => s.id)).toEqual(["c1"]);
+    expect(all.sessions.map((s: { nativeId: string }) => s.nativeId)).toEqual(["c1"]);
   });
 
   it("pages through a project's sessions", async () => {
@@ -104,7 +109,7 @@ describe("projects from the providers' own histories", () => {
     expect(first.sessions).toHaveLength(1);
     expect(first.nextOffset).toBe(1);
     const second = await get(`/api/projects/${projectId(alpha)}/sessions?limit=1&offset=1`);
-    expect(second.sessions.map((s: { id: string }) => s.id)).toEqual(["c1"]);
+    expect(second.sessions.map((s: { nativeId: string }) => s.nativeId)).toEqual(["c1"]);
     expect(second.nextOffset).toBeNull();
   });
 
@@ -154,7 +159,7 @@ describe("projects from the providers' own histories", () => {
     const publishing = setInterval(() => server.events.publish({ type: "sessions" }), 10);
     try {
       const { value } = await reader.read();
-      expect(new TextDecoder().decode(value)).toContain("event: sessions");
+      expect(new TextDecoder().decode(value)).toContain('data: {"type":"sessions"}');
     } finally {
       clearInterval(publishing);
       controller.abort();

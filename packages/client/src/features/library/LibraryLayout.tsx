@@ -1,18 +1,20 @@
-import { ChartNoAxesCombined, Plus, Search } from "lucide-react";
+import { ChartNoAxesCombined, Library, Plus, Search } from "lucide-react";
 import { NavLink, Outlet, useSearchParams } from "react-router-dom";
 import { ImportDialog } from "./components/ImportDialog";
 import { LibrarySelectionBar } from "./components/LibrarySelectionBar";
 import { LibrarySelectionProvider } from "./selection";
 
 /**
- * The two ways to look at the library, as places rather than actions.
+ * The ways to look at the library, as places rather than actions.
  *
- * Browsing and analysing are co-equal views of one collection, so they are
- * tabs. Importing is not a place — it is something done to the collection
- * from wherever the user is — so it opens as a dialog over the current view.
+ * Browsing, the literature collections and analysing are co-equal views of
+ * the library, so they are tabs. Importing is not a place — it is something
+ * done to the library from wherever the user is — so it opens as a dialog
+ * over the current view.
  */
 const TABS = [
   { path: "", label: "检索", icon: Search },
+  { path: "collections", label: "文献集合", icon: Library },
   { path: "insights", label: "分析", icon: ChartNoAxesCombined },
 ];
 

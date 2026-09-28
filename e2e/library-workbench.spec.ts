@@ -106,24 +106,24 @@ test("a reply renders tables, math, diff and incomplete Markdown safely", async 
   expect(await page.locator('a[href^="javascript:"]').count()).toBe(0);
 });
 
-test("internal project → cards → reading → first message preserves project identity", async ({
+test("collection → cards → reading → a session that refers to the paper", async ({
   page,
   request,
 }) => {
   const errors: string[] = [];
   page.on("pageerror", (error) => errors.push(error.message));
-  const projectName = `阅读项目-${Date.now()}`;
-  await page.goto("/projects");
+  const collectionName = `阅读集合-${Date.now()}`;
+  await page.goto("/library/collections");
   await page.getByRole("button", { name: "新建", exact: true }).click();
-  const createDialog = page.getByRole("dialog", { name: "新建 Workspace" });
-  await createDialog.getByRole("textbox", { name: "Workspace 名称" }).fill(projectName);
-  await createDialog.getByRole("button", { name: "创建并开始会话" }).click();
-  await expect(page).toHaveURL(/\/sessions\?project=/);
-  const projectId = new URL(page.url()).searchParams.get("project");
-  if (!projectId) throw new Error("创建项目后未返回项目 ID");
-  await page.goto("/projects");
+  const createDialog = page.getByRole("dialog", { name: "新建文献集合" });
+  await createDialog.getByRole("textbox", { name: "文献集合名称" }).fill(collectionName);
+  await createDialog.getByRole("button", { name: "创建", exact: true }).click();
+  await expect(page).toHaveURL(/\/library\/collections\/[^/?]+$/);
+  const collectionPath = new URL(page.url()).pathname;
+  const collectionId = decodeURIComponent(collectionPath.split("/").at(-1) ?? "");
+  await page.goto("/library/collections");
   await expect(
-    page.getByRole("main").getByRole("link", { name: projectName, exact: true }),
+    page.getByRole("main").getByRole("link", { name: collectionName, exact: true }),
   ).toBeVisible();
   await page.goto("/library?import=1");
   await page
@@ -139,10 +139,10 @@ test("internal project → cards → reading → first message preserves project
   await page.getByRole("button", { name: /Spectroscopy Research/ }).click();
   const selectionBar = page.getByLabel("选中文献的操作");
   await expect(selectionBar.getByText("已选 1 篇", { exact: true })).toBeVisible();
-  await selectionBar.getByRole("button", { name: "加入 Workspace" }).click();
-  await selectionBar.getByRole("button", { name: projectName, exact: true }).click();
+  await selectionBar.getByRole("button", { name: "加入文献集合" }).click();
+  await selectionBar.getByRole("button", { name: collectionName, exact: true }).click();
   await expect(selectionBar).toHaveCount(0);
-  await page.goto(`/workspaces/${encodeURIComponent(projectId)}`);
+  await page.goto(collectionPath);
   await page.getByRole("button", { name: "列表视图" }).click();
   await expect(page.getByRole("button", { name: "列表视图" })).toHaveAttribute(
     "aria-pressed",
@@ -158,6 +158,7 @@ test("internal project → cards → reading → first message preserves project
   );
   await page.getByRole("button", { name: "全文", exact: true }).click();
   await expect(page.getByText("Spectroscopy detects molecular", { exact: false })).toBeVisible();
+  const paperId = decodeURIComponent(new URL(page.url()).pathname.split("/").at(-1) ?? "");
   const readingUrl = new URL(page.url());
   readingUrl.searchParams.set("line", "1");
   await page.goto(readingUrl.toString());
@@ -166,30 +167,31 @@ test("internal project → cards → reading → first message preserves project
     "aria-pressed",
     "true",
   );
-  expect(new URL(page.url()).searchParams.get("project")).toBe(projectId);
+  expect(new URL(page.url()).searchParams.get("collection")).toBe(collectionId);
   await page.getByRole("button", { name: "← 返回", exact: true }).click();
-  // Back to the workspace page it was opened from, view settings included.
-  await expect
-    .poll(() => new URL(page.url()).pathname)
-    .toBe(`/workspaces/${encodeURIComponent(projectId)}`);
+  // Back to the collection page it was opened from, view settings included.
+  await expect.poll(() => new URL(page.url()).pathname).toBe(collectionPath);
   await page.getByRole("button", { name: /Spectroscopy Research/ }).click();
   await page.getByRole("button", { name: "阅读文献", exact: true }).click();
   await page.getByRole("link", { name: "询问本文" }).click();
-  await expect(page.getByRole("heading", { name: projectName, exact: true })).toBeVisible();
-  await page.getByRole("textbox", { name: "Message" }).fill("总结项目中的文献");
+  // The new chat refers to the paper, and can stop referring to it before it starts.
+  await expect(page.getByRole("button", { name: /不再引用 Spectroscopy Research/ })).toBeVisible();
+  await page.getByRole("textbox", { name: "Message" }).fill("总结集合中的文献");
   await page.getByRole("button", { name: "Send", exact: true }).click();
-  await expect(page).toHaveURL(/\/sessions\/[\w-]+$/);
+  await expect(page).toHaveURL(/\/sessions\/[\w:.-]+$/);
   await expect(page.getByText("文献回答", { exact: false })).toBeVisible();
   const response = await request.get(
     `/api/sessions/${new URL(page.url()).pathname.split("/").at(-1)}`,
   );
   const session = await response.json().then((body) => body.data);
-  expect(session.projectId).toBe(projectId);
+  expect(session.references).toEqual([{ kind: "paper", id: paperId }]);
   expect(session.messages.filter((m: { role: string }) => m.role === "user")).toHaveLength(1);
   await page.reload();
   await expect(page.getByText("文献回答", { exact: false })).toHaveCount(1);
+  // Started without a project, it is listed among the sessions that belong to none.
   const nav = page.getByRole("complementary", { name: "工作台导航" });
-  await expect(nav.getByRole("link", { name: "总结项目中的文献" })).toBeVisible();
+  await nav.getByRole("button", { name: "未归属会话" }).click();
+  await expect(nav.getByRole("link", { name: /总结集合中的文献/ })).toBeVisible();
   expect(errors).toEqual([]);
 });
 
@@ -218,7 +220,7 @@ test("settings persist defaults, sidebar resizes and Skills navigation works on 
   await page.getByRole("link", { name: "新对话", exact: true }).click();
   await page.getByRole("textbox", { name: "Message" }).fill("使用默认工具");
   await page.getByRole("button", { name: "Send", exact: true }).click();
-  await expect(page).toHaveURL(/\/sessions\/[\w-]+$/);
+  await expect(page).toHaveURL(/\/sessions\/[\w:.-]+$/);
   const sessionPath = new URL(page.url()).pathname;
   await page.getByRole("link", { name: "设置", exact: true }).click();
   await page.getByRole("button", { name: /^Claude Code/ }).click();
@@ -255,18 +257,17 @@ test("settings persist defaults, sidebar resizes and Skills navigation works on 
   expect(errors).toEqual([]);
 });
 
-test("composer keeps project drafts, handles IME and recovers failed sends", async ({
+test("composer keeps each project's draft, handles IME and recovers failed sends", async ({
   page,
   request,
 }) => {
-  const projectName = `草稿项目-${Date.now()}`;
-  await page.goto("/sessions");
-  const projectResponse = await request.post(await libraryEndpoint(page, "/collections"), {
+  // Any real directory can be a project; this one is the test's own fixtures.
+  const added = await request.post("/api/projects", {
     headers: { "ScholarAIO-Hub": "true" },
-    data: { name: projectName },
+    data: { path: path.resolve("e2e/fixtures/library") },
   });
-  expect(projectResponse.status()).toBe(201);
-  const projectId = (await projectResponse.json()).data.id;
+  expect(added.status()).toBe(201);
+  const project = (await added.json()).data;
   await page.goto("/sessions");
   const input = page.getByRole("textbox", { name: "Message" });
   await input.fill("第一行");
@@ -279,9 +280,9 @@ test("composer keeps project drafts, handles IME and recovers failed sends", asy
   await expect(page).toHaveURL(/\/sessions$/);
   await page.reload();
   await expect(input).toHaveValue("第一行\nsecond line");
-  const projectUrl = `/sessions?project=${encodeURIComponent(projectId)}`;
+  const projectUrl = `/sessions?project=${encodeURIComponent(project.id)}`;
   await page.goto(projectUrl);
-  await expect(page.getByRole("heading", { name: projectName, exact: true })).toBeVisible();
+  await expect(page.getByRole("button", { name: `项目：${project.name}` })).toBeVisible();
   await expect(input).toHaveValue("");
   await input.fill("项目草稿");
   await page.goto("/sessions");
@@ -306,8 +307,10 @@ test("composer keeps project drafts, handles IME and recovers failed sends", asy
   await expect(input).toHaveValue("项目草稿");
   await page.unroute("**/api/sessions");
   await page.getByRole("button", { name: "Send", exact: true }).click();
-  await expect(page).toHaveURL(/\/sessions\/[\w-]+$/);
+  await expect(page).toHaveURL(/\/sessions\/[\w:.-]+$/);
   await expect(page.getByText("文献回答", { exact: false })).toBeVisible();
+  const created = await request.get(`/api${new URL(page.url()).pathname}`);
+  expect((await created.json()).data).toMatchObject({ cwd: project.path, projectId: project.id });
   await input.fill("已有会话草稿");
   await page.reload();
   await expect(input).toHaveValue("已有会话草稿");
@@ -327,7 +330,7 @@ test("the last prompt is corrected in the composer, replacing its turn", async (
   const replies = page.locator(".message-list").getByText("文献回答", { exact: false });
   await input.fill("第一问");
   await send.click();
-  await expect(page).toHaveURL(/\/sessions\/[\w-]+$/);
+  await expect(page).toHaveURL(/\/sessions\/[\w:.-]+$/);
   await expect(replies).toHaveCount(1);
   await input.fill("第二问");
   await send.click();
@@ -367,7 +370,7 @@ test("composer permission menu uses the provider's modes and saves settings", as
   await expect(page.getByRole("button", { name: "Default", exact: true })).toBeVisible();
   await page.getByRole("textbox", { name: "Message" }).fill("验证原权限控件");
   await page.getByRole("button", { name: "Send", exact: true }).click();
-  await expect(page).toHaveURL(/\/sessions\/[\w-]+$/);
+  await expect(page).toHaveURL(/\/sessions\/[\w:.-]+$/);
   await expect(page.getByText("文献回答", { exact: false })).toBeVisible();
   await expect(page.getByRole("button", { name: "Send", exact: true })).toBeVisible();
   const id = new URL(page.url()).pathname.split("/").at(-1);

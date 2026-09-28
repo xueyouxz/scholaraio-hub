@@ -1,27 +1,17 @@
 /**
- * How a stored session changes: a turn starting and ending, a question
- * pending, a restart, a rewind, new options. Records stay plain JSON (the
- * SessionStore reads and writes them whole); every change to their state goes
- * through these functions, so the rules for it live in one place. See
+ * How the Hub's record of a session changes: a turn starting and ending, a
+ * question pending, a restart, a rewind, new options. Records stay plain JSON
+ * (the SessionStore reads and writes them whole); every change to their state
+ * goes through these functions, so the rules for it live in one place. See
  * `.claude/topics/session-state.md`.
  */
 
-import {
-  type InputRequest,
-  type SessionAttachment,
-  type SessionInput,
-  type StoredSession,
-  UNTITLED_SESSION_TITLE,
-} from "@scholaraio-hub/shared";
-import type { NativeRewind } from "../providers/types.js";
-import type { SessionRecord } from "./SessionStore.js";
-
-/** How much of the first message becomes the session's title. */
-const TITLE_LENGTH = 60;
+import type { InputRequest, SessionDetail, SessionInput } from "@scholaraio-hub/shared";
+import type { PromptRecord, SessionRecord } from "./SessionStore.js";
 
 /** The options a user can change on a session. */
 export type SessionOptions = Pick<
-  StoredSession,
+  SessionDetail,
   "model" | "permissionMode" | "thinking" | "effort"
 >;
 
@@ -31,37 +21,29 @@ export interface TurnOutcome {
   interrupted?: boolean;
 }
 
-/**
- * The user's message starts a turn: it leaves the queue, joins the
- * transcript, and names an untitled session.
- */
-export function startTurn(
-  record: SessionRecord,
-  input: SessionInput,
-  files: SessionAttachment[],
-): void {
+/** The user's message starts a turn: it leaves the queue, and the session runs. */
+export function startTurn(record: SessionRecord, input: SessionInput): void {
   record.queuedMessages = record.queuedMessages?.filter((message) => message.id !== input.id);
-  record.messages.push({
-    id: input.id,
-    role: "user",
-    parts: [
-      ...(input.text ? [{ type: "text" as const, text: input.text }] : []),
-      ...files.map((file) => ({
-        type: "file" as const,
-        mediaType: file.mediaType,
-        filename: file.filename,
-        url: file.url,
-      })),
-    ],
-  });
   record.state = "running";
   record.error = undefined;
   record.pendingInput = undefined;
   // This turn starts with the options changed during the last one.
   record.pendingOptions = undefined;
-  if (record.title === UNTITLED_SESSION_TITLE)
-    record.title =
-      input.text.slice(0, TITLE_LENGTH) || files[0]?.filename || UNTITLED_SESSION_TITLE;
+}
+
+/**
+ * What the Hub sent as a prompt, under the provider's id for it. A provider
+ * that names the prompt only once it has taken it (Codex's turn id) moves the
+ * entry from the id the Hub first filed it under.
+ */
+export function recordPrompt(
+  record: SessionRecord,
+  promptId: string,
+  prompt: PromptRecord,
+  filedAs?: string,
+): void {
+  if (filedAs && filedAs !== promptId) delete record.prompts[filedAs];
+  record.prompts[promptId] = prompt;
 }
 
 /** The running turn asks the user something, or no longer does. */
@@ -126,17 +108,13 @@ export function changeOptions(
 }
 
 /**
- * Cut the transcript before the message at `index`, continuing the native
- * session as the provider's rewind says (none: the next turn starts afresh).
+ * The conversation was cut before the prompt `promptId`: the provider applies
+ * the cut on its next resume (`resumeAt`), or already has. What the Hub added
+ * to that prompt goes with it.
  */
-export function rewindTo(
-  record: SessionRecord,
-  index: number,
-  native: NativeRewind | undefined,
-): void {
-  record.messages = record.messages.slice(0, index);
-  record.nativeSessionId = native?.sessionId;
-  record.nativeResumeAt = native?.resumeAt;
+export function rewindTo(record: SessionRecord, promptId: string, resumeAt?: string): void {
+  delete record.prompts[promptId];
+  record.nativeResumeAt = resumeAt;
   record.contextUsage = undefined;
   record.error = undefined;
   record.state = "idle";

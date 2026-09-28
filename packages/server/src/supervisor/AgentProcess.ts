@@ -32,13 +32,15 @@ type Listener = (event: ProcessEvent) => void;
 const DEFAULT_IDLE_TIMEOUT_MS = 5 * 60 * 1000;
 
 export interface AgentProcessOptions {
-  /** Our session id — the canonical one. A process serves exactly one session. */
+  /** The session it serves (`sessionKey`), or the placeholder of one its provider has yet to name. */
   sessionId: string;
   /** The provider's id of the conversation being resumed; a new one reports its own. */
   nativeSessionId?: string;
   /** Where to resume that conversation from after a rewind; see `StartSessionOptions`. */
   resumeAt?: string;
   projectPath: string;
+  /** Directories outside the project the agent may read without asking. */
+  additionalDirectories?: string[];
   provider: ProviderName;
   permissionMode?: PermissionMode;
   /** The model asked for at launch; undefined is the provider's default. */
@@ -57,7 +59,8 @@ export interface AgentProcessOptions {
  */
 export class AgentProcess {
   readonly id = randomUUID();
-  readonly sessionId: string;
+  /** The session it serves; a new session's placeholder is replaced once its provider names it. */
+  sessionId: string;
   readonly projectPath: string;
   readonly provider: ProviderName;
   readonly model: string | undefined;
@@ -101,8 +104,9 @@ export class AgentProcess {
     const created: { process?: AgentProcess } = {};
     const session = await provider.startSession({
       cwd: options.projectPath,
+      additionalDirectories: options.additionalDirectories,
       // The same UUID reaches the provider and our own record of the message.
-      initialMessage: { ...message, uuid: randomUUID() },
+      initialMessage: { ...message, uuid: message.uuid ?? randomUUID() },
       resumeSessionId: options.nativeSessionId,
       resumeAt: options.resumeAt,
       permissionMode: options.permissionMode,
@@ -235,7 +239,7 @@ export class AgentProcess {
     }
     if (this._state.type === "idle") this.setState({ type: "in-turn" });
     // The same UUID reaches the provider and our own record of the message.
-    this.session.queue.push({ ...message, uuid: randomUUID() });
+    this.session.queue.push({ ...message, uuid: message.uuid ?? randomUUID() });
     return { success: true };
   }
 

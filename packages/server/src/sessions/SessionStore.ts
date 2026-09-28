@@ -1,147 +1,171 @@
-import { randomUUID } from "node:crypto";
-import { mkdir, readFile, readdir, rename, rm } from "node:fs/promises";
+import { mkdir, readFile, readdir, rename } from "node:fs/promises";
 import path from "node:path";
-import { type StoredSession, isProviderName, readLegacyThinking } from "@scholaraio-hub/shared";
+import {
+  type LibraryCitation,
+  type ProviderName,
+  type SessionAttachment,
+  type SessionDetail,
+  type SessionMessage,
+  type SessionMessageMetadata,
+  type SessionNotice,
+  isProviderName,
+  sessionKey,
+} from "@scholaraio-hub/shared";
 import { loggerFor } from "../logging/logger.js";
 import { writeFileAtomic } from "../utils/write-file-atomic.js";
-import { SessionNotFoundError } from "./errors.js";
 import { recoverAfterRestart } from "./session-record.js";
 
 const log = () => loggerFor("session-store");
 
-export interface SessionRecord extends StoredSession {
-  nativeSessionId?: string;
+/**
+ * What the Hub sent as one prompt, and what it added to the answer. The
+ * provider's transcript holds the prompt as the agent received it (with the
+ * library passages appended); the conversation shows it as the user wrote it.
+ */
+export interface PromptRecord {
+  /** The message id the browser sent it under. */
+  inputId: string;
+  /** The id the answer streamed under, so it keeps it once read back from the transcript. */
+  replyId: string;
+  text: string;
+  /** The files sent with it; their addresses follow from the session's id. */
+  files: Array<Omit<SessionAttachment, "url">>;
+  citations?: LibraryCitation[];
+  notices?: SessionNotice[];
+  metadata?: SessionMessageMetadata;
+  /**
+   * What the answer had shown when the turn was stopped or failed: the
+   * provider's transcript may not have kept a reply cut short.
+   */
+  reply?: SessionMessage["parts"];
+}
+
+/**
+ * What the Hub keeps about a session its provider stores: how it runs, what
+ * literature it refers to, its queue, and what the Hub added to each prompt it
+ * sent. The conversation itself is the provider's (see `readSession`).
+ */
+export interface SessionRecord
+  extends Pick<
+    SessionDetail,
+    | "provider"
+    | "nativeId"
+    | "cwd"
+    | "model"
+    | "permissionMode"
+    | "thinking"
+    | "effort"
+    | "contextUsage"
+    | "pendingOptions"
+    | "references"
+    | "createdAt"
+    | "updatedAt"
+    | "state"
+    | "error"
+    | "pendingInput"
+    | "queuedMessages"
+    | "queuePaused"
+  > {
+  /** A title the user gave it; the provider's own otherwise. */
+  title?: string;
+  /** The folder its attachments are kept in, under the data directory's `attachments/`. */
+  attachments: string;
+  /** Left out of the lists; nothing on disk changes. */
+  archived?: boolean;
+  /** Prompts the Hub sent, by the provider's id for each. */
+  prompts: Record<string, PromptRecord>;
   /**
    * Where the next launch resumes the native session from, after a rewind the
    * provider applies on resume. Cleared once a process has resumed there.
    */
   nativeResumeAt?: string;
-  /**
-   * A fork works in the directory of the session it was forked from: Claude
-   * Code files a transcript by its working directory, so the forked native
-   * session only resumes there.
-   */
-  workspaceSessionId?: string;
 }
 
-/** Application-owned records; native CLI transcripts remain owned by their provider. */
+export type NewSessionRecord = Pick<
+  SessionRecord,
+  "provider" | "nativeId" | "cwd" | "attachments"
+> &
+  Partial<Omit<SessionRecord, "provider" | "nativeId" | "cwd" | "attachments">>;
+
+/** The Hub's records of sessions, one JSON file each under `session-records/<provider>/`. */
 export class SessionStore {
   private records = new Map<string, SessionRecord>();
   private writes = new Map<string, Promise<void>>();
   constructor(readonly dataDir: string) {}
 
-  directory(id: string): string {
-    if (!/^[a-zA-Z0-9-]+$/.test(id)) throw new Error("Invalid session id");
-    return path.join(this.dataDir, "sessions", id);
-  }
-
-  /** The private working directory of a session that has no literature project. */
-  workspace(record: SessionRecord): string {
-    return path.join(this.directory(record.workspaceSessionId ?? record.id), "workspace");
+  private file(provider: ProviderName, nativeId: string): string {
+    return path.join(this.dataDir, "session-records", provider, `${nativeId}.json`);
   }
 
   async initialize(): Promise<void> {
-    const base = path.join(this.dataDir, "sessions");
+    const base = path.join(this.dataDir, "session-records");
     await mkdir(base, { recursive: true });
-    for (const entry of await readdir(base, { withFileTypes: true })) {
-      if (!entry.isDirectory()) continue;
-      const data = await this.load(base, entry.name);
-      if (!data) continue;
-      this.records.set(data.id, data);
-      if (data.thinking && data.thinking !== "off" && data.thinking !== "adaptive") {
-        Object.assign(data, readLegacyThinking(data.thinking));
-        await this.save(data);
+    for (const provider of await readdir(base)) {
+      if (!isProviderName(provider)) continue;
+      for (const entry of await readdir(path.join(base, provider))) {
+        if (!entry.endsWith(".json")) continue;
+        const record = await this.load(provider, entry.slice(0, -".json".length));
+        if (!record) continue;
+        this.records.set(sessionKey(record.provider, record.nativeId), record);
+        if (recoverAfterRestart(record)) await this.save(record);
       }
-      if (recoverAfterRestart(data)) await this.save(data);
     }
   }
 
   /**
-   * One stored session, or undefined when the directory holds none. A record
-   * that cannot be read is set aside (renamed, never deleted) so one damaged
-   * file does not keep every other session from loading.
+   * One record, or undefined when the file holds none. A record that cannot
+   * be read is set aside (renamed, never deleted) so one damaged file does
+   * not keep every other session from loading.
    */
-  private async load(base: string, name: string): Promise<SessionRecord | undefined> {
-    const file = path.join(base, name, "session.json");
-    let content: string;
-    try {
-      content = await readFile(file, "utf8");
-    } catch (error) {
-      // A deleted session whose workspace its forks still use keeps only its directory.
-      if ((error as NodeJS.ErrnoException).code === "ENOENT") return undefined;
-      throw error;
-    }
+  private async load(provider: ProviderName, nativeId: string): Promise<SessionRecord | undefined> {
+    const file = this.file(provider, nativeId);
+    const content = await readFile(file, "utf8");
     try {
       const data = JSON.parse(content) as SessionRecord;
-      if (data.id !== name || !Array.isArray(data.messages) || !isProviderName(data.provider))
+      if (data.provider !== provider || data.nativeId !== nativeId || !data.prompts)
         throw new Error("the record does not describe this session");
       return data;
     } catch (error) {
       const aside = `${file}.corrupt-${Date.now()}`;
       await rename(file, aside);
-      log().error({ err: error, sessionId: name, movedTo: aside }, "Unreadable session set aside");
+      log().error({ err: error, file, movedTo: aside }, "Unreadable session record set aside");
       return undefined;
     }
   }
 
-  get(id: string): SessionRecord {
-    const record = this.records.get(id);
-    if (!record) throw new SessionNotFoundError(id);
-    return record;
+  /** The Hub's record of a session, if it has one. */
+  find(key: string): SessionRecord | undefined {
+    return this.records.get(key);
   }
 
-  list(): StoredSession[] {
-    return [...this.records.values()]
-      .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))
-      .map((record) => {
-        const {
-          nativeSessionId: _native,
-          nativeResumeAt: _resumeAt,
-          workspaceSessionId: _workspace,
-          messages: _messages,
-          ...summary
-        } = record;
-        return { ...structuredClone(summary), messages: [] };
-      });
+  /** Records of sessions the user archived. */
+  archived(): string[] {
+    return [...this.records.entries()].flatMap(([key, record]) => (record.archived ? [key] : []));
   }
 
-  toStoredSession(record: SessionRecord): StoredSession {
-    const {
-      nativeSessionId: _native,
-      nativeResumeAt: _resumeAt,
-      workspaceSessionId: _workspace,
-      ...visible
-    } = record;
-    return structuredClone(visible);
-  }
-
-  async create(
-    input: Pick<
-      StoredSession,
-      | "title"
-      | "provider"
-      | "paperIds"
-      | "model"
-      | "projectId"
-      | "permissionMode"
-      | "thinking"
-      | "effort"
-    >,
-  ): Promise<SessionRecord> {
+  /** Start keeping a record of a session, or return the one kept already. */
+  async create(input: NewSessionRecord): Promise<SessionRecord> {
+    const key = sessionKey(input.provider, input.nativeId);
+    const existing = this.records.get(key);
+    if (existing) return existing;
     const now = new Date().toISOString();
     const record: SessionRecord = {
-      ...input,
-      id: randomUUID(),
-      createdAt: now,
-      updatedAt: now,
-      readOnly: false,
+      references: [],
+      prompts: {},
       state: "idle",
-      messages: [],
+      createdAt: now,
+      ...input,
+      updatedAt: now,
     };
-    await mkdir(path.join(this.directory(record.id), "workspace"), { recursive: true });
+    this.records.set(key, record);
     await this.save(record);
-    this.records.set(record.id, record);
     return record;
+  }
+
+  /** Keep a record made elsewhere (a new session, once its provider named it). */
+  keep(record: SessionRecord): Promise<void> {
+    this.records.set(sessionKey(record.provider, record.nativeId), record);
+    return this.save(record);
   }
 
   /**
@@ -151,35 +175,24 @@ export class SessionStore {
    */
   save(record: SessionRecord): Promise<void> {
     record.updatedAt = new Date().toISOString();
+    const key = sessionKey(record.provider, record.nativeId);
     const content = JSON.stringify(record);
-    const file = path.join(this.directory(record.id), "session.json");
-    const previous = this.writes.get(record.id) ?? Promise.resolve();
-    const next = previous.then(() => writeFileAtomic(file, content));
+    const file = this.file(record.provider, record.nativeId);
+    const previous = this.writes.get(key) ?? Promise.resolve();
+    const next = previous.then(async () => {
+      await mkdir(path.dirname(file), { recursive: true });
+      await writeFileAtomic(file, content);
+    });
     // What later writes wait on: settled either way, since `next`'s caller has its failure.
     const settled = next.then(
       () => undefined,
       () => undefined,
     );
-    this.writes.set(record.id, settled);
+    this.writes.set(key, settled);
     void settled.then(() => {
-      if (this.writes.get(record.id) === settled) this.writes.delete(record.id);
+      if (this.writes.get(key) === settled) this.writes.delete(key);
     });
     return next;
-  }
-
-  /**
-   * Forget a session and remove its files. When forks still work in its
-   * directory, the directory stays and only the record goes. Provider-native
-   * transcripts are the provider's and are left alone.
-   */
-  async remove(id: string): Promise<void> {
-    this.get(id);
-    // Only wait for a pending write to settle; its caller has its outcome.
-    await this.writes.get(id);
-    this.records.delete(id);
-    const shared = [...this.records.values()].some((record) => record.workspaceSessionId === id);
-    if (shared) await rm(path.join(this.directory(id), "session.json"), { force: true });
-    else await rm(this.directory(id), { recursive: true, force: true });
   }
 
   async flush(): Promise<void> {

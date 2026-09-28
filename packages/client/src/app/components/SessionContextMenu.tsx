@@ -1,4 +1,4 @@
-import { GitBranch, Pencil, Trash2 } from "lucide-react";
+import { Archive, GitBranch, Pencil } from "lucide-react";
 import {
   type KeyboardEvent,
   type ReactNode,
@@ -12,7 +12,8 @@ import { createPortal } from "react-dom";
 export interface SessionMenuActions {
   onRename(): void;
   onFork(): void;
-  onDelete(): void;
+  /** Leave it out of the lists; the provider's own files stay. */
+  onArchive(): void;
   /** A running session cannot be forked until its turn ends. */
   forkDisabled?: boolean;
 }
@@ -27,7 +28,7 @@ export function SessionContextMenu({
   onClose,
   onRename,
   onFork,
-  onDelete,
+  onArchive,
   forkDisabled = false,
 }: { x: number; y: number; onClose(): void } & SessionMenuActions) {
   const menu = useRef<HTMLDivElement>(null);
@@ -103,7 +104,7 @@ export function SessionContextMenu({
     >
       {item("重命名", <Pencil size={13} aria-hidden="true" />, onRename)}
       {item("分叉", <GitBranch size={13} aria-hidden="true" />, onFork, false, forkDisabled)}
-      {item("删除", <Trash2 size={13} aria-hidden="true" />, onDelete, true)}
+      {item("归档", <Archive size={13} aria-hidden="true" />, onArchive)}
     </div>,
     document.body,
   );

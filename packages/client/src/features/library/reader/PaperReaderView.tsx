@@ -149,7 +149,7 @@ function Reader({
           className="ml-auto shrink-0 p-1.5 rounded-full text-on-surface-variant hover:text-on-surface hover:bg-surface-container"
           aria-label="询问本文"
           title="询问本文"
-          to={newSessionUrl(params.get("project") ?? undefined, [paper.id])}
+          to={newSessionUrl({ references: [{ kind: "paper", id: paper.id }] })}
         >
           <MessageSquare size={14} />
         </Link>

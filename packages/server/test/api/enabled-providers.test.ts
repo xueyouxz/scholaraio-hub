@@ -31,7 +31,11 @@ describe("ENABLED_PROVIDERS", () => {
   });
 
   const create = (body: object) =>
-    server.app.request("/api/sessions", { method: "POST", headers, body: JSON.stringify(body) });
+    server.app.request("/api/sessions", {
+      method: "POST",
+      headers,
+      body: JSON.stringify({ message: { id: crypto.randomUUID(), text: "hello" }, ...body }),
+    });
 
   it("lists only the enabled providers", async () => {
     const body = await (await server.app.request("/api/providers")).json();
@@ -41,19 +45,20 @@ describe("ENABLED_PROVIDERS", () => {
   });
 
   it("starts a session without a provider on the first enabled one", async () => {
-    const response = await create({ paperIds: [] });
+    const response = await create({});
     expect(response.status).toBe(201);
     expect((await response.json()).data.provider).toBe("codex");
   });
 
   it("refuses a new session on a provider that is not enabled", async () => {
-    const response = await create({ provider: "claude", paperIds: [] });
+    const response = await create({ provider: "claude" });
     expect(response.status).toBe(422);
     expect((await response.json()).message).toContain("claude");
   });
 
   it("does not run a session whose provider was disabled since", async () => {
-    const { id } = (await (await create({ paperIds: [] })).json()).data;
+    const { id } = (await (await create({})).json()).data;
+    await expect.poll(async () => (await server.sessions.detail(id)).state).toBe("idle");
     await server.close();
     server = createTestApp({
       dataDir: root,
@@ -61,7 +66,7 @@ describe("ENABLED_PROVIDERS", () => {
       provider: new WorkbenchProvider("claude"),
     });
     await server.ready;
-    const response = await server.app.request(`/api/sessions/${id}/messages`, {
+    const response = await server.app.request(`/api/sessions/${encodeURIComponent(id)}/messages`, {
       method: "POST",
       headers,
       body: JSON.stringify({ id: "m1", text: "hello" }),

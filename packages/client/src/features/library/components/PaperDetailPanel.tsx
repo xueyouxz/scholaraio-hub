@@ -9,17 +9,22 @@ import { StatusBadge } from "./StatusBadge";
 
 interface Props {
   /** The workspace the panel is shown in; scopes references and the reader. */
-  projectId?: string;
+  collectionId?: string;
   paper: PaperSummary | null;
   onClose: () => void;
 }
 
-export function PaperDetailPanel({ paper, projectId, onClose }: Props) {
+export function PaperDetailPanel({ paper, collectionId, onClose }: Props) {
   const navigate = useNavigate();
   const location = useLocation();
   // Every paper opened from here comes back to this page, in this workspace.
   const openReader = (paperId: string) =>
-    navigate(readerUrl(paperId, { projectId, returnTo: `${location.pathname}${location.search}` }));
+    navigate(
+      readerUrl(paperId, {
+        collectionId,
+        returnTo: `${location.pathname}${location.search}`,
+      }),
+    );
   const queryClient = useQueryClient();
   const [wsOpen, setWsOpen] = useState(false);
   const [addedTo, setAddedTo] = useState<Set<string>>(new Set());
@@ -41,10 +46,10 @@ export function PaperDetailPanel({ paper, projectId, onClose }: Props) {
   });
 
   const addPaperMutation = useMutation({
-    mutationFn: ({ projectId, paperId }: { projectId: string; paperId: string }) =>
-      libraryApi.collectionPapers(projectId, [paperId], "add"),
+    mutationFn: ({ collectionId, paperId }: { collectionId: string; paperId: string }) =>
+      libraryApi.collectionPapers(collectionId, [paperId], "add"),
     onSuccess: (_res, variables) => {
-      setAddedTo((prev) => new Set([...prev, variables.projectId]));
+      setAddedTo((prev) => new Set([...prev, variables.collectionId]));
       queryClient.invalidateQueries({ queryKey: ["library", "collections"] });
       queryClient.invalidateQueries({
         queryKey: ["library", "collections"],
@@ -60,13 +65,13 @@ export function PaperDetailPanel({ paper, projectId, onClose }: Props) {
   });
   const images = imageQuery.data?.images ?? (paper?.coverImage ? [paper.coverImage] : []);
   const referencesQuery = useQuery({
-    queryKey: ["library", "references", paper?.id, projectId],
-    queryFn: ({ signal }) => libraryApi.references(paper?.id ?? "", signal, projectId),
+    queryKey: ["library", "references", paper?.id, collectionId],
+    queryFn: ({ signal }) => libraryApi.references(paper?.id ?? "", signal, collectionId),
     enabled: !!paper,
   });
   const citingQuery = useQuery({
-    queryKey: ["library", "citing", paper?.id, projectId],
-    queryFn: ({ signal }) => libraryApi.citing(paper?.id ?? "", signal, projectId),
+    queryKey: ["library", "citing", paper?.id, collectionId],
+    queryFn: ({ signal }) => libraryApi.citing(paper?.id ?? "", signal, collectionId),
     enabled: !!paper,
   });
   const references = referencesQuery.data?.references ?? [];
@@ -95,7 +100,7 @@ export function PaperDetailPanel({ paper, projectId, onClose }: Props) {
     return () => document.removeEventListener("keydown", handler);
   }, [paper, wsOpen, onClose]);
   const addingTo = addPaperMutation.isPending
-    ? (addPaperMutation.variables?.projectId ?? null)
+    ? (addPaperMutation.variables?.collectionId ?? null)
     : null;
 
   useEffect(() => {
@@ -110,7 +115,7 @@ export function PaperDetailPanel({ paper, projectId, onClose }: Props) {
   const handleAdd = (targetProjectId: string) => {
     if (!paper || addingTo) return;
     setWsOpen(false);
-    addPaperMutation.mutate({ projectId: targetProjectId, paperId: paper.id });
+    addPaperMutation.mutate({ collectionId: targetProjectId, paperId: paper.id });
   };
 
   return (
@@ -347,12 +352,12 @@ export function PaperDetailPanel({ paper, projectId, onClose }: Props) {
                 className="flex items-center justify-center gap-2 w-full py-2.5 rounded-xl signature-gradient text-on-primary text-xs font-semibold disabled:opacity-50 border-0 cursor-pointer"
               >
                 <FolderPlus className="w-3.5 h-3.5" />
-                {addingTo ? `添加到 ${addingTo}…` : "添加到文献项目"}
+                {addingTo ? `添加到 ${addingTo}…` : "添加到文献集合"}
               </button>
               {wsOpen ? (
                 <div className="absolute bottom-full mb-2 left-0 right-0 bg-surface-container-highest border border-outline-variant/20 rounded-xl p-1.5 shadow-xl z-50 max-h-44 overflow-y-auto">
                   {workspaces.length === 0 ? (
-                    <p className="text-xs text-on-surface-variant px-3 py-2">暂无工作区</p>
+                    <p className="text-xs text-on-surface-variant px-3 py-2">暂无文献集合</p>
                   ) : (
                     workspaces.map((ws) => (
                       <button

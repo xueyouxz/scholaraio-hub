@@ -9,7 +9,7 @@
 | Layer | Where | States |
 | --- | --- | --- |
 | **Process** (one live CLI worker) | `ProcessState` in `packages/server/src/supervisor/AgentProcess.ts` | `idle`, `in-turn`, `waiting-input`, `terminated` |
-| **Session** (what is stored and shown) | `StoredSession.state` in `packages/shared/src/session/StoredSession.ts` | `idle`, `running`, `waiting-input`, `interrupted`, `error` |
+| **Session** (what is recorded and shown) | `SessionDetail.state` in `packages/shared/src/session/session.ts` | `idle`, `running`, `waiting-input`, `interrupted`, `error` |
 
 `SessionService` is the only consumer of process events for a session. Every change to
 session state goes through the rules in `packages/server/src/sessions/session-record.ts`
@@ -30,18 +30,20 @@ signals (an open stream, a recent poll):
 | `idle` / `interrupted` / `error` | send | options change directly |
 | `running` | queue (with text) or stop (empty) | options apply to the next turn (`pendingOptions`) |
 | `waiting-input` | the pending question/approval (`InputRequestPrompt`) | stop |
-| read-only session | none | sessions imported by earlier versions |
+
+A session another program (a CLI in a terminal) is writing to is marked `external` for
+half a minute; the Hub warns but does not lock it.
 
 - **Queue, no steering**: a session runs one turn at a time. A message sent while a run is
   in progress is kept in the session's persisted queue (`SessionService.enqueue`) and sent
   when the run ends; nothing is added to a running turn.
-- **Edit**: only the session's last prompt, and only while nothing runs. The prompt comes
+- **Edit**: only the session's last prompt, never its first, and only while nothing runs. The prompt comes
   back into the composer; sending the correction (a chat message with `replaces`) cuts
   that turn and runs the new one in its place in one request, as Claude Code's own edit
   of a sent prompt does. There is no separate undo. The cut is the provider's own, in
   place (`AgentProvider.rewindSession`: Claude resumes at it with `resumeSessionAt`,
-  Codex uses `thread/revert`), so the native id and its prompt cache stay; only a legacy
-  Codex thread is forked instead. The live process is released first. Files the agent
+  Codex uses `thread/revert`), so the native id and its prompt cache stay; a legacy Codex
+  thread, which can only be forked, is refused. The live process is released first. Files the agent
   changed are never restored.
 - **Permission mode**: a change reaches the live process (`AgentProcess.setPermissionMode`),
   which also applies it on the provider's side where it has one — Codex sends the matching
@@ -58,8 +60,10 @@ signals (an open stream, a recent poll):
 - On the open run stream, a transient `data-session-state` chunk carries `state` and
   `pendingInput` whenever they change; `useSessionChat` merges it into the snapshot query.
 - When no stream is open, the snapshot query polls while the session is active.
-- Re-attaching replays the current reply from its beginning; the snapshot omits that reply
-  so nothing is appended twice.
+- Re-attaching replays the current reply from its beginning; the snapshot ends before that
+  turn (it shows the running prompt only) so nothing is appended twice.
+- Project and session lists refresh on `GET /api/events` (a `sessions` event whenever a
+  provider writes a session file or a Hub turn starts or ends).
 
 ## Invariants
 
@@ -69,8 +73,8 @@ signals (an open stream, a recent poll):
 - The supervisor terminates an `in-turn` process with no provider events past a
   provider-specific threshold (5 min; 60 min for Codex), and an `idle` one after
   `IDLE_TIMEOUT`. Neither changes the stored conversation.
-- Our session id is canonical; provider-native ids stay internal (see
-  [`../rules/server.md`](../rules/server.md)).
+- A session's id is its provider's (see [`../rules/server.md`](../rules/server.md)); the
+  conversation is read from the provider, and the Hub never keeps a copy of it.
 
 ## Where this lives
 

@@ -23,7 +23,7 @@ describe("workbench security middleware wiring", () => {
     await rm(root, { recursive: true, force: true });
   });
   it("rejects DNS rebinding on the session and provider APIs", async () => {
-    for (const url of ["/api/providers", "/api/sessions"]) {
+    for (const url of ["/api/providers", "/api/projects"]) {
       expect((await server.app.request(url, { headers: { host: "evil.com" } })).status).toBe(403);
     }
   });
@@ -31,7 +31,7 @@ describe("workbench security middleware wiring", () => {
     const request = {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ provider: "claude" }),
+      body: JSON.stringify({ provider: "claude", message: { id: "first", text: "hello" } }),
     };
     expect((await server.app.request("/api/sessions", request)).status).toBe(403);
     expect(
@@ -44,7 +44,7 @@ describe("workbench security middleware wiring", () => {
     ).toBe(201);
   });
   it("allows reads without the write header and removes arbitrary filesystem access", async () => {
-    expect((await server.app.request("/api/sessions")).status).toBe(200);
+    expect((await server.app.request("/api/projects")).status).toBe(200);
     expect((await server.app.request("/hub/fs/browse?path=/tmp")).status).toBe(404);
   });
 });

@@ -41,14 +41,21 @@ an owner and a teardown path. Full review checklist:
 - UI controls that trigger jobs must be disabled while any job of that kind is pending or
   running.
 
-## Session Identity (canonical id)
+## Session Identity (the provider's id)
 
-Our own session id is the **canonical** user-facing identifier. Provider-native ids
-(e.g. the Codex thread id in
-`src/providers/codex/protocol/generated/ThreadId.ts`) may be stored and passed back
-for resume/export/debug, but must **never silently replace** our session id in URLs,
-metadata, payloads, or UI copy. Session and process states, and which controls they
-allow: [`../topics/session-state.md`](../topics/session-state.md).
+Sessions belong to their providers: Claude Code and Codex keep each conversation, and
+sessions run from a terminal are listed beside the Hub's own. A session's id is therefore
+the provider's id for it, written `sessionKey(provider, nativeId)` (`claude:<id>`,
+`codex:<thread id>`, `packages/shared/src/session/session.ts`) in URLs, payloads and
+records. The Hub adds no id of its own; its record of a session (`SessionStore`) is keyed
+by that id. A new session is started with its first message and answered under the id its
+provider gives it; until then the supervisor holds it under a placeholder that never leaves
+the server. Session and process states, and which controls they allow:
+[`../topics/session-state.md`](../topics/session-state.md).
+
+The conversation is read from the provider (`AgentProvider.readSession`), never copied:
+the Hub keeps only what it adds to it (the prompt as the user wrote it, citations,
+notices, a reply cut short, options, references, the queue).
 
 ## Provider Environment Isolation
 

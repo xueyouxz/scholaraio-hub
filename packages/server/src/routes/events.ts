@@ -12,12 +12,13 @@ export function createEventRoutes({ events }: { events: HubEvents }) {
   const routes = new Hono<AppEnv>();
   routes.get("/", (c) =>
     streamSSE(c, async (stream) => {
-      const send = (event: string, data: string) =>
-        stream.writeSSE({ event, data }).catch((error) => {
+      const send = (message: { data: string; event?: string }) =>
+        stream.writeSSE(message).catch((error) => {
           loggerFor("events").debug({ err: error }, "Event stream write failed");
         });
-      const unsubscribe = events.subscribe((event) => void send(event.type, JSON.stringify(event)));
-      const heartbeat = setInterval(() => void send("ping", ""), HEARTBEAT_MS);
+      // Changes are plain messages, as the library service sends its own.
+      const unsubscribe = events.subscribe((event) => void send({ data: JSON.stringify(event) }));
+      const heartbeat = setInterval(() => void send({ event: "ping", data: "" }), HEARTBEAT_MS);
       // Held open until the page goes away or the server closes.
       await new Promise<void>((resolve) => {
         if (events.closed.aborted) resolve();

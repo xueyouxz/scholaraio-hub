@@ -8,17 +8,17 @@ import { createTestApp } from "./helpers/app.js";
 import { offlineLibrary } from "./helpers/library.js";
 
 const HEADERS = { "Content-Type": "application/json", "ScholarAIO-Hub": "true" };
+/** A new session and its first message. */
+const NEW_SESSION = JSON.stringify({ message: { id: "first", text: "hello" } });
 
 describe("统一 HTTP 契约", () => {
   let root: string;
   let server: ReturnType<typeof createTestApp>;
+  let provider: WorkbenchProvider;
   beforeEach(async () => {
     root = await mkdtemp(join(tmpdir(), "hub-http-"));
-    server = createTestApp({
-      dataDir: root,
-      library: offlineLibrary(),
-      provider: new WorkbenchProvider("claude"),
-    });
+    provider = new WorkbenchProvider("claude");
+    server = createTestApp({ dataDir: root, library: offlineLibrary(), provider });
     await server.ready;
   });
   afterEach(async () => {
@@ -31,7 +31,7 @@ describe("统一 HTTP 契约", () => {
     const response = await server.app.request("/api/sessions", {
       method: "POST",
       headers: HEADERS,
-      body: "{}",
+      body: NEW_SESSION,
     });
     const body = await response.json();
     expect(response.status).toBe(201);
@@ -40,11 +40,17 @@ describe("统一 HTTP 契约", () => {
     expect(body.message).toBe("success");
     expect(body.id).toBe(response.headers.get("X-Request-ID"));
     expect(body.id).not.toBe(body.data.id);
-    expect(response.headers.get("Location")).toBe(`/api/sessions/${body.data.id}`);
-    const next = await server.app.request("/api/sessions");
+    expect(response.headers.get("Location")).toBe(
+      `/api/sessions/${encodeURIComponent(body.data.id)}`,
+    );
+    const next = await server.app.request("/api/projects");
     expect(next.headers.get("X-Request-ID")).not.toBe(body.id);
     expect(await next.json()).toMatchObject({ code: "success", message: "success" });
-    const stream = await server.app.request(`/api/sessions/${body.data.id}/stream`);
+    const path = `/api/sessions/${encodeURIComponent(body.data.id)}`;
+    await expect
+      .poll(async () => (await (await server.app.request(path)).json()).data.state)
+      .toBe("idle");
+    const stream = await server.app.request(`${path}/stream`);
     expect(stream.status).toBe(204);
     expect(await stream.text()).toBe("");
     expect(stream.headers.get("X-Request-ID")).toBeTruthy();
@@ -66,7 +72,7 @@ describe("统一 HTTP 契约", () => {
     expect(payload.id).toBe(response.headers.get("X-Request-ID"));
     if (code === "VALIDATION_FAILED")
       expect(payload.data.issues[0]).toMatchObject({ location: "body", path: ["provider"] });
-    expect(server.store.list()).toHaveLength(0);
+    expect(provider.calls).toHaveLength(0);
   });
 
   it("无请求体的操作接受空流且不要求媒体类型", async () => {
@@ -139,21 +145,21 @@ describe("统一 HTTP 契约", () => {
     const created = await server.app.request("/api/sessions", {
       method: "POST",
       headers: HEADERS,
-      body: "{}",
+      body: NEW_SESSION,
     });
     const session = (await created.json()).data;
     const missing = await server.app.request(
-      `/api/sessions/${session.id}/fs/file?path=missing.txt`,
+      `/api/sessions/${encodeURIComponent(session.id)}/fs/file?path=missing.txt`,
     );
     expect(missing.status).toBe(404);
     expect((await missing.json()).code).toBe("RESOURCE_NOT_FOUND");
   });
 
   it("内部解析错误保持 500，审批失效返回独立业务码", async () => {
-    vi.spyOn(server.store, "list").mockImplementation(() => {
+    vi.spyOn(server.catalog, "projects").mockImplementation(() => {
       throw new SyntaxError("private storage detail");
     });
-    const failed = await server.app.request("/api/sessions");
+    const failed = await server.app.request("/api/projects");
     expect(failed.status).toBe(500);
     expect((await failed.json()).message).not.toContain("private storage detail");
     const approval = await server.app.request("/api/sessions/unknown/input", {

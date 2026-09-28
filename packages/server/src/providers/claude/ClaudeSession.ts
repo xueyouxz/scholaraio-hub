@@ -85,6 +85,9 @@ export class ClaudeSession implements AgentSession {
         prompt: claudePrompt(this.queue),
         options: {
           cwd: options.cwd,
+          ...(options.additionalDirectories?.length
+            ? { additionalDirectories: options.additionalDirectories }
+            : {}),
           resume: options.resumeSessionId,
           ...(options.resumeSessionId && options.resumeAt
             ? { resumeSessionAt: options.resumeAt }

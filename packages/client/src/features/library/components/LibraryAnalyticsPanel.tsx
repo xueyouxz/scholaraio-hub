@@ -345,13 +345,13 @@ function LassoList({
               selection.selectMany(papers.slice(0, SELECTION_CAP).map((paper) => paper.id))
             }
             className="inline-flex items-center gap-1.5 rounded-full bg-surface-container-high px-3 py-1.5 text-xs font-medium text-on-surface active:scale-95"
-            title="加入下方操作栏，可导出或加入 Workspace"
+            title="加入下方操作栏，可导出或加入文献集合"
           >
             <CheckSquare className="w-3.5 h-3.5" aria-hidden="true" />
             选中这些
           </button>
           <Link
-            to={newSessionUrl(undefined, askIds)}
+            to={newSessionUrl({ references: askIds.map((id) => ({ kind: "paper" as const, id })) })}
             className="inline-flex items-center gap-1.5 rounded-full bg-surface-container-high px-3 py-1.5 text-xs font-medium text-on-surface active:scale-95"
           >
             <MessageSquare className="w-3.5 h-3.5" aria-hidden="true" />

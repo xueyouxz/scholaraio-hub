@@ -1,4 +1,4 @@
-import type { StoredSession } from "@scholaraio-hub/shared";
+import type { SessionDetail } from "@scholaraio-hub/shared";
 import { BookOpen, FolderTree } from "lucide-react";
 
 export type SessionPanel = "files" | "papers";
@@ -12,18 +12,19 @@ export function SessionHeader({
   running,
   inset,
   panel,
-  hasPapers,
+  references,
   onTogglePanel,
 }: {
   title: string;
-  provider: StoredSession["provider"];
+  provider: SessionDetail["provider"];
   model?: string;
-  state: StoredSession["state"];
+  state: SessionDetail["state"];
   running: boolean;
   /** Leave room for the navigation button overlaid on narrow screens. */
   inset: boolean;
   panel?: SessionPanel;
-  hasPapers: boolean;
+  /** How many references the session answers from, shown on the references button. */
+  references: number;
   onTogglePanel: (panel: SessionPanel) => void;
 }) {
   const label = state === "waiting-input" ? "needs input" : running ? "running" : "idle";
@@ -58,18 +59,21 @@ export function SessionHeader({
         >
           <FolderTree size={15} />
         </button>
-        {hasPapers ? (
-          <button
-            type="button"
-            aria-label="项目文献"
-            title="项目文献"
-            aria-pressed={panel === "papers"}
-            onClick={() => onTogglePanel("papers")}
-            className={panelButton(panel === "papers")}
-          >
-            <BookOpen size={15} />
-          </button>
-        ) : null}
+        <button
+          type="button"
+          aria-label="引用的文献"
+          title={references ? `引用的文献（${references}）` : "引用的文献"}
+          aria-pressed={panel === "papers"}
+          onClick={() => onTogglePanel("papers")}
+          className={`${panelButton(panel === "papers")} relative`}
+        >
+          <BookOpen size={15} />
+          {references ? (
+            <span className="absolute -top-1 -right-1 min-w-[14px] h-[14px] px-0.5 rounded-full bg-primary text-on-primary text-[9px] font-mono leading-[14px] text-center">
+              {references}
+            </span>
+          ) : null}
+        </button>
       </div>
     </header>
   );

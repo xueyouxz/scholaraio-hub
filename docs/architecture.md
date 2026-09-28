@@ -12,15 +12,22 @@
 - **server/routes**：校验、响应、二进制文件流和订阅连接。挂载 `/api/sessions`、`/api/providers` 等应用接口；浏览器直接调用 Python 文献接口。
 - **启动器**（`packages/cli`）：解析 profile，先启动 Python 文献服务并等它就绪，再启动 server；负责两者的
   重启与关闭。server 不启动、不重启、不配置 Python。
-- **LibraryClient**（`server/src/lib/`）：server 调用文献服务 API 的客户端（会话范围、上下文、项目目录），
+- **LibraryClient**（`server/src/lib/`）：server 调用文献服务 API 的客户端（引用范围校验、检索上下文），
   地址来自启动器传入的 `LIBRARY_URL`。
 - **Python HubLibrary**（`scholaraio/hub/`）：文件、元数据、哈希去重、解析任务、索引和检索，复用上游
   stores 与 chunks/index 服务。业务代码与运行数据完全分离。分层见下节。
-- **SessionStore**：应用自己的会话 ID、关联文献、显示消息和私有的原生 ID，每个会话一个 JSON，原子写入。
-  会话按项目 id 关联文献项目。项目 id 是项目目录里标识文件中的 UUID，改名不变；文献服务独自改名、归档项目，
-  会话下次使用时跟上（旧记录里的项目名换成 id，项目已归档则回到会话自己的目录），server 启动时也会一次性对齐。
-- **SessionService**：组织文献上下文与本轮输入、防重复提交、排队与审批；每一轮由一个 **Turn** 负责
-  流式输出、断线重放、定时落盘和收尾。
+- **会话归 Provider 所有**：Claude Code 与 Codex 自己保存每段对话，会话 id 就是它们的原生 id
+  （`claude:<id>`、`codex:<thread id>`）；终端里跑的会话与 Hub 发起的会话一起列出。**ProjectCatalog**
+  （`server/src/projects/`）用各 Provider 自己的列表接口（Claude Agent SDK `listSessions`、Codex app-server
+  `thread/list`）按工作目录把会话分组为项目；目录已不存在的会话不列出，临时目录、Hub 数据目录和两个桌面应用的
+  无文件夹会话归入「未归属会话」。**HistoryWatcher** 监听两者的会话文件，变更经 `GET /api/events` 推给页面，
+  并标出正被终端使用的会话。
+- **SessionStore**：Hub 对某个会话的附加记录，按原生 id 存：引用的文献、用户原样写下的提示、引用片段、
+  提示、被中断的半截回答、执行选项与队列。对话本身每次从 Provider 读取（`readSession`），经与实时相同的
+  adapter 回放成 `AgentEvent`。新会话连同首条消息一起创建，Provider 给出 id 后才对外可见。
+- **SessionService**：按会话引用的文献集合与单篇文献组织检索上下文、防重复提交、排队与审批；每一轮由一个
+  **Turn** 负责流式输出、断线重放和收尾，并把 Hub 附加的内容记到对应的原生提示 id 下。
+- **文献集合**：文献服务 `/collections` 下的一组论文，只作为会话可 `@` 引用的文献范围，不再是 agent 的工作目录。
 - **Supervisor / Provider**：CLI 协议、进程生命周期、登录、原生恢复、中断与权限。
 
 依赖方向：UI → HTTP → 文献 / 会话服务；会话服务调用文献服务和 Supervisor。文献模块不管理对话，CLI 原始协议不进入浏览器。

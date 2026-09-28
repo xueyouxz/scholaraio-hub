@@ -1,7 +1,7 @@
 import { FolderPlus, Loader2, Plus } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import type { KeyboardEvent as ReactKeyboardEvent } from "react";
-import { workspaceNameProblem } from "../workspaceName";
+import { collectionNameProblem } from "../collectionName";
 
 interface WorkspaceOption {
   id: string;
@@ -16,7 +16,7 @@ interface Props {
   onCreateAndAdd: (newName: string) => void;
 }
 
-export function AddToWorkspaceMenu({
+export function AddToCollectionMenu({
   workspaces,
   pending,
   selectedCount,
@@ -44,7 +44,7 @@ export function AddToWorkspaceMenu({
   const errorMessage =
     trimmed === ""
       ? null
-      : (workspaceNameProblem(trimmed) ?? (nameDuplicate ? "名称已存在" : null));
+      : (collectionNameProblem(trimmed) ?? (nameDuplicate ? "名称已存在" : null));
   const canCreate = trimmed !== "" && !errorMessage && !pending;
 
   const handleCreate = () => {
@@ -75,7 +75,7 @@ export function AddToWorkspaceMenu({
         ) : (
           <FolderPlus className="w-3.5 h-3.5" />
         )}
-        加入 Workspace
+        加入文献集合
       </button>
 
       {open ? (
@@ -122,7 +122,7 @@ export function AddToWorkspaceMenu({
           </div>
 
           {workspaces.length === 0 ? (
-            <p className="text-xs text-on-surface-variant px-3 py-2">暂无已有 workspace</p>
+            <p className="text-xs text-on-surface-variant px-3 py-2">暂无已有文献集合</p>
           ) : (
             workspaces.map((ws) => (
               <button

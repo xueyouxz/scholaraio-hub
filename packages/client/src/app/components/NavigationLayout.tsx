@@ -1,6 +1,7 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
 import { Outlet, useLocation, useOutletContext } from "react-router-dom";
 import { readStoredNumber, writeStored } from "../../core/browserStorage";
+import { useHubEvents } from "../../core/hubEvents";
 import { SIDEBAR_WIDTH_COLLAPSED, Sidebar } from "./Sidebar";
 
 const DESKTOP_BREAKPOINT = 1100;
@@ -37,6 +38,8 @@ function getIsDesktop() {
 }
 
 export function NavigationLayout() {
+  // Lists of projects and sessions stay current while the app is open.
+  useHubEvents();
   const location = useLocation();
   const [isDesktop, setIsDesktop] = useState(getIsDesktop);
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);

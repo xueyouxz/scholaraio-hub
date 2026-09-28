@@ -5,6 +5,8 @@ import {
   PROVIDER_NAMES,
   SendSessionMessageSchema,
   SessionOptionsSchema,
+  SessionReferencesSchema,
+  SessionUpdateSchema,
 } from "@scholaraio-hub/shared";
 import { createUIMessageStreamResponse } from "ai";
 import { Hono, type HonoRequest } from "hono";
@@ -25,7 +27,6 @@ import type { SessionFiles } from "../sessions/SessionFiles.js";
 import type { SessionService } from "../sessions/SessionService.js";
 
 const MULTIPART_OVERHEAD_BYTES = 64 * 1024;
-const RENAME_SCHEMA = z.object({ title: z.string().trim().min(1).max(200) }).strict();
 const FORK_SCHEMA = z.object({ messageId: z.string().min(1).optional() });
 const QUEUE_SCHEMA = z.discriminatedUnion("action", [
   z.object({ action: z.literal("resume") }),
@@ -68,7 +69,10 @@ export interface SessionRoutesDeps {
   settings?: ServerSettingsService;
 }
 
-/** 创建会话领域接口，提供记录、执行、交互、历史和文件操作。 */
+/**
+ * 创建会话领域接口，提供执行、交互、历史和文件操作。会话 id 是 `sessionKey`：
+ * Provider 名加它自己的会话 id（如 `claude:<id>`）。会话列表按项目提供（`/api/projects`）。
+ */
 export function createSessionRoutes({
   sessions: service,
   attachments,
@@ -77,32 +81,38 @@ export function createSessionRoutes({
 }: SessionRoutesDeps) {
   const routes = new Hono<AppEnv>();
 
-  // 命令发现：全局命令与会话命令。
+  // 命令发现：新会话（按 Provider 与目录）与已有会话的命令。
   routes.get(
     "/commands",
-    validate("query", z.object({ provider: z.enum(PROVIDER_NAMES).optional() })),
-    async (c) =>
-      success(c, { commands: await service.commands(undefined, c.req.valid("query").provider) }),
+    validate(
+      "query",
+      z.object({
+        provider: z.enum(PROVIDER_NAMES).optional(),
+        cwd: z.string().min(1).max(4096).optional(),
+      }),
+    ),
+    async (c) => {
+      const { provider, cwd } = c.req.valid("query");
+      return success(c, { commands: await service.commands(undefined, provider, cwd) });
+    },
   );
   routes.get("/:id/commands", async (c) =>
     success(c, { commands: await service.commands(c.req.param("id")) }),
   );
 
-  // 会话记录：列表、创建、详情、重命名、删除和选项。
-  routes.get("/", (c) => success(c, { sessions: service.list() }));
+  // 会话：以首条消息创建、详情、重命名与归档、引用的文献和执行选项。
   routes.post("/", validate("json", CreateSessionSchema.partial({ provider: true })), async (c) => {
     const defaults = settings?.getSettings().newSessionDefaults;
     const session = await service.create(c.req.valid("json"), defaults);
-    return created(c, session, `/api/sessions/${session.id}`);
+    return created(c, session, `/api/sessions/${encodeURIComponent(session.id)}`);
   });
-  routes.get("/:id", (c) => success(c, service.detail(c.req.param("id"))));
-  routes.patch("/:id", validate("json", RENAME_SCHEMA), async (c) =>
-    success(c, await service.rename(c.req.param("id"), c.req.valid("json").title)),
+  routes.get("/:id", async (c) => success(c, await service.detail(c.req.param("id"))));
+  routes.patch("/:id", validate("json", SessionUpdateSchema), async (c) =>
+    success(c, await service.update(c.req.param("id"), c.req.valid("json"))),
   );
-  routes.delete("/:id", async (c) => {
-    await service.delete(c.req.param("id"));
-    return emptyBody(c);
-  });
+  routes.put("/:id/references", validate("json", SessionReferencesSchema), async (c) =>
+    success(c, await service.setReferences(c.req.param("id"), c.req.valid("json").references)),
+  );
   routes.patch("/:id/options", validate("json", SessionOptionsSchema.strict()), async (c) =>
     success(c, await service.updateOptions(c.req.param("id"), c.req.valid("json"))),
   );
@@ -159,7 +169,7 @@ export function createSessionRoutes({
   routes.post("/:id/fork", async (c) => {
     const { messageId } = await optionalJson(c.req, FORK_SCHEMA);
     const session = await service.fork(c.req.param("id"), messageId);
-    return created(c, session, `/api/sessions/${session.id}`);
+    return created(c, session, `/api/sessions/${encodeURIComponent(session.id)}`);
   });
 
   // 附件与文件：草稿上传、附件管理、工作目录浏览和下载。
@@ -180,18 +190,18 @@ export function createSessionRoutes({
     bodyLimit({ maxSize: MAX_ATTACHMENT_BYTES + MULTIPART_OVERHEAD_BYTES }),
     async (c) => {
       const file = await readUploadedFile(c.req);
-      return created(c, await attachments.upload(c.req.param("id"), file));
+      const owner = await service.attachmentsOf(c.req.param("id"));
+      return created(c, await attachments.upload(owner, file));
     },
   );
   routes.delete("/:id/attachments/:attachmentId", async (c) => {
-    await attachments.remove(c.req.param("id"), c.req.param("attachmentId"));
+    const owner = await service.attachmentsOf(c.req.param("id"));
+    await attachments.remove(owner, c.req.param("attachmentId"));
     return emptyBody(c);
   });
   routes.get("/:id/attachments/:attachmentId", async (c) => {
-    const { visible, file } = await attachments.resolve(
-      c.req.param("id"),
-      c.req.param("attachmentId"),
-    );
+    const owner = await service.attachmentsOf(c.req.param("id"));
+    const { visible, file } = await attachments.resolve(owner, c.req.param("attachmentId"));
     c.header("Content-Type", visible.mediaType);
     c.header("Content-Disposition", downloadDisposition(visible.filename));
     return c.body(await readFile(file.path));

@@ -1,24 +1,33 @@
 /**
  * One assistant turn of a session, from the user's message to its single
  * ending: it turns the provider's events into UI chunks, keeps them for
- * browsers that attach later, streams them to those attached now, writes the
- * growing message into the session record, and saves that record as it goes.
+ * browsers that attach later, and streams them to those attached now. The
+ * conversation itself is the provider's to keep; the turn files what the Hub
+ * adds to it (the prompt as the user wrote it, citations, notices, metadata)
+ * in the session record, under the provider's id for the prompt.
  *
  * What starts a turn and what follows it (the process, the queue) is the
  * SessionService's; a turn only knows its own record and how to save it.
  */
 
-import type { SessionMessage, SessionMessageMetadata } from "@scholaraio-hub/shared";
-import { type UIMessageChunk, readUIMessageStream } from "ai";
+import type {
+  LibraryCitation,
+  SessionMessage,
+  SessionMessageMetadata,
+  SessionNotice,
+  SessionStatePush,
+} from "@scholaraio-hub/shared";
+import type { UIMessageChunk } from "ai";
 import { loggerFor } from "../logging/logger.js";
 import type { AgentEvent } from "../providers/events.js";
-import type { SessionRecord } from "./SessionStore.js";
+import type { PromptRecord, SessionRecord } from "./SessionStore.js";
 import { UIChunkWriter, appendReplayChunk } from "./UIChunkWriter.js";
-import { endTurn, turnNotSaved } from "./session-record.js";
+import { endTurn, recordPrompt, turnNotSaved } from "./session-record.js";
+import { assemble } from "./transcript.js";
 
 const log = () => loggerFor("session");
 
-/** How often a running turn's progress is written to disk, at most. */
+/** How often a running turn's state is written to disk, at most. */
 const CHECKPOINT_INTERVAL_MS = 1000;
 
 type Listener = (chunk: UIMessageChunk | null) => void;
@@ -37,42 +46,43 @@ export class Turn {
   readonly done: Promise<void>;
   /** The user asked to stop: however the turn ends, it ends as interrupted. */
   interrupted = false;
+  /**
+   * The provider's id for this turn's prompt: the id the Hub sent it with,
+   * until a provider that names prompts itself says otherwise.
+   */
+  promptId: string;
 
   private readonly chunks: UIMessageChunk[] = [];
   private readonly listeners = new Set<Listener>();
-  private readonly controller: ReadableStreamDefaultController<UIMessageChunk>;
   /** Turns the provider's events into UI chunks. */
   private readonly writer = new UIChunkWriter((chunk) => this.emit(chunk));
   /** Model and usage for this turn, sent as message metadata when it ends. */
   private readonly metadata: SessionMessageMetadata;
   private readonly startedAt = Date.now();
-  /** Writes each state of the assistant message into the record. */
-  private readonly consume: Promise<void>;
+  private citations: LibraryCitation[] | undefined;
+  private readonly notices: SessionNotice[] = [];
   private resolveDone = () => {};
   private timer?: ReturnType<typeof setTimeout>;
   private ended = false;
 
   constructor(
+    /** The session's id; a new session's placeholder until its provider names it. */
+    public key: string,
     readonly record: SessionRecord,
-    assistantId: string,
+    /** What the user sent, and the id it goes to the provider with. */
+    readonly prompt: PromptRecord & { promptId: string },
     /** The model the session's live process already reported, if it has one. */
     model: string | undefined,
-    private readonly hooks: TurnHooks,
+    readonly hooks: TurnHooks,
   ) {
-    this.assistantId = assistantId;
+    this.assistantId = prompt.replyId;
+    this.promptId = prompt.promptId;
     this.metadata = { model };
     this.done = new Promise((resolve) => {
       this.resolveDone = resolve;
     });
-    let controller!: ReadableStreamDefaultController<UIMessageChunk>;
-    const stream = new ReadableStream<UIMessageChunk>({
-      start(value) {
-        controller = value;
-      },
-    });
-    this.controller = controller;
-    this.consume = this.writeMessages(stream);
-    this.emit({ type: "start", messageId: assistantId });
+    this.file();
+    this.emit({ type: "start", messageId: this.assistantId });
   }
 
   get finished(): boolean {
@@ -81,6 +91,13 @@ export class Turn {
 
   /** One provider event of this turn; `turn.completed` ends it. */
   accept(event: AgentEvent): void {
+    if (event.type === "prompt.recorded") {
+      const filedAs = this.promptId;
+      this.promptId = event.promptId;
+      this.file(filedAs);
+      this.checkpoint();
+      return;
+    }
     if (event.type === "model.resolved") this.metadata.model = event.model;
     if (event.type === "turn.completed") {
       if (event.usage) this.metadata.usage = event.usage;
@@ -90,11 +107,26 @@ export class Turn {
     if (event.type === "turn.completed") void this.finish(event.error);
   }
 
-  /** A chunk that belongs to the answer (citations, notices), kept and replayed. */
+  /** A chunk that belongs to the answer, kept and replayed. */
   emit(chunk: UIMessageChunk): void {
     appendReplayChunk(this.chunks, chunk);
-    this.controller.enqueue(chunk);
     this.broadcast(chunk);
+  }
+
+  /** The library passages the prompt carried, shown with the answer and kept with the prompt. */
+  cite(citations: LibraryCitation[]): void {
+    this.citations = citations;
+    this.emit({ type: "data-citations", id: "citations", data: citations });
+  }
+
+  /**
+   * Something the Hub tells the user about this answer (not the provider):
+   * shown with it now and kept with the prompt, since the transcript has no
+   * record of it.
+   */
+  notice(id: string, notice: SessionNotice): void {
+    this.notices.push(notice);
+    this.emit({ type: "data-notice", id, data: notice });
   }
 
   /**
@@ -102,8 +134,7 @@ export class Turn {
    * then answered). Not replayed: later attachments read it from the snapshot.
    */
   showState(): void {
-    const { state, pendingInput } = this.record;
-    this.broadcast({ type: "data-session-state", data: { state, pendingInput }, transient: true });
+    this.broadcast({ type: "data-session-state", data: this.state(), transient: true });
     this.checkpoint();
   }
 
@@ -133,12 +164,7 @@ export class Turn {
         else {
           // The state may have changed after the snapshot this browser holds
           // (a question asked in between); state chunks are not replayed.
-          const { state, pendingInput } = this.record;
-          controller.enqueue({
-            type: "data-session-state",
-            data: { state, pendingInput },
-            transient: true,
-          });
+          controller.enqueue({ type: "data-session-state", data: this.state(), transient: true });
           this.listeners.add(listener);
           signal.addEventListener("abort", close, { once: true });
         }
@@ -168,38 +194,48 @@ export class Turn {
     if (Object.keys(metadata).length) {
       this.emit({ type: "message-metadata", messageMetadata: metadata });
     }
-    if (error) {
-      this.emit({ type: "data-notice", id: "error", data: { level: "error", text: error } });
-    }
+    if (error) this.notice("error", { level: "error", text: error });
     this.emit({ type: "finish", finishReason: error ? "error" : "stop" });
-    this.controller.close();
     for (const listener of [...this.listeners]) listener(null);
     this.listeners.clear();
     try {
-      await this.consume;
+      // A reply cut short may be missing from the provider's transcript; keep what it showed.
+      const reply = record.state === "idle" ? undefined : (await assemble(this.chunks))?.parts;
+      this.file(undefined, metadata, reply);
       await this.hooks.save(record);
     } catch (saveError) {
       turnNotSaved(record);
-      log().error({ err: saveError, sessionId: record.id }, "Final save failed");
+      log().error({ err: saveError, sessionKey: this.key }, "Final save failed");
     } finally {
       this.hooks.ended(this);
       this.resolveDone();
     }
   }
 
-  /** Each state of the assistant message replaces the last one in the record. */
-  private async writeMessages(stream: ReadableStream<UIMessageChunk>): Promise<void> {
-    const { record, assistantId } = this;
-    for await (const message of readUIMessageStream<SessionMessage>({
-      stream,
-      onError: (error) => log().error({ err: error, sessionId: record.id }, "Message stream error"),
-    })) {
-      // Each message the stream yields is already a copy of its own.
-      const index = record.messages.findIndex((item) => item.id === assistantId);
-      if (index < 0) record.messages.push(message);
-      else record.messages[index] = message;
-      this.checkpoint();
-    }
+  private state(): SessionStatePush {
+    const { state, pendingInput } = this.record;
+    return { state, pendingInput };
+  }
+
+  /** File the prompt, and what the Hub added to its answer so far, in the record. */
+  private file(
+    filedAs?: string,
+    metadata?: SessionMessageMetadata,
+    reply?: SessionMessage["parts"],
+  ): void {
+    const { promptId: _, ...prompt } = this.prompt;
+    recordPrompt(
+      this.record,
+      this.promptId,
+      {
+        ...prompt,
+        ...(this.citations ? { citations: this.citations } : {}),
+        ...(this.notices.length ? { notices: [...this.notices] } : {}),
+        ...(metadata ? { metadata } : {}),
+        ...(reply?.length ? { reply } : {}),
+      },
+      filedAs,
+    );
   }
 
   private broadcast(chunk: UIMessageChunk): void {
@@ -208,7 +244,7 @@ export class Turn {
         listener(chunk);
       } catch (error) {
         // One broken browser stream must not starve the others or the turn.
-        log().error({ err: error, sessionId: this.record.id }, "Stream listener failed");
+        log().error({ err: error, sessionKey: this.key }, "Stream listener failed");
         this.listeners.delete(listener);
       }
     }
@@ -220,7 +256,7 @@ export class Turn {
     this.timer = setTimeout(() => {
       this.timer = undefined;
       void this.hooks.save(this.record).catch((error) => {
-        log().error({ err: error, sessionId: this.record.id }, "Checkpoint failed");
+        log().error({ err: error, sessionKey: this.key }, "Checkpoint failed");
         void this.finish("Unable to save the session. Check available disk space.");
       });
     }, CHECKPOINT_INTERVAL_MS);

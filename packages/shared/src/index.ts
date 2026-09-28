@@ -42,6 +42,6 @@ export {
 export type { UploadedFile } from "./upload.js";
 
 export * from "./library.js";
-export * from "./session/StoredSession.js";
+export * from "./session/session.js";
 
 export type * from "./projects.js";

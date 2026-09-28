@@ -58,28 +58,34 @@ export function createServices(options: ServiceOptions): Services {
   const usage = new ProviderUsageLimitService();
   const store = new SessionStore(dataDir);
   const supervisor = new Supervisor({ providers, idleTimeoutMs: options.idleTimeoutMs });
-  const attachments = new SessionAttachments(store);
-  const sessions = new SessionService({
-    store,
-    library,
-    providers,
-    supervisor,
-    attachments,
-    skillsDir,
-  });
-  const files = new SessionFiles((id) => sessions.workingDirectory(id));
+  const attachments = new SessionAttachments(dataDir);
   const events = new HubEvents();
   // A provider writing a session file: the Hub's own sessions, or a CLI in a terminal.
   const history = new HistoryWatcher({
     providers,
     owns: (provider, id) => supervisor.runs(provider, id),
   });
-  const catalog = new ProjectCatalog({
+  const catalog: ProjectCatalog = new ProjectCatalog({
     providers,
     dataDir,
     rules: options.directories ?? new DirectoryRules({ home: homedir(), dataDir }),
     isExternal: (provider, id) => history.isExternal(provider, id),
+    activity: (key) => sessions.activity(key),
+    archived: (key) => sessions.archived(key),
+    titleOf: (key) => store.find(key)?.title,
   });
+  const sessions: SessionService = new SessionService({
+    store,
+    library,
+    providers,
+    supervisor,
+    attachments,
+    catalog,
+    events,
+    dataDir,
+    skillsDir,
+  });
+  const files = new SessionFiles((id) => sessions.workingDirectory(id));
   history.subscribe(() => {
     catalog.invalidate();
     events.publish({ type: "sessions" });

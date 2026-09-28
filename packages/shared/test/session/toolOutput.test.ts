@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { readNotice, readToolOutput } from "../../src/session/StoredSession.js";
+import { readNotice, readToolOutput } from "../../src/session/session.js";
 
 describe("readToolOutput", () => {
   it("passes the envelope through", () => {

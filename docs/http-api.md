@@ -73,7 +73,7 @@ Node 成功响应使用 `success()`，创建响应使用 `created()`，无响应
 
 ## 浏览器请求组织
 
-业务请求按领域保留在 `core/sessions.ts`、`library.ts`、`providers.ts`、`skills.ts` 和 `settings.ts`。组件调用领域方法，查询缓存、失效和重试由 TanStack Query 管理。
+业务请求按领域保留在 `core/projects.ts`、`sessions.ts`、`library.ts`、`providers.ts`、`skills.ts` 和 `settings.ts`；`core/hubEvents.ts` 订阅 `/api/events`，按事件让项目与会话列表失效重取。组件调用领域方法，查询缓存、失效和重试由 TanStack Query 管理。
 
 `core/http.ts` 的 `createHttpClient()` 接受服务地址、默认请求头、默认超时和可注入的 fetch，创建两个实例：
 

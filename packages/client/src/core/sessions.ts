@@ -1,12 +1,13 @@
 import type {
+  LiteratureRef,
   ProviderName,
   SessionAttachment,
+  SessionDetail,
   SessionDirectoryListing,
   SessionFileContent,
   SessionInput,
   SessionMessage,
   SlashCommand,
-  StoredSession,
 } from "@scholaraio-hub/shared";
 import { queryOptions } from "@tanstack/react-query";
 import {
@@ -16,13 +17,22 @@ import {
   hubHeaders,
   hubHttp,
   pathSegment,
-  readJsonResponse,
 } from "./http";
 
 /** 定义会话可调整的 Provider 执行选项。 */
 export type SessionOptions = Partial<
-  Pick<StoredSession, "model" | "permissionMode" | "thinking" | "effort">
+  Pick<SessionDetail, "model" | "permissionMode" | "thinking" | "effort">
 >;
+
+/** 新会话：Provider、执行选项、工作目录、引用的文献与首条消息。 */
+export interface NewSession extends Omit<SessionOptions, "model"> {
+  provider: ProviderName;
+  model?: string;
+  /** 会话运行的目录；不给出时服务端为它建一个自己的目录。 */
+  cwd?: string;
+  references: LiteratureRef[];
+  message: SessionInput;
+}
 
 /** 指定附件所属会话或新会话的草稿区。 */
 export type AttachmentTarget = { sessionId: string } | "draft";
@@ -83,31 +93,12 @@ export const sessionApi = {
     hubHttp.json<void>(`${attachmentsPath(target)}/${pathSegment(attachmentId)}`, {
       method: "DELETE",
     }),
-  /** 提交首条消息并释放响应流，失败时按消息标识核对接收状态。 */
-  async sendFirstMessage(id: string, input: SessionInput): Promise<void> {
-    try {
-      await hubHttp.read(
-        `/sessions/${pathSegment(id)}/messages`,
-        {
-          method: "POST",
-          json: input,
-        },
-        async (response) => {
-          if (!response.ok) await readJsonResponse<never>(response);
-          await response.body?.cancel();
-        },
-      );
-    } catch (error) {
-      // 按消息标识查询会话中的实际接收状态。
-      const current = await sessionApi.get(id);
-      if (!current.messages.some((message) => message.id === input.id)) throw error;
-    }
-  },
-  commands: (provider: ProviderName, sessionId?: string, signal?: AbortSignal) =>
+  /** 新会话的命令按 Provider 与目录列出，已有会话的按它自己的。 */
+  commands: (provider: ProviderName, sessionId?: string, signal?: AbortSignal, cwd?: string) =>
     hubHttp.json<{ commands: SlashCommand[] }>(
       sessionId
         ? `/sessions/${pathSegment(sessionId)}/commands`
-        : `/sessions/commands?provider=${provider}`,
+        : `/sessions/commands?${new URLSearchParams({ provider, ...(cwd ? { cwd } : {}) })}`,
       { signal },
     ),
   browseFiles: (id: string, relative = "", signal?: AbortSignal) =>
@@ -120,51 +111,44 @@ export const sessionApi = {
       `/sessions/${pathSegment(id)}/fs/file?path=${encodeURIComponent(relative)}`,
       { signal },
     ),
-  list: (signal?: AbortSignal) =>
-    hubHttp.json<{ sessions: StoredSession[] }>("/sessions", { signal }),
   get: (id: string, signal?: AbortSignal) =>
-    hubHttp.json<StoredSession>(`/sessions/${pathSegment(id)}`, { signal }),
-  create: (
-    provider: ProviderName,
-    paperIds: string[] = [],
-    model?: string,
-    projectId?: string,
-    execution?: Omit<SessionOptions, "model">,
-    /** 由新会话接收的草稿附件标识。 */
-    attachmentIds: string[] = [],
-  ) =>
-    hubHttp.json<StoredSession>("/sessions", {
-      method: "POST",
-      json: { provider, paperIds, model, projectId, ...execution, attachmentIds },
-    }),
+    hubHttp.json<SessionDetail>(`/sessions/${pathSegment(id)}`, { signal }),
+  /** 以首条消息创建会话；Provider 为它命名后返回，首轮已在运行。 */
+  create: (session: NewSession) =>
+    hubHttp.json<SessionDetail>("/sessions", { method: "POST", json: session }),
   options: (id: string, options: SessionOptions) =>
-    hubHttp.json<StoredSession>(`/sessions/${pathSegment(id)}/options`, {
+    hubHttp.json<SessionDetail>(`/sessions/${pathSegment(id)}/options`, {
       method: "PATCH",
       json: options,
     }),
   enqueue: (id: string, input: SessionInput) =>
-    hubHttp.json<StoredSession>(`/sessions/${pathSegment(id)}/queue`, {
+    hubHttp.json<SessionDetail>(`/sessions/${pathSegment(id)}/queue`, {
       method: "POST",
       json: input,
     }),
   editQueue: (id: string, action: "resume" | "remove", messageId?: string) =>
-    hubHttp.json<StoredSession>(`/sessions/${pathSegment(id)}/queue`, {
+    hubHttp.json<SessionDetail>(`/sessions/${pathSegment(id)}/queue`, {
       method: "PATCH",
       json: { action, messageId },
     }),
   /** 从指定消息之前的历史或完整历史创建分叉会话。 */
   fork: (id: string, messageId?: string) =>
-    hubHttp.json<StoredSession>(`/sessions/${pathSegment(id)}/fork`, {
+    hubHttp.json<SessionDetail>(`/sessions/${pathSegment(id)}/fork`, {
       method: "POST",
       json: { messageId },
     }),
-  rename: (id: string, title: string) =>
-    hubHttp.json<StoredSession>(`/sessions/${pathSegment(id)}`, {
+  /** 重命名或归档；归档的会话不再出现在列表中，Provider 的文件不变。 */
+  update: (id: string, fields: { title?: string; archived?: boolean }) =>
+    hubHttp.json<SessionDetail>(`/sessions/${pathSegment(id)}`, {
       method: "PATCH",
-      json: { title },
+      json: fields,
     }),
-  /** 停止并删除应用会话，保留 Provider 原生记录。 */
-  remove: (id: string) => hubHttp.json<void>(`/sessions/${pathSegment(id)}`, { method: "DELETE" }),
+  /** 整体替换会话引用的文献。 */
+  setReferences: (id: string, references: LiteratureRef[]) =>
+    hubHttp.json<SessionDetail>(`/sessions/${pathSegment(id)}/references`, {
+      method: "PUT",
+      json: { references },
+    }),
   stop: (id: string) => hubHttp.json(`/sessions/${pathSegment(id)}/stop`, { method: "POST" }),
   input: (
     id: string,
@@ -178,16 +162,38 @@ export const sessionApi = {
     }),
 };
 
-/** 构造会话详情页面地址。 */
+/** 构造会话详情页面地址；会话 id 中的冒号保持可读。 */
 export function sessionUrl(id: string): string {
-  return `/sessions/${encodeURIComponent(id)}`;
+  return `/sessions/${encodeURIComponent(id).replace("%3A", ":")}`;
 }
 
-/** 构造带有可选项目和文献上下文的新会话地址。 */
-export function newSessionUrl(projectId?: string, paperIds: string[] = []) {
+/** 引用在地址中的写法：`paper:<id>`、`collection:<id>`，逗号分隔。 */
+export function formatReferences(references: LiteratureRef[]): string {
+  return references.map((ref) => `${ref.kind}:${ref.id}`).join(",");
+}
+
+/** 读回 `formatReferences` 写下的引用，丢弃无法识别的项。 */
+export function parseReferences(value: string | null): LiteratureRef[] {
+  const references: LiteratureRef[] = [];
+  for (const item of (value ?? "").split(",")) {
+    const at = item.indexOf(":");
+    const kind = item.slice(0, at);
+    const id = item.slice(at + 1);
+    if (at > 0 && id && (kind === "paper" || kind === "collection"))
+      if (!references.some((ref) => ref.kind === kind && ref.id === id))
+        references.push({ kind, id });
+  }
+  return references;
+}
+
+/** 构造新会话地址：可指定项目、引用的文献，以及预先填入的研究技能。 */
+export function newSessionUrl(
+  options: { project?: string; references?: LiteratureRef[]; skill?: string } = {},
+) {
   const params = new URLSearchParams();
-  if (projectId) params.set("project", projectId);
-  if (paperIds.length) params.set("papers", paperIds.join(","));
+  if (options.project) params.set("project", options.project);
+  if (options.references?.length) params.set("refs", formatReferences(options.references));
+  if (options.skill) params.set("skill", options.skill);
   return `/sessions${params.size ? `?${params}` : ""}`;
 }
 
@@ -197,12 +203,6 @@ export function chatPaths(id: string) {
   return { messages: `${base}/messages`, stream: `${base}/stream` };
 }
 
-/** 定义侧栏和工作区共用的会话列表查询。 */
-export const sessionsQuery = queryOptions({
-  queryKey: ["sessions"],
-  queryFn: ({ signal }) => sessionApi.list(signal),
-});
-
 /** 查询会话消息、运行状态、待处理交互和执行选项。 */
 export const sessionQuery = (id: string) =>
   queryOptions({
@@ -211,16 +211,21 @@ export const sessionQuery = (id: string) =>
   });
 
 /** 判断会话是否正在运行或等待用户输入。 */
-export function isSessionActive(state: StoredSession["state"] | undefined): boolean {
+export function isSessionActive(state: SessionDetail["state"] | undefined): boolean {
   return state === "running" || state === "waiting-input";
 }
 
 /** 将会话消息转换为即时发送、排队和首条消息共用的输入。 */
-export function sessionInput(sessionId: string, message: SessionMessage): SessionInput {
+export function sessionInput(
+  sessionId: string,
+  message: SessionMessage,
+  references: LiteratureRef[] = [],
+): SessionInput {
   return {
     id: message.id,
     text: message.parts.flatMap((part) => (part.type === "text" ? [part.text] : [])).join("\n"),
     attachmentIds: ownAttachments(sessionId, message).map((file) => file.id),
+    references,
   };
 }
 

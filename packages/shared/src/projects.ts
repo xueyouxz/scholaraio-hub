@@ -18,9 +18,11 @@ export interface ProjectSummary {
 
 /** One session as the project lists show it. */
 export interface SessionSummary {
+  /** The session's id: `sessionKey(provider, nativeId)`. */
+  id: string;
   provider: ProviderName;
   /** The provider's own id: Claude's session id, Codex's thread id. */
-  id: string;
+  nativeId: string;
   /** The project it ran in; absent for a session that belongs to no project. */
   projectId?: string;
   /** The directory it ran in. */
@@ -31,6 +33,8 @@ export interface SessionSummary {
   /** When it last changed (ISO 8601). */
   updatedAt: string;
   gitBranch?: string;
+  /** A turn the Hub is running in it, or a question it waits on. */
+  state?: "running" | "waiting-input";
   /** Another program (a CLI in a terminal) wrote to it within the last half minute. */
   external?: boolean;
 }
@@ -56,5 +60,5 @@ export interface SessionPage {
 
 /** What changed, as the server pushes it to open pages (`GET /api/events`). */
 export type HubEvent =
-  /** Sessions or projects were added, removed or changed. */
+  /** Sessions or projects were added, removed or changed, or a session started or ended a turn. */
   { type: "sessions" };

@@ -42,7 +42,7 @@ describe("请求链路", () => {
   });
 
   it("给接口响应加上安全响应头，本机 HTTP 不发 HSTS", async () => {
-    const response = await server.app.request("/api/sessions");
+    const response = await server.app.request("/api/projects");
     expect(response.headers.get("x-content-type-options")).toBe("nosniff");
     expect(response.headers.get("cross-origin-resource-policy")).toBe("same-origin");
     expect(response.headers.get("x-frame-options")).toBe("SAMEORIGIN");
@@ -53,7 +53,7 @@ describe("请求链路", () => {
     const response = await server.app.request("/api/sessions", {
       method: "POST",
       headers: HEADERS,
-      body: "{}",
+      body: JSON.stringify({ message: { id: "first", text: "hello" } }),
     });
     const requestId = response.headers.get("x-request-id");
     const access = lines.find((line) => line.msg === "Request" && line.method === "POST");
@@ -68,10 +68,10 @@ describe("请求链路", () => {
   });
 
   it("成功的读取只记 debug，失败的请求记 info，并与拒绝原因共用请求标识", async () => {
-    await server.app.request("/api/sessions");
+    await server.app.request("/api/projects");
     const missing = await server.app.request("/api/sessions/nope");
     const requestId = missing.headers.get("x-request-id");
-    const reads = lines.filter((line) => line.msg === "Request" && line.path === "/api/sessions");
+    const reads = lines.filter((line) => line.msg === "Request" && line.path === "/api/projects");
     expect(reads.map((line) => line.level)).toEqual([20]);
     const rejected = lines.filter((line) => line.requestId === requestId);
     expect(rejected.map((line) => line.msg).sort()).toEqual(["Request", "Request rejected"]);

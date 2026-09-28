@@ -39,6 +39,11 @@ export interface TokenUsage {
 type AgentEventBody =
   /** The provider assigned (or confirmed) its native session id. */
   | { type: "session.started"; sessionId: string }
+  /**
+   * The provider filed the prompt under its own id (Codex's turn id). A
+   * provider that keeps the id it was given with the message never says so.
+   */
+  | { type: "prompt.recorded"; promptId: string }
   /** The concrete model serving this session, once the provider reports it. */
   | { type: "model.resolved"; model: string }
   /** More visible answer text for one block. */

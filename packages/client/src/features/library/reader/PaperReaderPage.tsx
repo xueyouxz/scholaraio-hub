@@ -1,21 +1,25 @@
 import { useEffect } from "react";
 import { useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { usePageTitle } from "../../../app/components/NavigationLayout";
-import { workspaceUrl } from "../../../core/library";
+import { collectionUrl } from "../../../core/library";
 import { PaperReaderView } from "./PaperReaderView";
 
 export function PaperReaderPage() {
   const { paperId } = useParams<{ paperId: string }>();
   const navigate = useNavigate();
   const [params] = useSearchParams();
-  const projectId = params.get("project");
+  const collectionId = params.get("collection");
   const { setTitle } = usePageTitle();
   const back = () => {
     const returnTo = params.get("returnTo");
     // Only a path within this app: never an address someone put in the link.
     const internal = returnTo?.startsWith("/") && !returnTo.startsWith("//");
     navigate(
-      internal && returnTo ? returnTo : projectId ? workspaceUrl(projectId) : "/library?view=grid",
+      internal && returnTo
+        ? returnTo
+        : collectionId
+          ? collectionUrl(collectionId)
+          : "/library?view=grid",
     );
   };
 

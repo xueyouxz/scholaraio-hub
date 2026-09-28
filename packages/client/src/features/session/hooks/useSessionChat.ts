@@ -1,16 +1,16 @@
 import { useChat } from "@ai-sdk/react";
-import type { SessionAttachment, SessionMessage, StoredSession } from "@scholaraio-hub/shared";
+import type { SessionAttachment, SessionDetail, SessionMessage } from "@scholaraio-hub/shared";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { DefaultChatTransport } from "ai";
 import { useCallback, useEffect, useMemo, useRef } from "react";
 import { hubHeaders } from "../../../core/http";
+import { PROJECTS_KEY } from "../../../core/projects";
 import {
   chatPaths,
   isSessionActive,
   sessionApi,
   sessionInput,
   sessionQuery,
-  sessionsQuery,
 } from "../../../core/sessions";
 
 /** How often to re-read the snapshot while a turn runs without our stream. */
@@ -26,7 +26,7 @@ export type ConnectionStatus = "connected" | "connecting" | "disconnected" | "id
  * decision, the queue, options) lives in the session snapshot query: the stream
  * pushes state changes into it, and it is polled while a turn runs elsewhere.
  */
-export function useSessionChat(initial: StoredSession) {
+export function useSessionChat(initial: SessionDetail) {
   const id = initial.id;
   const client = useQueryClient();
   // useChat reports failures through onError, not the sendMessage promise;
@@ -43,7 +43,7 @@ export function useSessionChat(initial: StoredSession) {
   const snapshotKey = sessionQuery(id).queryKey;
   const refresh = useCallback(() => {
     void client.invalidateQueries({ queryKey: sessionQuery(id).queryKey });
-    void client.invalidateQueries({ queryKey: sessionsQuery.queryKey });
+    void client.invalidateQueries({ queryKey: PROJECTS_KEY });
   }, [client, id]);
 
   const transport = useMemo(
@@ -128,7 +128,7 @@ export function useSessionChat(initial: StoredSession) {
     // (204). In that case no onFinish fires: reconcile the settled snapshot.
     synchronizedVersion.current = current.updatedAt;
     chat.setMessages(current.messages);
-    void client.invalidateQueries({ queryKey: sessionsQuery.queryKey });
+    void client.invalidateQueries({ queryKey: PROJECTS_KEY });
   }, [
     snapshot.data,
     streaming,
@@ -205,7 +205,7 @@ export function useSessionChat(initial: StoredSession) {
   const fork = useMutation({
     mutationFn: (messageId: string) => sessionApi.fork(id, messageId),
     onSuccess: () => {
-      void client.invalidateQueries({ queryKey: sessionsQuery.queryKey });
+      void client.invalidateQueries({ queryKey: PROJECTS_KEY });
     },
   });
 
@@ -216,7 +216,12 @@ export function useSessionChat(initial: StoredSession) {
     const signature = JSON.stringify([text, attachmentIds]);
     if (queueSubmission.current?.signature !== signature)
       queueSubmission.current = { signature, id: crypto.randomUUID() };
-    await sessionApi.enqueue(id, { id: queueSubmission.current.id, text, attachmentIds });
+    await sessionApi.enqueue(id, {
+      id: queueSubmission.current.id,
+      text,
+      attachmentIds,
+      references: [],
+    });
     queueSubmission.current = undefined;
     refresh();
   };

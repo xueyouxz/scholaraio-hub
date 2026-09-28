@@ -48,7 +48,7 @@ pnpm hub doctor --production
 
 任一命令加 `--production` 或 `--profile <名字>` 切换 profile，也可以设 `SCHOLARAIO_HUB_PROFILE`。`PORT`、`LIBRARY_PORT`（默认 `PORT` + 1）和 `SCHOLARAIO_HUB_DATA_DIR` 覆盖默认值。其余配置项见 [.env.example](.env.example)。
 
-数据目录里有：`data/`（文献与索引）、`workspace/`、`sessions/`（会话）、设置、日志、`backups/`（迁移备份）和 `runtime/`（Python 环境及已装能力清单）。CLI 的登录凭据和原生会话记录仍在各 CLI 自己的目录，应用不会扫描它们。
+数据目录里有：`data/`（文献与索引）、`workspace/`（文献集合）、`session-records/`（Hub 对会话的附加记录）、`attachments/`、`scratch/`（不在项目中运行的会话各自的目录）、设置、日志、`backups/`（迁移备份）和 `runtime/`（Python 环境及已装能力清单）。会话本身由 Claude Code 与 Codex 保存在各自的目录（`~/.claude/projects`、`~/.codex/sessions`），Hub 通过它们的接口读取并按项目列出。旧版本数据目录中的 `sessions/` 不再读取。
 
 Python 依赖由 `packages/scholaraio/uv.lock` 锁定。更新代码后重新执行对应 profile 的 `pnpm hub setup`；已安装的可选能力（如语义检索）会保留。
 

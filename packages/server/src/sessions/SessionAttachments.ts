@@ -7,7 +7,7 @@ import {
   type UploadedFile,
 } from "@scholaraio-hub/shared";
 import { loggerFor } from "../logging/logger.js";
-import type { SessionStore } from "./SessionStore.js";
+import type { SessionRecord } from "./SessionStore.js";
 import {
   SessionConflictError,
   SessionFileTooLargeError,
@@ -23,7 +23,8 @@ export const DRAFT_ATTACHMENT_TTL_MS = 24 * 60 * 60 * 1000;
 
 const ATTACHMENT_ID = /^[\da-f]{8}-(?:[\da-f]{4}-){3}[\da-f]{12}$/i;
 
-type Manifest = SessionAttachment & { name: string };
+/** What is kept about a file: its address follows from the session it was sent in. */
+type Manifest = Omit<SessionAttachment, "url"> & { name: string };
 
 /** Where one owner's files and their manifests live. */
 interface Area {
@@ -32,30 +33,48 @@ interface Area {
   url: (id: string) => string;
 }
 
+/** The address of a session's attachment. */
+export function attachmentUrl(key: string, id: string): string {
+  return `/api/sessions/${encodeURIComponent(key)}/attachments/${id}`;
+}
+
+/** The session an attachment belongs to: its id, and the folder its record keeps files in. */
+export interface AttachmentOwner {
+  provider: string;
+  nativeId: string;
+  attachments: string;
+}
+
+const FOLDER = /^[\da-f]{8}-(?:[\da-f]{4}-){3}[\da-f]{12}$/i;
+
 /**
  * Files attached to messages. Only opaque IDs cross the HTTP boundary; CLI
- * paths are resolved inside the owned workspace. A new chat uploads into a
- * draft area first and the session claims those files when it is created.
+ * paths are resolved inside the session's attachments folder, which is kept
+ * under the data directory, apart from the project the agent works in. A new
+ * chat uploads into a draft area first and the session claims those files
+ * when it is created.
  */
 export class SessionAttachments {
-  constructor(private store: SessionStore) {}
+  constructor(private readonly dataDir: string) {}
 
-  private async sessionArea(sessionId: string): Promise<Area> {
-    this.store.get(sessionId);
-    const workspace = path.join(await realpath(this.store.directory(sessionId)), "workspace");
-    const folder = path.join(workspace, ".attachments");
+  /** The folder the agent reads a session's attachments from. */
+  async directory(owner: AttachmentOwner): Promise<string> {
+    return (await this.sessionArea(owner)).folder;
+  }
+
+  private async sessionArea(owner: AttachmentOwner): Promise<Area> {
+    if (!FOLDER.test(owner.attachments)) throw new Error("Invalid attachments folder");
+    const root = path.join(await realpath(this.dataDir), "attachments", owner.attachments);
+    const folder = path.join(root, "files");
     await mkdir(folder, { recursive: true });
-    if ((await realpath(workspace)) !== workspace || (await realpath(folder)) !== folder)
+    if ((await realpath(folder)) !== folder)
       throw new SessionInputError("Attachment directories must not be symbolic links");
-    return {
-      folder,
-      manifests: path.join(this.store.directory(sessionId), "attachments"),
-      url: (id) => `/api/sessions/${sessionId}/attachments/${id}`,
-    };
+    const key = `${owner.provider}:${owner.nativeId}`;
+    return { folder, manifests: path.join(root, "manifests"), url: (id) => attachmentUrl(key, id) };
   }
 
   private async draftArea(): Promise<Area> {
-    const root = path.join(await realpath(this.store.dataDir), "draft-attachments");
+    const root = path.join(await realpath(this.dataDir), "draft-attachments");
     const folder = path.join(root, "files");
     await mkdir(folder, { recursive: true });
     if ((await realpath(folder)) !== folder)
@@ -91,7 +110,6 @@ export class SessionAttachments {
       name,
       size: file.size,
       mediaType: /^[\w.+-]+\/[\w.+-]+$/.test(file.type) ? file.type : "application/octet-stream",
-      url: area.url(id),
     };
     await writeFile(path.join(area.folder, name), Buffer.from(await file.arrayBuffer()), {
       flag: "wx",
@@ -103,7 +121,7 @@ export class SessionAttachments {
       mode: 0o600,
     });
     const { name: _name, ...visible } = metadata;
-    return visible;
+    return { ...visible, url: area.url(id) };
   }
 
   private async read(area: Area, id: string): Promise<{ metadata: Manifest; filePath: string }> {
@@ -136,7 +154,7 @@ export class SessionAttachments {
     const { metadata, filePath } = await this.read(area, id);
     const { name, ...visible } = metadata;
     return {
-      visible,
+      visible: { ...visible, url: area.url(id) },
       file: {
         id,
         name,
@@ -148,32 +166,28 @@ export class SessionAttachments {
     };
   }
 
-  async upload(sessionId: string, file: File): Promise<SessionAttachment> {
-    if (this.store.get(sessionId).readOnly)
-      throw new SessionConflictError("Cannot upload attachments to a read-only session");
-    return this.write(await this.sessionArea(sessionId), file);
+  async upload(owner: AttachmentOwner, file: File): Promise<SessionAttachment> {
+    return this.write(await this.sessionArea(owner), file);
   }
 
-  resolve(
-    sessionId: string,
+  async resolve(
+    owner: AttachmentOwner,
     id: string,
   ): Promise<{ visible: SessionAttachment; file: UploadedFile }> {
-    this.store.get(sessionId);
-    return this.sessionArea(sessionId).then((area) => this.resolveIn(area, id));
+    return this.resolveIn(await this.sessionArea(owner), id);
   }
 
   /**
    * Remove a file the user took back before sending. Files a sent or queued
    * message refers to stay: the transcript and the queue still need them.
    */
-  async remove(sessionId: string, id: string): Promise<void> {
-    const record = this.store.get(sessionId);
-    const area = await this.sessionArea(sessionId);
-    const { metadata, filePath } = await this.read(area, id);
-    const sent = record.messages.some((message) =>
-      message.parts.some((part) => part.type === "file" && part.url === metadata.url),
+  async remove(owner: SessionRecord, id: string): Promise<void> {
+    const area = await this.sessionArea(owner);
+    const { filePath } = await this.read(area, id);
+    const sent = Object.values(owner.prompts).some((prompt) =>
+      prompt.files.some((file) => file.id === id),
     );
-    const queued = record.queuedMessages?.some((message) => message.attachmentIds.includes(id));
+    const queued = owner.queuedMessages?.some((message) => message.attachmentIds.includes(id));
     if (sent || queued)
       throw new SessionConflictError(
         "Cannot delete attachments referenced by sent or queued messages",
@@ -195,22 +209,25 @@ export class SessionAttachments {
     await rm(path.join(area.manifests, `${id}.json`), { force: true });
   }
 
-  /** Move draft uploads into a new session; they keep their ids. */
-  async claimDrafts(sessionId: string, ids: string[]): Promise<void> {
-    if (ids.length === 0) return;
+  /** Move draft uploads into a new session; they keep their ids. Returns them as sent. */
+  async claimDrafts(
+    owner: AttachmentOwner,
+    ids: string[],
+  ): Promise<Array<{ visible: SessionAttachment; file: UploadedFile }>> {
+    if (ids.length === 0) return [];
     const drafts = await this.draftArea();
-    const session = await this.sessionArea(sessionId);
+    const session = await this.sessionArea(owner);
     await mkdir(session.manifests, { recursive: true });
     for (const id of ids) {
       const { metadata, filePath } = await this.read(drafts, id);
       await rename(filePath, path.join(session.folder, metadata.name));
-      await writeFile(
-        path.join(session.manifests, `${id}.json`),
-        JSON.stringify({ ...metadata, url: session.url(id) }),
-        { flag: "wx", mode: 0o600 },
-      );
+      await writeFile(path.join(session.manifests, `${id}.json`), JSON.stringify(metadata), {
+        flag: "wx",
+        mode: 0o600,
+      });
       await rm(path.join(drafts.manifests, `${id}.json`), { force: true });
     }
+    return Promise.all(ids.map((id) => this.resolveIn(session, id)));
   }
 
   /** Drop drafts older than the TTL; runs on each draft upload, never on a timer. */

@@ -3,6 +3,7 @@ import type { ModelInfo, SlashCommand } from "@scholaraio-hub/shared";
 import { MessageQueue } from "../../src/providers/MessageQueue.js";
 import { ClaudeEventAdapter } from "../../src/providers/claude/ClaudeEventAdapter.js";
 import { claudePrompt } from "../../src/providers/claude/ClaudeSession.js";
+import { type TranscriptMessage, claudeTurns } from "../../src/providers/claude/history.js";
 import type { SDKMessage } from "../../src/providers/claude/sdk-message.js";
 import type { AgentEvent } from "../../src/providers/events.js";
 import type {
@@ -11,7 +12,9 @@ import type {
   NativeRewind,
   NativeSession,
   NativeTurn,
+  ReadSessionOptions,
   StartSessionOptions,
+  UserMessage,
 } from "../../src/providers/types.js";
 import { TEST_CAPABILITIES } from "./scriptedProvider.js";
 
@@ -53,6 +56,8 @@ export class WorkbenchProvider implements AgentProvider {
   readonly capabilities = TEST_CAPABILITIES;
   readonly calls: StartSessionOptions[] = [];
   readonly inputs: string[] = [];
+  /** Every message the sessions were handed, first ones and later ones alike. */
+  readonly messages: UserMessage[] = [];
   interruptions = 0;
   approvals: string[] = [];
   /** What `getAvailableModels` reports; empty means the CLI listed nothing. */
@@ -72,33 +77,87 @@ export class WorkbenchProvider implements AgentProvider {
     return this.commands;
   }
   /** Native forks asked for; each returns a new native id. */
-  /** What the provider's own history holds, as a test sets it up. */
+  /** Sessions a test put in the provider's history, besides those this fake ran. */
   stored: NativeSession[] = [];
   transcripts = new Map<string, NativeTurn[]>();
+  /** Sessions this fake ran, kept the way Claude Code keeps them: a transcript per session. */
+  readonly kept = new Map<string, { session: NativeSession; messages: TranscriptMessage[] }>();
   async listSessions() {
-    return this.stored;
+    return [...this.stored, ...[...this.kept.values()].map(({ session }) => session)];
   }
-  async readSession(id: string) {
-    return this.transcripts.get(id) ?? [];
+  async readSession(id: string, { resumeAt }: ReadSessionOptions) {
+    const kept = this.kept.get(id);
+    if (!kept) return this.transcripts.get(id) ?? [];
+    return claudeTurns(upTo(kept.messages, resumeAt));
+  }
+  private keep(id: string, cwd: string, message: TranscriptMessage) {
+    const now = new Date().toISOString();
+    let kept = this.kept.get(id);
+    if (!kept) {
+      kept = { session: { id, cwd, title: "", createdAt: now, updatedAt: now }, messages: [] };
+      this.kept.set(id, kept);
+    }
+    kept.messages.push(message);
+    kept.session.updatedAt = now;
+    if (!kept.session.title && message.type === "user" && typeof message.message === "object")
+      kept.session.title = String((message.message as { content?: unknown }).content ?? "").slice(
+        0,
+        60,
+      );
   }
 
   readonly forks: Array<ForkSessionOptions & { forkedId: string }> = [];
   async forkSession(options: ForkSessionOptions) {
-    const forkedId = `fork-${randomUUID()}`;
+    const forkedId = randomUUID();
     this.forks.push({ ...options, forkedId });
+    const source = this.kept.get(options.sessionId);
+    if (source) {
+      const prompts = source.messages.flatMap((message, index) =>
+        message.type === "user" &&
+        typeof (message.message as { content?: unknown }).content === "string"
+          ? [index]
+          : [],
+      );
+      const cut = options.dropTurns ? prompts[prompts.length - options.dropTurns] : undefined;
+      this.kept.set(forkedId, {
+        session: { ...source.session, id: forkedId },
+        messages: source.messages.slice(0, cut),
+      });
+    }
     return forkedId;
   }
-  /** In-place rewinds asked for; each resumes the same session at a new point. */
+  /** In-place rewinds asked for; each resumes the same session at its last reply before the cut. */
   readonly rewinds: Array<ForkSessionOptions & { resumeAt: string }> = [];
   async rewindSession(options: ForkSessionOptions): Promise<NativeRewind> {
-    const resumeAt = `cut-${this.rewinds.length + 1}`;
+    const messages = upTo(this.kept.get(options.sessionId)?.messages ?? [], options.resumeAt);
+    const prompts = messages.flatMap((message, index) =>
+      message.type === "user" &&
+      typeof (message.message as { content?: unknown }).content === "string"
+        ? [index]
+        : [],
+    );
+    const cut = prompts[prompts.length - options.dropTurns] ?? 0;
+    const resumeAt =
+      messages
+        .slice(0, cut)
+        .filter((message) => message.type === "assistant")
+        .at(-1)?.uuid ?? `cut-${this.rewinds.length + 1}`;
     this.rewinds.push({ ...options, resumeAt });
     return { sessionId: options.sessionId, resumeAt };
   }
   async startSession(options: StartSessionOptions) {
     this.calls.push(options);
     const sessionId = options.resumeSessionId ?? randomUUID();
+    // Resuming at a rewind's point drops what came after it, as Claude Code does.
+    const resumed = this.kept.get(sessionId);
+    if (resumed && options.resumeAt) resumed.messages = upTo(resumed.messages, options.resumeAt);
+    const keep = (message: TranscriptMessage) => this.keep(sessionId, options.cwd, message);
     const queue = new MessageQueue();
+    const push = queue.push.bind(queue);
+    queue.push = (message: UserMessage) => {
+      this.messages.push(message);
+      return push(message);
+    };
     if (options.initialMessage) queue.push(options.initialMessage);
     const owner = this;
     const abort = new AbortController();
@@ -112,6 +171,11 @@ export class WorkbenchProvider implements AgentProvider {
             ? item.message.content
             : JSON.stringify(item.message.content);
         owner.inputs.push(text);
+        keep({
+          type: "user",
+          uuid: item.uuid ?? randomUUID(),
+          message: { role: "user", content: text },
+        });
         const nativeId = randomUUID();
         if (text.includes(RENDER_SAMPLE_PROMPT)) {
           yield {
@@ -173,8 +237,16 @@ export class WorkbenchProvider implements AgentProvider {
         yield { type: "result", subtype: "success", session_id: sessionId };
       }
     }
+    /** What the CLI would write to its transcript as the turn goes. */
+    async function* recorded(messages: AsyncGenerator<SDKMessage>): AsyncGenerator<SDKMessage> {
+      for await (const message of messages) {
+        if (message.type === "assistant" || message.type === "user")
+          keep({ type: message.type, uuid: randomUUID(), message: message.message });
+        yield message;
+      }
+    }
     return {
-      events: replayThroughAdapter(events()),
+      events: replayThroughAdapter(recorded(events())),
       queue,
       abort: () => {
         abort.abort();
@@ -187,4 +259,11 @@ export class WorkbenchProvider implements AgentProvider {
       },
     };
   }
+}
+
+/** A transcript up to a rewind's resume point, as Claude Code resumes it. */
+function upTo(messages: TranscriptMessage[], resumeAt: string | undefined): TranscriptMessage[] {
+  if (!resumeAt) return messages;
+  const end = messages.findIndex((message) => message.uuid === resumeAt);
+  return end < 0 ? messages : messages.slice(0, end + 1);
 }

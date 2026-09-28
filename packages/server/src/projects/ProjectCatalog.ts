@@ -8,17 +8,19 @@
 
 import { readFile, realpath, rename } from "node:fs/promises";
 import path from "node:path";
-import type {
-  CatalogFailure,
-  ProjectList,
-  ProjectSummary,
-  ProviderName,
-  SessionPage,
-  SessionSummary,
+import {
+  type CatalogFailure,
+  type ProjectList,
+  type ProjectSummary,
+  type ProviderName,
+  type SessionPage,
+  type SessionSummary,
+  sessionKey,
 } from "@scholaraio-hub/shared";
 import { loggerFor } from "../logging/logger.js";
 import type { ProviderRegistry } from "../providers/ProviderRegistry.js";
 import type { NativeSession } from "../providers/types.js";
+import { userText } from "../sessions/agent-prompt.js";
 import { AsyncCache } from "../utils/async-cache.js";
 import { writeFileAtomic } from "../utils/write-file-atomic.js";
 import { type DirectoryRules, isDirectory, projectId, projectPath } from "./directories.js";
@@ -53,7 +55,13 @@ export interface ProjectCatalogOptions {
   dataDir: string;
   rules: DirectoryRules;
   /** Whether another program (a CLI in a terminal) is writing to this session now. */
-  isExternal?: (provider: ProviderName, id: string) => boolean;
+  isExternal?: (provider: ProviderName, nativeId: string) => boolean;
+  /** What the Hub is doing in a session now (`SessionSummary.state`). */
+  activity?: (key: string) => SessionSummary["state"];
+  /** Whether the user archived a session: it is left out of the lists. */
+  archived?: (key: string) => boolean;
+  /** A title the user gave a session in the Hub, over the provider's. */
+  titleOf?: (key: string) => string | undefined;
 }
 
 export class ProjectCatalog {
@@ -109,16 +117,38 @@ export class ProjectCatalog {
     );
     const end = page.offset + page.limit;
     return {
-      sessions: matching.slice(page.offset, end),
+      sessions: matching.slice(page.offset, end).map((session) => this.now(session)),
       nextOffset: end < matching.length ? end : null,
       failures,
     };
   }
 
   /** One listed session; undefined when no provider lists it (or its directory is gone). */
-  async session(provider: ProviderName, id: string): Promise<SessionSummary | undefined> {
+  async session(provider: ProviderName, nativeId: string): Promise<SessionSummary | undefined> {
     const { sessions } = await this.snapshot();
-    return sessions.find((session) => session.provider === provider && session.id === id);
+    const listed = sessions.find(
+      (session) => session.provider === provider && session.nativeId === nativeId,
+    );
+    return listed && this.now(listed);
+  }
+
+  /** The project a directory belongs to, if any. */
+  async projectOf(cwd: string): Promise<{ projectId?: string }> {
+    const placement = await this.place(cwd);
+    return placement && !placement.projectless ? { projectId: projectId(placement.directory) } : {};
+  }
+
+  /** A listed session with what changes by the second: the Hub's activity, another program's writes. */
+  private now(session: SessionSummary): SessionSummary {
+    const state = this.options.activity?.(session.id);
+    const external = this.options.isExternal?.(session.provider, session.nativeId);
+    const title = this.options.titleOf?.(session.id) ?? session.title;
+    return {
+      ...session,
+      title,
+      ...(state ? { state } : {}),
+      ...(external ? { external } : {}),
+    };
   }
 
   /**
@@ -198,12 +228,13 @@ export class ProjectCatalog {
       return placement;
     };
     const hidden = new Set(this.preferences.hidden);
-    const isExternal = this.options.isExternal ?? (() => false);
+    const archived = this.options.archived ?? (() => false);
     const sessions: SessionSummary[] = [];
     for (const { provider, session } of listed.flat()) {
       const placement = await place(session.cwd);
       if (!placement || hidden.has(placement.directory)) continue;
-      sessions.push(summary(provider, session, placement, isExternal(provider, session.id)));
+      if (archived(sessionKey(provider, session.id))) continue;
+      sessions.push(summary(provider, session, placement));
     }
     sessions.sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
     return { sessions, projects: await this.group(sessions, hidden), failures };
@@ -254,18 +285,18 @@ function summary(
   provider: ProviderName,
   session: NativeSession,
   placement: NonNullable<Placement>,
-  external: boolean,
 ): SessionSummary {
   return {
+    id: sessionKey(provider, session.id),
     provider,
-    id: session.id,
+    nativeId: session.id,
     ...(placement.projectless ? {} : { projectId: projectId(placement.directory) }),
     cwd: session.cwd,
-    title: session.title,
+    // A provider titles a session by its first prompt, which for the Hub's has the library passages in it.
+    title: userText(session.title),
     createdAt: session.createdAt,
     updatedAt: session.updatedAt,
     ...(session.gitBranch ? { gitBranch: session.gitBranch } : {}),
-    ...(external ? { external } : {}),
   };
 }
 

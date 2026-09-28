@@ -15,12 +15,12 @@ import {
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import { usePageTitle } from "../../app/components/NavigationLayout";
-import { libraryApi, readerUrl, workspaceUrl } from "../../core/library";
+import { collectionUrl, libraryApi, readerUrl } from "../../core/library";
 import { newSessionUrl } from "../../core/sessions";
+import { CollectionAddPapersDialog } from "./components/CollectionCreateDialog";
 import { PaperDetailPanel } from "./components/PaperDetailPanel";
 import { PaperVirtualList } from "./components/PaperVirtualList";
 import type { ViewMode } from "./components/PaperVirtualList";
-import { WorkspaceAddPapersDialog } from "./components/WorkspaceCreateDialog";
 import { StepTrack, useImportJobs } from "./components/import/ImportProgress";
 import {
   ACTIVE_IMPORT,
@@ -52,7 +52,7 @@ const MODES = [
  * papers, keeps search behind an icon, and shows every import headed for this
  * workspace as a card of its own until the paper it becomes takes its place.
  */
-export function WorkspacePapersPage({ projectId }: { projectId: string }) {
+export function CollectionPage({ collectionId }: { collectionId: string }) {
   const { setTitle } = usePageTitle();
   const [params, setParams] = useSearchParams();
   const view: ViewMode = params.get("view") === "list" ? "list" : "grid";
@@ -68,13 +68,13 @@ export function WorkspacePapersPage({ projectId }: { projectId: string }) {
     );
 
   const project = useQuery({
-    queryKey: ["library", "collection", projectId],
-    queryFn: ({ signal }) => libraryApi.collection(projectId, signal),
+    queryKey: ["library", "collection", collectionId],
+    queryFn: ({ signal }) => libraryApi.collection(collectionId, signal),
   });
   useEffect(() => {
-    setTitle(project.data?.name ?? projectId);
+    setTitle(project.data?.name ?? collectionId);
     return () => setTitle("");
-  }, [setTitle, project.data?.name, projectId]);
+  }, [setTitle, project.data?.name, collectionId]);
 
   const sort = SORTS[sortIndex]?.key ?? "year_desc";
   // The workspace's papers are the library's, narrowed to its list.
@@ -90,14 +90,14 @@ export function WorkspacePapersPage({ projectId }: { projectId: string }) {
   const [mode, setMode] = useState("keyword");
   const [submitted, setSubmitted] = useState<{ query: string; mode: string } | null>(null);
   const found = useQuery({
-    queryKey: ["library", "search", { ...submitted, limit: 200, projectId }],
+    queryKey: ["library", "search", { ...submitted, limit: 200, collectionId }],
     queryFn: ({ signal }) =>
       libraryApi.search(
         {
           query: submitted?.query ?? "",
           mode: submitted?.mode ?? "keyword",
           limit: 200,
-          collectionId: projectId,
+          collectionId,
         },
         signal,
       ),
@@ -122,8 +122,8 @@ export function WorkspacePapersPage({ projectId }: { projectId: string }) {
     );
   }, [library.data, project.data?.paperIds, sort]);
   const inbound = useMemo(
-    () => incoming(jobs.data?.jobs ?? [], projectId, new Set(papers.map((paper) => paper.id))),
-    [jobs.data, projectId, papers],
+    () => incoming(jobs.data?.jobs ?? [], collectionId, new Set(papers.map((paper) => paper.id))),
+    [jobs.data, collectionId, papers],
   );
 
   const [selected, setSelected] = useState<PaperSummary | null>(null);
@@ -169,14 +169,14 @@ export function WorkspacePapersPage({ projectId }: { projectId: string }) {
             </select>
             <input
               ref={searchField}
-              aria-label="在 Workspace 中检索"
+              aria-label="在文献集合中检索"
               autoComplete="off"
               value={text}
               onChange={(event) => setText(event.target.value)}
               onKeyDown={(event) => {
                 if (event.key === "Escape") closeSearch();
               }}
-              placeholder="检索本 Workspace…"
+              placeholder="检索本文献集合…"
               className="min-w-0 flex-1 bg-transparent px-2 py-1.5 text-[13px] text-on-surface outline-none placeholder:text-on-surface-variant/40"
             />
             {found.isFetching ? (
@@ -232,11 +232,11 @@ export function WorkspacePapersPage({ projectId }: { projectId: string }) {
           加入文献
         </button>
         <Link
-          to={newSessionUrl(projectId)}
+          to={newSessionUrl({ references: [{ kind: "collection", id: collectionId }] })}
           className="inline-flex items-center gap-1.5 rounded-full signature-gradient px-3.5 py-1.5 text-sm font-semibold text-on-primary active:scale-95"
         >
           <MessageSquare className="w-3.5 h-3.5" aria-hidden="true" />
-          开始会话
+          在会话中引用
         </Link>
       </div>
 
@@ -261,7 +261,7 @@ export function WorkspacePapersPage({ projectId }: { projectId: string }) {
             <p className="text-sm text-on-surface-variant">
               {submitted
                 ? "没有匹配的文献，换个检索词或检索方式试试。"
-                : "这个 Workspace 还没有文献。"}
+                : "这个文献集合还没有文献。"}
             </p>
             {!submitted ? (
               <button
@@ -300,10 +300,10 @@ export function WorkspacePapersPage({ projectId }: { projectId: string }) {
                 ? inbound.map((entry) => <IncomingCard key={entry.item.id} entry={entry} />)
                 : null}
               {shown.map((paper) => (
-                <WorkspacePaperCard
+                <CollectionPaperCard
                   key={paper.id}
                   paper={paper}
-                  projectId={projectId}
+                  collectionId={collectionId}
                   active={selected?.id === paper.id}
                   onOpen={() =>
                     setSelected((previous) => (previous?.id === paper.id ? null : paper))
@@ -315,9 +315,13 @@ export function WorkspacePapersPage({ projectId }: { projectId: string }) {
         )}
       </div>
 
-      <PaperDetailPanel paper={selected} projectId={projectId} onClose={() => setSelected(null)} />
+      <PaperDetailPanel
+        paper={selected}
+        collectionId={collectionId}
+        onClose={() => setSelected(null)}
+      />
       {adding && project.data ? (
-        <WorkspaceAddPapersDialog project={project.data} onClose={() => setAdding(false)} />
+        <CollectionAddPapersDialog project={project.data} onClose={() => setAdding(false)} />
       ) : null}
     </div>
   );
@@ -334,9 +338,13 @@ interface Incoming {
  * An item stays until its paper shows up in the list, so there is no gap
  * between the card saying "入库" and the paper appearing.
  */
-function incoming(jobs: ImportJob[], projectId: string, present: ReadonlySet<string>): Incoming[] {
+function incoming(
+  jobs: ImportJob[],
+  collectionId: string,
+  present: ReadonlySet<string>,
+): Incoming[] {
   return jobs
-    .filter((job) => job.collectionId === projectId)
+    .filter((job) => job.collectionId === collectionId)
     .flatMap((job) => job.items.map((item) => ({ job, item })))
     .filter(({ item }) => {
       if (ACTIVE_IMPORT.includes(item.status) || item.status === "failed") return true;
@@ -428,19 +436,22 @@ const STATUS_DOT: Record<PaperSummary["status"], { dot: string; label: string }>
 };
 
 /** A paper in the workspace: a reading-list entry rather than a library tile. */
-function WorkspacePaperCard({
+function CollectionPaperCard({
   paper,
-  projectId,
+  collectionId,
   active,
   onOpen,
 }: {
   paper: PaperSummary;
-  projectId: string;
+  collectionId: string;
   active: boolean;
   onOpen: () => void;
 }) {
   const status = STATUS_DOT[paper.status] ?? STATUS_DOT.pending;
-  const reader = readerUrl(paper.id, { projectId, returnTo: workspaceUrl(projectId) });
+  const reader = readerUrl(paper.id, {
+    collectionId,
+    returnTo: collectionUrl(collectionId),
+  });
   return (
     <article
       className={`group relative flex h-[7.5rem] flex-col rounded-xl border px-4 py-3 transition-[background-color,border-color,box-shadow] ${

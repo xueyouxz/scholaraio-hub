@@ -29,7 +29,7 @@ export interface LaunchSettings {
 
 /** A message for one of our sessions, with everything its worker must match. */
 export interface SessionMessageRequest {
-  /** Our session id. */
+  /** The session (`sessionKey`), or the placeholder of a new one its provider has yet to name. */
   sessionId: string;
   /** The provider conversation to continue; none starts a new one. */
   nativeSessionId?: string;
@@ -39,6 +39,8 @@ export interface SessionMessageRequest {
    */
   resumeAt?: string;
   projectPath: string;
+  /** Directories outside the project the agent may read without asking. */
+  additionalDirectories?: string[];
   message: UserMessage;
   permissionMode?: PermissionMode;
   settings?: LaunchSettings;
@@ -60,7 +62,7 @@ export type SupervisorListener = (sessionId: string, event: ProcessEvent) => voi
 
 /**
  * Owns the provider processes this server runs, one per session and keyed by
- * our own session id. It keeps each live process matching what the session
+ * the session's id (`sessionKey`). It keeps each live process matching what the session
  * asks for — provider, native conversation, model, thinking, effort — and
  * reaps processes that died without saying so.
  */
@@ -96,6 +98,24 @@ export class Supervisor {
   /** The session's live process, if it has one. */
   get(sessionId: string): AgentProcess | undefined {
     return this.processes.get(sessionId);
+  }
+
+  /**
+   * A new session's provider has named it: its process now serves the
+   * session under that id. Its events are reported under the new id from now on.
+   */
+  rekey(from: string, to: string): void {
+    const process = this.processes.get(from);
+    if (!process) return;
+    this.processes.delete(from);
+    this.release(to, "Superseded by a new process");
+    process.sessionId = to;
+    this.processes.set(to, process);
+    const sending = this.sending.get(from);
+    if (sending) {
+      this.sending.delete(from);
+      this.sending.set(to, sending);
+    }
   }
 
   /** Whether a live process here runs this provider conversation. */
@@ -208,6 +228,7 @@ export class Supervisor {
       nativeSessionId: request.nativeSessionId,
       resumeAt: request.resumeAt,
       projectPath: request.projectPath,
+      additionalDirectories: request.additionalDirectories,
       message: request.message,
       permissionMode: request.permissionMode ?? "default",
       model: settings.model,
@@ -233,6 +254,8 @@ export class Supervisor {
     );
     this.processes.set(sessionId, process);
     process.subscribe((event) => {
+      // The session it serves now: a new session's is renamed once named.
+      const sessionId = process.sessionId;
       // A released process's ending belongs to nobody.
       if (this.processes.get(sessionId) !== process) return;
       if (event.type === "terminated") {

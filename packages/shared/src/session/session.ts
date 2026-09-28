@@ -51,7 +51,7 @@ export interface SessionMessageMetadata {
  * pending decision shows without waiting for the next poll. Sent transient:
  * it is never stored in a message or replayed.
  */
-export type SessionStatePush = Pick<StoredSession, "state" | "pendingInput">;
+export type SessionStatePush = Pick<SessionDetail, "state" | "pendingInput">;
 
 export type SessionMessage = UIMessage<
   SessionMessageMetadata,
@@ -124,10 +124,53 @@ export interface SessionContextUsage {
   /** Claude: token count at which it compacts automatically, when enabled. */
   autoCompactThreshold?: number;
 }
-export interface StoredSession {
+/** Literature a session refers to: a whole collection, or one paper. */
+export const LiteratureRefSchema = z
+  .object({ kind: z.enum(["collection", "paper"]), id: z.string().min(1).max(200) })
+  .strict();
+export type LiteratureRef = z.infer<typeof LiteratureRefSchema>;
+/** How many references a session may hold. */
+export const MAX_REFERENCES = 50;
+const References = z.array(LiteratureRefSchema).max(MAX_REFERENCES);
+
+/**
+ * A session's id throughout the Hub: its provider and the provider's own id
+ * for it (Claude's session id, Codex's thread id), as `claude:<id>`.
+ */
+export function sessionKey(provider: ProviderName, nativeId: string): string {
+  return `${provider}:${nativeId}`;
+}
+
+/** The provider and native id a session id stands for; undefined for one that is not a session id. */
+export function parseSessionKey(
+  key: string,
+): { provider: ProviderName; nativeId: string } | undefined {
+  const at = key.indexOf(":");
+  const provider = key.slice(0, at);
+  const nativeId = key.slice(at + 1);
+  if (at < 0 || !(PROVIDER_NAMES as readonly string[]).includes(provider)) return undefined;
+  if (!/^[A-Za-z0-9._-]{1,200}$/.test(nativeId)) return undefined;
+  return { provider: provider as ProviderName, nativeId };
+}
+
+/** Where a session is: idle, running a turn, waiting on the user, or stopped short. */
+export type SessionState = "idle" | "running" | "waiting-input" | "interrupted" | "error";
+
+/**
+ * A session as the Hub shows it: the conversation its provider keeps, with
+ * what the Hub adds (the literature it refers to, citations, the queue).
+ */
+export interface SessionDetail {
+  /** The session's id: `sessionKey(provider, nativeId)`. */
   id: string;
-  title: string;
   provider: ProviderName;
+  /** The provider's own id for the session. */
+  nativeId: string;
+  /** The project it runs in; absent for a session that belongs to no project. */
+  projectId?: string;
+  /** The directory it runs in. */
+  cwd: string;
+  title: string;
   model?: string;
   permissionMode?: PermissionMode;
   thinking?: ThinkingMode;
@@ -137,17 +180,18 @@ export interface StoredSession {
   contextUsage?: SessionContextUsage;
   /** Options changed while a turn was running; they take effect when the next turn starts. */
   pendingOptions?: Array<"model" | "permissionMode" | "thinking" | "effort">;
-  paperIds: string[];
-  projectId?: string;
+  /** The literature each turn is answered from. */
+  references: LiteratureRef[];
   createdAt: string;
   updatedAt: string;
-  readOnly: boolean;
-  state: "idle" | "running" | "waiting-input" | "interrupted" | "error";
+  state: SessionState;
   error?: string;
   pendingInput?: InputRequest;
   messages: SessionMessage[];
   queuedMessages?: SessionInput[];
   queuePaused?: boolean;
+  /** Another program (a CLI in a terminal) wrote to it within the last half minute. */
+  external?: boolean;
 }
 /** The title a session has until its first message names it. */
 export const UNTITLED_SESSION_TITLE = "新会话";
@@ -162,19 +206,12 @@ export const SessionOptionsSchema = z.object({
     .regex(/^[a-z0-9_-]{0,40}$/)
     .optional(),
 });
-export const CreateSessionSchema = SessionOptionsSchema.extend({
-  provider: z.enum(PROVIDER_NAMES),
-  model: z.string().max(200).optional(),
-  paperIds: z.array(z.string().min(1).max(200)).max(100).default([]),
-  projectId: z.string().min(1).max(120).optional(),
-  title: z.string().trim().min(1).max(200).default(UNTITLED_SESSION_TITLE),
-  /** Draft uploads the new session takes over (see draft attachments). */
-  attachmentIds: z.array(z.string().uuid()).max(ATTACHMENT_LIMITS.maxCount).default([]),
-});
 const SessionInputFields = z.object({
   id: z.string().min(1).max(200),
   text: z.string().trim().max(50000),
   attachmentIds: z.array(z.string().uuid()).max(ATTACHMENT_LIMITS.maxCount).default([]),
+  /** Literature this message refers to (`@`); the session keeps referring to it. */
+  references: References.default([]),
 });
 const hasContent = (input: { text: string; attachmentIds: string[] }) =>
   input.text.length > 0 || input.attachmentIds.length > 0;
@@ -184,6 +221,19 @@ export const SendSessionMessageSchema = SessionInputFields.refine(hasContent, EM
 export type SessionInput = z.infer<typeof SendSessionMessageSchema>;
 
 /**
+ * A new session and its first message, sent together: the provider names the
+ * session once it has started it. Draft uploads named in the message move into it.
+ */
+export const CreateSessionSchema = SessionOptionsSchema.extend({
+  provider: z.enum(PROVIDER_NAMES),
+  /** The directory to run in; a session without one gets a folder of its own. */
+  cwd: z.string().trim().min(1).max(4096).optional(),
+  /** Literature the session refers to from the start. */
+  references: References.default([]),
+  message: SendSessionMessageSchema,
+});
+
+/**
  * A message sent to the chat. `replaces` names the session's last prompt when
  * this message corrects it: that turn is taken back and this one runs instead.
  */
@@ -191,6 +241,18 @@ export const ChatMessageSchema = SessionInputFields.extend({
   replaces: z.string().min(1).max(200).optional(),
 }).refine(hasContent, EMPTY_MESSAGE);
 export type ChatMessageInput = z.infer<typeof ChatMessageSchema>;
+
+/** What a user may change about a session besides how it runs. */
+export const SessionUpdateSchema = z
+  .object({
+    title: z.string().trim().min(1).max(200).optional(),
+    /** An archived session is left out of the lists; nothing on disk changes. */
+    archived: z.boolean().optional(),
+  })
+  .strict();
+
+/** The literature a session refers to, as a whole. */
+export const SessionReferencesSchema = z.object({ references: References }).strict();
 
 /**
  * The tool call whose subagent produced this part, or undefined for the main

@@ -1,8 +1,8 @@
-import type { StoredSession } from "@scholaraio-hub/shared";
+import type { ProjectSummary, SessionSummary } from "@scholaraio-hub/shared";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
-  FolderCog,
   FolderOpen,
+  FolderTree,
   Library,
   Loader2,
   Menu,
@@ -12,38 +12,25 @@ import {
   Settings,
   Sparkles,
 } from "lucide-react";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   Link,
   NavLink,
   matchPath,
   useLocation,
   useNavigate,
-  useParams,
   useSearchParams,
 } from "react-router-dom";
-import { libraryApi, workspaceUrl } from "../../core/library";
-import {
-  isSessionActive,
-  newSessionUrl,
-  sessionApi,
-  sessionQuery,
-  sessionUrl,
-  sessionsQuery,
-} from "../../core/sessions";
+import { PROJECTS_KEY, UNASSIGNED, projectSessionsQuery, projectsQuery } from "../../core/projects";
+import { newSessionUrl, sessionApi, sessionQuery, sessionUrl } from "../../core/sessions";
 import { LibraryActivityTray } from "../../features/library/components/LibraryActivityTray";
-import { WorkspaceCreateDialog } from "../../features/library/components/WorkspaceCreateDialog";
 import { SessionContextMenu } from "./SessionContextMenu";
+import { SessionRow } from "./SessionRow";
 
-function relativeTime(iso: string): string {
-  const diff = Date.now() - new Date(iso).getTime();
-  const days = Math.floor(diff / 86400000);
-  if (days < 1) return "今天";
-  if (days < 7) return `${days}天前`;
-  const weeks = Math.floor(days / 7);
-  if (weeks < 5) return `${weeks}周前`;
-  return `${Math.floor(days / 30)}月前`;
-}
+/** How many sessions a project shows at first, and how many more each "more" adds. */
+const PAGE = 8;
+/** How many projects the sidebar lists; the projects page has them all. */
+const PROJECT_LIMIT = 12;
 
 function SidebarSection({
   title,
@@ -54,7 +41,8 @@ function SidebarSection({
   children,
 }: {
   title: string;
-  count: number;
+  /** Shown beside the title, when known. */
+  count?: number;
   open: boolean;
   onToggle: () => void;
   action?: React.ReactNode;
@@ -72,13 +60,120 @@ function SidebarSection({
           <span className="text-[9.5px] font-mono uppercase tracking-[0.2em] text-on-surface-variant/50 group-hover/section:text-on-surface-variant/70 transition-colors truncate">
             {title}
           </span>
-          <span className="min-w-[16px] text-center text-[9.5px] font-mono tabular-nums leading-none px-1.5 py-0.5 rounded-md bg-surface-container text-on-surface-variant/50 group-hover/section:text-on-surface-variant/70 transition-colors">
-            {count}
-          </span>
+          {count === undefined ? null : (
+            <span className="min-w-[16px] text-center text-[9.5px] font-mono tabular-nums leading-none px-1.5 py-0.5 rounded-md bg-surface-container text-on-surface-variant/50 group-hover/section:text-on-surface-variant/70 transition-colors">
+              {count}
+            </span>
+          )}
         </button>
         {action}
       </div>
       {open ? children : null}
+    </div>
+  );
+}
+
+/** What the sidebar does with a session a row's menu or rename field names. */
+interface SessionHandlers {
+  renaming: string | null;
+  onMenu: (session: SessionSummary, x: number, y: number) => void;
+  onRename: (session: SessionSummary, title: string) => void;
+  onCancelRename: () => void;
+  onOpen?: () => void;
+}
+
+/** A project's newest sessions (or those in no project), loaded when shown, more on request. */
+function SessionList({ project, handlers }: { project: string; handlers: SessionHandlers }) {
+  const [limit, setLimit] = useState(PAGE);
+  const page = useQuery(projectSessionsQuery(project, limit));
+  if (page.isLoading)
+    return (
+      <div className="flex items-center gap-2 px-2.5 py-1.5 text-on-surface-variant/60">
+        <Loader2 className="w-3 h-3 animate-spin" />
+        <span className="text-[11.5px]">加载中…</span>
+      </div>
+    );
+  if (page.error)
+    return (
+      <p role="alert" className="px-2.5 py-1 text-[11.5px] text-error break-words">
+        {page.error.message}
+      </p>
+    );
+  const sessions = page.data?.sessions ?? [];
+  return (
+    <div className="space-y-0.5">
+      {sessions.map((session) => (
+        <SessionRow
+          key={session.id}
+          session={session}
+          renaming={handlers.renaming === session.id}
+          onRename={(title) => handlers.onRename(session, title)}
+          onCancelRename={handlers.onCancelRename}
+          onMenu={(x, y) => handlers.onMenu(session, x, y)}
+          onOpen={handlers.onOpen}
+        />
+      ))}
+      {sessions.length === 0 ? (
+        <p className="px-2.5 py-1 text-[11.5px] text-on-surface-variant/50">暂无会话</p>
+      ) : null}
+      {page.data?.nextOffset !== null && page.data?.nextOffset !== undefined ? (
+        <button
+          type="button"
+          onClick={() => setLimit((current) => current + PAGE)}
+          className="w-full rounded-lg px-2.5 py-1 text-left text-[11px] text-on-surface-variant/70 hover:bg-surface-container hover:text-on-surface transition-colors"
+        >
+          显示更多
+        </button>
+      ) : null}
+    </div>
+  );
+}
+
+/** One project: a header that opens its sessions, and a button for a new session in it. */
+function ProjectGroup({
+  project,
+  active,
+  open,
+  onToggle,
+  handlers,
+}: {
+  project: ProjectSummary;
+  active: boolean;
+  open: boolean;
+  onToggle: () => void;
+  handlers: SessionHandlers;
+}) {
+  return (
+    <div className="mb-0.5">
+      <div className="flex items-center gap-1 group/header">
+        <button
+          type="button"
+          aria-expanded={open}
+          onClick={onToggle}
+          aria-current={active ? "true" : undefined}
+          title={project.path}
+          className={`flex items-center gap-2 flex-1 min-w-0 px-2 py-1 rounded-lg transition-colors text-left ${active ? "bg-surface-container-high text-primary" : "text-on-surface hover:bg-surface-container"}`}
+        >
+          <FolderOpen
+            className={`w-3.5 h-3.5 shrink-0 ${active ? "text-primary" : "text-on-surface-variant"}`}
+          />
+          <span className="text-[12px] font-medium truncate">{project.name}</span>
+        </button>
+        <Link
+          to={newSessionUrl({ project: project.id })}
+          onClick={handlers.onOpen}
+          title={`在 ${project.name} 中新建会话`}
+          aria-label={`在 ${project.name} 中新建会话`}
+          className="shrink-0 p-1 rounded-md opacity-0 group-hover/header:opacity-100 focus:opacity-100 hover:bg-surface-container transition-all text-on-surface-variant hover:text-primary"
+        >
+          <Plus className="w-3 h-3" />
+        </Link>
+      </div>
+      {open ? (
+        <div className="ml-3 mt-0.5">
+          <SessionList project={project.id} handlers={handlers} />
+        </div>
+      ) : null}
     </div>
   );
 }
@@ -108,81 +203,65 @@ export function Sidebar({
   onToggle,
   onClose,
 }: SidebarProps) {
-  const sessions = useQuery(sessionsQuery);
-  const projects = useQuery({
-    queryKey: ["library", "collections"],
-    queryFn: ({ signal }) => libraryApi.collections(signal),
-  });
+  const projects = useQuery(projectsQuery);
   const [params] = useSearchParams();
   const location = useLocation();
-  const { sessionId } = useParams();
-  const scopedProject = matchPath("/workspaces/:projectId", location.pathname)?.params.projectId;
-  const activeProject =
-    scopedProject ??
-    params.get("project") ??
-    sessions.data?.sessions.find((session) => session.id === sessionId)?.projectId;
-  const grouped = useMemo(() => {
-    const groups = new Map<string, StoredSession[]>();
-    for (const session of sessions.data?.sessions ?? []) {
-      const id = session.projectId ?? "";
-      const group = groups.get(id) ?? [];
-      group.push(session);
-      groups.set(id, group);
-    }
-    return groups;
-  }, [sessions.data]);
-  const known = new Set(projects.data?.collections.map((p) => p.id));
-  const unassigned = [...grouped.entries()]
-    .filter(([id]) => !known.has(id))
-    .flatMap(([, items]) => items);
+  const sessionId = matchPath("/sessions/:sessionId", location.pathname)?.params.sessionId;
+  const current = useQuery({ ...sessionQuery(sessionId ?? ""), enabled: !!sessionId });
+  const pageProject = matchPath("/projects/:projectId", location.pathname)?.params.projectId;
+  const activeProject = pageProject ?? params.get("project") ?? current.data?.projectId;
   const collapsed = isDesktop && isCollapsed;
   const close = isDesktop ? undefined : onClose;
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
-  const [sectionOpen, setSectionOpen] = useState(true);
-  const [creating, setCreating] = useState(false);
-  const [unassignedOpen, setUnassignedOpen] = useState(true);
+  const [projectsOpen, setProjectsOpen] = useState(true);
+  const [unassignedOpen, setUnassignedOpen] = useState(false);
   const client = useQueryClient();
   const navigate = useNavigate();
-  const [menu, setMenu] = useState<{ session: StoredSession; x: number; y: number } | null>(null);
+  const [menu, setMenu] = useState<{ session: SessionSummary; x: number; y: number } | null>(null);
   const [renaming, setRenaming] = useState<string | null>(null);
-  // The user just chose to rename a session: its name field takes the focus.
-  const renameInput = useRef<HTMLInputElement>(null);
-  useEffect(() => {
-    if (renaming) renameInput.current?.focus();
-  }, [renaming]);
   const settled = (id: string) => {
-    void client.invalidateQueries({ queryKey: sessionsQuery.queryKey });
+    void client.invalidateQueries({ queryKey: PROJECTS_KEY });
     void client.invalidateQueries({ queryKey: sessionQuery(id).queryKey });
   };
   const rename = useMutation({
-    mutationFn: ({ id, title }: { id: string; title: string }) => sessionApi.rename(id, title),
+    mutationFn: ({ id, title }: { id: string; title: string }) => sessionApi.update(id, { title }),
     onSettled: (_data, _error, { id }) => settled(id),
   });
   const fork = useMutation({
     mutationFn: (id: string) => sessionApi.fork(id),
     onSuccess: (created) => {
-      void client.invalidateQueries({ queryKey: sessionsQuery.queryKey });
+      void client.invalidateQueries({ queryKey: PROJECTS_KEY });
       close?.();
       navigate(sessionUrl(created.id));
     },
   });
-  const remove = useMutation({
-    mutationFn: (id: string) => sessionApi.remove(id),
+  const archive = useMutation({
+    mutationFn: (id: string) => sessionApi.update(id, { archived: true }),
     onSuccess: (_data, id) => {
-      client.removeQueries({ queryKey: sessionQuery(id).queryKey });
-      void client.invalidateQueries({ queryKey: sessionsQuery.queryKey });
+      settled(id);
       if (sessionId === id) navigate("/sessions");
     },
   });
-  const actionError = rename.error ?? fork.error ?? remove.error;
-  const commitRename = (session: StoredSession, value: string) => {
-    setRenaming(null);
-    const title = value.trim();
-    if (title && title !== session.title) rename.mutate({ id: session.id, title });
+  const actionError = rename.error ?? fork.error ?? archive.error;
+  const handlers: SessionHandlers = {
+    renaming,
+    onMenu: (session, x, y) => setMenu({ session, x, y }),
+    onRename: (session, value) => {
+      setRenaming(null);
+      const title = value.trim();
+      if (title && title !== session.title) rename.mutate({ id: session.id, title });
+    },
+    onCancelRename: () => setRenaming(null),
+    onOpen: close,
   };
   useEffect(() => {
     if (activeProject) setExpanded((previous) => new Set([...previous, activeProject]));
   }, [activeProject]);
+  const listed = projects.data?.projects ?? [];
+  // The active project stays listed even when it is not among the most recent.
+  const shown = listed.filter(
+    (project, index) => index < PROJECT_LIMIT || project.id === activeProject,
+  );
 
   // Pointer moves arrive faster than frames; apply the latest once per frame.
   const drag = useRef<{ frame: number; x: number } | null>(null);
@@ -213,56 +292,7 @@ export function Sidebar({
   );
   const navClass = (active: boolean) =>
     `w-full flex items-center gap-2.5 rounded-lg px-[11px] py-2 text-[12.5px] font-medium transition-colors ${active ? "bg-surface-container-high text-primary" : "text-on-surface-variant hover:bg-surface-container hover:text-on-surface"}`;
-  const renderSessions = (items: StoredSession[]) =>
-    items.map((session) =>
-      renaming === session.id ? (
-        <input
-          key={session.id}
-          ref={renameInput}
-          aria-label="会话名称"
-          defaultValue={session.title}
-          maxLength={200}
-          onFocus={(event) => event.currentTarget.select()}
-          onBlur={(event) => commitRename(session, event.currentTarget.value)}
-          onKeyDown={(event) => {
-            if (event.key === "Enter") commitRename(session, event.currentTarget.value);
-            else if (event.key === "Escape") setRenaming(null);
-          }}
-          className="w-full rounded-lg border border-primary/40 bg-surface-container-lowest px-2.5 py-1 text-[12px] text-on-surface outline-none"
-        />
-      ) : (
-        <NavLink
-          key={session.id}
-          to={sessionUrl(session.id)}
-          onClick={close}
-          className={({ isActive }) =>
-            `group flex items-center justify-between w-full rounded-lg px-2.5 py-1.5 text-left transition-colors ${isActive ? "bg-surface-container-high text-primary" : "text-on-surface hover:bg-surface-container"}`
-          }
-          style={{ contentVisibility: "auto", containIntrinsicSize: "auto 28px" }}
-          onContextMenu={(event) => {
-            event.preventDefault();
-            setMenu({ session, x: event.clientX, y: event.clientY });
-          }}
-        >
-          <span className="line-clamp-1 text-[12px] min-w-0 flex-1">{session.title}</span>
-          <span className="flex items-center gap-1.5 shrink-0 ml-2">
-            {isSessionActive(session.state) ? (
-              <span
-                aria-label="进行中"
-                className="w-1.5 h-1.5 rounded-full bg-primary animate-pulse"
-              />
-            ) : null}
-            <span
-              className="text-[9.5px] text-on-surface-variant/60 whitespace-nowrap"
-              title={new Date(session.updatedAt).toLocaleString()}
-            >
-              {relativeTime(session.updatedAt)}
-            </span>
-          </span>
-        </NavLink>
-      ),
-    );
-  const libraryActive = location.pathname.startsWith("/library") && !scopedProject;
+  const failure = projects.error ?? actionError;
   return (
     <>
       {!isDesktop && !isOpen ? (
@@ -319,7 +349,7 @@ export function Sidebar({
             className="mb-2.5 flex w-full items-center gap-2.5 rounded-xl bg-surface-container px-[11px] py-2 text-[12.5px] font-medium text-on-surface transition-colors hover:bg-surface-container-high"
             aria-label="新对话"
             title="新对话"
-            to={newSessionUrl(activeProject)}
+            to={newSessionUrl({ project: activeProject })}
           >
             <Plus size={16} className="shrink-0" aria-hidden="true" />
             {label("New Chat")}
@@ -327,7 +357,18 @@ export function Sidebar({
           <nav aria-label="主导航" className="space-y-1 mb-4 shrink-0">
             <NavLink
               onClick={close}
-              className={() => navClass(libraryActive)}
+              end
+              className={({ isActive }) => navClass(isActive)}
+              aria-label="项目"
+              title="项目"
+              to="/projects"
+            >
+              <FolderTree size={16} className="shrink-0" aria-hidden="true" />
+              {label("Projects")}
+            </NavLink>
+            <NavLink
+              onClick={close}
+              className={({ isActive }) => navClass(isActive)}
               aria-label="文献库"
               title="文献库"
               to="/library"
@@ -350,31 +391,20 @@ export function Sidebar({
             {!collapsed ? (
               <>
                 <SidebarSection
-                  title="Workspaces"
-                  count={projects.data?.collections.length ?? 0}
-                  open={sectionOpen}
-                  onToggle={() => setSectionOpen((v) => !v)}
+                  title="项目"
+                  count={listed.length}
+                  open={projectsOpen}
+                  onToggle={() => setProjectsOpen((v) => !v)}
                   action={
-                    <>
-                      <button
-                        type="button"
-                        aria-label="新建 Workspace"
-                        title="新建 Workspace"
-                        onClick={() => setCreating(true)}
-                        className="shrink-0 p-1 rounded-md opacity-0 group-hover/section:opacity-100 focus:opacity-100 hover:bg-surface-container transition-all text-on-surface-variant hover:text-primary"
-                      >
-                        <Plus className="w-3 h-3" />
-                      </button>
-                      <Link
-                        to="/projects"
-                        aria-label="管理 Workspace"
-                        title="管理 Workspace"
-                        onClick={close}
-                        className="shrink-0 p-1 rounded-md opacity-0 group-hover/section:opacity-100 focus:opacity-100 hover:bg-surface-container transition-all text-on-surface-variant hover:text-primary"
-                      >
-                        <FolderCog className="w-3 h-3" />
-                      </Link>
-                    </>
+                    <Link
+                      to="/projects"
+                      aria-label="全部项目"
+                      title="全部项目"
+                      onClick={close}
+                      className="shrink-0 p-1 rounded-md opacity-0 group-hover/section:opacity-100 focus:opacity-100 hover:bg-surface-container transition-all text-on-surface-variant hover:text-primary"
+                    >
+                      <FolderTree className="w-3 h-3" />
+                    </Link>
                   }
                 >
                   {projects.isLoading ? (
@@ -383,79 +413,57 @@ export function Sidebar({
                       <span className="text-[11.5px]">加载中…</span>
                     </div>
                   ) : null}
-                  {projects.data?.collections.map((project) => (
-                    <div key={project.id} className="mb-0.5">
-                      <div className="flex items-center gap-1 group/header">
-                        <button
-                          type="button"
-                          aria-expanded={expanded.has(project.id)}
-                          onClick={() =>
-                            setExpanded((previous) => {
-                              const next = new Set(previous);
-                              if (next.has(project.id)) next.delete(project.id);
-                              else next.add(project.id);
-                              return next;
-                            })
-                          }
-                          aria-current={activeProject === project.id ? "true" : undefined}
-                          className={`flex items-center gap-2 flex-1 min-w-0 px-2 py-1 rounded-lg transition-colors text-left ${activeProject === project.id ? "bg-surface-container-high text-primary" : "text-on-surface hover:bg-surface-container"}`}
-                        >
-                          <FolderOpen
-                            className={`w-3.5 h-3.5 shrink-0 ${activeProject === project.id ? "text-primary" : "text-on-surface-variant"}`}
-                          />
-                          <span className="text-[12px] font-medium truncate">{project.name}</span>
-                        </button>
-                        <Link
-                          to={newSessionUrl(project.id)}
-                          onClick={close}
-                          title={`在 ${project.name} 中新建会话`}
-                          aria-label={`在 ${project.name} 中新建会话`}
-                          className="shrink-0 p-1 rounded-md opacity-0 group-hover/header:opacity-100 focus:opacity-100 hover:bg-surface-container transition-all text-on-surface-variant hover:text-primary"
-                        >
-                          <Plus className="w-3 h-3" />
-                        </Link>
-                      </div>
-                      {expanded.has(project.id) ? (
-                        <div className="ml-4 mt-0.5 space-y-0.5">
-                          <Link
-                            className={`flex items-center justify-between w-full rounded-lg px-2.5 py-1.5 text-[11.5px] transition-colors ${scopedProject === project.id ? "bg-surface-container-high text-primary" : "text-on-surface-variant hover:bg-surface-container hover:text-primary"}`}
-                            onClick={close}
-                            to={workspaceUrl(project.id)}
-                          >
-                            <span>文献</span>
-                            <span className="text-[9.5px] font-mono tabular-nums">
-                              {project.paperCount}
-                            </span>
-                          </Link>
-                          {renderSessions(grouped.get(project.id) ?? [])}
-                          {!grouped.get(project.id)?.length ? (
-                            <p className="px-2.5 py-1 text-[11.5px] text-on-surface-variant/50">
-                              暂无对话
-                            </p>
-                          ) : null}
-                        </div>
-                      ) : null}
-                    </div>
+                  {shown.map((project) => (
+                    <ProjectGroup
+                      key={project.id}
+                      project={project}
+                      active={activeProject === project.id}
+                      open={expanded.has(project.id)}
+                      onToggle={() =>
+                        setExpanded((previous) => {
+                          const next = new Set(previous);
+                          if (next.has(project.id)) next.delete(project.id);
+                          else next.add(project.id);
+                          return next;
+                        })
+                      }
+                      handlers={handlers}
+                    />
                   ))}
-                  {projects.data?.collections.length === 0 ? (
+                  {listed.length > shown.length ? (
+                    <Link
+                      to="/projects"
+                      onClick={close}
+                      className="block px-2.5 py-1 text-[11px] text-on-surface-variant/70 hover:text-primary"
+                    >
+                      全部 {listed.length} 个项目
+                    </Link>
+                  ) : null}
+                  {projects.data && listed.length === 0 ? (
                     <p className="px-2.5 py-1.5 text-[11.5px] text-on-surface-variant/50">
-                      还没有文献项目
+                      还没有项目会话
                     </p>
                   ) : null}
+                  {projects.data?.failures.map((failed) => (
+                    <p
+                      key={failed.provider}
+                      role="alert"
+                      className="px-2.5 py-1 text-[11px] text-error break-words"
+                    >
+                      无法读取 {failed.provider} 的会话：{failed.message}
+                    </p>
+                  ))}
                 </SidebarSection>
-                {unassigned.length ? (
-                  <SidebarSection
-                    title="未归属会话"
-                    count={unassigned.length}
-                    open={unassignedOpen}
-                    onToggle={() => setUnassignedOpen((v) => !v)}
-                  >
-                    <div className="space-y-0.5">{renderSessions(unassigned)}</div>
-                  </SidebarSection>
-                ) : null}
-                {(projects.error ?? sessions.error ?? actionError) ? (
+                <SidebarSection
+                  title="未归属会话"
+                  open={unassignedOpen}
+                  onToggle={() => setUnassignedOpen((v) => !v)}
+                >
+                  <SessionList project={UNASSIGNED} handlers={handlers} />
+                </SidebarSection>
+                {failure ? (
                   <p role="alert" className="text-error text-xs p-2 break-words">
-                    {(projects.error ?? sessions.error ?? actionError)?.message}
+                    {failure.message}
                   </p>
                 ) : null}
               </>
@@ -524,20 +532,15 @@ export function Sidebar({
           />
         ) : null}
       </aside>
-      {creating ? <WorkspaceCreateDialog onClose={() => setCreating(false)} /> : null}
       {menu ? (
         <SessionContextMenu
           x={menu.x}
           y={menu.y}
           onClose={() => setMenu(null)}
           onRename={() => setRenaming(menu.session.id)}
-          forkDisabled={isSessionActive(menu.session.state) || menu.session.readOnly}
+          forkDisabled={!!menu.session.state}
           onFork={() => fork.mutate(menu.session.id)}
-          onDelete={() => {
-            // Irreversible: the conversation and its private files go.
-            if (window.confirm(`删除会话「${menu.session.title}」？此操作无法撤销。`))
-              remove.mutate(menu.session.id);
-          }}
+          onArchive={() => archive.mutate(menu.session.id)}
         />
       ) : null}
     </>

@@ -1,15 +1,22 @@
-import type { SessionMessage, StoredSession } from "@scholaraio-hub/shared";
+import type { SessionDetail, SessionMessage } from "@scholaraio-hub/shared";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { ArrowDown } from "lucide-react";
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useNavigationLayout } from "../../app/components/NavigationLayout";
-import { ownAttachments, sessionInput, sessionUrl } from "../../core/sessions";
+import {
+  ownAttachments,
+  sessionApi,
+  sessionInput,
+  sessionQuery,
+  sessionUrl,
+} from "../../core/sessions";
 import { PaperReaderView } from "../library/reader/PaperReaderView";
 import { InputRequestPrompt } from "./components/InputRequestPrompt";
+import { ResizableReferencesPanel } from "./components/ReferencesPanel";
 import { ResizableSessionFilesPanel } from "./components/SessionFilesPanel";
 import { SessionHeader, type SessionPanel } from "./components/SessionHeader";
 import { SessionMessages } from "./components/SessionMessages";
-import { ResizableWorkspacePapersPanel } from "./components/WorkspacePapersPanel";
 import { useProviders } from "./composer/hooks/useProviders";
 import { rememberComposerChoice } from "./composer/model/preferences";
 import { Composer, type EditedPrompt } from "./composer/ui/Composer";
@@ -18,7 +25,7 @@ import { useSessionChat } from "./hooks/useSessionChat";
 import { useStickToBottom } from "./hooks/useStickToBottom";
 
 /** An open session: header, transcript, composer and the side panels. */
-export function SessionChatView({ initial }: { initial: StoredSession }) {
+export function SessionChatView({ initial }: { initial: SessionDetail }) {
   const { isDesktop } = useNavigationLayout();
   const providers = useProviders();
   const session = useSessionChat(initial);
@@ -26,6 +33,12 @@ export function SessionChatView({ initial }: { initial: StoredSession }) {
   const scroll = useStickToBottom(running);
   const navigate = useNavigate();
   const [panel, setPanel] = useState<SessionPanel | undefined>();
+  const client = useQueryClient();
+  const references = session.snapshot?.references ?? initial.references;
+  const changeReferences = useMutation({
+    mutationFn: (next: typeof references) => sessionApi.setReferences(initial.id, next),
+    onSuccess: (detail) => client.setQueryData(sessionQuery(initial.id).queryKey, detail),
+  });
   const [selectedPaper, setSelectedPaper] = useState<string | null>(null);
   /** The last prompt, brought back into the composer to be corrected. */
   const [editing, setEditing] = useState<EditedPrompt>();
@@ -79,7 +92,7 @@ export function SessionChatView({ initial }: { initial: StoredSession }) {
           running={running}
           inset={!isDesktop}
           panel={panel}
-          hasPapers={!!initial.projectId}
+          references={references.length}
           onTogglePanel={(next) => setPanel((current) => (current === next ? undefined : next))}
         />
         {pending && !askedInline ? (
@@ -138,18 +151,14 @@ export function SessionChatView({ initial }: { initial: StoredSession }) {
                 sessionId={initial.id}
                 onInputDone={session.refresh}
                 provider={initial.provider}
-                promptActions={
-                  initial.readOnly
-                    ? undefined
-                    : {
-                        busy: running || session.fork.isPending,
-                        onEdit: edit,
-                        onFork: (message) =>
-                          session.fork.mutate(message.id, {
-                            onSuccess: (fork) => navigate(sessionUrl(fork.id)),
-                          }),
-                      }
-                }
+                promptActions={{
+                  busy: running || session.fork.isPending,
+                  onEdit: edit,
+                  onFork: (message) =>
+                    session.fork.mutate(message.id, {
+                      onSuccess: (fork) => navigate(sessionUrl(fork.id)),
+                    }),
+                }}
                 editingId={editing?.id}
               />
               {snapshot?.queuePaused ? (
@@ -182,11 +191,12 @@ export function SessionChatView({ initial }: { initial: StoredSession }) {
           <footer className="session-input pb-[max(0.75rem,env(safe-area-inset-bottom))]">
             <div className={`session-connection-bar session-connection-${session.connection}`} />
             <div className="session-input-inner">
-              {initial.readOnly ? (
-                <p className="text-sm text-on-surface-variant py-3">
-                  这是导入的只读历史。新建会话后可继续提问。
+              {snapshot?.external ? (
+                <p className="text-xs text-attention pb-1.5">
+                  另一个程序（如终端里的 CLI）正在使用这个会话；在这里继续可能与它冲突。
                 </p>
-              ) : (
+              ) : null}
+              {
                 <Composer
                   provider={initial.provider}
                   sessionId={initial.id}
@@ -205,7 +215,7 @@ export function SessionChatView({ initial }: { initial: StoredSession }) {
                   onEditEnd={() => setEditing(undefined)}
                   controls={controls}
                 />
-              )}
+              }
             </div>
           </footer>
         )}
@@ -213,21 +223,25 @@ export function SessionChatView({ initial }: { initial: StoredSession }) {
       <ResizableSessionFilesPanel
         open={panel === "files"}
         sessionId={initial.id}
-        rootName="会话工作目录"
+        rootName={initial.cwd.split(/[\\/]/).filter(Boolean).at(-1) ?? "工作目录"}
         onClose={() => setPanel(undefined)}
       />
-      {initial.projectId ? (
-        <ResizableWorkspacePapersPanel
-          open={panel === "papers"}
-          projectId={initial.projectId}
-          selectedPaperId={selectedPaper}
-          onSelectPaper={(id) => {
-            setSelectedPaper(id);
-            if (!isDesktop) setPanel(undefined);
-          }}
-          onClose={() => setPanel(undefined)}
-        />
-      ) : null}
+      <ResizableReferencesPanel
+        open={panel === "papers"}
+        references={references}
+        selectedPaperId={selectedPaper}
+        onSelectPaper={(id) => {
+          setSelectedPaper(id);
+          if (!isDesktop) setPanel(undefined);
+        }}
+        onRemove={(removed) =>
+          changeReferences.mutate(
+            references.filter((ref) => ref.kind !== removed.kind || ref.id !== removed.id),
+          )
+        }
+        disabled={changeReferences.isPending}
+        onClose={() => setPanel(undefined)}
+      />
     </div>
   );
 }

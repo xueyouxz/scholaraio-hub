@@ -1,25 +1,32 @@
-import type { LiteratureCollection } from "@scholaraio-hub/shared";
-import { Check, ChevronDown, FolderOpen, FolderX } from "lucide-react";
-import { useEffect, useRef, useState } from "react";
+import type { ProjectSummary } from "@scholaraio-hub/shared";
+import { Check, ChevronDown, FolderOpen, FolderPlus, FolderX } from "lucide-react";
+import { type FormEvent, useEffect, useRef, useState } from "react";
 
 /**
- * Which workspace a new chat starts in, changeable before the first message.
- *
- * The workspace decides the agent's directory and the papers it may cite, so
- * it is chosen here rather than fixed by whichever link opened the page.
+ * Which project a new chat runs in, changeable before the first message: one
+ * of the projects the agents have sessions in, another directory, or none (the
+ * session then gets a folder of its own).
  */
-export function WorkspaceSwitcher({
+export function ProjectPicker({
   projects,
   current,
   disabled,
   onChange,
+  onAdd,
+  adding,
+  addError,
 }: {
-  projects: LiteratureCollection[];
-  current?: LiteratureCollection;
+  projects: ProjectSummary[];
+  current?: ProjectSummary;
   disabled: boolean;
   onChange: (projectId: string) => void;
+  /** Add a directory by its path; the new project becomes the choice. */
+  onAdd: (path: string) => void;
+  adding: boolean;
+  addError?: string;
 }) {
   const [open, setOpen] = useState(false);
+  const [path, setPath] = useState("");
   const menu = useRef<HTMLDivElement>(null);
   useEffect(() => {
     if (!open) return;
@@ -40,13 +47,18 @@ export function WorkspaceSwitcher({
     setOpen(false);
     if (id !== (current?.id ?? "")) onChange(id);
   };
+  const add = (event: FormEvent) => {
+    event.preventDefault();
+    if (path.trim()) onAdd(path.trim());
+  };
   return (
     <div className="relative" ref={menu}>
       <button
         type="button"
-        aria-label={`Workspace：${current?.name ?? "未选择"}`}
+        aria-label={`项目：${current?.name ?? "不使用项目"}`}
         aria-expanded={open}
         disabled={disabled}
+        title={current?.path}
         onClick={() => setOpen((value) => !value)}
         className={`inline-flex max-w-[16rem] items-center gap-1.5 rounded-full border px-3 py-1 text-xs font-medium transition-colors ${
           current
@@ -55,20 +67,20 @@ export function WorkspaceSwitcher({
         }`}
       >
         <FolderOpen className="w-3.5 h-3.5 shrink-0" aria-hidden="true" />
-        <span className="truncate">{current?.name ?? "选择 Workspace"}</span>
+        <span className="truncate">{current?.name ?? "选择项目"}</span>
         <ChevronDown
           className={`w-3 h-3 shrink-0 transition-transform ${open ? "rotate-180" : ""}`}
           aria-hidden="true"
         />
       </button>
       {open ? (
-        <div className="absolute bottom-[calc(100%+6px)] left-0 z-30 w-64 rounded-xl border border-outline-variant/20 bg-surface-container-high p-1.5 shadow-xl">
+        <div className="absolute bottom-[calc(100%+6px)] left-0 z-30 w-72 rounded-xl border border-outline-variant/20 bg-surface-container-high p-1.5 shadow-xl">
           <p className="px-2.5 pb-1 pt-0.5 text-[10px] font-mono font-bold uppercase tracking-widest text-on-surface-variant">
-            切换 Workspace
+            在哪个项目中运行
           </p>
           <div className="max-h-64 overflow-auto">
             <MenuItem active={!current} onClick={() => choose("")} icon={FolderX}>
-              不关联 Workspace
+              不使用项目（临时目录）
             </MenuItem>
             {projects.map((project) => (
               <MenuItem
@@ -76,12 +88,40 @@ export function WorkspaceSwitcher({
                 active={current?.id === project.id}
                 onClick={() => choose(project.id)}
                 icon={FolderOpen}
-                meta={`${project.paperCount} 篇`}
+                title={project.path}
               >
                 {project.name}
               </MenuItem>
             ))}
           </div>
+          <form
+            onSubmit={add}
+            className="mt-1 flex items-center gap-1 border-t border-outline-variant/15 pt-1.5"
+          >
+            <FolderPlus
+              className="ml-1 w-3.5 h-3.5 shrink-0 text-on-surface-variant"
+              aria-hidden="true"
+            />
+            <input
+              value={path}
+              onChange={(event) => setPath(event.target.value)}
+              aria-label="其他目录的绝对路径"
+              placeholder="其他目录的绝对路径"
+              className="flex-1 min-w-0 rounded-md bg-surface-container px-2 py-1 text-[12px] text-on-surface outline-none placeholder:text-on-surface-variant/60"
+            />
+            <button
+              type="submit"
+              disabled={!path.trim() || adding}
+              className="rounded-md px-2 py-1 text-[12px] font-medium text-primary disabled:opacity-40"
+            >
+              使用
+            </button>
+          </form>
+          {addError ? (
+            <p role="alert" className="px-2 pt-1 text-[11px] text-error break-words">
+              {addError}
+            </p>
+          ) : null}
         </div>
       ) : null}
     </div>
@@ -92,13 +132,13 @@ function MenuItem({
   active,
   onClick,
   icon: Icon,
-  meta,
+  title,
   children,
 }: {
   active: boolean;
   onClick: () => void;
   icon: typeof FolderOpen;
-  meta?: string;
+  title?: string;
   children: React.ReactNode;
 }) {
   return (
@@ -106,6 +146,7 @@ function MenuItem({
       type="button"
       aria-pressed={active}
       onClick={onClick}
+      title={title}
       className={`flex w-full items-center gap-2 rounded-lg px-2.5 py-1.5 text-left text-[13px] transition-colors ${
         active
           ? "bg-primary/10 font-semibold text-primary"
@@ -114,9 +155,6 @@ function MenuItem({
     >
       <Icon className="w-3.5 h-3.5 shrink-0" aria-hidden="true" />
       <span className="min-w-0 flex-1 truncate">{children}</span>
-      {meta ? (
-        <span className="shrink-0 text-[10px] font-mono text-on-surface-variant">{meta}</span>
-      ) : null}
       {active ? <Check className="w-3.5 h-3.5 shrink-0" aria-hidden="true" /> : null}
     </button>
   );

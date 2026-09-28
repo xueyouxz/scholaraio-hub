@@ -19,7 +19,8 @@ Terms used here are defined in [`../glossary.md`](../glossary.md).
 - **HTTP protocol**: `src/http.ts` (the `{ id, code, message, data }` envelope and the error
   codes with their statuses), shared by the server, the client and, through the contract
   test, the library service. See `docs/http-api.md`.
-- **Schemas / types**: `src/session/StoredSession.ts` (the session contract),
+- **Schemas / types**: `src/session/session.ts` (the session contract), `src/projects.ts`
+  (projects and session lists),
   `src/library.ts` (library API shapes, aliases of the types generated into
   `src/generated/` from the library service's OpenAPI document), `src/types.ts` (providers, capabilities,
   permissions). Consumers import these rather than re-declaring shapes; a type

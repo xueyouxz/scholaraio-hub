@@ -6,7 +6,7 @@ import { type ReferenceFormat, libraryApi } from "../../../core/library";
 import { newSessionUrl } from "../../../core/sessions";
 import { useLibrarySelection } from "../selection";
 import { useExportReferences } from "../useExportReferences";
-import { AddToWorkspaceMenu } from "./AddToWorkspaceMenu";
+import { AddToCollectionMenu } from "./AddToCollectionMenu";
 
 const FORMATS: { value: ReferenceFormat; label: string }[] = [
   { value: "bibtex", label: "BibTeX" },
@@ -75,13 +75,13 @@ export function LibrarySelectionBar() {
         onExport={(format) => save.mutate({ paperIds: ids, format })}
       />
       <Link
-        to={newSessionUrl(undefined, ids)}
+        to={newSessionUrl({ references: ids.map((id) => ({ kind: "paper" as const, id })) })}
         className="inline-flex items-center gap-1.5 rounded-full bg-surface-container-high px-3 py-1.5 text-sm font-medium text-on-surface active:scale-95"
       >
         <MessageSquare className="w-3.5 h-3.5" aria-hidden="true" />
         询问选中的
       </Link>
-      <AddToWorkspaceMenu
+      <AddToCollectionMenu
         workspaces={projects.data?.collections.map((p) => ({ id: p.id, name: p.name })) ?? []}
         pending={add.isPending}
         selectedCount={ids.length}

@@ -54,19 +54,16 @@ describe("assistant turn metadata", () => {
     const created = await server.app.request("/api/sessions", {
       method: "POST",
       headers,
-      body: JSON.stringify({ provider: "claude" }),
+      body: JSON.stringify({ provider: "claude", message: { id: "first", text: "hi" } }),
     });
     const { id } = (await created.json().then((body) => body.data)) as { id: string };
-    const response = await server.app.request(`/api/sessions/${id}/messages`, {
-      method: "POST",
-      headers,
-      body: JSON.stringify({ id: crypto.randomUUID(), text: "hi" }),
-    });
-    expect(await response.text()).toContain('"message-metadata"');
-    await expect.poll(() => server.sessions.detail(id).state).toBe("idle");
+    expect(id).toBe("claude:native-1");
+    await expect.poll(async () => (await server.sessions.detail(id)).state).toBe("idle");
 
-    const assistant = server.sessions.detail(id).messages.at(-1);
-    expect(assistant?.metadata).toEqual({
+    // The transcript is the provider's; the Hub keeps what it added to the answer.
+    const prompt = Object.values(server.store.find(id)?.prompts ?? {})[0];
+    expect(prompt?.inputId).toBe("first");
+    expect(prompt?.metadata).toEqual({
       model: "claude-opus-5",
       usage: { inputTokens: 1200, outputTokens: 340 },
       contextWindow: 200_000,

@@ -9,9 +9,9 @@ const LibraryBrowsePage = lazy(() =>
     default: module.LibraryBrowsePage,
   })),
 );
-const WorkspacePapersPage = lazy(() =>
-  import("../features/library/WorkspacePapersPage").then((module) => ({
-    default: module.WorkspacePapersPage,
+const CollectionPage = lazy(() =>
+  import("../features/library/CollectionPage").then((module) => ({
+    default: module.CollectionPage,
   })),
 );
 const LibraryDashboard = lazy(() => import("../features/library/LibraryDashboard"));
@@ -32,10 +32,28 @@ const SkillsPage = lazy(() =>
 const ProjectsPage = lazy(() =>
   import("./pages/ProjectsPage").then((module) => ({ default: module.ProjectsPage })),
 );
-/** A workspace's page, fresh for each workspace. */
-function WorkspaceRoute() {
+const ProjectPage = lazy(() =>
+  import("./pages/ProjectPage").then((module) => ({ default: module.ProjectPage })),
+);
+const CollectionsPage = lazy(() =>
+  import("../features/library/CollectionsPage").then((module) => ({
+    default: module.CollectionsPage,
+  })),
+);
+/** A literature collection's page, fresh for each collection. */
+function CollectionRoute() {
+  const { collectionId = "" } = useParams();
+  return <CollectionPage key={collectionId} collectionId={collectionId} />;
+}
+/** A project's page, fresh for each project. */
+function ProjectRoute() {
   const { projectId = "" } = useParams();
-  return <WorkspacePapersPage key={projectId} projectId={projectId} />;
+  return <ProjectPage key={projectId} />;
+}
+/** Collections used to be workspaces; old links still land on them. */
+function WorkspaceRedirect() {
+  const { projectId = "" } = useParams();
+  return <Navigate to={`/library/collections/${encodeURIComponent(projectId)}`} replace />;
 }
 
 export function App() {
@@ -47,20 +65,23 @@ export function App() {
       <Suspense fallback={<output className="p-6">加载中…</output>}>
         <Routes>
           <Route element={<NavigationLayout />}>
-            <Route path="/" element={<Navigate to="/library" replace />} />
+            <Route path="/" element={<Navigate to="/projects" replace />} />
             <Route path="/library" element={<LibraryLayout />}>
               <Route index element={<LibraryBrowsePage />} />
+              <Route path="collections" element={<CollectionsPage />} />
               <Route path="insights" element={<LibraryDashboard />} />
             </Route>
+            <Route path="/library/collections/:collectionId" element={<CollectionRoute />} />
             <Route path="/library/:paperId" element={<ReaderPage />} />
-            <Route path="/workspaces/:projectId" element={<WorkspaceRoute />} />
+            <Route path="/workspaces/:projectId" element={<WorkspaceRedirect />} />
             <Route path="/sessions" element={<SessionPage />} />
             <Route path="/sessions/:sessionId" element={<SessionPage />} />
             <Route path="/projects" element={<ProjectsPage />} />
+            <Route path="/projects/:projectId" element={<ProjectRoute />} />
             <Route path="/settings" element={<SettingsPage />} />
             <Route path="/skills" element={<SkillsPage />} />
             <Route path="/skills/:skillId" element={<SkillsPage />} />
-            <Route path="*" element={<Navigate to="/library" replace />} />
+            <Route path="*" element={<Navigate to="/projects" replace />} />
           </Route>
         </Routes>
       </Suspense>

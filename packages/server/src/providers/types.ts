@@ -90,6 +90,8 @@ export interface StartSessionOptions {
   effort?: string;
   /** Tool approval callback */
   onToolApproval?: CanUseTool;
+  /** Directories outside `cwd` the agent may read without asking (the session's attachments). */
+  additionalDirectories?: string[];
 }
 
 export interface ForkSessionOptions {

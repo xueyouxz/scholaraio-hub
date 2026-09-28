@@ -141,6 +141,7 @@ export class UIChunkWriter {
         this.close();
         return;
       case "session.started":
+      case "prompt.recorded":
       case "model.resolved":
       case "rate-limit":
       case "context.usage":

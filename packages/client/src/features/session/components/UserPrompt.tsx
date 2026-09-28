@@ -2,6 +2,7 @@ import type { SessionMessage } from "@scholaraio-hub/shared";
 import { GitBranch, Pencil } from "lucide-react";
 import { type KeyboardEvent, memo, useEffect, useRef, useState } from "react";
 import { CopyButton } from "./CopyButton";
+import { FileAttachment } from "./FileAttachment";
 import { ImageThumb } from "./parts/ImagePart";
 
 const MAX_LINES = 12;
@@ -18,7 +19,7 @@ export interface PromptActions {
 }
 
 /**
- * The user's message: a right-aligned bubble with its attachments, and under
+ * The user's message: its attachments above a right-aligned bubble, and under
  * it copy, edit and fork, shown on hover the way Claude's apps show them.
  */
 export const UserPrompt = memo(function UserPrompt({
@@ -33,8 +34,10 @@ export const UserPrompt = memo(function UserPrompt({
     .join("\n")
     .trim();
   const files = message.parts.filter((part) => part.type === "file");
-  const images = files.filter((file) => file.mediaType.startsWith("image/"));
-  const others = files.filter((file) => !file.mediaType.startsWith("image/"));
+  // Pictures and videos in one row, documents in a row under them.
+  const isMedia = (file: (typeof files)[number]) => /^(image|video)\//.test(file.mediaType);
+  const media = files.filter(isMedia);
+  const documents = files.filter((file) => !isMedia(file));
 
   if (editing && onEdit) {
     return (
@@ -50,34 +53,47 @@ export const UserPrompt = memo(function UserPrompt({
   }
   return (
     <div className="user-prompt-container">
-      <div className="message message-user-prompt">
-        <div className="message-content">
-          {text ? <CollapsibleText text={text} /> : null}
-          {images.length ? (
-            <div className="image-strip">
-              {images.map((file) => (
-                <ImageThumb key={file.url} url={file.url} name={file.filename} />
+      {files.length ? (
+        <div className="user-prompt-attachments">
+          {media.length ? (
+            <ul className="user-prompt-attachment-row" aria-label="图片和视频">
+              {media.map((file) => (
+                <li key={file.url}>
+                  {file.mediaType.startsWith("image/") ? (
+                    <ImageThumb url={file.url} name={file.filename} />
+                  ) : (
+                    <FileAttachment
+                      url={file.url}
+                      filename={file.filename}
+                      mediaType={file.mediaType}
+                    />
+                  )}
+                </li>
               ))}
-            </div>
+            </ul>
           ) : null}
-          {others.length ? (
-            <div className="user-prompt-metadata">
-              {others.map((file) => (
-                <a
-                  key={file.url}
-                  className="uploaded-file uploaded-file-clickable"
-                  href={file.url}
-                  target="_blank"
-                  rel="noreferrer"
-                  title={file.mediaType}
-                >
-                  📎 {file.filename || "附件"}
-                </a>
+          {documents.length ? (
+            <ul className="user-prompt-attachment-row" aria-label="文档">
+              {documents.map((file) => (
+                <li key={file.url} className="max-w-full">
+                  <FileAttachment
+                    url={file.url}
+                    filename={file.filename}
+                    mediaType={file.mediaType}
+                  />
+                </li>
               ))}
-            </div>
+            </ul>
           ) : null}
         </div>
-      </div>
+      ) : null}
+      {text ? (
+        <div className="message message-user-prompt">
+          <div className="message-content">
+            <CollapsibleText text={text} />
+          </div>
+        </div>
+      ) : null}
       <div className="message-actions">
         {text ? <CopyButton text={text} label="复制消息" /> : null}
         {onEdit ? (

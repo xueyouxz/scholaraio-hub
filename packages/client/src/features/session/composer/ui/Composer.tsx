@@ -202,17 +202,32 @@ export function Composer({
     submitting.current = true;
     setSending(true);
     setError(undefined);
+    let taken: ReturnType<typeof staged.take> | undefined;
     try {
       const attachments = await staged.settle();
-      await (route === "queue" && onQueue ? onQueue : onSend)(submitted, attachments);
-      staged.clear();
+      // The transcript shows the message as soon as it is handed off, which can be
+      // long before the send resolves; empty the input and the tray now and restore
+      // them on failure.
+      const send = (route === "queue" && onQueue ? onQueue : onSend)(submitted, attachments);
+      taken = staged.take();
       if (latest.current === submitted) {
         setText("");
-        // New-session submission unmounts this composer, so clear storage here too.
-        forget();
+        latest.current = "";
       }
+      await send;
+      taken.commit();
+      // New-session submission unmounts this composer, so clear storage here too.
+      if (!latest.current) forget();
       textarea.current?.focus();
     } catch (error) {
+      // Put the failed message back unless the user has started a new one meanwhile.
+      if (taken) {
+        taken.restore();
+        if (!latest.current) {
+          setText(submitted);
+          latest.current = submitted;
+        }
+      }
       setError(error instanceof Error ? error.message : "Could not send. Try again.");
     } finally {
       submitting.current = false;

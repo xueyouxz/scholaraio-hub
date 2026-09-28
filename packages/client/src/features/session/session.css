@@ -293,25 +293,27 @@
   word-break: break-word;
 }
 
-.message-content .user-prompt-metadata {
-  margin-top: var(--space-2);
-  padding-top: var(--space-2);
-  border-top: 1px solid var(--border-subtle);
-  color: var(--color-on-surface-variant);
+/* A sent message's files, above its bubble and apart from it (UserPrompt.tsx):
+   pictures and videos in one row, documents in a row under them. */
+.user-prompt-attachments {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 6px;
+  max-width: min(80%, 820px);
+  margin-bottom: 6px;
 }
 
-.uploaded-file {
-  cursor: default;
-  color: var(--color-on-surface-variant);
-}
-
-.uploaded-file-clickable {
-  cursor: pointer;
-  color: var(--color-primary);
-}
-
-.uploaded-file-clickable:hover {
-  text-decoration: underline;
+.user-prompt-attachment-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  justify-content: flex-end;
+  gap: 6px;
+  max-width: 100%;
+  margin: 0;
+  padding: 0;
+  list-style: none;
 }
 
 .collapsible-text {
@@ -750,25 +752,20 @@ details[open] > summary .disclosure-chevron {
 .image-thumb {
   display: block;
   overflow: hidden;
+  padding: 0;
+  border: 1px solid var(--border-subtle);
   border-radius: var(--radius-frame);
   background: var(--color-surface-container-low);
   cursor: zoom-in;
 }
 
+/* Scaled down whole, never cropped, to a small box so pictures do not take over the transcript. */
 .image-thumb img {
   display: block;
-  max-width: 240px;
-  max-height: 160px;
-  object-fit: contain;
-}
-
-.image-thumb.large {
-  cursor: zoom-out;
-}
-
-.image-thumb.large img {
-  max-width: 100%;
-  max-height: none;
+  width: auto;
+  height: auto;
+  max-width: 220px;
+  max-height: 112px;
 }
 
 /* What a finished turn changed (FileChangesCard.tsx). */
@@ -1317,4 +1314,9 @@ details[open] > summary .disclosure-chevron {
   .inline-decision:active {
     transform: none;
   }
+}
+
+/* The file viewer (AttachmentViewer.tsx): the file alone on a dark backdrop in the brand's near-black. */
+.attachment-viewer::backdrop {
+  background: rgb(23 29 26 / 0.88);
 }

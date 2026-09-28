@@ -1,17 +1,19 @@
 import type { SessionAttachment } from "@scholaraio-hub/shared";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { type AttachmentTarget, sessionApi } from "../../../../core/sessions";
+import { type AttachmentKind, attachmentKind } from "../../lib/fileKinds";
 
 export interface StagedAttachment {
   /** Local key; the server id is `attachment.id` once uploaded. */
   key: string;
   file: File;
+  kind: AttachmentKind;
   status: "uploading" | "uploaded" | "failed";
   /** 0–1 while uploading. */
   progress: number;
   attachment?: SessionAttachment;
   error?: string;
-  /** Object URL for an image thumbnail; revoked when the item goes. */
+  /** Object URL for an image or video thumbnail; revoked when the item goes. */
   preview?: string;
 }
 
@@ -76,11 +78,14 @@ export function useStagedAttachments(target: AttachmentTarget) {
   const add = useCallback(
     (files: File[]) => {
       const added = files.map((file) => {
-        const preview = file.type.startsWith("image/") ? URL.createObjectURL(file) : undefined;
+        const kind = attachmentKind(file);
+        const preview =
+          kind === "image" || kind === "video" ? URL.createObjectURL(file) : undefined;
         if (preview) previews.current.add(preview);
         return {
           key: `attachment-${nextKey++}`,
           file,
+          kind,
           status: "uploading" as const,
           progress: 0,
           preview,
@@ -142,11 +147,24 @@ export function useStagedAttachments(target: AttachmentTarget) {
     return settled.filter((outcome): outcome is SessionAttachment => !(outcome instanceof Error));
   }, []);
 
-  /** Forget the files after they were sent; they now belong to the message. */
-  const clear = useCallback(() => {
-    for (const item of itemsRef.current) release(item);
-    outcomes.current.clear();
+  /**
+   * Take the files out of the tray as their message goes out. The message is
+   * shown at once, before the send settles: `commit` forgets them once sent (they
+   * now belong to the message), `restore` puts them back when the send failed.
+   */
+  const take = useCallback(() => {
+    const taken = itemsRef.current;
+    itemsRef.current = [];
     setItems([]);
+    return {
+      commit: () => {
+        for (const item of taken) {
+          release(item);
+          outcomes.current.delete(item.key);
+        }
+      },
+      restore: () => setItems((current) => [...taken, ...current]),
+    };
   }, [release]);
 
   // Closing the composer stops uploads and frees thumbnails; server-side drafts expire.
@@ -167,7 +185,7 @@ export function useStagedAttachments(target: AttachmentTarget) {
     remove,
     retry,
     settle,
-    clear,
+    take,
     failed: items.some((item) => item.status === "failed"),
   };
 }

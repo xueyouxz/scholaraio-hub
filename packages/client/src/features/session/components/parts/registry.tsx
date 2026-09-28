@@ -3,6 +3,7 @@ import type { ReactNode } from "react";
 import { Link } from "react-router-dom";
 import { citationUrl, linkCitations } from "../../lib/citations";
 import type { Part, PartOf, TimelinePartType, ToolPart } from "../../lib/parts";
+import { FileAttachment } from "../FileAttachment";
 import { ImageStrip } from "./ImagePart";
 import { ReasoningPart } from "./ReasoningPart";
 import { TextPart } from "./TextPart";
@@ -48,10 +49,8 @@ const PART_RENDERERS: { [T in TimelinePartType]: PartRenderer<T> } = {
         <ImageStrip images={[{ part, index: 0 }]} />
       </div>
     ) : (
-      <div className="text-block timeline-item">
-        <a className="uploaded-file" href={part.url} target="_blank" rel="noreferrer">
-          📎 {part.filename || "查看附件"}
-        </a>
+      <div className="timeline-item">
+        <FileAttachment url={part.url} filename={part.filename} mediaType={part.mediaType} />
       </div>
     ),
 };

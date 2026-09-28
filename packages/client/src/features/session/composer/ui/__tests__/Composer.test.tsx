@@ -2,7 +2,7 @@ import type { SlashCommand } from "@scholaraio-hub/shared";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { type ComponentProps, act } from "react";
 import { type Root, createRoot } from "react-dom/client";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, onTestFinished, vi } from "vitest";
 
 const commands = vi.hoisted(() => ({
   list: [] as SlashCommand[],
@@ -142,8 +142,8 @@ async function press(init: KeyboardEventInit) {
   await flush();
 }
 
-function file(name: string, size = 3) {
-  return new File(["x".repeat(size)], name, { type: "text/plain" });
+function file(name: string, size = 3, type = "text/plain") {
+  return new File(["x".repeat(size)], name, { type });
 }
 
 function chooseFiles(files: File[]) {
@@ -155,8 +155,8 @@ function chooseFiles(files: File[]) {
 }
 
 const chips = () =>
-  Array.from(container?.querySelectorAll('[aria-label="Attachments"] li') ?? []).map(
-    (node) => node.querySelector("span")?.textContent,
+  Array.from(container?.querySelectorAll('[aria-label="Attachments"] li') ?? []).map((node) =>
+    node.getAttribute("aria-label"),
   );
 const chipStatus = () =>
   Array.from(container?.querySelectorAll('[aria-label="Attachments"] li') ?? []).map((node) =>
@@ -264,6 +264,43 @@ describe("Composer send outcome", () => {
     render({ onSend: vi.fn(async () => Promise.reject(new Error("Network down"))) });
     type("hello");
     await press({ key: "Enter" });
+    expect(textarea().value).toBe("hello");
+    expect(alerts()).toContain("Network down");
+  });
+
+  it("empties the input as soon as the message is handed off, before the send resolves", async () => {
+    let resolve: () => void = () => {};
+    const onSend = vi.fn(
+      () =>
+        new Promise<void>((done) => {
+          resolve = done;
+        }),
+    );
+    render({ onSend });
+    type("hello");
+    await press({ key: "Enter" });
+    expect(onSend).toHaveBeenCalledWith("hello", []);
+    expect(textarea().value).toBe("");
+    await act(async () => resolve());
+    await flush();
+    expect(textarea().value).toBe("");
+    expect(sessionStorage.getItem("hub-composer:session:s1")).toBeNull();
+  });
+
+  it("puts the message back when a pending send fails", async () => {
+    let reject: (error: Error) => void = () => {};
+    const onSend = vi.fn(
+      () =>
+        new Promise<void>((_, fail) => {
+          reject = fail;
+        }),
+    );
+    render({ onSend });
+    type("hello");
+    await press({ key: "Enter" });
+    expect(textarea().value).toBe("");
+    await act(async () => reject(new Error("Network down")));
+    await flush();
     expect(textarea().value).toBe("hello");
     expect(alerts()).toContain("Network down");
   });
@@ -480,6 +517,75 @@ describe("Composer attachments", () => {
     await press({ key: "Enter" });
     expect(onSend).toHaveBeenCalledWith("", [uploaded("notes.txt")]);
     expect(chips()).toEqual([]);
+  });
+
+  it("empties the tray once the message is handed off and restores it if the send fails", async () => {
+    let reject: (error: Error) => void = () => {};
+    const onSend = vi.fn(
+      () =>
+        new Promise<void>((_, fail) => {
+          reject = fail;
+        }),
+    );
+    render({ onSend });
+    chooseFiles([file("notes.txt")]);
+    await flush();
+    type("with file");
+    await press({ key: "Enter" });
+    expect(onSend).toHaveBeenCalledWith("with file", [uploaded("notes.txt")]);
+    expect(chips()).toEqual([]);
+
+    await act(async () => reject(new Error("Network down")));
+    await flush();
+    expect(chips()).toEqual(["notes.txt"]);
+    expect(chipStatus()).toEqual(["uploaded"]);
+    expect(textarea().value).toBe("with file");
+  });
+
+  it("shows pictures and videos as thumbnails and other files by kind and name", async () => {
+    const original = { createObjectURL: URL.createObjectURL, revokeObjectURL: URL.revokeObjectURL };
+    const createObjectURL = vi.fn((blob: Blob) => `blob:${(blob as File).name}`);
+    Object.assign(URL, { createObjectURL, revokeObjectURL: vi.fn() });
+    onTestFinished(() => {
+      Object.assign(URL, original);
+    });
+    render();
+    chooseFiles([
+      file("photo.png", 3, "image/png"),
+      file("clip.mp4", 3, "video/mp4"),
+      file("paper.pdf", 3, "application/pdf"),
+      file("data.csv", 3, ""),
+    ]);
+    const tray = container?.querySelector('[aria-label="Attachments"]');
+    expect(tray?.querySelector("img")?.getAttribute("src")).toBe("blob:photo.png");
+    expect(tray?.querySelector("video")?.getAttribute("src")).toBe("blob:clip.mp4#t=0.1");
+    expect(createObjectURL).toHaveBeenCalledTimes(2);
+    const kinds = Array.from(tray?.querySelectorAll("li[data-kind]") ?? []).map((node) => [
+      node.getAttribute("data-kind"),
+      node.textContent,
+    ]);
+    expect(kinds).toEqual([
+      ["pdf", "paper.pdfpdf"],
+      ["spreadsheet", "data.csvcsv"],
+    ]);
+  });
+
+  it("opens a chosen file in the viewer from the tray", async () => {
+    HTMLDialogElement.prototype.showModal ??= function (this: HTMLDialogElement) {
+      this.open = true;
+    };
+    HTMLDialogElement.prototype.close ??= function (this: HTMLDialogElement) {
+      this.open = false;
+    };
+    render();
+    chooseFiles([file("notes.txt")]);
+    await flush();
+    act(() => button("View notes.txt")?.click());
+    await flush();
+    expect(document.querySelector("dialog")?.getAttribute("aria-label")).toBe("notes.txt");
+    act(() => (document.querySelector('dialog button[aria-label="关闭"]') as HTMLElement).click());
+    expect(document.querySelector("dialog")).toBeNull();
+    expect(chips()).toEqual(["notes.txt"]);
   });
 
   it("uploads a new chat's files to the draft area", async () => {

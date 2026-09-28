@@ -104,6 +104,19 @@ export class ClaudeSession implements AgentSession {
       throw startError(error);
     }
     this.events = this.toAgentEvents();
+    this.warmContextUsage();
+  }
+
+  /**
+   * Claude Code's first `/context` count in a process takes over a second; take
+   * it now, alongside the first turn, so the count at each turn's end is quick.
+   * It settles when the query closes, so nothing outlives the session.
+   */
+  private warmContextUsage(): void {
+    this.sdkQuery
+      .initializationResult()
+      .then(() => this.sdkQuery.getContextUsage())
+      .catch((error) => log().debug({ err: error }, "Context usage warm-up failed"));
   }
 
   abort(): Promise<void> {
@@ -172,7 +185,9 @@ export class ClaudeSession implements AgentSession {
         for (const event of adapter.accept(message as unknown as SDKMessage)) {
           // Report the window as `/context` counts it before the turn closes.
           if (event.type === "turn.completed" && !event.parentCallId) {
-            const usage = await readClaudeContextUsage(this.sdkQuery);
+            const usage =
+              (await readClaudeContextUsage(this.sdkQuery)) ??
+              estimateClaudeContextUsage(adapter.promptTokens, event.contextWindow);
             if (usage) yield { type: "context.usage", usage };
           }
           yield event;
@@ -268,7 +283,25 @@ export async function readClaudeContextUsage(
         : {}),
     };
   } catch (error) {
-    log().warn({ err: error }, "Context usage unavailable");
+    log().warn({ err: error }, "Context usage unavailable; estimating it from the last request");
     return undefined;
   }
+}
+
+/**
+ * The window's fill as the main agent's last API request measured it: what
+ * `/context` would count, less the reply not yet sent back. Undefined without
+ * both numbers.
+ */
+export function estimateClaudeContextUsage(
+  promptTokens: number | undefined,
+  contextWindow: number | undefined,
+): SessionContextUsage | undefined {
+  if (promptTokens === undefined || !contextWindow) return undefined;
+  return {
+    usedTokens: promptTokens,
+    contextWindow,
+    percent: Math.min(100, Math.round((promptTokens / contextWindow) * 100)),
+    display: "used",
+  };
 }

@@ -1,5 +1,10 @@
 import { describe, expect, it, vi } from "vitest";
-import { readClaudeContextUsage } from "../../src/providers/claude/ClaudeSession.js";
+import { ClaudeEventAdapter } from "../../src/providers/claude/ClaudeEventAdapter.js";
+import {
+  estimateClaudeContextUsage,
+  readClaudeContextUsage,
+} from "../../src/providers/claude/ClaudeSession.js";
+import type { SDKMessage } from "../../src/providers/claude/sdk-message.js";
 import {
   CodexEventAdapter,
   codexContextUsage,
@@ -79,7 +84,7 @@ describe("Claude context used", () => {
     });
   });
 
-  it("reports nothing rather than a guess when the CLI cannot answer", async () => {
+  it("reports nothing of its own when the CLI cannot answer", async () => {
     const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
     expect(
       await readClaudeContextUsage({
@@ -87,5 +92,41 @@ describe("Claude context used", () => {
       } as unknown as Parameters<typeof readClaudeContextUsage>[0]),
     ).toBeUndefined();
     warn.mockRestore();
+  });
+
+  const assistant = (usage: Record<string, number>, parent?: string) =>
+    ({
+      type: "assistant",
+      parent_tool_use_id: parent ?? null,
+      message: { id: "msg", role: "assistant", content: [], usage },
+    }) as unknown as SDKMessage;
+
+  it("keeps the main agent's last request size, cached or not", () => {
+    const adapter = new ClaudeEventAdapter();
+    expect(adapter.promptTokens).toBeUndefined();
+    adapter.accept(
+      assistant({
+        input_tokens: 10,
+        cache_creation_input_tokens: 200,
+        cache_read_input_tokens: 40_000,
+        output_tokens: 5,
+      }),
+    );
+    expect(adapter.promptTokens).toBe(40_210);
+    adapter.accept(assistant({ input_tokens: 90_000, output_tokens: 5 }, "task-1"));
+    adapter.accept({ type: "result", subtype: "success" } as unknown as SDKMessage);
+    expect(adapter.promptTokens).toBe(40_210);
+  });
+
+  it("estimates the fill from that request when /context has no answer", () => {
+    expect(estimateClaudeContextUsage(50_000, 200_000)).toEqual({
+      usedTokens: 50_000,
+      contextWindow: 200_000,
+      percent: 25,
+      display: "used",
+    });
+    expect(estimateClaudeContextUsage(250_000, 200_000)?.percent).toBe(100);
+    expect(estimateClaudeContextUsage(undefined, 200_000)).toBeUndefined();
+    expect(estimateClaudeContextUsage(50_000, undefined)).toBeUndefined();
   });
 });

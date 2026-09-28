@@ -67,6 +67,19 @@ const API_ERROR_HINTS: Record<string, string> = {
 };
 
 /**
+ * The tokens an assistant message's API request sent: the context the model
+ * saw, cached or not. Undefined when the message carries no usage.
+ */
+function promptTokens(message: SDKMessage): number | undefined {
+  const raw = record(record(message.message).usage);
+  if (typeof raw.input_tokens !== "number") return undefined;
+  const count = (value: unknown) => (typeof value === "number" ? value : 0);
+  return (
+    raw.input_tokens + count(raw.cache_creation_input_tokens) + count(raw.cache_read_input_tokens)
+  );
+}
+
+/**
  * The error of a message the SDK made up to report a failed API call (it
  * carries `error`), or undefined for a real assistant message.
  */
@@ -295,6 +308,16 @@ export class ClaudeEventAdapter {
   private modelResolved = false;
   /** A failed API call this turn; it, not the result's bare text, explains the failure. */
   private turnApiError: string | undefined;
+  /**
+   * The main agent's last API request size; it outlives the turn, since the
+   * conversation's context does.
+   */
+  private lastPromptTokens: number | undefined;
+
+  /** The context the main agent last sent, for when Claude Code cannot count it itself. */
+  get promptTokens(): number | undefined {
+    return this.lastPromptTokens;
+  }
 
   accept(message: SDKMessage): AgentEvent[] {
     const parent =
@@ -315,6 +338,7 @@ export class ClaudeEventAdapter {
           this.turnApiError = error;
           return [];
         }
+        this.lastPromptTokens = promptTokens(message) ?? this.lastPromptTokens;
         return [...this.resolveModel(message), ...this.scoped(this.root, message)];
       }
       case "rate_limit_event": {

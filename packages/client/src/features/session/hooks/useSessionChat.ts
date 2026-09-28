@@ -7,7 +7,6 @@ import { hubHeaders } from "../../../core/http";
 import {
   chatPaths,
   isSessionActive,
-  ownAttachments,
   sessionApi,
   sessionInput,
   sessionQuery,
@@ -53,9 +52,13 @@ export function useSessionChat(initial: StoredSession) {
         api: chatPaths(id).messages,
         headers: Object.fromEntries(hubHeaders()),
         // The server keeps history; send only the newest user turn (stable id for idempotency).
-        prepareSendMessagesRequest: ({ messages }) => {
+        // A replaced message (`sendMessage` with its id) corrects the last prompt.
+        prepareSendMessagesRequest: ({ messages, messageId }) => {
           const message = messages.at(-1);
-          return { body: message ? sessionInput(id, message) : {} };
+          if (!message) return { body: {} };
+          return {
+            body: { ...sessionInput(id, message), ...(messageId ? { replaces: messageId } : {}) },
+          };
         },
         prepareReconnectToStreamRequest: () => ({ api: chatPaths(id).stream }),
       }),
@@ -159,7 +162,12 @@ export function useSessionChat(initial: StoredSession) {
     },
   });
 
-  const send = async (text: string, attachments: SessionAttachment[]) => {
+  /**
+   * Send a prompt. With `replaces` it corrects the session's last prompt: the
+   * AI SDK swaps that message for this one and drops the reply, and the server
+   * takes the turn back and runs this one in its place.
+   */
+  const send = async (text: string, attachments: SessionAttachment[], replaces?: string) => {
     sendError.current = undefined;
     chat.clearError();
     const taken = new Promise<void>((resolve, reject) => {
@@ -174,6 +182,7 @@ export function useSessionChat(initial: StoredSession) {
           filename: file.filename,
           url: file.url,
         })),
+        messageId: replaces,
       })
       .then(
         () => accepted.current?.resolve(),
@@ -185,22 +194,27 @@ export function useSessionChat(initial: StoredSession) {
     } finally {
       accepted.current = undefined;
     }
-    if (sendError.current) throw sendError.current;
+    if (sendError.current) {
+      // The correction was refused, but the transcript here already dropped the turn.
+      if (replaces) chat.setMessages((await sessionApi.get(id)).messages);
+      throw sendError.current;
+    }
   };
 
   /**
-   * Replace a sent prompt: the server drops it and everything after, then the
-   * edit is sent as a new turn. Attachments of this session go along again.
+   * Take back the last turn: the server removes the prompt and its reply, and
+   * the agent continues from before them. Files it changed stay.
    */
-  const edit = async (message: SessionMessage, text: string) => {
-    const attachments = ownAttachments(id, message);
-    const rewound = await sessionApi.rewind(id, message.id);
-    // The snapshot is now the rewound one; do not reconcile back to the old messages.
-    synchronizedVersion.current = rewound.updatedAt;
-    client.setQueryData(snapshotKey, rewound);
-    chat.setMessages(rewound.messages);
-    await send(text, attachments);
-  };
+  const takeBack = useMutation({
+    mutationFn: (message: SessionMessage) => sessionApi.rewind(id, message.id),
+    onSuccess: (rewound) => {
+      // The snapshot is now the rewound one; do not reconcile back to the old messages.
+      synchronizedVersion.current = rewound.updatedAt;
+      client.setQueryData(snapshotKey, rewound);
+      chat.setMessages(rewound.messages);
+      void client.invalidateQueries({ queryKey: sessionsQuery.queryKey });
+    },
+  });
 
   /** Continue from the turn `messageId` starts, in a new session. */
   const fork = useMutation({
@@ -241,10 +255,16 @@ export function useSessionChat(initial: StoredSession) {
     running,
     state,
     connection,
-    failure: chat.error ?? stop.error ?? reconnect.error ?? editQueue.error ?? fork.error,
+    failure:
+      chat.error ??
+      stop.error ??
+      reconnect.error ??
+      editQueue.error ??
+      fork.error ??
+      takeBack.error,
     refresh,
     send,
-    edit,
+    takeBack,
     fork,
     enqueue,
     stop,

@@ -2,6 +2,7 @@ import type { SessionMessage } from "@scholaraio-hub/shared";
 import { act } from "react";
 import { type Root, createRoot } from "react-dom/client";
 import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
+import { SessionMessages } from "../SessionMessages";
 import { UserPrompt } from "../UserPrompt";
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
@@ -127,5 +128,62 @@ describe("UserPrompt attachment viewer", () => {
     await flush();
     expect(dialog()?.textContent).toContain("无法在这里预览");
     expect(dialog()?.querySelector("a")).toBeNull();
+  });
+});
+
+describe("SessionMessages prompt actions", () => {
+  const prompt = (id: string, text: string): SessionMessage => ({
+    id,
+    role: "user",
+    parts: [{ type: "text", text }],
+  });
+  const answer = (id: string): SessionMessage => ({
+    id,
+    role: "assistant",
+    parts: [{ type: "text", text: "ok" }],
+  });
+  function renderList(editingId?: string) {
+    const actions = { onEdit: vi.fn(), onTakeBack: vi.fn(), onFork: vi.fn() };
+    container = document.createElement("div");
+    document.body.append(container);
+    root = createRoot(container);
+    act(() =>
+      root?.render(
+        <SessionMessages
+          messages={[prompt("u1", "一"), answer("a1"), prompt("u2", "二"), answer("a2")]}
+          streaming={false}
+          provider="claude"
+          promptActions={actions}
+          editingId={editingId}
+        />,
+      ),
+    );
+    return { view: container, actions };
+  }
+  const labels = (view: HTMLElement) =>
+    Array.from(view.querySelectorAll(".user-prompt-container")).map((prompt) =>
+      Array.from(prompt.querySelectorAll(".message-action")).map((action) =>
+        action.getAttribute("aria-label"),
+      ),
+    );
+
+  it("offers edit and take back on the last prompt only; fork on every one", () => {
+    const { view, actions } = renderList();
+    expect(labels(view)).toEqual([
+      ["复制消息", "从这里分叉"],
+      ["复制消息", "编辑消息", "撤销这一轮", "从这里分叉"],
+    ]);
+    click(view.querySelector('button[aria-label="撤销这一轮"]'));
+    expect(actions.onTakeBack).toHaveBeenCalledWith(expect.objectContaining({ id: "u2" }));
+  });
+
+  it("marks the prompt being corrected and holds its actions", () => {
+    const { view } = renderList("u2");
+    const prompts = view.querySelectorAll(".user-prompt-container");
+    expect(prompts[1]?.classList.contains("is-editing")).toBe(true);
+    expect(prompts[0]?.classList.contains("is-editing")).toBe(false);
+    expect(
+      (view.querySelector('button[aria-label="编辑消息"]') as HTMLButtonElement).disabled,
+    ).toBe(true);
   });
 });

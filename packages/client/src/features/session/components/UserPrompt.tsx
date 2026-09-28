@@ -1,6 +1,6 @@
 import type { SessionMessage } from "@scholaraio-hub/shared";
-import { GitBranch, Pencil } from "lucide-react";
-import { type KeyboardEvent, memo, useEffect, useRef, useState } from "react";
+import { GitBranch, Pencil, Undo2 } from "lucide-react";
+import { memo, useState } from "react";
 import { CopyButton } from "./CopyButton";
 import { FileAttachment } from "./FileAttachment";
 import { ImageThumb } from "./parts/ImagePart";
@@ -10,25 +10,29 @@ const MAX_CHARS = MAX_LINES * 100;
 
 /** What the user can do with a prompt they sent; absent actions are not offered. */
 export interface PromptActions {
-  /** Send an edited version in place of this prompt; resolves once the server took it. */
-  onEdit?(message: SessionMessage, text: string): Promise<void>;
+  /** Bring this prompt back into the composer to correct it. */
+  onEdit?(message: SessionMessage): void;
+  /** Take this turn back: the prompt and its reply go. */
+  onTakeBack?(message: SessionMessage): void;
   /** Continue from this turn in a new session. */
   onFork?(message: SessionMessage): void;
-  /** Edit and fork wait while a turn runs or one of them is underway. */
+  /** Edit, take back and fork wait while a turn runs or one of them is underway. */
   busy?: boolean;
 }
 
 /**
  * The user's message: its attachments above a right-aligned bubble, and under
- * it copy, edit and fork, shown on hover the way Claude's apps show them.
+ * it copy, edit, take back and fork, shown on hover the way Claude's apps show
+ * them. While it is being corrected in the composer it is marked as such.
  */
 export const UserPrompt = memo(function UserPrompt({
   message,
   onEdit,
+  onTakeBack,
   onFork,
   busy = false,
-}: { message: SessionMessage } & PromptActions) {
-  const [editing, setEditing] = useState(false);
+  editing = false,
+}: { message: SessionMessage; editing?: boolean } & PromptActions) {
   const text = message.parts
     .flatMap((part) => (part.type === "text" ? [part.text] : []))
     .join("\n")
@@ -39,20 +43,8 @@ export const UserPrompt = memo(function UserPrompt({
   const media = files.filter(isMedia);
   const documents = files.filter((file) => !isMedia(file));
 
-  if (editing && onEdit) {
-    return (
-      <PromptEditor
-        initial={text}
-        onCancel={() => setEditing(false)}
-        onSubmit={async (next) => {
-          await onEdit(message, next);
-          setEditing(false);
-        }}
-      />
-    );
-  }
   return (
-    <div className="user-prompt-container">
+    <div className={`user-prompt-container${editing ? " is-editing" : ""}`}>
       {files.length ? (
         <div className="user-prompt-attachments">
           {media.length ? (
@@ -100,12 +92,24 @@ export const UserPrompt = memo(function UserPrompt({
           <button
             type="button"
             className="message-action"
-            disabled={busy}
-            onClick={() => setEditing(true)}
-            title="编辑后重新发送（之后的对话会被替换，文件改动不会撤销）"
+            disabled={busy || editing}
+            onClick={() => onEdit(message)}
+            title="在输入框中编辑后重新发送（替换这条消息和之后的回复，文件改动不会撤销）"
             aria-label="编辑消息"
           >
             <Pencil size={14} aria-hidden="true" />
+          </button>
+        ) : null}
+        {onTakeBack ? (
+          <button
+            type="button"
+            className="message-action"
+            disabled={busy || editing}
+            onClick={() => onTakeBack(message)}
+            title="撤销这一轮：删除这条消息和它的回复，内容放回输入框（文件改动不会撤销）"
+            aria-label="撤销这一轮"
+          >
+            <Undo2 size={14} aria-hidden="true" />
           </button>
         ) : null}
         {onFork ? (
@@ -124,78 +128,6 @@ export const UserPrompt = memo(function UserPrompt({
     </div>
   );
 });
-
-/** The bubble turned into a text box; Enter sends, Shift+Enter breaks, Escape cancels. */
-function PromptEditor({
-  initial,
-  onCancel,
-  onSubmit,
-}: {
-  initial: string;
-  onCancel(): void;
-  onSubmit(text: string): Promise<void>;
-}) {
-  const [text, setText] = useState(initial);
-  // The user just asked to edit this prompt: the text box takes the focus.
-  const field = useRef<HTMLTextAreaElement>(null);
-  useEffect(() => {
-    field.current?.focus();
-  }, []);
-  const [pending, setPending] = useState(false);
-  const [error, setError] = useState<string | undefined>();
-  const submit = async () => {
-    const value = text.trim();
-    if (!value || pending) return;
-    setPending(true);
-    setError(undefined);
-    try {
-      await onSubmit(value);
-    } catch (failure) {
-      setError(failure instanceof Error ? failure.message : String(failure));
-      setPending(false);
-    }
-  };
-  const onKeyDown = (event: KeyboardEvent<HTMLTextAreaElement>) => {
-    if (event.key === "Escape") onCancel();
-    else if (event.key === "Enter" && !event.shiftKey && !event.nativeEvent.isComposing) {
-      event.preventDefault();
-      void submit();
-    }
-  };
-  return (
-    <div className="user-prompt-container">
-      <div className="prompt-editor">
-        <textarea
-          ref={field}
-          aria-label="编辑消息"
-          value={text}
-          rows={Math.min(12, Math.max(2, text.split("\n").length))}
-          disabled={pending}
-          onChange={(event) => setText(event.target.value)}
-          onKeyDown={onKeyDown}
-        />
-        {error ? (
-          <p role="alert" className="prompt-editor-error">
-            {error}
-          </p>
-        ) : null}
-        <div className="prompt-editor-actions">
-          <button type="button" className="prompt-editor-cancel" onClick={onCancel}>
-            取消
-          </button>
-          <button
-            type="button"
-            className="prompt-editor-send"
-            disabled={pending || !text.trim()}
-            onClick={() => void submit()}
-          >
-            {pending ? "发送中…" : "发送"}
-          </button>
-        </div>
-      </div>
-    </div>
-  );
-}
 
 /** Long prompts show their first lines until expanded. */
 function CollapsibleText({ text }: { text: string }) {

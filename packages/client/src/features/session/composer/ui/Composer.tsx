@@ -1,9 +1,10 @@
 import type { ProviderName, SessionAttachment, SlashCommand } from "@scholaraio-hub/shared";
 import { useQuery } from "@tanstack/react-query";
-import { Paperclip } from "lucide-react";
+import { Paperclip, Pencil } from "lucide-react";
 import {
   type Dispatch,
   type SetStateAction,
+  useEffect,
   useId,
   useLayoutEffect,
   useMemo,
@@ -13,7 +14,7 @@ import {
 import { sessionApi } from "../../../../core/sessions";
 import { useComposerDraft } from "../hooks/useComposerDraft";
 import { useSlashCommandPicker } from "../hooks/useSlashCommandPicker";
-import { useStagedAttachments } from "../hooks/useStagedAttachments";
+import { type StagedAttachment, useStagedAttachments } from "../hooks/useStagedAttachments";
 import { rejectAttachments } from "../model/attachments";
 import { type ClientCommandName, clientCommands, isClientCommand } from "../model/clientCommands";
 import {
@@ -45,6 +46,20 @@ import { VoiceInputButton, type VoiceInputButtonRef } from "./VoiceInputButton";
 
 export { readComposerDraft } from "../hooks/useComposerDraft";
 
+/** A sent prompt brought back into the composer, with the files it carried. */
+export interface RecalledPrompt {
+  /** The prompt's message id. */
+  id: string;
+  text: string;
+  attachments: SessionAttachment[];
+  /**
+   * Correcting it: the composer sets its draft aside and edits this prompt
+   * until the correction is sent or cancelled. Otherwise the prompt was taken
+   * back and joins the draft.
+   */
+  editing: boolean;
+}
+
 /**
  * Shared message input:
  * attachments + provider option pills + voice on the left, model + send on the right.
@@ -64,6 +79,8 @@ export function Composer({
   controls,
   text: controlledText,
   onTextChange,
+  recalled,
+  onEditEnd,
 }: {
   draftKey: string;
   provider: ProviderName;
@@ -82,6 +99,10 @@ export function Composer({
   controls?: ComposerControls;
   text?: string;
   onTextChange?: Dispatch<SetStateAction<string>>;
+  /** A sent prompt to bring back; a new object each time it is asked for. */
+  recalled?: RecalledPrompt;
+  /** The correction of a recalled prompt was sent or cancelled. */
+  onEditEnd?: () => void;
 }) {
   const { text, setText, forget } = useComposerDraft(draftKey, {
     text: controlledText,
@@ -129,6 +150,40 @@ export function Composer({
   const submitting = useRef(false);
   const latest = useRef(text);
   latest.current = text;
+  const editing = recalled?.editing ? recalled : undefined;
+  /** The draft set aside while a sent prompt is corrected; it comes back afterwards. */
+  const setAside = useRef<{ text: string; items: StagedAttachment[] }>(undefined);
+  const applied = useRef<RecalledPrompt>(undefined);
+  const { adopt, swap } = staged;
+  useEffect(() => {
+    if (!recalled || applied.current === recalled) return;
+    applied.current = recalled;
+    if (recalled.editing) {
+      setAside.current ??= { text: latest.current, items: swap([]) };
+      latest.current = recalled.text;
+    } else {
+      // Taken back: the prompt joins whatever draft is there, so neither is lost.
+      latest.current = latest.current.trim()
+        ? `${latest.current}\n\n${recalled.text}`
+        : recalled.text;
+    }
+    setText(latest.current);
+    adopt(recalled.attachments, recalled.editing);
+    textarea.current?.focus();
+  }, [recalled, adopt, swap, setText]);
+  /**
+   * Leave the correction: the draft set aside comes back. Cancelling also
+   * drops the files added for it; the prompt's own files were never touched.
+   */
+  const endEdit = (sent: boolean) => {
+    const saved = setAside.current;
+    setAside.current = undefined;
+    if (!sent) for (const item of staged.items) if (!item.sent) staged.remove(item.key);
+    latest.current = saved?.text ?? "";
+    setText(latest.current);
+    swap(saved?.items ?? []);
+    onEditEnd?.();
+  };
   const placeCaret = (position: number) => {
     setCaret(position);
     window.requestAnimationFrame(() => {
@@ -216,6 +271,7 @@ export function Composer({
       }
       await send;
       taken.commit();
+      if (editing) endEdit(true);
       // New-session submission unmounts this composer, so clear storage here too.
       if (!latest.current) forget();
       textarea.current?.focus();
@@ -245,6 +301,21 @@ export function Composer({
           onSelect={selectCommand}
         />
       ) : null}
+      {editing ? (
+        <div className="mb-1.5 flex items-center justify-between gap-3 px-1 text-xs text-on-surface-variant">
+          <span className="flex min-w-0 items-center gap-1.5">
+            <Pencil size={12} aria-hidden="true" className="shrink-0 text-primary" />
+            <span className="truncate">正在编辑上一条消息，发送后将替换它和之后的回复</span>
+          </span>
+          <button
+            type="button"
+            onClick={() => endEdit(false)}
+            className="shrink-0 rounded-md px-2 py-0.5 text-on-surface hover:bg-surface-container transition-colors"
+          >
+            取消 (Esc)
+          </button>
+        </div>
+      ) : null}
       <form
         onDragOver={(event) => {
           if (event.dataTransfer.types.includes("Files")) event.preventDefault();
@@ -254,7 +325,7 @@ export function Composer({
           addFiles(Array.from(event.dataTransfer.files));
         }}
         data-provider={provider}
-        className={`hub-composer bg-surface-container-low border border-outline-variant/20 rounded-xl transition-all ${interim ? "ring-1 ring-error/30 border-error/30" : ""}`}
+        className={`hub-composer bg-surface-container-low border border-outline-variant/20 rounded-xl transition-all ${interim ? "ring-1 ring-error/30 border-error/30" : editing ? "ring-1 ring-primary/30 border-primary/30" : ""}`}
         onSubmit={(event) => {
           event.preventDefault();
           void submit();
@@ -332,6 +403,12 @@ export function Composer({
                   return;
                 }
               }
+            }
+            // Open suggestions take Escape first; then it cancels a correction.
+            if (e.key === "Escape" && editing) {
+              e.preventDefault();
+              endEdit(false);
+              return;
             }
             if (e.key === "Backspace" && picker.showBadge && picker.messageBody.length === 0) {
               e.preventDefault();

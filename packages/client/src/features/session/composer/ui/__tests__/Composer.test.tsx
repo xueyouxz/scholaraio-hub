@@ -840,3 +840,95 @@ describe("Composer voice input", () => {
     expect(onSend).toHaveBeenCalledWith("draft spoken words", []);
   });
 });
+
+describe("Composer correcting a sent prompt", () => {
+  const sentFile = (name: string) => ({
+    id: `sent-${name}`,
+    filename: name,
+    mediaType: "text/plain",
+    size: 0,
+    url: `/api/sessions/s1/attachments/sent-${name}`,
+  });
+  const recall = (editing: boolean) => ({
+    id: "u2",
+    text: "第二问",
+    attachments: [sentFile("notes.txt")],
+    editing,
+  });
+  function renderWith(overrides: Partial<Props>) {
+    const current = { ...props(), ...overrides };
+    act(() =>
+      root?.render(
+        <QueryClientProvider client={queryClient}>
+          <Composer {...current} />
+        </QueryClientProvider>,
+      ),
+    );
+    return current;
+  }
+  const banner = () => container?.textContent?.includes("正在编辑上一条消息") ?? false;
+
+  it("edits the prompt and its files in place of the draft, and Esc brings the draft back", async () => {
+    const onEditEnd = vi.fn();
+    render();
+    type("unsent draft");
+    renderWith({ recalled: recall(true), onEditEnd });
+    expect(banner()).toBe(true);
+    expect(textarea().value).toBe("第二问");
+    expect(chips()).toEqual(["notes.txt"]);
+
+    // Taking a sent file off the correction leaves its upload alone.
+    act(() => button("Remove notes.txt")?.click());
+    await flush();
+    expect(chips()).toEqual([]);
+    expect(uploads.removed).toEqual([]);
+    chooseFiles([file("extra.txt")]);
+    await flush();
+
+    await press({ key: "Escape" });
+    expect(onEditEnd).toHaveBeenCalledTimes(1);
+    expect(textarea().value).toBe("unsent draft");
+    expect(chips()).toEqual([]);
+    // The file added only for the correction is deleted with it.
+    expect(uploads.removed).toEqual(["id-extra.txt"]);
+  });
+
+  it("sends the correction with the files it kept, then brings the draft back", async () => {
+    const onEditEnd = vi.fn();
+    const { onSend } = render();
+    type("unsent draft");
+    renderWith({ onSend, recalled: recall(true), onEditEnd });
+    type("改过的第二问");
+    await press({ key: "Enter" });
+    expect(onSend).toHaveBeenCalledWith("改过的第二问", [
+      expect.objectContaining({ id: "sent-notes.txt" }),
+    ]);
+    // The parent ends the mode on onEditEnd; the composer has put the draft back.
+    expect(onEditEnd).toHaveBeenCalledTimes(1);
+    expect(textarea().value).toBe("unsent draft");
+  });
+
+  it("stays in edit mode with the correction when sending it fails", async () => {
+    const onEditEnd = vi.fn();
+    const onSend = vi.fn(async () => Promise.reject(new Error("Network down")));
+    render({ onSend });
+    renderWith({ onSend, recalled: recall(true), onEditEnd });
+    await press({ key: "Enter" });
+    expect(onEditEnd).not.toHaveBeenCalled();
+    expect(banner()).toBe(true);
+    expect(textarea().value).toBe("第二问");
+    expect(chips()).toEqual(["notes.txt"]);
+  });
+
+  it("puts a taken-back prompt after the draft, its files as plain drafts", async () => {
+    render();
+    type("unsent draft");
+    renderWith({ recalled: recall(false) });
+    expect(banner()).toBe(false);
+    expect(textarea().value).toBe("unsent draft\n\n第二问");
+    act(() => button("Remove notes.txt")?.click());
+    await flush();
+    // Taken back, the file belongs to no message any more and can go.
+    expect(uploads.removed).toEqual(["sent-notes.txt"]);
+  });
+});

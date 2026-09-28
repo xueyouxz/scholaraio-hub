@@ -38,7 +38,11 @@ export function AttachmentTray({ items, ...actions }: { items: StagedAttachment[
       </ul>
       {viewed ? (
         <AttachmentViewer
-          file={{ name: viewed.file.name, mediaType: viewed.file.type, source: viewed.file }}
+          file={{
+            name: viewed.name,
+            mediaType: viewed.mediaType,
+            source: viewed.file ?? viewed.attachment?.url ?? "",
+          }}
           onClose={() => setViewing(undefined)}
         />
       ) : null}
@@ -51,8 +55,8 @@ function MediaTile({ item, onView, ...actions }: TileProps) {
   return (
     <li
       data-status={item.status}
-      aria-label={item.file.name}
-      title={item.error ?? item.file.name}
+      aria-label={item.name}
+      title={item.error ?? item.name}
       className={`group relative size-16 shrink-0 overflow-hidden rounded-lg border bg-surface-container ${
         failed ? "border-error/60" : "border-outline-variant/20"
       }`}
@@ -84,7 +88,7 @@ function MediaTile({ item, onView, ...actions }: TileProps) {
       <button
         type="button"
         onClick={onView}
-        aria-label={`View ${item.file.name}`}
+        aria-label={`View ${item.name}`}
         className="absolute inset-0 cursor-zoom-in"
       />
       <UploadState item={item} {...actions} overlay />
@@ -95,13 +99,13 @@ function MediaTile({ item, onView, ...actions }: TileProps) {
 
 function FileTile({ item, onView, ...actions }: TileProps) {
   const failed = item.status === "failed";
-  const extension = fileExtension(item.file.name);
+  const extension = fileExtension(item.name);
   return (
     <li
       data-status={item.status}
       data-kind={item.kind}
-      aria-label={item.file.name}
-      title={item.error ?? item.file.name}
+      aria-label={item.name}
+      title={item.error ?? item.name}
       className={`group relative h-16 w-52 shrink-0 overflow-hidden rounded-lg border bg-surface-container ${
         failed ? "border-error/60" : "border-outline-variant/20"
       }`}
@@ -109,14 +113,12 @@ function FileTile({ item, onView, ...actions }: TileProps) {
       <button
         type="button"
         onClick={onView}
-        aria-label={`View ${item.file.name}`}
+        aria-label={`View ${item.name}`}
         className="flex size-full items-center gap-2.5 pl-2 pr-6 text-left"
       >
         <FileKindIcon kind={item.kind} />
         <span className="min-w-0 flex-1">
-          <span className="block truncate text-xs font-medium text-on-surface">
-            {item.file.name}
-          </span>
+          <span className="block truncate text-xs font-medium text-on-surface">{item.name}</span>
           <span
             className={`mt-0.5 block truncate text-[10px] uppercase tracking-wide ${
               failed ? "text-error" : "text-on-surface-variant"
@@ -146,7 +148,7 @@ function UploadState({
         type="button"
         disabled={disabled}
         onClick={() => onRetry(item.key)}
-        aria-label={`Retry upload of ${item.file.name}`}
+        aria-label={`Retry upload of ${item.name}`}
         className={
           overlay
             ? "absolute inset-0 flex items-center justify-center bg-black/45 text-white hover:bg-black/55 transition-colors"
@@ -189,7 +191,7 @@ function RemoveButton({
       type="button"
       disabled={disabled}
       onClick={() => onRemove(item.key)}
-      aria-label={`Remove ${item.file.name}`}
+      aria-label={`Remove ${item.name}`}
       className={`absolute top-1 right-1 flex size-5 items-center justify-center rounded-full bg-black/60 text-white hover:bg-error transition-[opacity,background-color] disabled:hidden ${HOVER_ONLY}`}
     >
       <X size={12} strokeWidth={2.5} />

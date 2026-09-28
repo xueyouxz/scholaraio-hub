@@ -1,9 +1,9 @@
-import type { StoredSession } from "@scholaraio-hub/shared";
+import type { SessionMessage, StoredSession } from "@scholaraio-hub/shared";
 import { ArrowDown } from "lucide-react";
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useNavigationLayout } from "../../app/components/NavigationLayout";
-import { sessionUrl } from "../../core/sessions";
+import { ownAttachments, sessionInput, sessionUrl } from "../../core/sessions";
 import { PaperReaderView } from "../library/reader/PaperReaderView";
 import { InputRequestPrompt } from "./components/InputRequestPrompt";
 import { ResizableSessionFilesPanel } from "./components/SessionFilesPanel";
@@ -12,7 +12,7 @@ import { SessionMessages } from "./components/SessionMessages";
 import { ResizableWorkspacePapersPanel } from "./components/WorkspacePapersPanel";
 import { useProviders } from "./composer/hooks/useProviders";
 import { rememberComposerChoice } from "./composer/model/preferences";
-import { Composer } from "./composer/ui/Composer";
+import { Composer, type RecalledPrompt } from "./composer/ui/Composer";
 import type { ComposerControls } from "./composer/ui/ComposerOptions";
 import { useSessionChat } from "./hooks/useSessionChat";
 import { useStickToBottom } from "./hooks/useStickToBottom";
@@ -27,6 +27,15 @@ export function SessionChatView({ initial }: { initial: StoredSession }) {
   const navigate = useNavigate();
   const [panel, setPanel] = useState<SessionPanel | undefined>();
   const [selectedPaper, setSelectedPaper] = useState<string | null>(null);
+  /** The last prompt brought back into the composer, to correct it or once taken back. */
+  const [recalled, setRecalled] = useState<RecalledPrompt>();
+  const recall = (message: SessionMessage, editing: boolean): RecalledPrompt => ({
+    id: message.id,
+    text: sessionInput(initial.id, message).text,
+    attachments: ownAttachments(initial.id, message),
+    editing,
+  });
+  const editingId = recalled?.editing ? recalled.id : undefined;
 
   const pending = snapshot?.pendingInput;
   // Ask on the tool call's own row when it is on screen; otherwise (no call id,
@@ -134,17 +143,20 @@ export function SessionChatView({ initial }: { initial: StoredSession }) {
                   initial.readOnly
                     ? undefined
                     : {
-                        busy: running || session.fork.isPending,
-                        onEdit: (message, text) => {
-                          scroll.scrollToBottom();
-                          return session.edit(message, text);
-                        },
+                        busy: running || session.fork.isPending || session.takeBack.isPending,
+                        onEdit: (message) => setRecalled(recall(message, true)),
+                        onTakeBack: (message) =>
+                          session.takeBack.mutate(message, {
+                            // The prompt goes back to the composer, as Claude Code's rewind does.
+                            onSuccess: () => setRecalled(recall(message, false)),
+                          }),
                         onFork: (message) =>
                           session.fork.mutate(message.id, {
                             onSuccess: (fork) => navigate(sessionUrl(fork.id)),
                           }),
                       }
                 }
+                editingId={editingId}
               />
               {snapshot?.queuePaused ? (
                 <div className="flex justify-center -mt-2 mb-2">
@@ -193,8 +205,10 @@ export function SessionChatView({ initial }: { initial: StoredSession }) {
                   onQueue={session.enqueue}
                   onSend={(text, attachments) => {
                     scroll.scrollToBottom();
-                    return session.send(text, attachments);
+                    return session.send(text, attachments, editingId);
                   }}
+                  recalled={recalled}
+                  onEditEnd={() => setRecalled(undefined)}
                   controls={controls}
                 />
               )}

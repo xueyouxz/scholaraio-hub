@@ -319,6 +319,44 @@ test("composer keeps project drafts, handles IME and recovers failed sends", asy
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
 });
 
+test("the last prompt is corrected in the composer and can be taken back", async ({ page }) => {
+  await page.goto("/sessions");
+  const input = page.getByRole("textbox", { name: "Message" });
+  const send = page.getByRole("button", { name: "Send", exact: true });
+  const prompts = page.locator(".message-list .message-user-prompt");
+  const replies = page.locator(".message-list").getByText("文献回答", { exact: false });
+  await input.fill("第一问");
+  await send.click();
+  await expect(page).toHaveURL(/\/sessions\/[\w-]+$/);
+  await expect(replies).toHaveCount(1);
+  await input.fill("第二问");
+  await send.click();
+  await expect(prompts).toHaveText(["第一问", "第二问"]);
+  await expect(replies).toHaveCount(2);
+
+  // Only the last prompt can be edited or taken back.
+  const edit = page.getByRole("button", { name: "编辑消息" });
+  await expect(edit).toHaveCount(1);
+  await edit.click();
+  await expect(page.getByText("正在编辑上一条消息")).toBeVisible();
+  await expect(input).toHaveValue("第二问");
+  await input.fill("改过的第二问");
+  await input.press("Enter");
+  await expect(page.getByText("正在编辑上一条消息")).toHaveCount(0);
+  await expect(prompts).toHaveText(["第一问", "改过的第二问"]);
+  await expect(replies).toHaveCount(2);
+  await page.reload();
+  await expect(prompts).toHaveText(["第一问", "改过的第二问"]);
+
+  // Taking the turn back puts its prompt back in the composer.
+  await page.getByRole("button", { name: "撤销这一轮" }).click();
+  await expect(prompts).toHaveText(["第一问"]);
+  await expect(replies).toHaveCount(1);
+  await expect(input).toHaveValue("改过的第二问");
+  await page.reload();
+  await expect(prompts).toHaveText(["第一问"]);
+});
+
 test("composer permission menu uses the provider's modes and saves settings", async ({
   page,
   request,

@@ -25,6 +25,7 @@ export function SessionMessages({
   onInputDone,
   provider,
   promptActions,
+  editingId,
 }: {
   messages: SessionMessage[];
   streaming: boolean;
@@ -37,9 +38,16 @@ export function SessionMessages({
   sessionId?: string;
   onInputDone?: () => void;
   provider: ProviderName;
-  /** Copy is always offered; edit and fork only where the session allows them. */
+  /**
+   * Copy is always offered; fork only where the session allows it, and edit
+   * and take back only on the last prompt.
+   */
   promptActions?: PromptActions;
+  /** The prompt being corrected in the composer; it and its reply are marked. */
+  editingId?: string;
 }) {
+  const lastPrompt = messages.filter((message) => message.role === "user").at(-1)?.id;
+  const { onEdit, onTakeBack, ...everyPrompt } = promptActions ?? {};
   return (
     <div className="message-list">
       {messages.map((message, index) => {
@@ -55,7 +63,12 @@ export function SessionMessages({
             )}
           >
             {message.role === "user" ? (
-              <UserPrompt message={message} {...promptActions} />
+              <UserPrompt
+                message={message}
+                {...everyPrompt}
+                {...(message.id === lastPrompt ? { onEdit, onTakeBack } : {})}
+                editing={message.id === editingId}
+              />
             ) : (
               <AssistantTurn
                 message={message}

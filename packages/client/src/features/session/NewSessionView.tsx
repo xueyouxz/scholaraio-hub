@@ -8,7 +8,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { usePageTitle } from "../../app/components/NavigationLayout";
-import { PROJECTS_KEY, projectApi, projectsQuery } from "../../core/projects";
+import { PROJECTS_KEY, addChosenFolder, projectsQuery } from "../../core/projects";
 import {
   type SessionOptions,
   formatReferences,
@@ -189,8 +189,9 @@ function NewSessionForm({
       },
     );
   const addProject = useMutation({
-    mutationFn: (path: string) => projectApi.add(path),
+    mutationFn: addChosenFolder,
     onSuccess: (added) => {
+      if (!added) return;
       void client.invalidateQueries({ queryKey: PROJECTS_KEY });
       chooseProject(added.id);
     },
@@ -226,7 +227,7 @@ function NewSessionForm({
     submitting || defaults.isLoading || !!defaults.error || invalidProject || projects.isLoading;
   const error =
     (invalidProject ? "项目不存在，请重新选择。" : undefined) ??
-    (defaults.error ?? projects.error ?? providers.error)?.message ??
+    (defaults.error ?? projects.error ?? providers.error ?? addProject.error)?.message ??
     createError;
   return (
     <div className="flex flex-col flex-1 min-h-0 overflow-hidden">
@@ -298,9 +299,8 @@ function NewSessionForm({
             current={project}
             disabled={submitting || projects.isLoading}
             onChange={chooseProject}
-            onAdd={(path) => addProject.mutate(path)}
+            onAdd={() => addProject.mutate()}
             adding={addProject.isPending}
-            addError={addProject.error?.message}
           />
           <ReferenceChips
             references={references}

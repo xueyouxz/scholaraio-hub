@@ -10,7 +10,9 @@ commits, and instructions so humans and agents mean the same thing.
 - **Project** — A directory sessions run in (their `cwd`), as the providers' histories list
   them (`ProjectCatalog`, `packages/server/src/projects/`). Its id is the path,
   base64url-encoded. Sessions run in no project's directory (temporary folders, the Hub's
-  data directory, the Claude and Codex apps' folderless chats) are **unassigned**.
+  data directory, the Claude and Codex apps' folderless chats) are **unassigned**. A folder
+  no session ran in yet is added by choosing it in the system's own folder dialog
+  (`FolderPicker`), as Claude Code does.
 - **Literature collection** — A named set of papers in the library (`LiteratureCollection`
   in `packages/shared/src/library.ts`, `/collections` on the library service). A session
   refers to collections and single papers (its **references**, `@` in the composer), and

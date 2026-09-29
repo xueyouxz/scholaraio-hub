@@ -2,7 +2,7 @@ import type { SessionSummary } from "@scholaraio-hub/shared";
 import { useEffect, useRef } from "react";
 import { NavLink } from "react-router-dom";
 import { sessionUrl } from "../../core/sessions";
-import { ProviderLogo } from "../../features/session/composer/ui/controls/ProviderLogo";
+import { ProviderWatermark } from "../../features/session/composer/ui/controls/ProviderLogo";
 
 const PROVIDER_NAMES = { claude: "Claude Code", codex: "Codex" } as const;
 
@@ -22,8 +22,8 @@ export function relativeTime(iso: string): string {
 }
 
 /**
- * One session in a list: which agent keeps it (its mark and colour stripe),
- * its title, whether it runs here or elsewhere, and when it last changed.
+ * One session in a list: which agent keeps it (its mark, faint behind the
+ * row), its title, whether it runs here or elsewhere, and when it last changed.
  */
 export function SessionRow({
   session,
@@ -69,7 +69,7 @@ export function SessionRow({
       onClick={onOpen}
       title={`${title}\n${agent} · ${session.cwd}`}
       className={({ isActive }) =>
-        `group relative flex items-center gap-2 w-full rounded-lg pl-2.5 pr-2 py-1.5 text-left transition-colors ${isActive ? "bg-surface-container-high text-primary" : "text-on-surface hover:bg-surface-container"}`
+        `group relative isolate flex items-center gap-2 w-full overflow-hidden rounded-lg pl-2.5 pr-2 py-1.5 text-left transition-colors ${isActive ? "bg-surface-container-high text-primary" : "text-on-surface hover:bg-surface-container"}`
       }
       style={{ contentVisibility: "auto", containIntrinsicSize: "auto 28px" }}
       onContextMenu={(event) => {
@@ -78,12 +78,10 @@ export function SessionRow({
         onMenu(event.clientX, event.clientY);
       }}
     >
-      <span
-        aria-hidden="true"
-        className="absolute left-0.5 top-1.5 bottom-1.5 w-[2px] rounded-full"
-        style={{ backgroundColor: `var(--provider-${session.provider})` }}
+      <ProviderWatermark
+        provider={session.provider}
+        className="absolute left-0.5 top-1/2 h-8 w-8 -translate-y-1/2 opacity-[0.12]"
       />
-      <ProviderLogo provider={session.provider} size={12} />
       <span className="sr-only">{agent}：</span>
       <span className="line-clamp-1 text-[12px] min-w-0 flex-1">{title}</span>
       <span className="flex items-center gap-1.5 shrink-0">

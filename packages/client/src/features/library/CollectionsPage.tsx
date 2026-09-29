@@ -45,10 +45,7 @@ export function CollectionsPage() {
 
   return (
     <div className="w-full max-w-2xl mx-auto px-6 pt-4 pb-6">
-      <div className="flex items-center gap-2 pb-2">
-        <p className="flex-1 text-xs text-on-surface-variant">
-          文献集合是一组论文。会话里输入 @ 即可引用整个集合或单篇文献。
-        </p>
+      <div className="flex items-center justify-end gap-2 pb-2">
         <button
           type="button"
           onClick={() => void collections.refetch()}

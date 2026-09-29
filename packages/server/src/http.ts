@@ -9,6 +9,7 @@ import type { Logger } from "pino";
 import type { z } from "zod";
 import { LibraryRequestError, LibraryUnavailableError } from "./lib/LibraryClient.js";
 import { loggerFor } from "./logging/logger.js";
+import { FolderPickerError } from "./projects/FolderPicker.js";
 import { ProjectError } from "./projects/ProjectCatalog.js";
 import { ProviderUnavailableError } from "./providers/ProviderRegistry.js";
 import {
@@ -113,6 +114,8 @@ export function handleApiError(error: Error, c: Context) {
   else if (error instanceof SessionFileTooLargeError)
     mapped = new ApiError("PAYLOAD_TOO_LARGE", error.message);
   else if (error instanceof SessionConflictError) mapped = new ApiError(error.code, error.message);
+  else if (error instanceof FolderPickerError)
+    mapped = new ApiError("STATE_CONFLICT", error.message);
   else if (
     error instanceof SessionInputError ||
     error instanceof ProviderUnavailableError ||

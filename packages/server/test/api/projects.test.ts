@@ -2,6 +2,7 @@ import { mkdir, mkdtemp, realpath, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { FolderPickerError } from "../../src/projects/FolderPicker.js";
 import { DirectoryRules, projectId } from "../../src/projects/directories.js";
 import type { NativeSession } from "../../src/providers/types.js";
 import { WorkbenchProvider } from "../helpers/WorkbenchProvider.js";
@@ -26,6 +27,8 @@ describe("projects from the providers' own histories", () => {
   let claude: WorkbenchProvider;
   let codex: WorkbenchProvider;
   let server: ReturnType<typeof createTestApp>;
+  /** What the folder dialog answers: a folder, a cancel (null), or a failure. */
+  let dialog: () => Promise<string | null>;
 
   beforeEach(async () => {
     root = await realpath(await mkdtemp(join(tmpdir(), "hub-projects-")));
@@ -54,7 +57,9 @@ describe("projects from the providers' own histories", () => {
       providers: [claude, codex],
       library: offlineLibrary(),
       directories: new DirectoryRules({ home, dataDir: join(root, "data"), temporary: [] }),
+      folders: { choose: () => dialog(), close: () => {} },
     });
+    dialog = async () => null;
     await server.ready;
   });
 
@@ -137,6 +142,20 @@ describe("projects from the providers' own histories", () => {
     expect(hidden.status).toBe(204);
     const { projects } = await get("/api/projects");
     expect(projects.map((project: { name: string }) => project.name)).toEqual(["alpha", "empty"]);
+  });
+
+  it("asks for a folder in the system's dialog", async () => {
+    const pick = () => server.app.request("/api/projects/pick-folder", { method: "POST", headers });
+    dialog = async () => alpha;
+    expect((await (await pick()).json()).data).toEqual({ path: alpha });
+    dialog = async () => null;
+    expect((await (await pick()).json()).data).toEqual({ path: null });
+    dialog = async () => {
+      throw new FolderPickerError("A folder dialog is already open.");
+    };
+    const busy = await pick();
+    expect(busy.status).toBe(409);
+    expect((await busy.json()).message).toBe("A folder dialog is already open.");
   });
 
   it("names a provider whose history cannot be read, and still lists the others", async () => {

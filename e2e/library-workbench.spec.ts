@@ -293,13 +293,6 @@ test("composer keeps each project's draft, handles IME and recovers failed sends
   page,
   request,
 }) => {
-  // Any real directory can be a project; this one is the test's own fixtures.
-  const added = await request.post("/api/projects", {
-    headers: { "ScholarAIO-Hub": "true" },
-    data: { path: path.resolve("e2e/fixtures/library") },
-  });
-  expect(added.status()).toBe(201);
-  const project = (await added.json()).data;
   await page.goto("/sessions");
   const input = page.getByRole("textbox", { name: "Message" });
   await input.fill("第一行");
@@ -312,9 +305,26 @@ test("composer keeps each project's draft, handles IME and recovers failed sends
   await expect(page).toHaveURL(/\/sessions$/);
   await page.reload();
   await expect(input).toHaveValue("第一行\nsecond line");
-  const projectUrl = `/sessions?project=${encodeURIComponent(project.id)}`;
-  await page.goto(projectUrl);
-  await expect(page.getByRole("button", { name: `项目：${project.name}` })).toBeVisible();
+  // Any real folder can be a project. The system's folder dialog cannot be driven
+  // here, so the test's own fixtures stand in for the folder chosen in it.
+  const folder = path.resolve("e2e/fixtures/library");
+  await page.route("**/api/projects/pick-folder", (route) =>
+    route.fulfill({
+      json: {
+        id: "test-request",
+        code: "success",
+        message: "success",
+        data: { path: folder },
+      },
+    }),
+  );
+  await page.getByRole("button", { name: "项目：不使用项目" }).click();
+  await page.getByRole("button", { name: "选择其他文件夹…" }).click();
+  await expect(page.getByRole("button", { name: "项目：library" })).toBeVisible();
+  const chosen = new URL(page.url());
+  const projectId = chosen.searchParams.get("project");
+  expect(projectId).toBeTruthy();
+  const projectUrl = chosen.pathname + chosen.search;
   await expect(input).toHaveValue("");
   await input.fill("项目草稿");
   await page.goto("/sessions");
@@ -342,7 +352,7 @@ test("composer keeps each project's draft, handles IME and recovers failed sends
   await expect(page).toHaveURL(/\/sessions\/[\w:.-]+$/);
   await expect(page.getByText("文献回答", { exact: false })).toBeVisible();
   const created = await request.get(`/api${new URL(page.url()).pathname}`);
-  expect((await created.json()).data).toMatchObject({ cwd: project.path, projectId: project.id });
+  expect((await created.json()).data).toMatchObject({ cwd: folder, projectId });
   await input.fill("已有会话草稿");
   await page.reload();
   await expect(input).toHaveValue("已有会话草稿");

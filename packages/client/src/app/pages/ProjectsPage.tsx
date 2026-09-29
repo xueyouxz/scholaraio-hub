@@ -1,11 +1,12 @@
 import type { ProjectSummary, ProviderName } from "@scholaraio-hub/shared";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { EyeOff, FolderOpen, FolderPlus, Inbox, Plus } from "lucide-react";
-import { type FormEvent, useEffect, useState } from "react";
-import { Link } from "react-router-dom";
+import { useEffect } from "react";
+import { Link, useNavigate } from "react-router-dom";
 import {
   PROJECTS_KEY,
   UNASSIGNED,
+  addChosenFolder,
   projectApi,
   projectUrl,
   projectsQuery,
@@ -38,53 +39,44 @@ function ProviderCounts({ counts }: { counts: ProjectSummary["sessionCounts"] })
 
 /**
  * The home page: every project Claude Code and Codex have sessions in, most
- * recently active first, and a way to add a directory before any session ran there.
+ * recently active first, and a way to add a folder before any session ran there,
+ * chosen in the system's dialog as Claude Code does.
  */
 export function ProjectsPage() {
   const { setTitle } = usePageTitle();
   const client = useQueryClient();
+  const navigate = useNavigate();
   const projects = useQuery(projectsQuery);
-  const [path, setPath] = useState("");
   useEffect(() => {
     setTitle("Projects");
     return () => setTitle("");
   }, [setTitle]);
   const refresh = () => client.invalidateQueries({ queryKey: PROJECTS_KEY });
   const add = useMutation({
-    mutationFn: (directory: string) => projectApi.add(directory),
-    onSuccess: () => {
-      setPath("");
+    mutationFn: addChosenFolder,
+    // A new project has no sessions yet, so it would sit at the end of the list: open it.
+    onSuccess: (added) => {
+      if (!added) return;
       void refresh();
+      navigate(projectUrl(added.id));
     },
   });
   const hide = useMutation({ mutationFn: projectApi.hide, onSuccess: () => void refresh() });
-  const submit = (event: FormEvent) => {
-    event.preventDefault();
-    if (path.trim()) add.mutate(path.trim());
-  };
   const list = projects.data?.projects ?? [];
   const error = projects.error ?? add.error ?? hide.error;
   return (
     <div className="w-full max-w-5xl mx-auto px-6 pt-4 pb-10">
-      <form onSubmit={submit} className="flex items-center gap-2 mb-5">
-        <label className="flex-1 flex items-center gap-2 rounded-xl border border-outline-variant/20 bg-surface-container px-3 py-2 focus-within:ring-2 focus-within:ring-primary/20">
-          <FolderPlus className="w-4 h-4 shrink-0 text-on-surface-variant" aria-hidden="true" />
-          <span className="sr-only">项目目录的绝对路径</span>
-          <input
-            value={path}
-            onChange={(event) => setPath(event.target.value)}
-            placeholder="添加项目目录，例如 /Users/me/Projects/app"
-            className="flex-1 min-w-0 bg-transparent text-[13px] text-on-surface outline-none placeholder:text-on-surface-variant/60"
-          />
-        </label>
+      <div className="flex items-center justify-end gap-2 mb-5">
         <button
-          type="submit"
-          disabled={!path.trim() || add.isPending}
-          className="rounded-xl bg-primary px-4 py-2 text-sm font-medium text-on-primary disabled:opacity-50"
+          type="button"
+          disabled={add.isPending}
+          onClick={() => add.mutate()}
+          className="flex items-center gap-1.5 rounded-md bg-primary px-3 py-1.5 text-sm font-medium text-on-primary border-0 cursor-pointer hover:opacity-90 disabled:opacity-60 disabled:cursor-default"
         >
-          添加
+          <FolderPlus className="w-4 h-4" aria-hidden="true" />
+          {add.isPending ? "在弹出的窗口中选择文件夹…" : "添加项目"}
         </button>
-      </form>
+      </div>
       {error ? (
         <p role="alert" className="mb-3 text-sm text-error break-words">
           {error.message}
@@ -100,7 +92,7 @@ export function ProjectsPage() {
       ) : null}
       {projects.data && list.length === 0 ? (
         <p className="py-12 text-center text-sm text-on-surface-variant/60">
-          还没有项目。在上面添加一个目录，或在 Claude Code、Codex 里开始一段会话。
+          还没有项目。添加一个文件夹，或在 Claude Code、Codex 里开始一段会话。
         </p>
       ) : null}
       <ul className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">

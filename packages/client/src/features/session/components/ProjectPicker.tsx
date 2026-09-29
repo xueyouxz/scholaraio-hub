@@ -1,11 +1,12 @@
 import type { ProjectSummary } from "@scholaraio-hub/shared";
 import { Check, ChevronDown, FolderOpen, FolderPlus, FolderX } from "lucide-react";
-import { type FormEvent, useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 /**
  * Which project a new chat runs in, changeable before the first message: one
- * of the projects the agents have sessions in, another directory, or none (the
- * session then gets a folder of its own).
+ * of the projects the agents have sessions in, another folder chosen in the
+ * system's dialog (as Claude Code does), or none (the session then gets a
+ * folder of its own).
  */
 export function ProjectPicker({
   projects,
@@ -14,19 +15,17 @@ export function ProjectPicker({
   onChange,
   onAdd,
   adding,
-  addError,
 }: {
   projects: ProjectSummary[];
   current?: ProjectSummary;
   disabled: boolean;
   onChange: (projectId: string) => void;
-  /** Add a directory by its path; the new project becomes the choice. */
-  onAdd: (path: string) => void;
+  /** Choose another folder in the system's dialog; the new project becomes the choice. */
+  onAdd: () => void;
+  /** The dialog is open. */
   adding: boolean;
-  addError?: string;
 }) {
   const [open, setOpen] = useState(false);
-  const [path, setPath] = useState("");
   const menu = useRef<HTMLDivElement>(null);
   useEffect(() => {
     if (!open) return;
@@ -47,17 +46,13 @@ export function ProjectPicker({
     setOpen(false);
     if (id !== (current?.id ?? "")) onChange(id);
   };
-  const add = (event: FormEvent) => {
-    event.preventDefault();
-    if (path.trim()) onAdd(path.trim());
-  };
   return (
     <div className="relative" ref={menu}>
       <button
         type="button"
-        aria-label={`项目：${current?.name ?? "不使用项目"}`}
+        aria-label={adding ? "正在选择文件夹" : `项目：${current?.name ?? "不使用项目"}`}
         aria-expanded={open}
-        disabled={disabled}
+        disabled={disabled || adding}
         title={current?.path}
         onClick={() => setOpen((value) => !value)}
         className={`inline-flex max-w-[16rem] items-center gap-1.5 rounded-full border px-3 py-1 text-xs font-medium transition-colors ${
@@ -67,7 +62,9 @@ export function ProjectPicker({
         }`}
       >
         <FolderOpen className="w-3.5 h-3.5 shrink-0" aria-hidden="true" />
-        <span className="truncate">{current?.name ?? "选择项目"}</span>
+        <span className="truncate">
+          {adding ? "在弹出的窗口中选择文件夹…" : (current?.name ?? "选择项目")}
+        </span>
         <ChevronDown
           className={`w-3 h-3 shrink-0 transition-transform ${open ? "rotate-180" : ""}`}
           aria-hidden="true"
@@ -94,34 +91,17 @@ export function ProjectPicker({
               </MenuItem>
             ))}
           </div>
-          <form
-            onSubmit={add}
-            className="mt-1 flex items-center gap-1 border-t border-outline-variant/15 pt-1.5"
-          >
-            <FolderPlus
-              className="ml-1 w-3.5 h-3.5 shrink-0 text-on-surface-variant"
-              aria-hidden="true"
-            />
-            <input
-              value={path}
-              onChange={(event) => setPath(event.target.value)}
-              aria-label="其他目录的绝对路径"
-              placeholder="其他目录的绝对路径"
-              className="flex-1 min-w-0 rounded-md bg-surface-container px-2 py-1 text-[12px] text-on-surface outline-none placeholder:text-on-surface-variant/60"
-            />
-            <button
-              type="submit"
-              disabled={!path.trim() || adding}
-              className="rounded-md px-2 py-1 text-[12px] font-medium text-primary disabled:opacity-40"
+          <div className="mt-1 border-t border-outline-variant/15 pt-1">
+            <MenuItem
+              onClick={() => {
+                setOpen(false);
+                onAdd();
+              }}
+              icon={FolderPlus}
             >
-              使用
-            </button>
-          </form>
-          {addError ? (
-            <p role="alert" className="px-2 pt-1 text-[11px] text-error break-words">
-              {addError}
-            </p>
-          ) : null}
+              选择其他文件夹…
+            </MenuItem>
+          </div>
         </div>
       ) : null}
     </div>
@@ -135,7 +115,8 @@ function MenuItem({
   title,
   children,
 }: {
-  active: boolean;
+  /** Which choice is the current one; unset for an action. */
+  active?: boolean;
   onClick: () => void;
   icon: typeof FolderOpen;
   title?: string;

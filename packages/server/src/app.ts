@@ -45,7 +45,10 @@ export function createApp(services: Services, options: AppOptions = {}) {
       settings: services.settings,
     }),
   );
-  app.route("/api/projects", createProjectRoutes({ catalog: services.catalog }));
+  app.route(
+    "/api/projects",
+    createProjectRoutes({ catalog: services.catalog, folders: services.folders }),
+  );
   app.route("/api/events", createEventRoutes({ events: services.events }));
   app.route("/api/skills", createSkillsRoutes({ scholaraioSkillsDir: services.skillsDir }));
   app.route(

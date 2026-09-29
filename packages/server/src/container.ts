@@ -1,5 +1,10 @@
 import { homedir } from "node:os";
 import type { LibraryClient } from "./lib/LibraryClient.js";
+import {
+  type FolderPicker,
+  SystemFolderPicker,
+  systemFolderDialog,
+} from "./projects/FolderPicker.js";
 import { HistoryWatcher } from "./projects/HistoryWatcher.js";
 import { ProjectCatalog } from "./projects/ProjectCatalog.js";
 import { DirectoryRules } from "./projects/directories.js";
@@ -26,6 +31,8 @@ export interface ServiceOptions {
   settings?: ServerSettingsService;
   /** 哪些工作目录不算项目；未给出时按本机主目录与临时目录判断。 */
   directories?: DirectoryRules;
+  /** 添加项目时选择文件夹的窗口；未给出时用本机系统的对话框。 */
+  folders?: FolderPicker;
 }
 
 /** 组装根：创建一次的各项服务，及其启动与关闭。 */
@@ -43,6 +50,8 @@ export interface Services {
   usage: ProviderUsageLimitService;
   /** 各 Provider 自己保存的会话，按项目分组。 */
   catalog: ProjectCatalog;
+  /** 本机系统的选择文件夹对话框。 */
+  folders: FolderPicker;
   /** 推送给打开页面的变更。 */
   events: HubEvents;
   /** 读入持久化状态；完成前不接收请求。 */
@@ -60,6 +69,7 @@ export function createServices(options: ServiceOptions): Services {
   const supervisor = new Supervisor({ providers, idleTimeoutMs: options.idleTimeoutMs });
   const attachments = new SessionAttachments(dataDir);
   const events = new HubEvents();
+  const folders = options.folders ?? new SystemFolderPicker(systemFolderDialog());
   // A provider writing a session file: the Hub's own sessions, or a CLI in a terminal.
   const history = new HistoryWatcher({
     providers,
@@ -108,6 +118,7 @@ export function createServices(options: ServiceOptions): Services {
     settings,
     usage,
     catalog,
+    folders,
     events,
     async start() {
       await Promise.all([settings.initialize(), store.initialize(), catalog.initialize()]);
@@ -115,6 +126,7 @@ export function createServices(options: ServiceOptions): Services {
     },
     async close() {
       history.close();
+      folders.close();
       events.close();
       await sessions.close();
       await supervisor.close();

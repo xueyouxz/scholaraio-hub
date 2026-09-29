@@ -1,6 +1,7 @@
 import { createApp } from "../../src/app.js";
 import { createServices } from "../../src/container.js";
 import type { LibraryClient } from "../../src/lib/LibraryClient.js";
+import type { FolderPicker } from "../../src/projects/FolderPicker.js";
 import type { DirectoryRules } from "../../src/projects/directories.js";
 import { ProviderRegistry } from "../../src/providers/ProviderRegistry.js";
 import type { AgentProvider } from "../../src/providers/types.js";
@@ -23,6 +24,8 @@ export interface TestAppOptions {
   profile?: string;
   /** Which directories are projects; by default this machine's rules. */
   directories?: DirectoryRules;
+  /** The folder dialog; by default one that is never shown and reports a cancel. */
+  folders?: FolderPicker;
 }
 
 /** 像入口那样组装服务和应用：`ready` 完成后再发请求，`close` 释放全部服务。 */
@@ -37,6 +40,7 @@ export function createTestApp(options: TestAppOptions) {
     settings: options.serverSettingsService,
     idleTimeoutMs: options.idleTimeoutMs,
     directories: options.directories,
+    folders: options.folders ?? { choose: async () => null, close: () => {} },
   });
   const ready = services.start();
   const app = createApp(services, {

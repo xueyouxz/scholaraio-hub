@@ -20,8 +20,9 @@
   （`claude:<id>`、`codex:<thread id>`）；终端里跑的会话与 Hub 发起的会话一起列出。**ProjectCatalog**
   （`server/src/projects/`）用各 Provider 自己的列表接口（Claude Agent SDK `listSessions`、Codex app-server
   `thread/list`）按工作目录把会话分组为项目；目录已不存在的会话不列出，临时目录、Hub 数据目录和两个桌面应用的
-  无文件夹会话归入「未归属会话」。**HistoryWatcher** 监听两者的会话文件，变更经 `GET /api/events` 推给页面，
-  并标出正被终端使用的会话。
+  无文件夹会话归入「未归属会话」。还没有会话的文件夹由用户在本机系统的选择文件夹对话框里选出后加为项目
+  （**FolderPicker**，与 Claude Code 相同的添加方式）。**HistoryWatcher** 监听两者的会话文件，变更经
+  `GET /api/events` 推给页面，并标出正被终端使用的会话。
 - **SessionStore**：Hub 对某个会话的附加记录，按原生 id 存：引用的文献、用户原样写下的提示、引用片段、
   提示、被中断的半截回答、执行选项与队列。对话本身每次从 Provider 读取（`readSession`），经与实时相同的
   adapter 回放成 `AgentEvent`。新会话连同首条消息一起创建，Provider 给出 id 后才对外可见。

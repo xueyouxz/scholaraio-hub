@@ -92,6 +92,36 @@ describe("Claude Code's own history", () => {
     ]);
   });
 
+  it("keeps a background task's notification out of the prompts, in the turn it interrupts", async () => {
+    const notification = [
+      "<task-notification>",
+      "<task-id>b7si5c8ty</task-id>",
+      '<summary>Background command "Run full local CI gate" completed (exit code 0)</summary>',
+      "</task-notification>",
+    ].join("\n");
+    sdk.messages = [
+      user("p1", "提交并推送"),
+      assistant("a1", "msg_1", [{ type: "text", text: "CI running." }]),
+      user("n1", notification),
+      assistant("a2", "msg_2", [{ type: "text", text: "CI green." }]),
+      user("p2", "下一步"),
+      assistant("a3", "msg_3", [{ type: "text", text: "Waiting on the build." }]),
+      user("n2", notification),
+      assistant("a4", "msg_4", [{ type: "text", text: "Built." }]),
+    ];
+    const provider = new ClaudeProvider();
+    const turns = await provider.readSession("s1", { cwd: "/w" });
+    expect(turns.map((turn) => turn.id)).toEqual(["p1", "p2"]);
+    expect(turns[0]?.events.filter((event) => event.type === "text.delta")).toEqual([
+      { type: "text.delta", blockId: "msg_1:0", delta: "CI running." },
+      { type: "text.delta", blockId: "msg_2:0", delta: "CI green." },
+    ]);
+    // Correcting the last prompt drops it with the notifications after it, not just the last one.
+    await expect(
+      provider.rewindSession({ sessionId: "s1", cwd: "/w", dropTurns: 1 }),
+    ).resolves.toEqual({ sessionId: "s1", resumeAt: "a2" });
+  });
+
   it("ends the history at a rewind not yet applied", async () => {
     sdk.messages = [
       user("p1", "first"),

@@ -12,11 +12,17 @@ import type { HistoryFiles, NativeSession, NativeTurn, ReadSessionOptions } from
 import { ClaudeEventAdapter } from "./ClaudeEventAdapter.js";
 import type { SDKMessage } from "./sdk-message.js";
 
-/** Markers Claude Code writes as user messages that the user did not type. */
+/**
+ * Markers Claude Code writes as user messages that the user did not type. A
+ * background task's `<task-notification>` is one: Claude Code tells it apart
+ * by the entry's `origin`, which `getSessionMessages` does not pass on, so
+ * here only its text can.
+ */
 const NON_PROMPT_PREFIXES = [
   "[Request interrupted",
   "<local-command",
   "<command-message>",
+  "<task-notification>",
   "Caveat: The messages below",
 ];
 

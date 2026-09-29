@@ -19,10 +19,15 @@ const PREVIEW_BYTES = 1024 * 1024;
 export class SessionFiles {
   constructor(private workingDirectory: (id: string) => Promise<string>) {}
 
-  /** 解析工作目录内的文件路径，并检查文件存在性与访问范围。 */
+  /**
+   * 解析工作目录内的文件路径，并检查文件存在性与访问范围。绝对路径按 agent
+   * 写出它时的样子理解：相对于它拿到的工作目录，而不是解析符号链接后的目录。
+   */
   private async resolve(id: string, relative: string) {
-    const base = await realpath(await this.workingDirectory(id));
-    const candidate = path.resolve(base, relative);
+    const root = await this.workingDirectory(id);
+    const base = await realpath(root);
+    const inside = path.isAbsolute(relative) ? path.relative(root, relative) : relative;
+    const candidate = path.resolve(base, inside);
     if (
       relative.includes("\0") ||
       (candidate !== base && !candidate.startsWith(`${base}${path.sep}`))
@@ -74,6 +79,7 @@ export class SessionFiles {
     const { bytes, size } = await this.read(id, relative);
     return {
       content: bytes.includes(0) ? undefined : bytes.toString("utf8"),
+      size,
       truncated: size > bytes.length,
       rawUrl: `/api/sessions/${id}/fs/raw?path=${encodeURIComponent(relative)}`,
     };

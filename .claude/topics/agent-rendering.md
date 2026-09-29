@@ -10,7 +10,16 @@
 - **Session transcript**: Streamdown (`packages/client/src/shared/components/Markdown.tsx`)
   with the `code` (Shiki), `math` (KaTeX, `$…$` enabled) and `cjk` plugins; streaming mode
   and a block caret while a part is live. `script` / `iframe` / `object` / `embed` / `form` /
-  `input` are dropped and URLs pass Streamdown's `defaultUrlTransform`.
+  `input` are dropped and URLs pass Streamdown's `defaultUrlTransform`. Code blocks carry no
+  line numbers and only a copy button; tables carry no toolbar; nothing offers a download;
+  code and tables show whole (no inner max height).
+- **File links**: a link whose target is a path rather than a web address
+  (`[app.ts](src/app.ts:42)`, `/abs/path/app.ts#L42-L50`, `README.md:3`) is marked by a
+  remark step (`shared/components/fileLinks.ts`) before Streamdown's sanitizer, which would
+  otherwise block a bare relative path, and renders as a button. In a session it opens the
+  file in `features/session/components/FileViewerDialog.tsx` (read through
+  `/api/sessions/:id/fs/file`, which takes paths relative to the working directory or
+  absolute under it), with the linked lines marked; outside a session it is plain text.
 - **Paper reader**: `react-markdown` with `remark-gfm`, `remark-math`, `rehype-katex` and
   `rehype-raw` (`packages/client/src/features/library/reader/PaperMarkdown.tsx`). Typeset by
   Tailwind Typography (`prose`, palette mapped in `.paper-prose` in `styles.css`); a small
@@ -39,6 +48,8 @@
 ## Guidance for agents
 
 - Tag code fences with a language for highlighting.
+- Link files by path, optionally with a line (`[app.ts](src/app.ts:42)`); the reader opens
+  them in place. A directory link cannot be opened.
 - Use `$…$` / `$$…$$` for any math (loss functions, notation, matrices).
 - Do not paraphrase structured tool results into prose if the UI already renders them
   richly — check the relevant tool renderer under
@@ -68,8 +79,8 @@
 - A pending decision is one component, `components/InputRequestPrompt.tsx`: asked inline
   on its call's row, or floating over the transcript when that row is not on screen.
 - Tool code and output are highlighted by Streamdown itself: `renderers/blocks.tsx` wraps
-  them in a fence (`startLine=N` / `noLineNumbers` in the info string) and renders it with
-  the shared `Markdown` component.
+  them in a fence (`startLine=N` in the info string, numbered only for a file read from a
+  known line) and renders it with the shared `Markdown` component.
 - `components/parts/registry.tsx` draws each part type; tool calls are dispatched further
   by tool name in `components/renderers/registry.tsx`. A new part type goes into
   `TIMELINE_PART_TYPES` (`lib/parts.ts`) and the part registry together; the types keep
@@ -96,5 +107,8 @@
 - A turn is a plain column: no timeline line or status dots. Every child carries
   `timeline-item` for spacing only. Tool rows have no frame of their own; code sits on
   one flat surface (no border inside a border), a step smaller than prose.
+- An answer reads at `--font-size-prose` (a step above the tool rows' `--font-size-base`),
+  its code at `--font-size-code-prose`. Code blocks and tables are as wide as what they
+  hold, up to the column (`width: fit-content`), never stretched to it by default.
 - The app has one light palette: `styles.css` makes Tailwind's `dark:` class-based, so
   Streamdown's Shiki tokens and `@pierre/diffs` stay light whatever the OS theme.

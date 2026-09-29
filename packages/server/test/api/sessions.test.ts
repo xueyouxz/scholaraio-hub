@@ -308,7 +308,15 @@ describe.each(["claude", "codex"] as const)("%s sessions", (name) => {
       ),
     ).toEqual(["result.md"]);
     const preview = await server.app.request(url(id, "/fs/file?path=result.md"));
-    expect((await preview.json().then((body) => body.data)).content).toContain("真实输出");
+    const file = await preview.json().then((body) => body.data);
+    expect(file.content).toContain("真实输出");
+    expect(file.size).toBe(Buffer.byteLength("# 真实输出\n文件内容"));
+    // An agent links files by the absolute path it was given.
+    const linked = join(project, "result.md");
+    const absolute = await server.app.request(
+      url(id, `/fs/file?path=${encodeURIComponent(linked)}`),
+    );
+    expect((await absolute.json().then((body) => body.data)).content).toContain("真实输出");
     for (const path of ["../outside.txt", "outside-link", join(root, "outside.txt")]) {
       expect(
         (await server.app.request(url(id, `/fs/file?path=${encodeURIComponent(path)}`))).status,

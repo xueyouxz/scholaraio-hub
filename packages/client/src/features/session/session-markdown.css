@@ -3,19 +3,23 @@
  *
  * Streamdown styles its own elements with Tailwind utilities, and its colors
  * come from the shadcn-named tokens mapped in styles.css (`--color-muted`,
- * `--color-border`, ...). This file only tightens its document-sized
- * typography to the transcript's density. It is imported into the `markdown`
- * layer, declared after `utilities`, so these rules beat Streamdown's classes.
+ * `--color-border`, ...). This file sets the answer's reading typography and
+ * reshapes Streamdown's blocks. It is imported into the `markdown` layer,
+ * declared after `utilities`, so these rules beat Streamdown's classes.
  *
  * Target elements through Streamdown's `data-streamdown` attributes rather than
  * its class names; the attributes are the stable part of its output.
  */
 
+/*
+ * An answer is read, not scanned: a step larger than the tool rows around it,
+ * with room between its lines.
+ */
 .session-markdown {
   min-width: 0;
   overflow-wrap: anywhere;
-  font-size: var(--font-size-base);
-  line-height: 1.6;
+  font-size: var(--font-size-prose);
+  line-height: 1.75;
   color: var(--color-on-surface);
 }
 
@@ -28,110 +32,223 @@
 }
 
 .session-markdown p {
-  margin: 0 0 var(--space-2);
+  margin: 0 0 0.7em;
 }
 
+.session-markdown strong {
+  font-weight: 600;
+}
+
+/* Headings stay in the sans: in a transcript they order an answer, they do not title a page. */
 .session-markdown :is(h1, h2, h3, h4, h5, h6) {
-  margin: var(--space-3) 0 var(--space-2);
+  margin: 1.2em 0 0.5em;
   font-family: var(--font-sans);
   font-weight: 600;
-  line-height: 1.35;
+  line-height: 1.4;
 }
 
 .session-markdown [data-streamdown="heading-1"] {
-  font-size: 1.25rem;
+  font-size: 1.3em;
 }
 
 .session-markdown [data-streamdown="heading-2"] {
-  font-size: 1.125rem;
+  font-size: 1.18em;
 }
 
 .session-markdown [data-streamdown="heading-3"] {
-  font-size: 1rem;
+  font-size: 1.07em;
 }
 
 .session-markdown :is(h4, h5, h6) {
-  font-size: var(--font-size-lg);
+  font-size: 1em;
 }
 
+/*
+ * Lists are dense: an item is a line, not a paragraph. Streamdown pads each
+ * item on its own (`py-1`); only a hair of space is left between them.
+ */
 .session-markdown :is([data-streamdown="ordered-list"], [data-streamdown="unordered-list"]) {
-  margin: var(--space-2) 0;
+  margin: 0.2em 0 0.5em;
+  padding-left: 1.4em;
+  line-height: 1.65;
 }
 
 .session-markdown [data-streamdown="list-item"] {
-  margin: var(--space-1) 0;
+  margin: 0.12em 0;
+  padding: 0 0 0 0.15em;
+}
+
+/* A list inside an item continues it, with no gap of its own. */
+.session-markdown
+  [data-streamdown="list-item"]
+  > :is([data-streamdown="ordered-list"], [data-streamdown="unordered-list"]) {
+  margin: 0.12em 0 0;
+}
+
+.session-markdown [data-streamdown="list-item"]::marker {
+  color: var(--color-on-surface-faint);
 }
 
 .session-markdown [data-streamdown="blockquote"] {
-  margin: var(--space-2) 0;
+  margin: 0.7em 0;
+  padding-left: 0.9em;
+  border-left: 3px solid var(--border-strong);
   font-style: normal;
+  color: var(--color-on-surface-variant);
 }
 
 .session-markdown [data-streamdown="horizontal-rule"] {
-  margin: var(--space-3) 0;
+  margin: 1.2em 0;
+  border: 0;
+  border-top: 1px solid var(--border-subtle);
 }
 
-.session-markdown [data-streamdown="link"] {
+/* Links, and the buttons that stand in for links to files (Markdown.tsx). */
+.session-markdown :is([data-streamdown="link"], a, .file-link) {
   color: var(--color-primary);
+  text-decoration: underline;
+  text-decoration-color: color-mix(in srgb, var(--color-primary) 35%, transparent);
+  text-underline-offset: 3px;
 }
 
+.session-markdown :is([data-streamdown="link"], a, .file-link):hover {
+  text-decoration-color: currentColor;
+}
+
+.session-markdown .file-link {
+  display: inline;
+  padding: 0;
+  font: inherit;
+  text-align: inherit;
+}
+
+/* Inline code: a quiet chip, a notch smaller than the words around it. */
 .session-markdown [data-streamdown="inline-code"] {
-  font-size: 0.9em;
+  padding: 0.1em 0.38em;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-sm);
+  background: var(--color-surface-container-low);
+  font-size: 0.86em;
+  color: var(--color-on-surface);
+  overflow-wrap: anywhere;
 }
 
+/*
+ * Blocks (code, tables, diagrams) take the width of what they hold, up to the
+ * column, instead of stretching across it.
+ */
 .session-markdown
   :is(
     [data-streamdown="code-block"],
     [data-streamdown="table-wrapper"],
     [data-streamdown="mermaid-block"]
   ) {
-  margin: var(--space-2) 0;
-}
-
-.session-markdown [data-streamdown="code-block"] pre {
-  font-size: var(--font-size-sm);
+  width: fit-content;
+  min-width: 0;
+  max-width: 100%;
+  margin: 0.8em 0;
 }
 
 /*
- * Tables: one rounded frame, a tinted header row and a rule between rows; no
- * column lines, room around each cell.
+ * Code: a light frame on the session's own surface, no language strip and no
+ * line numbers; the copy button sits in the top right corner, in room the code
+ * leaves for it.
  */
-/* Streamdown frames the table twice (wrapper and scroller); keep only the inner
-   frame, and float the copy / download controls over its corner on hover. */
-.session-markdown [data-streamdown="table-wrapper"] {
+.session-markdown [data-streamdown="code-block"] {
   position: relative;
+  gap: 0;
+  padding: 0;
+  border: 1px solid var(--border-code);
+  border-radius: var(--radius-md);
+  background: var(--color-surface);
+}
+
+.session-markdown [data-streamdown="code-block-header"] {
+  display: none;
+}
+
+.session-markdown
+  [data-streamdown="code-block"]
+  > div:has(> [data-streamdown="code-block-actions"]) {
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  height: auto;
+  margin: 0;
+  opacity: 0;
+  transition: opacity 0.15s;
+}
+
+.session-markdown
+  [data-streamdown="code-block"]:hover
+  > div:has(> [data-streamdown="code-block-actions"]),
+.session-markdown
+  [data-streamdown="code-block"]
+  > div:has(> [data-streamdown="code-block-actions"]):focus-within {
+  opacity: 1;
+}
+
+@media (hover: none) {
+  .session-markdown
+    [data-streamdown="code-block"]
+    > div:has(> [data-streamdown="code-block-actions"]) {
+    opacity: 1;
+  }
+}
+
+.session-markdown [data-streamdown="code-block-actions"] {
+  gap: 0;
+  padding: 0;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: var(--color-surface);
+}
+
+.session-markdown [data-streamdown="code-block-actions"] button {
+  padding: 3px;
+  border-radius: var(--radius-sm);
+}
+
+.session-markdown [data-streamdown="code-block-actions"] button:hover {
+  background: var(--color-surface-container);
+}
+
+.session-markdown [data-streamdown="code-block-actions"] svg {
+  width: 13px;
+  height: 13px;
+}
+
+.session-markdown [data-streamdown="code-block-body"] {
+  padding: 7px 30px 7px 12px;
+  border: 0;
+  border-radius: inherit;
+  background: transparent;
+  tab-size: var(--tab-size);
+}
+
+.session-markdown [data-streamdown="code-block-body"] pre {
+  font-size: var(--font-size-code-prose);
+  line-height: 1.6;
+}
+
+/* Tables: one rounded frame, a tinted header row and a rule between rows. */
+.session-markdown [data-streamdown="table-wrapper"] {
   gap: 0;
   padding: 0;
   border: 0;
   background: transparent;
 }
 
-.session-markdown [data-streamdown="table-wrapper"] > div:first-child:not(:has(table)) {
-  position: absolute;
-  top: 4px;
-  right: 6px;
-  z-index: 1;
-  opacity: 0;
-  transition: opacity 0.15s;
-}
-
-.session-markdown [data-streamdown="table-wrapper"]:hover > div:first-child,
-.session-markdown [data-streamdown="table-wrapper"] > div:first-child:focus-within {
-  opacity: 1;
-}
-
 .session-markdown div:has(> [data-streamdown="table"]) {
   border: 1px solid var(--border-code);
-  border-radius: var(--radius-frame);
+  border-radius: var(--radius-lg);
   background: transparent;
 }
 
 .session-markdown [data-streamdown="table"] {
-  width: 100%;
+  width: auto;
   border: 0;
   border-collapse: collapse;
-  font-size: var(--font-size-base);
-  line-height: 1.55;
 }
 
 .session-markdown [data-streamdown="table-header"] {
@@ -154,16 +271,11 @@
 }
 
 .session-markdown :is([data-streamdown="table-header-cell"], [data-streamdown="table-cell"]) {
-  padding: 6px 12px;
-  font-size: var(--font-size-base);
-  line-height: 1.5;
+  padding: 7px 14px;
+  font-size: 0.93em;
+  line-height: 1.55;
   vertical-align: top;
   border: 0;
-}
-
-.session-markdown [data-streamdown="table-header-cell"] {
-  padding-top: 5px;
-  padding-bottom: 5px;
 }
 
 .session-markdown [data-streamdown="table-header-cell"] {
@@ -176,113 +288,32 @@
   font-size: var(--font-size-lg);
 }
 
-/* Reasoning reads as an aside: muted, like its summary. */
+/* Reasoning reads as an aside: muted, like its summary, and a step smaller than the answer. */
 .collapsible__content .session-markdown {
+  font-size: var(--font-size-base);
   color: inherit;
 }
 
-/* One frame per code block: the outer container keeps its border and fill,
-   the body inside it draws neither a second border nor a second panel. */
-.session-markdown [data-streamdown="code-block"] {
-  gap: 0;
-  padding: 0;
-  border-color: var(--border-code);
-  border-radius: 6px;
-}
-
 /*
- * Code in the answer, packed like the tables: a short language strip, the
- * controls floated into it, and a body without the default roomy padding.
- */
-.session-markdown [data-streamdown="code-block-header"] {
-  height: 24px;
-  padding: 0 10px;
-  font-size: 10.5px;
-}
-
-.session-markdown [data-streamdown="code-block-header"] > span {
-  margin-left: 0;
-}
-
-.session-markdown
-  [data-streamdown="code-block"]
-  > div:has(> [data-streamdown="code-block-actions"]) {
-  height: 24px;
-  margin-top: -24px;
-  top: 0;
-  padding-right: 4px;
-}
-
-.session-markdown [data-streamdown="code-block-actions"] {
-  gap: 0;
-  padding: 0;
-  border: 0;
-  background: transparent;
-}
-
-.session-markdown [data-streamdown="code-block-actions"] button {
-  padding: 3px;
-}
-
-.session-markdown [data-streamdown="code-block-actions"] svg {
-  width: 13px;
-  height: 13px;
-}
-
-.session-markdown [data-streamdown="code-block-body"] code > span::before {
-  margin-right: 12px;
-}
-
-.session-markdown [data-streamdown="code-block-body"] {
-  border: 0;
-  background: transparent;
-  padding: 2px 10px 8px 4px;
-}
-
-/*
- * Tool output (renderers/blocks.tsx): the same highlighting, without the
- * chrome. No frame, no language header, a smaller face, and the copy button
- * only on hover, over the code's top right corner.
+ * Tool output (renderers/blocks.tsx): the same highlighting, on the tool rows'
+ * scale. The code surface, a smaller face, and line numbers only for a file
+ * read from a given line.
  */
 .tool-markdown [data-streamdown="code-block"] {
-  gap: 0;
   margin: 4px 0;
-  padding: 0;
-  border: 1px solid var(--border-code);
   border-radius: var(--radius-frame);
   background: var(--color-surface-code);
 }
 
-.tool-markdown [data-streamdown="code-block-header"] {
-  display: none;
-}
-
 .tool-markdown [data-streamdown="code-block"] > div:has(> [data-streamdown="code-block-actions"]) {
-  height: 0;
-  margin-top: 0;
   top: 4px;
-  padding-right: 4px;
-  opacity: 0;
-  transition: opacity 0.15s;
-}
-
-.tool-markdown
-  [data-streamdown="code-block"]:hover
-  > div:has(> [data-streamdown="code-block-actions"]),
-.tool-markdown
-  [data-streamdown="code-block"]
-  > div:has(> [data-streamdown="code-block-actions"]):focus-within {
-  opacity: 1;
+  right: 4px;
 }
 
 .tool-markdown [data-streamdown="code-block-actions"] {
-  margin-top: 22px;
-  gap: 0;
-  padding: 1px;
-  border-radius: 4px;
+  background: var(--color-surface-code);
 }
 
-/* A small copy button: the code, not its controls, is the point. */
 .tool-markdown [data-streamdown="code-block-actions"] button {
   padding: 3px;
 }
@@ -295,15 +326,14 @@
 .tool-markdown [data-streamdown="code-block-body"] {
   max-height: 24rem;
   overflow: auto;
-  padding: 8px 12px 8px 4px;
-  border: 0;
-  background: transparent;
+  padding: 8px 30px 8px 12px;
   font-size: var(--font-size-code);
   line-height: var(--line-height-code);
 }
 
 .tool-markdown [data-streamdown="code-block-body"] pre {
   font-size: var(--font-size-code);
+  line-height: var(--line-height-code);
 }
 
 .tool-markdown [data-streamdown="code-block-body"] code > span::before {

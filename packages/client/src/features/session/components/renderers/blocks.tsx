@@ -1,9 +1,6 @@
 import { useState } from "react";
 import { Markdown } from "../../../../shared/components/Markdown";
 
-/** Only the copy button: a tool's output is read here, not downloaded. */
-const CODE_CONTROLS = { code: { copy: true, download: false } } as const;
-
 /** Names Shiki does not guess from an extension. */
 const LANGUAGE_BY_NAME: Record<string, string> = {
   dockerfile: "dockerfile",
@@ -49,7 +46,7 @@ export function CodeBlock({
   const lines = text.replace(/\n$/, "").split("\n");
   const clipped = !showAll && lines.length > maxLines;
   const visible = (clipped ? lines.slice(0, maxLines) : lines).join("\n");
-  const numbers = startLine === undefined ? " noLineNumbers" : ` startLine=${startLine}`;
+  const info = startLine === undefined ? language : `${language} startLine=${startLine}`;
   return (
     <div className="tool-code">
       {error ? (
@@ -58,9 +55,9 @@ export function CodeBlock({
         </pre>
       ) : (
         <Markdown
-          text={fence(visible, `${language}${numbers}`)}
+          text={fence(visible, info)}
           className="session-markdown tool-markdown"
-          controls={CODE_CONTROLS}
+          lineNumbers={startLine !== undefined}
         />
       )}
       {clipped ? (
@@ -97,6 +94,9 @@ export function OutputTail({
 
 const MARKDOWN_LANGUAGES = new Set(["md", "markdown", "mdx"]);
 
+/** Whether a highlighting language is Markdown, which reads better rendered. */
+export const isMarkdown = (language: string) => MARKDOWN_LANGUAGES.has(language);
+
 /**
  * A file's text as a call read or wrote it. Markdown is shown rendered, with
  * a switch to its source; everything else is highlighted code.
@@ -104,15 +104,16 @@ const MARKDOWN_LANGUAGES = new Set(["md", "markdown", "mdx"]);
 export function FileContent({
   path,
   text,
-  startLine = 1,
+  startLine,
 }: {
   path: string;
   text: string;
+  /** Number the lines from here; unset for text that carries no line of its own to start at. */
   startLine?: number;
 }) {
   const language = languageOf(path);
   const [source, setSource] = useState(false);
-  if (!MARKDOWN_LANGUAGES.has(language))
+  if (!isMarkdown(language))
     return <CodeBlock text={text} language={language} startLine={startLine} />;
   return (
     <div className="file-markdown">

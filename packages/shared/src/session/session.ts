@@ -108,6 +108,8 @@ export interface SessionAttachment {
 export interface SessionFileContent {
   content?: string;
   rawUrl: string;
+  /** The whole file's size in bytes; `content` holds at most the first megabyte. */
+  size: number;
   truncated: boolean;
 }
 /**

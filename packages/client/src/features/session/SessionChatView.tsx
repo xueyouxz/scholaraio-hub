@@ -12,6 +12,7 @@ import {
   sessionUrl,
 } from "../../core/sessions";
 import { PaperReaderView } from "../library/reader/PaperReaderView";
+import { SessionFileLinks } from "./components/FileViewerDialog";
 import { InputRequestPrompt } from "./components/InputRequestPrompt";
 import { ReferenceChips } from "./components/ReferenceChips";
 import { ResizableReferencesPanel } from "./components/ReferencesPanel";
@@ -103,178 +104,180 @@ export function SessionChatView({ initial }: { initial: SessionDetail }) {
     contextUsage: snapshot?.contextUsage,
   };
   return (
-    <div className="flex flex-1 h-full min-h-0 overflow-hidden">
-      <section className="session-page flex-1 min-w-0">
-        <SessionHeader
-          title={snapshot?.title ?? initial.title}
-          provider={initial.provider}
-          model={model}
-          state={session.state}
-          running={running}
-          inset={!isDesktop}
-          panel={panel}
-          references={references.length}
-          onTogglePanel={(next) => setPanel((current) => (current === next ? undefined : next))}
-        />
-        {pending && !askedInline ? (
-          <InputRequestPrompt
-            key={pending.id}
-            request={pending}
-            sessionId={initial.id}
-            placement="floating"
-            onDone={session.refresh}
+    <SessionFileLinks sessionId={initial.id} cwd={initial.cwd}>
+      <div className="flex flex-1 h-full min-h-0 overflow-hidden">
+        <section className="session-page flex-1 min-w-0">
+          <SessionHeader
+            title={snapshot?.title ?? initial.title}
+            provider={initial.provider}
+            model={model}
+            state={session.state}
+            running={running}
+            inset={!isDesktop}
+            panel={panel}
+            references={references.length}
+            onTogglePanel={(next) => setPanel((current) => (current === next ? undefined : next))}
           />
-        ) : null}
-        {selectedPaper ? (
-          <main className="flex-1 min-h-0 flex flex-col overflow-hidden">
-            <PaperReaderView paperId={selectedPaper} onClose={() => setSelectedPaper(null)} />
-          </main>
-        ) : (
-          <main
-            ref={scroll.viewportRef}
-            className={`session-messages${pending && !askedInline ? " session-messages-with-approval" : ""}`}
-          >
-            <div ref={scroll.contentRef}>
-              {session.failure ? (
-                <div
-                  role="alert"
-                  className="max-w-[830px] mx-auto mb-3 text-sm text-error break-words"
-                >
-                  {session.failure.message}
-                  <button
-                    type="button"
-                    className="ml-2 underline"
-                    disabled={session.reconnect.isPending}
-                    onClick={() => session.reconnect.mutate()}
+          {pending && !askedInline ? (
+            <InputRequestPrompt
+              key={pending.id}
+              request={pending}
+              sessionId={initial.id}
+              placement="floating"
+              onDone={session.refresh}
+            />
+          ) : null}
+          {selectedPaper ? (
+            <main className="flex-1 min-h-0 flex flex-col overflow-hidden">
+              <PaperReaderView paperId={selectedPaper} onClose={() => setSelectedPaper(null)} />
+            </main>
+          ) : (
+            <main
+              ref={scroll.viewportRef}
+              className={`session-messages${pending && !askedInline ? " session-messages-with-approval" : ""}`}
+            >
+              <div ref={scroll.contentRef}>
+                {session.failure ? (
+                  <div
+                    role="alert"
+                    className="max-w-[830px] mx-auto mb-3 text-sm text-error break-words"
                   >
-                    重新连接
-                  </button>
-                </div>
-              ) : null}
-              {snapshot?.error && !session.streaming ? (
-                <div className="max-w-[830px] mx-auto mb-3 text-sm text-error break-words">
-                  {snapshot.error}
-                </div>
-              ) : null}
-              <SessionMessages
-                messages={session.messages}
-                streaming={session.streaming}
-                processing={running && !pending}
-                queued={(snapshot?.queuedMessages ?? []).map((message) => ({
-                  id: message.id,
-                  text: message.text || `${message.attachmentIds.length} 个附件`,
-                }))}
-                queuePaused={snapshot?.queuePaused}
-                onCancelQueued={(messageId) =>
-                  session.editQueue.mutate({ action: "remove", messageId })
-                }
-                pendingInput={askedInline ? pending : undefined}
-                sessionId={initial.id}
-                onInputDone={session.refresh}
-                provider={initial.provider}
-                promptActions={{
-                  busy: running || session.fork.isPending,
-                  onEdit: edit,
-                  onFork: (message) =>
-                    session.fork.mutate(message.id, {
-                      onSuccess: (fork) => navigate(sessionUrl(fork.id)),
-                    }),
-                }}
-                editingId={editing?.id}
-              />
-              {snapshot?.queuePaused ? (
-                <div className="flex justify-center -mt-2 mb-2">
-                  <button
-                    type="button"
-                    className="queue-resume-button"
-                    disabled={session.editQueue.isPending}
-                    onClick={() => session.editQueue.mutate({ action: "resume" })}
-                  >
-                    继续队列
-                  </button>
-                </div>
-              ) : null}
-            </div>
-            {scroll.atBottom ? null : (
-              <button
-                type="button"
-                className="scroll-to-bottom"
-                aria-label="滚动到最新消息"
-                title="滚动到最新消息"
-                onClick={() => scroll.scrollToBottom("smooth")}
-              >
-                <ArrowDown size={15} />
-              </button>
-            )}
-          </main>
-        )}
-        {selectedPaper ? null : (
-          <footer className="session-input pb-[max(0.75rem,env(safe-area-inset-bottom))]">
-            <div className={`session-connection-bar session-connection-${session.connection}`} />
-            <div className="session-input-inner">
-              {snapshot?.external ? (
-                <p className="text-xs text-attention pb-1.5">
-                  另一个程序（如终端里的 CLI）正在使用这个会话；在这里继续可能与它冲突。
-                </p>
-              ) : null}
-              <div className="mb-1.5 empty:hidden">
-                <ReferenceChips
-                  references={references}
-                  disabled={changeReferences.isPending}
-                  onRemove={removeReference}
-                />
-              </div>
-              {
-                <Composer
-                  provider={initial.provider}
+                    {session.failure.message}
+                    <button
+                      type="button"
+                      className="ml-2 underline"
+                      disabled={session.reconnect.isPending}
+                      onClick={() => session.reconnect.mutate()}
+                    >
+                      重新连接
+                    </button>
+                  </div>
+                ) : null}
+                {snapshot?.error && !session.streaming ? (
+                  <div className="max-w-[830px] mx-auto mb-3 text-sm text-error break-words">
+                    {snapshot.error}
+                  </div>
+                ) : null}
+                <SessionMessages
+                  messages={session.messages}
+                  streaming={session.streaming}
+                  processing={running && !pending}
+                  queued={(snapshot?.queuedMessages ?? []).map((message) => ({
+                    id: message.id,
+                    text: message.text || `${message.attachmentIds.length} 个附件`,
+                  }))}
+                  queuePaused={snapshot?.queuePaused}
+                  onCancelQueued={(messageId) =>
+                    session.editQueue.mutate({ action: "remove", messageId })
+                  }
+                  pendingInput={askedInline ? pending : undefined}
                   sessionId={initial.id}
-                  draftKey={`session:${initial.id}`}
-                  running={running}
-                  stoppable={running && session.state !== "waiting-input"}
-                  placeholder={running ? "Queue a follow-up message" : "Continue this session"}
-                  onStop={() => session.stop.mutate()}
-                  stopPending={session.stop.isPending}
-                  onQueue={(text, attachments) =>
-                    withReferences((refs) => session.enqueue(text, attachments, refs))
-                  }
-                  onSend={(text, attachments) => {
-                    scroll.scrollToBottom();
-                    return withReferences((refs) =>
-                      session.send(text, attachments, editing?.id, refs),
-                    );
+                  onInputDone={session.refresh}
+                  provider={initial.provider}
+                  promptActions={{
+                    busy: running || session.fork.isPending,
+                    onEdit: edit,
+                    onFork: (message) =>
+                      session.fork.mutate(message.id, {
+                        onSuccess: (fork) => navigate(sessionUrl(fork.id)),
+                      }),
                   }}
-                  onReference={(ref) =>
-                    setAdded((current) =>
-                      references.some((item) => same(item, ref)) ? current : [...current, ref],
-                    )
-                  }
-                  editing={editing}
-                  onEditEnd={() => setEditing(undefined)}
-                  controls={controls}
+                  editingId={editing?.id}
                 />
-              }
-            </div>
-          </footer>
-        )}
-      </section>
-      <ResizableSessionFilesPanel
-        open={panel === "files"}
-        sessionId={initial.id}
-        rootName={initial.cwd.split(/[\\/]/).filter(Boolean).at(-1) ?? "工作目录"}
-        onClose={() => setPanel(undefined)}
-      />
-      <ResizableReferencesPanel
-        open={panel === "papers"}
-        references={references}
-        selectedPaperId={selectedPaper}
-        onSelectPaper={(id) => {
-          setSelectedPaper(id);
-          if (!isDesktop) setPanel(undefined);
-        }}
-        onRemove={removeReference}
-        disabled={changeReferences.isPending}
-        onClose={() => setPanel(undefined)}
-      />
-    </div>
+                {snapshot?.queuePaused ? (
+                  <div className="flex justify-center -mt-2 mb-2">
+                    <button
+                      type="button"
+                      className="queue-resume-button"
+                      disabled={session.editQueue.isPending}
+                      onClick={() => session.editQueue.mutate({ action: "resume" })}
+                    >
+                      继续队列
+                    </button>
+                  </div>
+                ) : null}
+              </div>
+              {scroll.atBottom ? null : (
+                <button
+                  type="button"
+                  className="scroll-to-bottom"
+                  aria-label="滚动到最新消息"
+                  title="滚动到最新消息"
+                  onClick={() => scroll.scrollToBottom("smooth")}
+                >
+                  <ArrowDown size={15} />
+                </button>
+              )}
+            </main>
+          )}
+          {selectedPaper ? null : (
+            <footer className="session-input pb-[max(0.75rem,env(safe-area-inset-bottom))]">
+              <div className={`session-connection-bar session-connection-${session.connection}`} />
+              <div className="session-input-inner">
+                {snapshot?.external ? (
+                  <p className="text-xs text-attention pb-1.5">
+                    另一个程序（如终端里的 CLI）正在使用这个会话；在这里继续可能与它冲突。
+                  </p>
+                ) : null}
+                <div className="mb-1.5 empty:hidden">
+                  <ReferenceChips
+                    references={references}
+                    disabled={changeReferences.isPending}
+                    onRemove={removeReference}
+                  />
+                </div>
+                {
+                  <Composer
+                    provider={initial.provider}
+                    sessionId={initial.id}
+                    draftKey={`session:${initial.id}`}
+                    running={running}
+                    stoppable={running && session.state !== "waiting-input"}
+                    placeholder={running ? "Queue a follow-up message" : "Continue this session"}
+                    onStop={() => session.stop.mutate()}
+                    stopPending={session.stop.isPending}
+                    onQueue={(text, attachments) =>
+                      withReferences((refs) => session.enqueue(text, attachments, refs))
+                    }
+                    onSend={(text, attachments) => {
+                      scroll.scrollToBottom();
+                      return withReferences((refs) =>
+                        session.send(text, attachments, editing?.id, refs),
+                      );
+                    }}
+                    onReference={(ref) =>
+                      setAdded((current) =>
+                        references.some((item) => same(item, ref)) ? current : [...current, ref],
+                      )
+                    }
+                    editing={editing}
+                    onEditEnd={() => setEditing(undefined)}
+                    controls={controls}
+                  />
+                }
+              </div>
+            </footer>
+          )}
+        </section>
+        <ResizableSessionFilesPanel
+          open={panel === "files"}
+          sessionId={initial.id}
+          rootName={initial.cwd.split(/[\\/]/).filter(Boolean).at(-1) ?? "工作目录"}
+          onClose={() => setPanel(undefined)}
+        />
+        <ResizableReferencesPanel
+          open={panel === "papers"}
+          references={references}
+          selectedPaperId={selectedPaper}
+          onSelectPaper={(id) => {
+            setSelectedPaper(id);
+            if (!isDesktop) setPanel(undefined);
+          }}
+          onRemove={removeReference}
+          disabled={changeReferences.isPending}
+          onClose={() => setPanel(undefined)}
+        />
+      </div>
+    </SessionFileLinks>
   );
 }

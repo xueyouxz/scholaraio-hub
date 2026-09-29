@@ -210,6 +210,15 @@ export const sessionQuery = (id: string) =>
     queryFn: ({ signal }) => sessionApi.get(id, signal),
   });
 
+/** 会话工作目录里的一个文件；agent 随时可能改它，所以每次打开都重新读取。 */
+export const sessionFileQuery = (id: string, path: string) =>
+  queryOptions({
+    queryKey: ["session-file", id, path],
+    queryFn: ({ signal }) => sessionApi.file(id, path, signal),
+    staleTime: 0,
+    gcTime: 60_000,
+  });
+
 /** 判断会话是否正在运行或等待用户输入。 */
 export function isSessionActive(state: SessionDetail["state"] | undefined): boolean {
   return state === "running" || state === "waiting-input";

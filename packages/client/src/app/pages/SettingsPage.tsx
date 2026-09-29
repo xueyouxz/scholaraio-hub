@@ -2,7 +2,6 @@ import {
   DEFAULT_PROVIDER,
   type NewSessionDefaults,
   PROVIDER_NAMES,
-  type ProviderInfo,
   type ProviderUsageLimits,
 } from "@scholaraio-hub/shared";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
@@ -17,14 +16,14 @@ import { usePageTitle } from "../components/NavigationLayout";
 import { UsageLimitBlock, describeProvider } from "../components/ProviderUsage";
 
 /**
- * The agent cards as they last looked, so reopening the page shows them at
- * once and a fresh answer only moves the bars. A per-browser convenience:
- * without it the cards simply start empty.
+ * The agents' usage as it last looked, so reopening the page shows the bars at
+ * once and a fresh answer only moves them. A per-browser convenience: without
+ * it the bars simply start empty. (The agents themselves start from the last
+ * list `providersQuery` keeps.)
  */
 const REMEMBERED_KEY = "hub-settings:agent-status";
 
 interface RememberedStatus {
-  providers?: ProviderInfo[];
   usageLimits?: ProviderUsageLimits[];
 }
 
@@ -51,10 +50,7 @@ export function SettingsPage() {
     queryFn: ({ signal }) => libraryApi.settings(signal),
   });
   const [remembered] = useState(readRemembered);
-  const providers = useQuery({
-    ...providersQuery,
-    placeholderData: remembered.providers ? { providers: remembered.providers } : undefined,
-  });
+  const providers = useQuery(providersQuery);
   const usage = useQuery({
     queryKey: ["provider-usage-limits"],
     queryFn: ({ signal }) => providersApi.usageLimits(signal),
@@ -63,10 +59,6 @@ export function SettingsPage() {
     refetchInterval: 60_000,
     placeholderData: remembered.usageLimits ? { usageLimits: remembered.usageLimits } : undefined,
   });
-  useEffect(() => {
-    if (providers.data && !providers.isPlaceholderData)
-      remember({ providers: providers.data.providers });
-  }, [providers.data, providers.isPlaceholderData]);
   useEffect(() => {
     if (usage.data && !usage.isPlaceholderData) remember({ usageLimits: usage.data.usageLimits });
   }, [usage.data, usage.isPlaceholderData]);

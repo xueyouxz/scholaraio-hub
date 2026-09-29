@@ -13,7 +13,9 @@ export function resolveModel(models: ModelInfo[], modelId?: string): ModelInfo |
 /**
  * The options a new chat starts with for `provider`: the choices it made last
  * time when the provider still offers them, else the provider's own defaults.
- * Every field is a real id, never a placeholder.
+ * Model and permission mode are always real ids, never placeholders; thinking
+ * and effort are set only when a remembered one still applies, and otherwise
+ * left to the provider.
  */
 export function initialOptions(
   capabilities: ProviderCapabilities,
@@ -29,7 +31,13 @@ export function initialOptions(
     ? remembered.permissionMode
     : (capabilities.permissionModes.find((mode) => mode.id === "default")?.id ??
       capabilities.permissionModes[0]?.id);
-  return { model, permissionMode };
+  const options: SessionOptions = { model, permissionMode };
+  if (capabilities.thinkingModes.some((mode) => mode.id === remembered.thinking))
+    options.thinking = remembered.thinking;
+  // An effort belongs to a model: it carries over only to one that offers it.
+  if (resolveModel(models, model)?.efforts?.some((option) => option.id === remembered.effort))
+    options.effort = remembered.effort;
+  return options;
 }
 
 /**
@@ -48,9 +56,9 @@ export function modelChange(
 }
 
 /**
- * Options a different provider can run: its own model and permission choices
- * (the remembered ones when it still offers them), and no effort, which
- * belongs to the model that is now gone.
+ * Options a different provider can run: each current choice it also offers,
+ * else the one remembered for it, else its own default. The current effort
+ * stays behind with the old model; a remembered one applies when it fits.
  */
 export function optionsForProvider(
   capabilities: ProviderCapabilities,
@@ -58,17 +66,23 @@ export function optionsForProvider(
   current: SessionOptions,
   remembered: ComposerPreference = {},
 ): SessionOptions {
-  const thinking = capabilities.thinkingModes.some((mode) => mode.id === current.thinking)
-    ? current.thinking
-    : capabilities.thinkingModes[0]?.id;
-  // The current choices come first: permission modes are the hub's, so they
-  // carry over; a model id belongs to the old provider and rarely matches.
-  const preferred = {
+  const offersThinking = (id?: string) => capabilities.thinkingModes.some((mode) => mode.id === id);
+  const thinking = [current.thinking, remembered.thinking].find(offersThinking);
+  // Permission modes are the hub's, so they usually carry over; a model id
+  // belongs to the old provider and rarely matches, so the remembered one wins then.
+  const preferred: ComposerPreference = {
     ...remembered,
-    ...(current.model ? { model: current.model } : {}),
-    ...(current.permissionMode ? { permissionMode: current.permissionMode } : {}),
+    ...(models.some((model) => model.id === current.model) ? { model: current.model } : {}),
+    ...(capabilities.permissionModes.some((mode) => mode.id === current.permissionMode)
+      ? { permissionMode: current.permissionMode }
+      : {}),
   };
-  return { ...initialOptions(capabilities, models, preferred), thinking, effort: undefined };
+  const options = initialOptions(capabilities, models, preferred);
+  return {
+    ...options,
+    thinking: thinking ?? capabilities.thinkingModes[0]?.id,
+    effort: options.effort,
+  };
 }
 
 /** Whether the effort layer applies: providers with a thinking switch hide it while off. */

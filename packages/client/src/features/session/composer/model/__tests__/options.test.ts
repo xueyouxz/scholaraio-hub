@@ -50,6 +50,23 @@ describe("initialOptions", () => {
       initialOptions(capabilities(), models, { model: "gone", permissionMode: "acceptEdits" }),
     ).toEqual({ model: "fast", permissionMode: "default" });
   });
+
+  it("reuses a remembered thinking and effort only where they still apply", () => {
+    const thinking = capabilities({
+      thinkingModes: [
+        { id: "adaptive", label: "On" },
+        { id: "off", label: "Off" },
+      ],
+    });
+    expect(
+      initialOptions(thinking, models, { model: "deep", thinking: "off", effort: "xhigh" }),
+    ).toEqual({ model: "deep", permissionMode: "default", thinking: "off", effort: "xhigh" });
+    // The default model has no "xhigh", and this provider no thinking switch.
+    expect(initialOptions(capabilities(), models, { thinking: "off", effort: "xhigh" })).toEqual({
+      model: "fast",
+      permissionMode: "default",
+    });
+  });
 });
 
 describe("modelChange", () => {
@@ -73,6 +90,23 @@ describe("optionsForProvider", () => {
         effort: "max",
       }),
     ).toEqual({ permissionMode: "plan", thinking: undefined, model: "fast", effort: undefined });
+  });
+
+  it("takes the choices remembered for the new provider where the current ones do not fit", () => {
+    const thinking = capabilities({
+      thinkingModes: [
+        { id: "adaptive", label: "On" },
+        { id: "off", label: "Off" },
+      ],
+    });
+    expect(
+      optionsForProvider(
+        thinking,
+        models,
+        { model: "gpt", permissionMode: "acceptEdits", effort: "max" },
+        { model: "deep", permissionMode: "plan", thinking: "off", effort: "xhigh" },
+      ),
+    ).toEqual({ model: "deep", permissionMode: "plan", thinking: "off", effort: "xhigh" });
   });
 
   it("falls back to the provider's default permission and first thinking choice", () => {

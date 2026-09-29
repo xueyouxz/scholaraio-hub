@@ -98,13 +98,14 @@ function NewSessionForm({
   const [choices, setChoices] = useState<SessionOptions>({});
   const provider: ProviderName = providerChoice ?? newSessionDefaults?.provider ?? DEFAULT_PROVIDER;
   const info = providers.find(provider);
-  // Until the user picks, a new chat opens on its last choices for this agent
-  // (the server settings' model counts as one), else the provider's own defaults.
+  // Until the user picks, a new chat opens on the choices last made in this
+  // browser for this agent, else a model saved in the settings, else the
+  // provider's own defaults.
   const remembered = {
-    ...readComposerPreference(provider),
     ...(provider === newSessionDefaults?.provider && newSessionDefaults.model
       ? { model: newSessionDefaults.model }
       : {}),
+    ...readComposerPreference(provider),
   };
   const options: SessionOptions = {
     ...(info ? initialOptions(info.capabilities, info.models ?? [], remembered) : {}),

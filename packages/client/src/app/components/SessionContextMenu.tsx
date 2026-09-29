@@ -1,4 +1,4 @@
-import { Archive, GitBranch, Pencil } from "lucide-react";
+import { Archive, Pencil, Split } from "lucide-react";
 import {
   type KeyboardEvent,
   type ReactNode,
@@ -103,7 +103,13 @@ export function SessionContextMenu({
       style={position}
     >
       {item("重命名", <Pencil size={13} aria-hidden="true" />, onRename)}
-      {item("分叉", <GitBranch size={13} aria-hidden="true" />, onFork, false, forkDisabled)}
+      {item(
+        "分叉",
+        <Split size={13} aria-hidden="true" className="rotate-90" />,
+        onFork,
+        false,
+        forkDisabled,
+      )}
       {item("归档", <Archive size={13} aria-hidden="true" />, onArchive)}
     </div>,
     document.body,

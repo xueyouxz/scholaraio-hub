@@ -1,5 +1,5 @@
 import type { SessionMessage } from "@scholaraio-hub/shared";
-import { GitBranch, Pencil } from "lucide-react";
+import { Pencil, Split } from "lucide-react";
 import { memo, useState } from "react";
 import { CopyButton } from "./CopyButton";
 import { FileAttachment } from "./FileAttachment";
@@ -94,7 +94,7 @@ export const UserPrompt = memo(function UserPrompt({
             title="在输入框中编辑后重新发送：替换这条消息和它的回复（文件改动不会撤销）"
             aria-label="编辑消息"
           >
-            <Pencil size={14} aria-hidden="true" />
+            <Pencil size={12} aria-hidden="true" />
           </button>
         ) : null}
         {onFork ? (
@@ -106,7 +106,8 @@ export const UserPrompt = memo(function UserPrompt({
             title="从这一轮分叉出新会话"
             aria-label="从这里分叉"
           >
-            <GitBranch size={14} aria-hidden="true" />
+            {/* Lucide's split, turned to branch left to right: one conversation becoming two. */}
+            <Split size={12} aria-hidden="true" className="rotate-90" />
           </button>
         ) : null}
       </div>

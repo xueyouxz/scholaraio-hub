@@ -12,10 +12,12 @@ import type { ProviderRegistry } from "./providers/ProviderRegistry.js";
 import { HubEvents } from "./services/HubEvents.js";
 import { ProviderUsageLimitService } from "./services/ProviderUsageLimitService.js";
 import { ServerSettingsService } from "./services/ServerSettingsService.js";
+import { RunningTurns } from "./sessions/RunningTurns.js";
 import { SessionAttachments } from "./sessions/SessionAttachments.js";
 import { SessionFiles } from "./sessions/SessionFiles.js";
 import { SessionService } from "./sessions/SessionService.js";
 import { SessionStore } from "./sessions/SessionStore.js";
+import { userText } from "./sessions/agent-prompt.js";
 import { Supervisor } from "./supervisor/Supervisor.js";
 
 export interface ServiceOptions {
@@ -67,6 +69,7 @@ export function createServices(options: ServiceOptions): Services {
   const usage = new ProviderUsageLimitService();
   const store = new SessionStore(dataDir);
   const supervisor = new Supervisor({ providers, idleTimeoutMs: options.idleTimeoutMs });
+  const turns = new RunningTurns();
   const attachments = new SessionAttachments(dataDir);
   const events = new HubEvents();
   const folders = options.folders ?? new SystemFolderPicker(systemFolderDialog());
@@ -75,20 +78,23 @@ export function createServices(options: ServiceOptions): Services {
     providers,
     owns: (provider, id) => supervisor.runs(provider, id),
   });
-  const catalog: ProjectCatalog = new ProjectCatalog({
+  // The lists read the Hub's state from below the sessions, never from the SessionService.
+  const catalog = new ProjectCatalog({
     providers,
     dataDir,
     rules: options.directories ?? new DirectoryRules({ home: homedir(), dataDir }),
     isExternal: (provider, id) => history.isExternal(provider, id),
-    activity: (key) => sessions.activity(key),
-    archived: (key) => sessions.archived(key),
-    titleOf: (key) => store.find(key)?.title,
+    activity: (key) => turns.activity(key),
+    archived: (key) => store.find(key)?.archived === true,
+    // A provider titles a session by its first prompt, which for the Hub's has the library passages in it.
+    title: (key, listed) => store.find(key)?.title ?? userText(listed),
   });
-  const sessions: SessionService = new SessionService({
+  const sessions = new SessionService({
     store,
     library,
     providers,
     supervisor,
+    turns,
     attachments,
     catalog,
     events,

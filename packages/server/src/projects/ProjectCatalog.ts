@@ -20,7 +20,6 @@ import {
 import { loggerFor } from "../logging/logger.js";
 import type { ProviderRegistry } from "../providers/ProviderRegistry.js";
 import type { NativeSession } from "../providers/types.js";
-import { userText } from "../sessions/agent-prompt.js";
 import { AsyncCache } from "../utils/async-cache.js";
 import { writeFileAtomic } from "../utils/write-file-atomic.js";
 import { type DirectoryRules, isDirectory, projectId, projectPath } from "./directories.js";
@@ -60,8 +59,8 @@ export interface ProjectCatalogOptions {
   activity?: (key: string) => SessionSummary["state"];
   /** Whether the user archived a session: it is left out of the lists. */
   archived?: (key: string) => boolean;
-  /** A title the user gave a session in the Hub, over the provider's. */
-  titleOf?: (key: string) => string | undefined;
+  /** The title the lists show, from the one the provider lists the session under. */
+  title?: (key: string, listed: string) => string;
 }
 
 export class ProjectCatalog {
@@ -142,7 +141,7 @@ export class ProjectCatalog {
   private now(session: SessionSummary): SessionSummary {
     const state = this.options.activity?.(session.id);
     const external = this.options.isExternal?.(session.provider, session.nativeId);
-    const title = this.options.titleOf?.(session.id) ?? session.title;
+    const title = this.options.title?.(session.id, session.title) ?? session.title;
     return {
       ...session,
       title,
@@ -292,8 +291,7 @@ function summary(
     nativeId: session.id,
     ...(placement.projectless ? {} : { projectId: projectId(placement.directory) }),
     cwd: session.cwd,
-    // A provider titles a session by its first prompt, which for the Hub's has the library passages in it.
-    title: userText(session.title),
+    title: session.title,
     createdAt: session.createdAt,
     updatedAt: session.updatedAt,
     ...(session.gitBranch ? { gitBranch: session.gitBranch } : {}),

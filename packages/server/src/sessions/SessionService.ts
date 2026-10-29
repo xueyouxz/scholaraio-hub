@@ -9,7 +9,6 @@ import {
   type SessionAttachment,
   type SessionDetail,
   type SessionInput,
-  type SessionSummary,
   type UploadedFile,
   parseSessionKey,
   sessionKey,
@@ -28,6 +27,7 @@ import { researchSlashCommands } from "../skills/scholaraioSkills.js";
 import type { ProcessEvent } from "../supervisor/AgentProcess.js";
 import type { Supervisor } from "../supervisor/Supervisor.js";
 import { resolvesWithin } from "../utils/timeout.js";
+import type { RunningTurns } from "./RunningTurns.js";
 import type { SessionAttachments } from "./SessionAttachments.js";
 import type { SessionRecord, SessionStore } from "./SessionStore.js";
 import { Turn } from "./Turn.js";
@@ -66,6 +66,8 @@ export interface SessionServiceOptions {
   providers: ProviderRegistry;
   /** The provider processes serving these sessions, one per session. */
   supervisor: Supervisor;
+  /** The turn each session is running; the lists read the sessions' activity from it. */
+  turns: RunningTurns;
   attachments: SessionAttachments;
   /** The sessions the providers keep, for those the Hub has no record of yet. */
   catalog: ProjectCatalog;
@@ -115,8 +117,7 @@ interface PendingStart {
  * refers to, the prompts as the user wrote them, citations, options, a queue.
  */
 export class SessionService {
-  /** The turn each session is running, by session id (a new session's placeholder at first). */
-  private turns = new Map<string, Turn>();
+  private readonly turns: RunningTurns;
   private closing = false;
   private drains = new Map<string, Promise<void>>();
   private changingOptions = new Set<string>();
@@ -146,24 +147,13 @@ export class SessionService {
     this.library = options.library;
     this.providers = options.providers;
     this.supervisor = options.supervisor;
+    this.turns = options.turns;
     this.attachments = options.attachments;
     this.catalog = options.catalog;
     this.events = options.events;
     this.dataDir = options.dataDir;
     this.skillsDir = options.skillsDir;
     this.unsubscribe = this.supervisor.subscribe((id, event) => this.onEvent(id, event));
-  }
-
-  /** What the Hub is doing in a session now, for the lists. */
-  activity(key: string): SessionSummary["state"] {
-    const turn = this.turns.get(key);
-    if (!turn || turn.finished) return undefined;
-    return turn.record.state === "waiting-input" ? "waiting-input" : "running";
-  }
-
-  /** Whether the user archived the session. */
-  archived(key: string): boolean {
-    return this.store.find(key)?.archived === true;
   }
 
   /**

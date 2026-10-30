@@ -169,6 +169,9 @@ The transcript's own layers, Streamdown mapping and turn layout are specified ne
 - Radius: `rounded-full` (icon-only) or `rounded-lg` (small icon+label)
 - Use: toolbar actions, paper row hover controls, sidebar collapse
 
+The three above are the `btn-primary`, `btn-pill` and `btn-ghost` classes in `styles.css`
+(colour, shape, hover, press, disabled); a button adds only its size and placement.
+
 **Danger / Destructive Button**
 - Text: `text-error`
 - Background: transparent, hover `bg-surface-container`

@@ -57,7 +57,7 @@ export function AddToCollectionMenu({
       placement="above"
       align="end"
       panelClassName="w-64 max-h-72 overflow-y-auto"
-      triggerClassName="flex items-center gap-1.5 px-3 py-1.5 signature-gradient text-on-primary rounded-full text-sm font-semibold disabled:opacity-40 disabled:cursor-not-allowed border-0 cursor-pointer"
+      triggerClassName="btn-primary px-3 py-1.5 text-sm"
       trigger={() => (
         <>
           {pending ? (

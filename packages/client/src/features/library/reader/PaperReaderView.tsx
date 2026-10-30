@@ -139,7 +139,7 @@ function Reader({
           ]}
         />
         <Link
-          className="ml-auto shrink-0 p-1.5 rounded-full text-on-surface-variant hover:text-on-surface hover:bg-surface-container"
+          className="btn-ghost ml-auto shrink-0 p-1.5 hover:text-on-surface"
           aria-label="询问本文"
           title="询问本文"
           to={newSessionUrl({ references: [{ kind: "paper", id: paper.id }] })}
@@ -148,7 +148,7 @@ function Reader({
         </Link>
         {onClose ? (
           <button
-            className="shrink-0 p-1.5 rounded-full text-on-surface-variant hover:bg-surface-container"
+            className="btn-ghost shrink-0 p-1.5"
             type="button"
             aria-label="关闭阅读器"
             onClick={onClose}

@@ -426,7 +426,7 @@ export function Composer({
               title="Attach files"
               disabled={disabled || sending}
               onClick={() => fileInput.current?.click()}
-              className="relative p-1.5 rounded-lg text-on-surface-variant hover:bg-surface-container hover:text-on-surface transition-colors disabled:opacity-40"
+              className="btn-ghost relative p-1.5 rounded-lg hover:text-on-surface"
             >
               <Paperclip size={15} aria-hidden="true" />
               {attachmentCount > 0 ? (

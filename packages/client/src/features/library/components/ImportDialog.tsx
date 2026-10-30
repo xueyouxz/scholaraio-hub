@@ -61,7 +61,7 @@ export function ImportDialog({ onClose }: { onClose: () => void }) {
               setStaged([]);
               void submission.submit(entries);
             }}
-            className="signature-gradient rounded-full px-4 py-2 text-sm font-semibold text-on-primary active:scale-95 disabled:opacity-40"
+            className="btn-primary px-4 py-2 text-sm"
           >
             {submission.busy ? "提交中…" : `确定导入${staged.length ? ` (${staged.length})` : ""}`}
           </button>

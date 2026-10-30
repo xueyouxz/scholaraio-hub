@@ -187,7 +187,7 @@ export function CollectionPage({ collectionId }: { collectionId: string }) {
               type="button"
               aria-label="关闭检索"
               onClick={closeSearch}
-              className="mr-1 rounded-full p-1.5 text-on-surface-variant hover:bg-surface-container"
+              className="btn-ghost mr-1 p-1.5"
             >
               <X className="w-3.5 h-3.5" />
             </button>
@@ -198,7 +198,7 @@ export function CollectionPage({ collectionId }: { collectionId: string }) {
             aria-label="检索"
             title="检索"
             onClick={() => setSearchOpen(true)}
-            className="rounded-full p-2 text-on-surface-variant hover:bg-surface-container-high active:opacity-80"
+            className="btn-ghost p-2"
           >
             <Search className="w-4 h-4" />
           </button>
@@ -208,14 +208,14 @@ export function CollectionPage({ collectionId }: { collectionId: string }) {
           type="button"
           onClick={() => setAdding(true)}
           disabled={!project.data}
-          className="inline-flex items-center gap-1.5 rounded-full bg-surface-container-high px-3 py-1.5 text-sm font-medium text-on-surface active:scale-95"
+          className="btn-pill px-3 py-1.5 text-sm"
         >
           <Plus className="w-3.5 h-3.5" aria-hidden="true" />
           加入文献
         </button>
         <Link
           to={newSessionUrl({ references: [{ kind: "collection", id: collectionId }] })}
-          className="inline-flex items-center gap-1.5 rounded-full signature-gradient px-3.5 py-1.5 text-sm font-semibold text-on-primary active:scale-95"
+          className="btn-primary px-3.5 py-1.5 text-sm"
         >
           <MessageSquare className="w-3.5 h-3.5" aria-hidden="true" />
           在会话中引用
@@ -249,7 +249,7 @@ export function CollectionPage({ collectionId }: { collectionId: string }) {
               <button
                 type="button"
                 onClick={() => setAdding(true)}
-                className="inline-flex items-center gap-1.5 rounded-full signature-gradient px-4 py-2 text-sm font-semibold text-on-primary active:scale-95"
+                className="btn-primary px-4 py-2 text-sm"
               >
                 <Plus className="w-3.5 h-3.5" aria-hidden="true" />
                 加入文献

@@ -202,6 +202,62 @@
   }
 }
 
+@layer components {
+  /*
+   * The design's buttons (DESIGN.md "Buttons"): colour, shape, hover and press.
+   * Size and placement stay with the caller's utilities, which win over these.
+   */
+  .btn-primary,
+  .btn-pill,
+  .btn-ghost {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.375rem;
+    border: 0;
+    border-radius: 9999px;
+    cursor: pointer;
+    transition: background-color 150ms ease, color 150ms ease, scale 150ms ease;
+  }
+
+  .btn-primary:disabled,
+  .btn-pill:disabled,
+  .btn-ghost:disabled {
+    opacity: 0.4;
+    cursor: not-allowed;
+  }
+
+  /* The primary call to action: the signature gradient. */
+  .btn-primary {
+    background: linear-gradient(135deg, #005235 0%, #1a6b4a 100%);
+    color: var(--color-on-primary);
+    font-weight: 600;
+  }
+
+  /* Secondary toolbar actions: a filled pill. */
+  .btn-pill {
+    background-color: var(--color-surface-container-high);
+    color: var(--color-on-surface);
+    font-weight: 500;
+  }
+
+  .btn-primary:active:not(:disabled),
+  .btn-pill:active:not(:disabled) {
+    scale: 0.95;
+  }
+
+  /* Toolbar icons and quiet actions: no fill until hovered. */
+  .btn-ghost {
+    background-color: transparent;
+    color: var(--color-on-surface-variant);
+  }
+
+  .btn-pill:hover:not(:disabled),
+  .btn-ghost:hover:not(:disabled) {
+    background-color: var(--color-surface-container);
+  }
+}
+
 @layer utilities {
   .signature-gradient {
     background: linear-gradient(135deg, #005235 0%, #1a6b4a 100%);

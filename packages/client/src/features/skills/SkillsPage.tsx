@@ -84,7 +84,7 @@ export function SkillsPage() {
             onClick={() => refreshMutation.mutate()}
             disabled={refreshMutation.isPending}
             title="重新扫描 scholaraio skills 目录"
-            className="p-1.5 rounded-lg hover:bg-surface-container text-on-surface-variant disabled:opacity-40"
+            className="btn-ghost p-1.5 rounded-lg"
           >
             <RefreshCw
               className={`w-3.5 h-3.5 ${refreshMutation.isPending ? "animate-spin" : ""}`}

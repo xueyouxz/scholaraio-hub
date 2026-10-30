@@ -125,7 +125,7 @@ export function ProjectsPage() {
             <div className="relative z-10 flex items-center gap-1 pt-1">
               <Link
                 to={newSessionUrl({ project: project.id })}
-                className="inline-flex items-center gap-1 rounded-full bg-surface-container-high px-3 py-1 text-xs font-medium text-on-surface hover:text-primary"
+                className="btn-pill gap-1 px-3 py-1 text-xs hover:text-primary"
               >
                 <Plus className="w-3.5 h-3.5" aria-hidden="true" />
                 新会话

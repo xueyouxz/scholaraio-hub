@@ -232,7 +232,7 @@ export function PdfViewer({ url, initialPage = 1, onPageChange }: Props) {
           onClick={zoomOut}
           disabled={pendingZoomIndex === 0}
           aria-label="缩小"
-          className="p-1.5 rounded-lg text-on-surface-variant hover:bg-surface-container-high disabled:opacity-30 disabled:cursor-not-allowed transition-colors border-0 bg-transparent cursor-pointer"
+          className="btn-ghost p-1.5 rounded-lg disabled:opacity-30"
         >
           <ZoomOut className="w-4 h-4" />
         </button>
@@ -255,7 +255,7 @@ export function PdfViewer({ url, initialPage = 1, onPageChange }: Props) {
           onClick={zoomIn}
           disabled={pendingZoomIndex === ZOOM_STEPS.length - 1}
           aria-label="放大"
-          className="p-1.5 rounded-lg text-on-surface-variant hover:bg-surface-container-high disabled:opacity-30 disabled:cursor-not-allowed transition-colors border-0 bg-transparent cursor-pointer"
+          className="btn-ghost p-1.5 rounded-lg disabled:opacity-30"
         >
           <ZoomIn className="w-4 h-4" />
         </button>
@@ -266,7 +266,7 @@ export function PdfViewer({ url, initialPage = 1, onPageChange }: Props) {
           onClick={zoomReset}
           aria-label="适应宽度"
           title="重置为 100%"
-          className="p-1.5 rounded-lg text-on-surface-variant hover:bg-surface-container-high transition-colors border-0 bg-transparent cursor-pointer ml-0.5"
+          className="btn-ghost p-1.5 rounded-lg ml-0.5"
         >
           <Minimize2 className="w-3.5 h-3.5" />
         </button>

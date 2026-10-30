@@ -99,12 +99,7 @@ export function Dialog({
               <p className="mt-1 text-xs text-on-surface-variant">{description}</p>
             ) : null}
           </div>
-          <button
-            type="button"
-            onClick={onClose}
-            aria-label="关闭"
-            className="rounded-full p-2 text-on-surface-variant hover:bg-surface-container active:opacity-80 border-0 bg-transparent cursor-pointer"
-          >
+          <button type="button" onClick={onClose} aria-label="关闭" className="btn-ghost p-2">
             <X className="w-4 h-4" />
           </button>
         </div>

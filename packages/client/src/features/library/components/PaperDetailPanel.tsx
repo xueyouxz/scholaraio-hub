@@ -133,7 +133,7 @@ export function PaperDetailPanel({ paper, collectionId, onClose }: Props) {
               type="button"
               onClick={onClose}
               aria-label="关闭文献详情"
-              className="p-1.5 rounded-full text-on-surface-variant hover:bg-surface-container shrink-0 mt-0.5 border-0 bg-transparent cursor-pointer"
+              className="btn-ghost p-1.5 shrink-0 mt-0.5"
             >
               <X className="w-4 h-4" />
             </button>
@@ -340,7 +340,7 @@ export function PaperDetailPanel({ paper, collectionId, onClose }: Props) {
                 type="button"
                 onClick={() => setWsOpen((v) => !v)}
                 disabled={!!addingTo}
-                className="flex items-center justify-center gap-2 w-full py-2.5 rounded-xl signature-gradient text-on-primary text-xs font-semibold disabled:opacity-50 border-0 cursor-pointer"
+                className="btn-primary flex gap-2 w-full py-2.5 rounded-xl text-xs disabled:opacity-50"
               >
                 <FolderPlus className="w-3.5 h-3.5" />
                 {addingTo ? `添加到 ${addingTo}…` : "添加到文献集合"}

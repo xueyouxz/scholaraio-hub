@@ -55,9 +55,7 @@ export const VoiceInputButton = forwardRef(function VoiceInputButton(
       title={speech.error ?? (speech.listening ? "Stop voice input" : "Start voice input")}
       aria-label={speech.listening ? "Stop voice input" : "Start voice input"}
       aria-pressed={speech.listening}
-      className={`p-1.5 rounded-lg transition-colors text-on-surface-variant hover:bg-surface-container hover:text-on-surface ${
-        speech.listening ? "bg-error/10 text-error hover:bg-error/20" : ""
-      }`}
+      className={`btn-ghost p-1.5 rounded-lg hover:text-on-surface ${speech.listening ? "bg-error/10 text-error hover:bg-error/20" : ""}`}
     >
       <Mic size={13} aria-hidden="true" />
     </button>

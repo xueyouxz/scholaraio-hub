@@ -290,12 +290,7 @@ function LassoList({
           已圈选 {papers.length} 篇
         </p>
         <div className="flex-1" />
-        <button
-          type="button"
-          aria-label="清除圈选"
-          onClick={onClear}
-          className="rounded-full p-1 text-on-surface-variant hover:bg-surface-container-high"
-        >
+        <button type="button" aria-label="清除圈选" onClick={onClear} className="btn-ghost p-1">
           <X className="w-3.5 h-3.5" />
         </button>
       </div>
@@ -344,7 +339,7 @@ function LassoList({
             onClick={() =>
               selection.selectMany(papers.slice(0, SELECTION_CAP).map((paper) => paper.id))
             }
-            className="inline-flex items-center gap-1.5 rounded-full bg-surface-container-high px-3 py-1.5 text-xs font-medium text-on-surface active:scale-95"
+            className="btn-pill px-3 py-1.5 text-xs"
             title="加入下方操作栏，可导出或加入文献集合"
           >
             <CheckSquare className="w-3.5 h-3.5" aria-hidden="true" />
@@ -352,7 +347,7 @@ function LassoList({
           </button>
           <Link
             to={newSessionUrl({ references: askIds.map((id) => ({ kind: "paper" as const, id })) })}
-            className="inline-flex items-center gap-1.5 rounded-full bg-surface-container-high px-3 py-1.5 text-xs font-medium text-on-surface active:scale-95"
+            className="btn-pill px-3 py-1.5 text-xs"
           >
             <MessageSquare className="w-3.5 h-3.5" aria-hidden="true" />
             询问

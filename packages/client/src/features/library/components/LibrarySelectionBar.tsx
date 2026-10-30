@@ -76,7 +76,7 @@ export function LibrarySelectionBar() {
       />
       <Link
         to={newSessionUrl({ references: ids.map((id) => ({ kind: "paper" as const, id })) })}
-        className="inline-flex items-center gap-1.5 rounded-full bg-surface-container-high px-3 py-1.5 text-sm font-medium text-on-surface active:scale-95"
+        className="btn-pill px-3 py-1.5 text-sm"
       >
         <MessageSquare className="w-3.5 h-3.5" aria-hidden="true" />
         询问选中的
@@ -91,7 +91,7 @@ export function LibrarySelectionBar() {
       <button
         type="button"
         aria-label="清除选择"
-        className="rounded-full p-1.5 text-on-surface-variant hover:bg-surface-container-high active:opacity-80 border-0 bg-transparent cursor-pointer"
+        className="btn-ghost p-1.5"
         onClick={selection.clear}
       >
         <X className="w-4 h-4" />
@@ -115,7 +115,7 @@ function ExportMenu({
       align="end"
       panelRole="menu"
       panelClassName="w-40"
-      triggerClassName="inline-flex items-center gap-1.5 rounded-full bg-surface-container-high px-3 py-1.5 text-sm font-medium text-on-surface active:scale-95 disabled:opacity-40 border-0 cursor-pointer"
+      triggerClassName="btn-pill px-3 py-1.5 text-sm"
       trigger={(open) => (
         <>
           <Download className="w-3.5 h-3.5" aria-hidden="true" />

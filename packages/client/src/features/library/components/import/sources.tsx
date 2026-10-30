@@ -226,7 +226,7 @@ export function ImportStaging({
                   type="button"
                   aria-label={`移除 ${entry.name}`}
                   onClick={() => onDrop(entry.id)}
-                  className="rounded-full p-1 text-on-surface-variant hover:bg-surface-container-high"
+                  className="btn-ghost p-1"
                 >
                   <X className="w-3.5 h-3.5" />
                 </button>

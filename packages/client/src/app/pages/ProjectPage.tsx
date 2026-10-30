@@ -45,7 +45,7 @@ export function ProjectPage() {
         {unassigned ? null : (
           <Link
             to={newSessionUrl({ project: projectId })}
-            className="inline-flex items-center gap-1.5 rounded-full signature-gradient px-3.5 py-1.5 text-sm font-semibold text-on-primary"
+            className="btn-primary px-3.5 py-1.5 text-sm"
           >
             <Plus className="w-3.5 h-3.5" aria-hidden="true" />
             新会话

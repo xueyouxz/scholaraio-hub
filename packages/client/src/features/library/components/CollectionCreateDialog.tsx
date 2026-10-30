@@ -115,7 +115,7 @@ export function CollectionCreateDialog({ onClose }: { onClose: () => void }) {
               type="button"
               onClick={submit}
               disabled={create.isPending || Boolean(problem)}
-              className="signature-gradient rounded-full px-4 py-2 text-sm font-semibold text-on-primary active:scale-95 disabled:opacity-40"
+              className="btn-primary px-4 py-2 text-sm"
             >
               {create.isPending ? "创建中…" : sources.staged.length ? "创建并导入" : "创建"}
             </button>
@@ -177,7 +177,7 @@ export function CollectionAddPapersDialog({
               type="button"
               disabled={add.isPending || sources.empty}
               onClick={() => add.mutate()}
-              className="signature-gradient rounded-full px-4 py-2 text-sm font-semibold text-on-primary active:scale-95 disabled:opacity-40"
+              className="btn-primary px-4 py-2 text-sm"
             >
               {add.isPending ? "加入中…" : "加入文献集合"}
             </button>
@@ -216,14 +216,14 @@ function ImportFollowUp({
         <Link
           to={collectionUrl(project.id)}
           onClick={onClose}
-          className="rounded-full bg-surface-container-high px-4 py-2 text-sm font-medium text-on-surface active:scale-95"
+          className="btn-pill px-4 py-2 text-sm"
         >
           查看文献集合
         </Link>
         <Link
           to={newSessionUrl({ references: [{ kind: "collection", id: project.id }] })}
           onClick={onClose}
-          className="signature-gradient rounded-full px-4 py-2 text-sm font-semibold text-on-primary active:scale-95"
+          className="btn-primary px-4 py-2 text-sm"
         >
           在会话中引用
         </Link>
@@ -453,7 +453,7 @@ function InternalPicker({ sources }: { sources: PaperSourcesState }) {
             type="button"
             aria-label="清空检索"
             onClick={() => setText("")}
-            className="mr-2 rounded-full p-1 text-on-surface-variant hover:bg-surface-container-high"
+            className="btn-ghost mr-2 p-1"
           >
             <X className="w-3.5 h-3.5" />
           </button>

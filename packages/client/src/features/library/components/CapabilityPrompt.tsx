@@ -144,7 +144,7 @@ function VectorRuntimeInstall() {
         type="button"
         disabled={installing || install.isPending}
         onClick={() => install.mutate()}
-        className="self-start rounded-full signature-gradient px-3 py-1.5 text-xs font-semibold text-on-primary active:scale-95 disabled:opacity-40 border-0 cursor-pointer"
+        className="btn-primary self-start px-3 py-1.5 text-xs"
       >
         {installing ? "安装中…" : state === "failed" ? "重新安装" : "安装语义检索运行时"}
       </button>

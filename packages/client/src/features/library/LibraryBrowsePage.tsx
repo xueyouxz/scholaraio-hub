@@ -264,7 +264,7 @@ export function LibraryBrowsePage() {
                     setSearchParams({ view }, { replace: true });
                   }}
                   aria-label="清空检索"
-                  className="mr-3 p-1 rounded-lg text-on-surface-variant hover:text-on-surface hover:bg-surface-container transition-colors"
+                  className="btn-ghost mr-3 p-1 rounded-lg hover:text-on-surface"
                 >
                   <X className="w-3.5 h-3.5" />
                 </button>
@@ -304,7 +304,7 @@ export function LibraryBrowsePage() {
             <button
               type="button"
               onClick={exitSelectionMode}
-              className="p-1.5 rounded-lg text-on-surface-variant hover:bg-surface-container-high border-0 bg-transparent cursor-pointer"
+              className="btn-ghost p-1.5 rounded-lg"
               aria-label="退出选择"
             >
               <X className="w-4 h-4" />
@@ -316,7 +316,7 @@ export function LibraryBrowsePage() {
             <div className="flex items-center gap-3">
               <ChoiceMenu
                 triggerTitle="排序"
-                triggerClassName="flex items-center gap-1.5 px-3 py-1.5 bg-surface-container-high rounded-full text-sm font-medium text-primary hover:bg-surface-container active:scale-95 transition-[background-color,border-color,box-shadow,transform]"
+                triggerClassName="btn-pill px-3 py-1.5 text-sm text-primary"
                 panelClassName="w-36"
                 trigger={(open) => (
                   <>
@@ -349,7 +349,7 @@ export function LibraryBrowsePage() {
                 }}
                 title="多选"
                 aria-label="多选"
-                className="p-1.5 rounded-lg text-on-surface-variant hover:bg-surface-container-high border-0 bg-transparent cursor-pointer"
+                className="btn-ghost p-1.5 rounded-lg"
               >
                 <CheckSquare className="w-4 h-4" />
               </button>

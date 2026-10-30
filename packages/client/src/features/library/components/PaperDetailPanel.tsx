@@ -1,12 +1,12 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { BookOpen, FolderPlus, X } from "lucide-react";
-import { useEffect, useRef, useState } from "react";
+import { BookOpen, X } from "lucide-react";
+import { useEffect, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { libraryApi, readerUrl } from "../../../core/library";
 import { Badge } from "../../../shared/ui/Badge";
-import { useDismiss } from "../../../shared/ui/useDismiss";
 import { paperAssetUrl } from "../paperSummary";
 import type { PaperSummary } from "../paperSummary";
+import { AddToCollectionMenu } from "./AddToCollectionMenu";
 import { StatusBadge } from "./StatusBadge";
 
 interface Props {
@@ -28,16 +28,13 @@ export function PaperDetailPanel({ paper, collectionId, onClose }: Props) {
       }),
     );
   const queryClient = useQueryClient();
-  const [wsOpen, setWsOpen] = useState(false);
   const [addedTo, setAddedTo] = useState<Set<string>>(new Set());
-  // Another paper starts with the workspace menu closed and nothing added yet.
+  // Another paper starts with nothing added yet.
   const [shownId, setShownId] = useState(paper?.id);
   if (shownId !== paper?.id) {
     setShownId(paper?.id);
-    setWsOpen(false);
     setAddedTo(new Set());
   }
-  const wsRef = useRef<HTMLDivElement>(null);
 
   const workspacesQuery = useQuery({
     queryKey: ["library", "collections"],
@@ -48,14 +45,17 @@ export function PaperDetailPanel({ paper, collectionId, onClose }: Props) {
   });
 
   const addPaperMutation = useMutation({
-    mutationFn: ({ collectionId, paperId }: { collectionId: string; paperId: string }) =>
-      libraryApi.collectionPapers(collectionId, [paperId], "add"),
+    mutationFn: async ({
+      collection,
+      paperId,
+      create,
+    }: { collection: string; paperId: string; create: boolean }) => {
+      if (create) await libraryApi.createCollection(collection);
+      await libraryApi.collectionPapers(collection, [paperId], "add");
+    },
     onSuccess: (_res, variables) => {
-      setAddedTo((prev) => new Set([...prev, variables.collectionId]));
+      setAddedTo((prev) => new Set([...prev, variables.collection]));
       queryClient.invalidateQueries({ queryKey: ["library", "collections"] });
-      queryClient.invalidateQueries({
-        queryKey: ["library", "collections"],
-      });
     },
   });
 
@@ -93,24 +93,18 @@ export function PaperDetailPanel({ paper, collectionId, onClose }: Props) {
   useEffect(() => {
     if (!paper) return;
     const handler = (event: KeyboardEvent) => {
-      if (event.key === "Escape") {
-        if (wsOpen) setWsOpen(false);
-        else onClose();
-      }
+      // An open menu in the panel takes the first Escape (see useDismiss).
+      if (event.key === "Escape" && !event.defaultPrevented) onClose();
     };
     document.addEventListener("keydown", handler);
     return () => document.removeEventListener("keydown", handler);
-  }, [paper, wsOpen, onClose]);
+  }, [paper, onClose]);
   const addingTo = addPaperMutation.isPending
-    ? (addPaperMutation.variables?.collectionId ?? null)
+    ? (addPaperMutation.variables?.collection ?? null)
     : null;
-
-  useDismiss(wsOpen, () => setWsOpen(false), wsRef);
-
-  const handleAdd = (targetProjectId: string) => {
+  const addTo = (collection: string, create: boolean) => {
     if (!paper || addingTo) return;
-    setWsOpen(false);
-    addPaperMutation.mutate({ collectionId: targetProjectId, paperId: paper.id });
+    addPaperMutation.mutate({ collection, paperId: paper.id, create });
   };
 
   return (
@@ -335,40 +329,15 @@ export function PaperDetailPanel({ paper, collectionId, onClose }: Props) {
               </button>
             ) : null}
 
-            <div className="relative" ref={wsRef}>
-              <button
-                type="button"
-                onClick={() => setWsOpen((v) => !v)}
-                disabled={!!addingTo}
-                className="btn-primary flex gap-2 w-full py-2.5 rounded-xl text-xs disabled:opacity-50"
-              >
-                <FolderPlus className="w-3.5 h-3.5" />
-                {addingTo ? `添加到 ${addingTo}…` : "添加到文献集合"}
-              </button>
-              {wsOpen ? (
-                <div className="absolute bottom-full mb-2 left-0 right-0 bg-surface-container-highest border border-outline-variant/20 rounded-xl p-1.5 shadow-xl z-50 max-h-44 overflow-y-auto">
-                  {workspaces.length === 0 ? (
-                    <p className="text-xs text-on-surface-variant px-3 py-2">暂无文献集合</p>
-                  ) : (
-                    workspaces.map((ws) => (
-                      <button
-                        key={ws.id}
-                        type="button"
-                        onClick={() => handleAdd(ws.name)}
-                        className="w-full text-left px-3 py-2 text-xs rounded-lg text-on-surface hover:bg-surface-container transition-colors flex items-center justify-between border-0 bg-transparent cursor-pointer"
-                      >
-                        {ws.name}
-                        {addedTo.has(ws.name) ? (
-                          <span className="text-[10px] font-mono text-primary font-bold">
-                            已添加
-                          </span>
-                        ) : null}
-                      </button>
-                    ))
-                  )}
-                </div>
-              ) : null}
-            </div>
+            <AddToCollectionMenu
+              wide
+              workspaces={workspaces}
+              pending={!!addingTo}
+              label={addingTo ? `添加到 ${addingTo}…` : "添加到文献集合"}
+              added={addedTo}
+              onAdd={(collection) => addTo(collection, false)}
+              onCreateAndAdd={(collection) => addTo(collection, true)}
+            />
           </div>
         </>
       ) : null}

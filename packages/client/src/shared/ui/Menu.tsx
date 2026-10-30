@@ -39,6 +39,7 @@ export function Popover({
   floating = false,
   panelRole,
   panelClassName = "",
+  className = "",
   openRequest,
   children,
 }: {
@@ -56,6 +57,8 @@ export function Popover({
   panelRole?: "menu";
   /** The panel's size: width, height limit. */
   panelClassName?: string;
+  /** The trigger's box, e.g. `w-full` for a trigger as wide as its column. */
+  className?: string;
   /** Opens the panel whenever this changes to a new number (e.g. from a /command). */
   openRequest?: number;
   children: ReactNode | ((close: () => void) => ReactNode);
@@ -107,7 +110,7 @@ export function Popover({
     </div>
   );
   return (
-    <div ref={root} className="relative inline-flex min-w-0">
+    <div ref={root} className={`relative inline-flex min-w-0 ${className}`}>
       <button
         type="button"
         onClick={() => setOpen((value) => !value)}

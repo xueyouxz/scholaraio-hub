@@ -20,8 +20,11 @@ function Popover({ open, onDismiss }: { open: boolean; onDismiss: () => void }) 
 
 const press = (id: string) =>
   document.getElementById(id)?.dispatchEvent(new MouseEvent("pointerdown", { bubbles: true }));
-const key = (name: string) =>
-  document.dispatchEvent(new KeyboardEvent("keydown", { key: name, bubbles: true }));
+const key = (name: string) => {
+  const event = new KeyboardEvent("keydown", { key: name, bubbles: true, cancelable: true });
+  document.dispatchEvent(event);
+  return event;
+};
 
 describe("useDismiss", () => {
   let container: HTMLDivElement;
@@ -44,7 +47,8 @@ describe("useDismiss", () => {
     key("Enter");
     expect(onDismiss).not.toHaveBeenCalled();
     press("outside");
-    key("Escape");
+    // The Escape it takes is marked handled for whatever holds the popover.
+    expect(key("Escape").defaultPrevented).toBe(true);
     expect(onDismiss).toHaveBeenCalledTimes(2);
   });
 

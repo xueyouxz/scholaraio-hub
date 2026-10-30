@@ -1,6 +1,7 @@
 import { FolderPlus, Loader2, Plus } from "lucide-react";
 import { useCallback, useState } from "react";
 import type { KeyboardEvent as ReactKeyboardEvent } from "react";
+import { Badge } from "../../../shared/ui/Badge";
 import { MenuOption, Popover } from "../../../shared/ui/Menu";
 import { collectionNameProblem } from "../collectionName";
 
@@ -12,15 +13,28 @@ interface WorkspaceOption {
 interface Props {
   workspaces: WorkspaceOption[];
   pending?: boolean;
-  selectedCount: number;
-  onAdd: (projectId: string) => void;
+  disabled?: boolean;
+  /** The trigger's text; "加入文献集合" by default. */
+  label?: string;
+  /** As wide as its column, the menu too (the detail panel's footer). */
+  wide?: boolean;
+  /** Collections, by name, the papers were just added to; marked in the list. */
+  added?: ReadonlySet<string>;
+  onAdd: (collection: string) => void;
   onCreateAndAdd: (newName: string) => void;
 }
 
+/**
+ * Add papers to a literature collection: an existing one, or a new one named
+ * here. Collections are named by name; the library service accepts either.
+ */
 export function AddToCollectionMenu({
   workspaces,
   pending,
-  selectedCount,
+  disabled,
+  label = "加入文献集合",
+  wide = false,
+  added,
   onAdd,
   onCreateAndAdd,
 }: Props) {
@@ -53,11 +67,16 @@ export function AddToCollectionMenu({
 
   return (
     <Popover
-      disabled={selectedCount === 0}
+      disabled={disabled || pending}
       placement="above"
       align="end"
-      panelClassName="w-64 max-h-72 overflow-y-auto"
-      triggerClassName="btn-primary px-3 py-1.5 text-sm"
+      className={wide ? "w-full" : ""}
+      panelClassName={`max-h-72 overflow-y-auto ${wide ? "left-0" : "w-64"}`}
+      triggerClassName={
+        wide
+          ? "btn-primary w-full gap-2 rounded-xl py-2.5 text-xs"
+          : "btn-primary px-3 py-1.5 text-sm"
+      }
       trigger={() => (
         <>
           {pending ? (
@@ -65,7 +84,7 @@ export function AddToCollectionMenu({
           ) : (
             <FolderPlus className="w-3.5 h-3.5" />
           )}
-          加入文献集合
+          {label}
         </>
       )}
     >
@@ -118,7 +137,16 @@ export function AddToCollectionMenu({
             workspaces.map((ws) => (
               <MenuOption
                 key={ws.id}
-                label={ws.name}
+                label={
+                  added?.has(ws.name) ? (
+                    <span className="flex items-center justify-between gap-2">
+                      {ws.name}
+                      <Badge tone="positive">已添加</Badge>
+                    </span>
+                  ) : (
+                    ws.name
+                  )
+                }
                 dense
                 onSelect={() => {
                   close();

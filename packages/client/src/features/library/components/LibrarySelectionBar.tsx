@@ -84,7 +84,7 @@ export function LibrarySelectionBar() {
       <AddToCollectionMenu
         workspaces={projects.data?.collections.map((p) => ({ id: p.id, name: p.name })) ?? []}
         pending={add.isPending}
-        selectedCount={ids.length}
+        disabled={ids.length === 0}
         onAdd={(project) => add.mutate({ project, create: false })}
         onCreateAndAdd={(project) => add.mutate({ project, create: true })}
       />

@@ -5,6 +5,10 @@ import { type RefObject, useEffect, useRef } from "react";
  * it or presses Escape. `inside` are the elements that count as the popover —
  * its trigger's container, and the menu itself when it is portalled elsewhere.
  *
+ * The Escape it takes is marked handled (`defaultPrevented`) before anything
+ * else sees it, so what holds the popover (a panel, a dialog) can leave that
+ * press alone and close only on the next one.
+ *
  * The listeners exist only while `open`, and go when it closes or unmounts.
  */
 export function useDismiss(
@@ -24,13 +28,16 @@ export function useDismiss(
         latest.current.onDismiss();
     };
     const onKey = (event: KeyboardEvent) => {
-      if (event.key === "Escape") latest.current.onDismiss();
+      if (event.key !== "Escape" || event.defaultPrevented) return;
+      event.preventDefault();
+      latest.current.onDismiss();
     };
     document.addEventListener("pointerdown", away);
-    document.addEventListener("keydown", onKey);
+    // Capture, so this runs ahead of the holder's own Escape handling.
+    document.addEventListener("keydown", onKey, true);
     return () => {
       document.removeEventListener("pointerdown", away);
-      document.removeEventListener("keydown", onKey);
+      document.removeEventListener("keydown", onKey, true);
     };
   }, [open]);
 }

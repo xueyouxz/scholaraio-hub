@@ -14,9 +14,9 @@ import {
 } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
-import { usePageTitle } from "../../app/components/NavigationLayout";
 import { collectionUrl, libraryApi, readerUrl } from "../../core/library";
 import { newSessionUrl } from "../../core/sessions";
+import { usePageTitle } from "../../shared/layout";
 import { CollectionAddPapersDialog } from "./components/CollectionCreateDialog";
 import { PaperDetailPanel } from "./components/PaperDetailPanel";
 import { PaperVirtualList } from "./components/PaperVirtualList";

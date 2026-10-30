@@ -3,8 +3,8 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Check, Copy, RefreshCw, Sparkles } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { Link, useParams } from "react-router-dom";
-import { usePageTitle } from "../../app/components/NavigationLayout";
 import { skillsApi, skillsQuery } from "../../core/skills";
+import { usePageTitle } from "../../shared/layout";
 import { SkillDetailView } from "./SkillDetailView";
 
 interface GroupedCategory {

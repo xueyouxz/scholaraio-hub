@@ -7,7 +7,6 @@ import {
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
-import { usePageTitle } from "../../app/components/NavigationLayout";
 import { PROJECTS_KEY, addChosenFolder, projectsQuery } from "../../core/projects";
 import {
   type SessionOptions,
@@ -19,6 +18,7 @@ import {
 } from "../../core/sessions";
 import { appSettingsQuery } from "../../core/settings";
 import { skillsQuery } from "../../core/skills";
+import { usePageTitle } from "../../shared/layout";
 import { ProjectPicker } from "./components/ProjectPicker";
 import { ReferenceChips } from "./components/ReferenceChips";
 import { useProviders } from "./composer/hooks/useProviders";

@@ -12,7 +12,7 @@ import { libraryApi } from "../../core/library";
 import { providersApi, providersQuery } from "../../core/providers";
 import { appSettingsQuery, settingsApi } from "../../core/settings";
 import { LibrarySettingsForm } from "../../features/library/components/LibrarySettingsForm";
-import { usePageTitle } from "../components/NavigationLayout";
+import { usePageTitle } from "../../shared/layout";
 import { UsageLimitBlock, describeProvider } from "../components/ProviderUsage";
 
 /**

@@ -1,8 +1,8 @@
 import { useQuery } from "@tanstack/react-query";
 import { useEffect, useMemo } from "react";
 import { Link } from "react-router-dom";
-import { usePageTitle } from "../../app/components/NavigationLayout";
 import { libraryApi } from "../../core/library";
+import { usePageTitle } from "../../shared/layout";
 import { LibraryAnalyticsPanel } from "./components/LibraryAnalyticsPanel";
 import { LibraryTasksPanel } from "./components/LibraryTasksPanel";
 import { toPaperSummary } from "./paperSummary";

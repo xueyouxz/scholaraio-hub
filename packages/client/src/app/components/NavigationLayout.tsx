@@ -1,7 +1,8 @@
-import { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
-import { Outlet, useLocation, useOutletContext } from "react-router-dom";
+import { type ContextType, useCallback, useEffect, useMemo, useState } from "react";
+import { Outlet, useLocation } from "react-router-dom";
 import { readStoredNumber, writeStored } from "../../core/browserStorage";
 import { useHubEvents } from "../../core/hubEvents";
+import { type NavigationLayoutContext, PageTitleContext } from "../../shared/layout";
 import { SIDEBAR_WIDTH_COLLAPSED, Sidebar } from "./Sidebar";
 
 const DESKTOP_BREAKPOINT = 1100;
@@ -10,26 +11,6 @@ const SIDEBAR_WIDTH_KEY = "sidebarExpandedWidth";
 
 function clampSidebarWidth(width: number): number {
   return Math.max(220, Math.min(420, width));
-}
-
-// ─── PageTitle context ────────────────────────────────────────────────────────
-
-interface PageTitleContextValue {
-  setTitle: (title: string) => void;
-}
-
-const PageTitleContext = createContext<PageTitleContextValue>({
-  setTitle: () => {},
-});
-
-export function usePageTitle() {
-  return useContext(PageTitleContext);
-}
-
-// ─── NavigationLayout context ─────────────────────────────────────────────────
-
-interface NavigationLayoutContext {
-  isDesktop: boolean;
 }
 
 function getIsDesktop() {
@@ -81,7 +62,10 @@ export function NavigationLayout() {
 
   const layoutContext = useMemo<NavigationLayoutContext>(() => ({ isDesktop }), [isDesktop]);
 
-  const pageTitleContext = useMemo<PageTitleContextValue>(() => ({ setTitle: setPageTitle }), []);
+  const pageTitleContext = useMemo<ContextType<typeof PageTitleContext>>(
+    () => ({ setTitle: setPageTitle }),
+    [],
+  );
 
   // New chats keep the layout title bar; an open session renders its own header.
   const isSessionRoute = /^\/sessions\/[^/]+/.test(location.pathname);
@@ -161,8 +145,4 @@ export function NavigationLayout() {
       </div>
     </PageTitleContext>
   );
-}
-
-export function useNavigationLayout() {
-  return useOutletContext<NavigationLayoutContext>();
 }

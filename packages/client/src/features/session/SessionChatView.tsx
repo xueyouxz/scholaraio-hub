@@ -3,7 +3,6 @@ import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { ArrowDown } from "lucide-react";
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { useNavigationLayout } from "../../app/components/NavigationLayout";
 import {
   ownAttachments,
   sessionApi,
@@ -11,6 +10,7 @@ import {
   sessionQuery,
   sessionUrl,
 } from "../../core/sessions";
+import { useNavigationLayout } from "../../shared/layout";
 import { PaperReaderView } from "../library/reader/PaperReaderView";
 import { SessionFileLinks } from "./components/FileViewerDialog";
 import { InputRequestPrompt } from "./components/InputRequestPrompt";

@@ -1,6 +1,6 @@
 import type { ProviderName } from "@scholaraio-hub/shared";
 import { memo, useEffect, useMemo, useState } from "react";
-import { ProviderLogo } from "../composer/ui/controls/ProviderLogo";
+import { ProviderLogo } from "../../../shared/ui/ProviderLogo";
 import { formatDuration } from "./AssistantTurn";
 
 const PROCESSING_PHRASES = [

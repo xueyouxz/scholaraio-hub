@@ -2,7 +2,7 @@ import type { SessionSummary } from "@scholaraio-hub/shared";
 import { useEffect, useRef } from "react";
 import { NavLink } from "react-router-dom";
 import { sessionUrl } from "../../core/sessions";
-import { ProviderWatermark } from "../../features/session/composer/ui/controls/ProviderLogo";
+import { ProviderWatermark } from "../../shared/ui/ProviderLogo";
 
 const PROVIDER_NAMES = { claude: "Claude Code", codex: "Codex" } as const;
 

@@ -12,8 +12,8 @@ import {
   projectsQuery,
 } from "../../core/projects";
 import { newSessionUrl } from "../../core/sessions";
-import { ProviderLogo } from "../../features/session/composer/ui/controls/ProviderLogo";
-import { usePageTitle } from "../components/NavigationLayout";
+import { usePageTitle } from "../../shared/layout";
+import { ProviderLogo } from "../../shared/ui/ProviderLogo";
 import { relativeTime } from "../components/SessionRow";
 
 /** How many sessions each agent keeps in a project, in its own mark. */

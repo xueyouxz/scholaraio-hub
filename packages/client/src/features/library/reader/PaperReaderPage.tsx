@@ -1,7 +1,7 @@
 import { useEffect } from "react";
 import { useNavigate, useParams, useSearchParams } from "react-router-dom";
-import { usePageTitle } from "../../../app/components/NavigationLayout";
 import { collectionUrl } from "../../../core/library";
+import { usePageTitle } from "../../../shared/layout";
 import { PaperReaderView } from "./PaperReaderView";
 
 export function PaperReaderPage() {

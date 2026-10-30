@@ -5,8 +5,8 @@ import { useEffect, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { UNASSIGNED, projectSessionsQuery, projectsQuery } from "../../core/projects";
 import { newSessionUrl } from "../../core/sessions";
-import { ProviderLogo } from "../../features/session/composer/ui/controls/ProviderLogo";
-import { usePageTitle } from "../components/NavigationLayout";
+import { usePageTitle } from "../../shared/layout";
+import { ProviderLogo } from "../../shared/ui/ProviderLogo";
 import { SessionRow } from "../components/SessionRow";
 
 const PAGE = 30;

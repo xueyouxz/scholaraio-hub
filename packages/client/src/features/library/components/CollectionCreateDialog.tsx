@@ -1,13 +1,13 @@
 import type { LiteratureCollection } from "@scholaraio-hub/shared";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Check, CheckCircle2, ChevronDown, Library, Loader2, Search, X } from "lucide-react";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { Check, CheckCircle2, Library, Loader2, Search, X } from "lucide-react";
+import { useEffect, useMemo, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { collectionUrl, libraryApi } from "../../../core/library";
 import { newSessionUrl } from "../../../core/sessions";
 import { Dialog } from "../../../shared/ui/Dialog";
-import { useDismiss } from "../../../shared/ui/useDismiss";
 import { collectionNameProblem } from "../collectionName";
+import { LibrarySearchBar, type SearchMode } from "./LibrarySearchBar";
 import { ImportProgress } from "./import/ImportProgress";
 import { ImportStaging, type Staged } from "./import/sources";
 import { useImportSubmission } from "./import/submit";
@@ -338,11 +338,6 @@ function PaperSources({ sources }: { sources: PaperSourcesState }) {
   );
 }
 
-const MODES = [
-  { id: "keyword", label: "关键词", hint: "标题、作者、摘要与全文中的字面匹配" },
-  { id: "unified", label: "综合", hint: "关键词与向量检索融合排序" },
-  { id: "semantic", label: "语义", hint: "按意思检索，基于向量相似度" },
-];
 const SEARCH_LIMIT = 100;
 
 function useDebounced<T>(value: T, delay: number): T {
@@ -357,9 +352,7 @@ function useDebounced<T>(value: T, delay: number): T {
 /** The papers already in the library, found by keyword, meaning or both. */
 function InternalPicker({ sources }: { sources: PaperSourcesState }) {
   const [text, setText] = useState("");
-  const [mode, setMode] = useState("keyword");
-  const [modeOpen, setModeOpen] = useState(false);
-  const modeMenu = useRef<HTMLDivElement>(null);
+  const [mode, setMode] = useState<SearchMode>("keyword");
   const query = useDebounced(text.trim(), 350);
 
   const all = useQuery({
@@ -379,8 +372,6 @@ function InternalPicker({ sources }: { sources: PaperSourcesState }) {
     staleTime: 60_000,
   });
 
-  useDismiss(modeOpen, () => setModeOpen(false), modeMenu);
-
   const rows = query
     ? (found.data?.results ?? []).map(({ paper }) => ({
         id: paper.id,
@@ -389,76 +380,39 @@ function InternalPicker({ sources }: { sources: PaperSourcesState }) {
       }))
     : (all.data ?? []);
   const loading = query ? found.isFetching && !found.data : all.isLoading;
-  const current = MODES.find((item) => item.id === mode) ?? MODES[0];
   const selectable = rows.filter((row) => !sources.members.has(row.id));
 
   return (
     <div className="flex min-h-0 flex-1 flex-col gap-2">
-      <div className="flex shrink-0 items-center rounded-xl border border-outline-variant/20 bg-surface-container focus-within:ring-2 focus-within:ring-primary/20">
-        <div className="relative shrink-0" ref={modeMenu}>
-          <button
-            type="button"
-            aria-expanded={modeOpen}
-            aria-label={`检索方式：${current?.label}`}
-            onClick={() => setModeOpen((value) => !value)}
-            className="flex items-center gap-1 py-2 pl-3 pr-2 text-xs font-mono font-bold text-on-surface-variant hover:text-on-surface"
-          >
-            {current?.label}
-            <ChevronDown
-              className={`w-3 h-3 transition-transform ${modeOpen ? "rotate-180" : ""}`}
-              aria-hidden="true"
-            />
-          </button>
-          {modeOpen ? (
-            <div className="absolute left-0 top-[calc(100%+6px)] z-30 w-56 rounded-xl border border-outline-variant/20 bg-surface-container-high p-1.5 shadow-xl">
-              {MODES.map((item) => (
-                <button
-                  key={item.id}
-                  type="button"
-                  aria-pressed={item.id === mode}
-                  onClick={() => {
-                    setMode(item.id);
-                    setModeOpen(false);
-                  }}
-                  className={`w-full rounded-lg px-3 py-1.5 text-left transition-colors ${
-                    item.id === mode
-                      ? "bg-primary/10 text-primary"
-                      : "text-on-surface hover:bg-surface-container-low"
-                  }`}
-                >
-                  <span className="block text-xs font-semibold">{item.label}</span>
-                  <span className="block text-[11px] text-on-surface-variant">{item.hint}</span>
-                </button>
-              ))}
-            </div>
-          ) : null}
-        </div>
-        <span className="h-4 w-px shrink-0 bg-outline-variant/30" aria-hidden="true" />
-        <Search
-          className="ml-2.5 w-3.5 h-3.5 shrink-0 text-on-surface-variant"
-          aria-hidden="true"
-        />
-        <input
-          aria-label="检索文献库"
-          autoComplete="off"
-          value={text}
-          onChange={(event) => setText(event.target.value)}
-          placeholder={mode === "semantic" ? "描述你要找的内容…" : "标题、作者、关键词…"}
-          className="min-w-0 flex-1 bg-transparent px-2 py-2 text-[13px] text-on-surface outline-none placeholder:text-on-surface-variant/40"
-        />
-        {found.isFetching ? (
-          <Loader2 className="mr-3 w-3.5 h-3.5 animate-spin text-primary" aria-hidden="true" />
-        ) : text ? (
-          <button
-            type="button"
-            aria-label="清空检索"
-            onClick={() => setText("")}
-            className="btn-ghost mr-2 p-1"
-          >
-            <X className="w-3.5 h-3.5" />
-          </button>
-        ) : null}
-      </div>
+      <LibrarySearchBar
+        size="compact"
+        label="检索文献库"
+        className="shrink-0 rounded-xl border border-outline-variant/20 bg-surface-container focus-within:ring-2 focus-within:ring-primary/20"
+        mode={mode}
+        onModeChange={setMode}
+        text={text}
+        onTextChange={setText}
+        leading={
+          <Search
+            className="ml-2.5 w-3.5 h-3.5 shrink-0 text-on-surface-variant"
+            aria-hidden="true"
+          />
+        }
+        trailing={
+          found.isFetching ? (
+            <Loader2 className="mr-3 w-3.5 h-3.5 animate-spin text-primary" aria-hidden="true" />
+          ) : text ? (
+            <button
+              type="button"
+              aria-label="清空检索"
+              onClick={() => setText("")}
+              className="btn-ghost mr-2 p-1"
+            >
+              <X className="w-3.5 h-3.5" />
+            </button>
+          ) : null
+        }
+      />
 
       <div className="flex shrink-0 items-center gap-2 text-[11px] text-on-surface-variant">
         <span>{query ? `找到 ${rows.length} 篇` : `文献库共 ${rows.length} 篇`}</span>

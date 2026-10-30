@@ -1,12 +1,12 @@
 import { useQuery } from "@tanstack/react-query";
 import { CheckSquare, ChevronDown, Search, SortAsc, X } from "lucide-react";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import { libraryApi } from "../../core/library";
 import { usePageTitle } from "../../shared/layout";
 import { ChoiceMenu } from "../../shared/ui/Menu";
-import { useDismiss } from "../../shared/ui/useDismiss";
 import { CapabilityPrompt } from "./components/CapabilityPrompt";
+import { LibrarySearchBar, type SearchMode, searchMode } from "./components/LibrarySearchBar";
 import { PaperDetailPanel } from "./components/PaperDetailPanel";
 import { PaperResults, ViewModeToggle, useViewMode } from "./components/PaperResults";
 import { SearchSkeleton } from "./components/SearchSkeleton";
@@ -21,21 +21,9 @@ const BROWSE_SORT_OPTIONS = ["年份", "引用量", "标题"];
 const BROWSE_SORT_KEYS: PaperSort[] = ["year_desc", "citations_desc", "title_asc"];
 const SEARCH_LIMIT = 100;
 
-interface SearchMode {
-  id: string;
-  label: string;
-}
-const SEARCH_MODES: SearchMode[] = [
-  { id: "unified", label: "综合" },
-  { id: "keyword", label: "关键词" },
-  { id: "semantic", label: "语义" },
-  { id: "author", label: "作者" },
-];
-const DEFAULT_SEARCH_MODE = SEARCH_MODES[0] ?? { id: "unified", label: "综合" };
-
 interface SubmittedSearch {
   query: string;
-  mode: string;
+  mode: SearchMode;
 }
 
 // ─── Component ────────────────────────────────────────────────────────────────
@@ -72,16 +60,14 @@ export function LibraryBrowsePage() {
   // ── Search state (persisted in URL so back-navigation restores results) ──
   const [searchParams, setSearchParams] = useSearchParams();
   const urlQuery = searchParams.get("q") ?? "";
-  const urlMode = searchParams.get("mode") ?? "unified";
+  const urlMode = searchMode(searchParams.get("mode"), "unified");
 
   const [query, setQuery] = useState(urlQuery);
   const [mode, setMode] = useState(urlMode);
-  const [modeOpen, setModeOpen] = useState(false);
   const [submittedSearch, setSubmittedSearch] = useState<SubmittedSearch | null>(
     urlQuery ? { query: urlQuery, mode: urlMode } : null,
   );
   const searched = submittedSearch !== null;
-  const modeRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     setQuery(urlQuery);
@@ -144,8 +130,6 @@ export function LibraryBrowsePage() {
     setSearchParams({ view, q, mode }, { replace: true });
   };
 
-  useDismiss(modeOpen, () => setModeOpen(false), modeRef);
-
   // ── Sorted search results ──
   // Relevance is the order the library returned them in.
   const searchPapers = useMemo(
@@ -157,8 +141,6 @@ export function LibraryBrowsePage() {
           : rawResults,
     [rawResults, searchSort],
   );
-
-  const currentMode = SEARCH_MODES.find((m) => m.id === mode) ?? DEFAULT_SEARCH_MODE;
 
   // ── Unified toolbar values ──
   const sortOptions = searched ? SEARCH_SORT_OPTIONS : BROWSE_SORT_OPTIONS;
@@ -192,84 +174,44 @@ export function LibraryBrowsePage() {
         <div className="max-w-3xl mx-auto">
           {/* Search bar */}
           <div className="relative">
-            <div className="w-full bg-surface-container-lowest rounded-2xl flex items-center border border-outline-variant/20 focus-within:border-primary/30 focus-within:ring-1 focus-within:ring-primary/10 transition-[background-color,border-color,box-shadow,transform] shadow-sm">
-              <div className="relative shrink-0" ref={modeRef}>
-                <button
-                  type="button"
-                  onClick={() => setModeOpen((v) => !v)}
-                  className="flex items-center gap-1 pl-4 pr-3 py-3 text-xs font-mono font-bold text-on-surface-variant hover:text-on-surface transition-colors"
-                >
-                  {currentMode.label}
-                  <ChevronDown
-                    className={`w-3 h-3 transition-transform duration-150 ${modeOpen ? "rotate-180" : ""}`}
-                  />
-                </button>
-                {modeOpen && (
-                  <div className="absolute left-0 top-[calc(100%+6px)] z-30 bg-surface-container-lowest border border-outline-variant/20 rounded-xl p-1.5 w-28 shadow-xl">
-                    {SEARCH_MODES.map((m) => (
-                      <button
-                        key={m.id}
-                        type="button"
-                        onClick={() => {
-                          setMode(m.id);
-                          setModeOpen(false);
-                          if (searched) {
-                            setSearchParams(
-                              (prev) => {
-                                const next = new URLSearchParams(prev);
-                                next.set("mode", m.id);
-                                return next;
-                              },
-                              { replace: true },
-                            );
-                          }
-                        }}
-                        className={`w-full text-left px-3 py-1.5 text-xs rounded-lg transition-colors font-mono font-bold ${
-                          m.id === mode
-                            ? "bg-primary/10 text-primary"
-                            : "text-on-surface hover:bg-surface-container"
-                        }`}
-                      >
-                        {m.label}
-                      </button>
-                    ))}
-                  </div>
-                )}
-              </div>
-
-              <div className="h-4 w-px bg-outline-variant/30 shrink-0" />
-
-              <input
-                value={query}
-                onChange={(e) => setQuery(e.target.value)}
-                aria-label="检索文献"
-                name="query"
-                // The browser's saved-entry fill paints the field blue; the history it offers is not ours.
-                autoComplete="off"
-                onKeyDown={(e) => {
-                  if (e.key === "Enter" && !e.nativeEvent.isComposing && e.keyCode !== 229)
-                    handleSearch();
-                }}
-                placeholder="输入并搜索…"
-                className="min-w-0 flex-1 bg-transparent text-on-surface px-3 py-3 font-sans text-sm outline-none placeholder:text-on-surface-variant/40"
-              />
-
-              {query ? (
-                <button
-                  type="button"
-                  onClick={() => {
-                    setQuery("");
-                    setSubmittedSearch(null);
-                    setSelectedPaper(null);
-                    setSearchParams({ view }, { replace: true });
-                  }}
-                  aria-label="清空检索"
-                  className="btn-ghost mr-3 p-1 rounded-lg hover:text-on-surface"
-                >
-                  <X className="w-3.5 h-3.5" />
-                </button>
-              ) : null}
-            </div>
+            <LibrarySearchBar
+              size="large"
+              label="检索文献"
+              className="w-full bg-surface-container-lowest rounded-2xl border border-outline-variant/20 focus-within:border-primary/30 focus-within:ring-1 focus-within:ring-primary/10 transition-[background-color,border-color,box-shadow] shadow-sm"
+              mode={mode}
+              onModeChange={(next) => {
+                setMode(next);
+                if (searched)
+                  setSearchParams(
+                    (prev) => {
+                      const params = new URLSearchParams(prev);
+                      params.set("mode", next);
+                      return params;
+                    },
+                    { replace: true },
+                  );
+              }}
+              text={query}
+              onTextChange={setQuery}
+              onSubmit={handleSearch}
+              trailing={
+                query ? (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setQuery("");
+                      setSubmittedSearch(null);
+                      setSelectedPaper(null);
+                      setSearchParams({ view }, { replace: true });
+                    }}
+                    aria-label="清空检索"
+                    className="btn-ghost mr-3 p-1 rounded-lg hover:text-on-surface"
+                  >
+                    <X className="w-3.5 h-3.5" />
+                  </button>
+                ) : null
+              }
+            />
 
             {mode === "semantic" && !searched ? (
               // Once a query has run, the results area carries this instead.

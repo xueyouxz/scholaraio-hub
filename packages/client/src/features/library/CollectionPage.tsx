@@ -17,6 +17,7 @@ import { newSessionUrl } from "../../core/sessions";
 import { usePageTitle } from "../../shared/layout";
 import { ChoiceMenu } from "../../shared/ui/Menu";
 import { CollectionAddPapersDialog } from "./components/CollectionCreateDialog";
+import { LibrarySearchBar, type SearchMode } from "./components/LibrarySearchBar";
 import { PaperDetailPanel } from "./components/PaperDetailPanel";
 import { PaperResults, ViewModeToggle, useViewMode } from "./components/PaperResults";
 import { StepTrack, useImportJobs } from "./components/import/ImportProgress";
@@ -35,11 +36,6 @@ const SORTS: { key: PaperSort; label: string }[] = [
   { key: "year_desc", label: "年份" },
   { key: "citations_desc", label: "引用量" },
   { key: "title_asc", label: "标题" },
-];
-const MODES = [
-  { id: "keyword", label: "关键词" },
-  { id: "unified", label: "综合" },
-  { id: "semantic", label: "语义" },
 ];
 
 /**
@@ -85,8 +81,8 @@ export function CollectionPage({ collectionId }: { collectionId: string }) {
     if (searchOpen) searchField.current?.focus();
   }, [searchOpen]);
   const [text, setText] = useState("");
-  const [mode, setMode] = useState("keyword");
-  const [submitted, setSubmitted] = useState<{ query: string; mode: string } | null>(null);
+  const [mode, setMode] = useState<SearchMode>("keyword");
+  const [submitted, setSubmitted] = useState<{ query: string; mode: SearchMode } | null>(null);
   const found = useQuery({
     queryKey: ["library", "search", { ...submitted, limit: 200, collectionId }],
     queryFn: ({ signal }) =>
@@ -145,53 +141,43 @@ export function CollectionPage({ collectionId }: { collectionId: string }) {
         ) : null}
         <div className="flex-1" />
         {searchOpen ? (
-          <form
-            className="flex w-full max-w-sm items-center rounded-full border border-outline-variant/20 bg-surface-container-lowest pl-1 focus-within:ring-2 focus-within:ring-primary/20 sm:w-80"
-            onSubmit={(event) => {
-              event.preventDefault();
+          <LibrarySearchBar
+            size="compact"
+            label="在文献集合中检索"
+            placeholder="检索本文献集合…"
+            className="w-full max-w-sm rounded-full border border-outline-variant/20 bg-surface-container-lowest pl-1 focus-within:ring-2 focus-within:ring-primary/20 sm:w-80"
+            inputRef={searchField}
+            mode={mode}
+            onModeChange={(next) => {
+              setMode(next);
+              if (submitted) setSubmitted({ ...submitted, mode: next });
+            }}
+            text={text}
+            onTextChange={setText}
+            onSubmit={() => {
               const query = text.trim();
               setSubmitted(query ? { query, mode } : null);
             }}
-          >
-            <select
-              aria-label="检索方式"
-              value={mode}
-              onChange={(event) => {
-                setMode(event.target.value);
-                if (submitted) setSubmitted({ ...submitted, mode: event.target.value });
-              }}
-              className="shrink-0 rounded-full bg-transparent px-2 py-1.5 text-xs font-mono font-bold text-on-surface-variant outline-none"
-            >
-              {MODES.map((item) => (
-                <option key={item.id} value={item.id}>
-                  {item.label}
-                </option>
-              ))}
-            </select>
-            <input
-              ref={searchField}
-              aria-label="在文献集合中检索"
-              autoComplete="off"
-              value={text}
-              onChange={(event) => setText(event.target.value)}
-              onKeyDown={(event) => {
-                if (event.key === "Escape") closeSearch();
-              }}
-              placeholder="检索本文献集合…"
-              className="min-w-0 flex-1 bg-transparent px-2 py-1.5 text-[13px] text-on-surface outline-none placeholder:text-on-surface-variant/40"
-            />
-            {found.isFetching ? (
-              <Loader2 className="mr-2 w-3.5 h-3.5 animate-spin text-primary" aria-hidden="true" />
-            ) : null}
-            <button
-              type="button"
-              aria-label="关闭检索"
-              onClick={closeSearch}
-              className="btn-ghost mr-1 p-1.5"
-            >
-              <X className="w-3.5 h-3.5" />
-            </button>
-          </form>
+            onEscape={closeSearch}
+            trailing={
+              <>
+                {found.isFetching ? (
+                  <Loader2
+                    className="mr-2 w-3.5 h-3.5 animate-spin text-primary"
+                    aria-hidden="true"
+                  />
+                ) : null}
+                <button
+                  type="button"
+                  aria-label="关闭检索"
+                  onClick={closeSearch}
+                  className="btn-ghost mr-1 p-1.5"
+                >
+                  <X className="w-3.5 h-3.5" />
+                </button>
+              </>
+            }
+          />
         ) : (
           <button
             type="button"

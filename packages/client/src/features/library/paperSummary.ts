@@ -66,9 +66,25 @@ export const libraryPapersQuery = queryOptions({
   select: (data) => data.papers.map(toPaperSummary),
 });
 
-export type PaperSort = "year_desc" | "citations_desc" | "title_asc";
+export type PaperSort = "relevance" | "year_desc" | "citations_desc" | "title_asc";
 
+/** What each order is called in the sort menus. */
+export const SORT_LABELS: Record<PaperSort, string> = {
+  relevance: "相关度",
+  year_desc: "年份",
+  citations_desc: "引用量",
+  title_asc: "标题",
+};
+
+/** The orders a list of papers offers, first the default; links keep the index. */
+export const PAPER_SORTS: readonly PaperSort[] = ["year_desc", "citations_desc", "title_asc"];
+
+/** A search's results: the library's own ranking first, then by year or citations. */
+export const RESULT_SORTS: readonly PaperSort[] = ["relevance", "year_desc", "citations_desc"];
+
+/** The papers in `sort` order; `relevance` keeps the order they came in. */
 export function sortPapers(papers: readonly PaperSummary[], sort: PaperSort): PaperSummary[] {
+  if (sort === "relevance") return [...papers];
   return [...papers].sort((a, b) =>
     sort === "title_asc"
       ? a.title.localeCompare(b.title)

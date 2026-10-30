@@ -10,15 +10,19 @@ import { LibrarySearchBar, type SearchMode, searchMode } from "./components/Libr
 import { PaperDetailPanel } from "./components/PaperDetailPanel";
 import { PaperResults, ViewModeToggle, useViewMode } from "./components/PaperResults";
 import { SearchSkeleton } from "./components/SearchSkeleton";
-import { type PaperSort, libraryPapersQuery, sortPapers, toPaperSummary } from "./paperSummary";
+import {
+  PAPER_SORTS,
+  RESULT_SORTS,
+  SORT_LABELS,
+  libraryPapersQuery,
+  sortPapers,
+  toPaperSummary,
+} from "./paperSummary";
 import type { PaperSummary } from "./paperSummary";
 import { useLibrarySelection } from "./selection";
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
-const SEARCH_SORT_OPTIONS = ["相关度", "年份", "引用量"];
-const BROWSE_SORT_OPTIONS = ["年份", "引用量", "标题"];
-const BROWSE_SORT_KEYS: PaperSort[] = ["year_desc", "citations_desc", "title_asc"];
 const SEARCH_LIMIT = 100;
 
 interface SubmittedSearch {
@@ -37,8 +41,14 @@ export function LibraryBrowsePage() {
   const [view, setView] = useViewMode();
 
   // ── Unified sort state ──
-  const browseSort = Math.max(0, Math.min(2, Number(viewParams.get("sort")) || 0));
-  const searchSort = Math.max(0, Math.min(2, Number(viewParams.get("searchSort")) || 0));
+  const browseSort = Math.max(
+    0,
+    Math.min(PAPER_SORTS.length - 1, Number(viewParams.get("sort")) || 0),
+  );
+  const searchSort = Math.max(
+    0,
+    Math.min(RESULT_SORTS.length - 1, Number(viewParams.get("searchSort")) || 0),
+  );
   const saveSort = (key: string, value: number) =>
     setViewParams((previous) => {
       const next = new URLSearchParams(previous);
@@ -49,7 +59,7 @@ export function LibraryBrowsePage() {
   const setSearchSort = (value: number) => saveSort("searchSort", value);
 
   // ── Browse query ──
-  const sort = BROWSE_SORT_KEYS[browseSort] ?? "year_desc";
+  const sort = PAPER_SORTS[browseSort] ?? "year_desc";
   const browseQuery = useQuery(libraryPapersQuery);
   const browseLoading = browseQuery.isLoading;
   const browsePapers = useMemo(
@@ -131,19 +141,13 @@ export function LibraryBrowsePage() {
   };
 
   // ── Sorted search results ──
-  // Relevance is the order the library returned them in.
   const searchPapers = useMemo(
-    () =>
-      searchSort === 1
-        ? sortPapers(rawResults, "year_desc")
-        : searchSort === 2
-          ? sortPapers(rawResults, "citations_desc")
-          : rawResults,
+    () => sortPapers(rawResults, RESULT_SORTS[searchSort] ?? "relevance"),
     [rawResults, searchSort],
   );
 
   // ── Unified toolbar values ──
-  const sortOptions = searched ? SEARCH_SORT_OPTIONS : BROWSE_SORT_OPTIONS;
+  const sortOptions = (searched ? RESULT_SORTS : PAPER_SORTS).map((key) => SORT_LABELS[key]);
   const currentSortIndex = searched ? searchSort : browseSort;
   const currentSortLabel = sortOptions[currentSortIndex] ?? sortOptions[0] ?? "";
   const countText = searched

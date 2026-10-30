@@ -80,4 +80,8 @@ describe("sortPapers", () => {
     expect(ids("title_asc")).toEqual(["a", "b", "c"]);
     expect(papers.map((paper) => paper.id)).toEqual(["b", "a", "c"]);
   });
+
+  it("keeps a search's own ranking for relevance", () => {
+    expect(ids("relevance")).toEqual(["b", "a", "c"]);
+  });
 });

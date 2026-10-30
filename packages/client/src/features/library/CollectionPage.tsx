@@ -29,14 +29,14 @@ import {
   TONE_TEXT,
   importState,
 } from "./components/import/pipeline";
-import { type PaperSort, libraryPapersQuery, sortPapers, toPaperSummary } from "./paperSummary";
+import {
+  PAPER_SORTS,
+  SORT_LABELS,
+  libraryPapersQuery,
+  sortPapers,
+  toPaperSummary,
+} from "./paperSummary";
 import type { PaperSummary } from "./paperSummary";
-
-const SORTS: { key: PaperSort; label: string }[] = [
-  { key: "year_desc", label: "年份" },
-  { key: "citations_desc", label: "引用量" },
-  { key: "title_asc", label: "标题" },
-];
 
 /**
  * One workspace's literature: what is in it, and what is still on its way in.
@@ -50,7 +50,7 @@ export function CollectionPage({ collectionId }: { collectionId: string }) {
   const { setTitle } = usePageTitle();
   const [params, setParams] = useSearchParams();
   const [view, setView] = useViewMode();
-  const sortIndex = Math.max(0, Math.min(SORTS.length - 1, Number(params.get("sort")) || 0));
+  const sortIndex = Math.max(0, Math.min(PAPER_SORTS.length - 1, Number(params.get("sort")) || 0));
   const setParam = (key: string, value: string) =>
     setParams(
       (previous) => {
@@ -70,7 +70,7 @@ export function CollectionPage({ collectionId }: { collectionId: string }) {
     return () => setTitle("");
   }, [setTitle, project.data?.name, collectionId]);
 
-  const sort = SORTS[sortIndex]?.key ?? "year_desc";
+  const sort = PAPER_SORTS[sortIndex] ?? "year_desc";
   // The workspace's papers are the library's, narrowed to its list.
   const library = useQuery(libraryPapersQuery);
 
@@ -457,7 +457,7 @@ function SortMenu({ index, onChange }: { index: number; onChange: (index: number
       trigger={(open) => (
         <>
           <SortAsc className="w-3.5 h-3.5" aria-hidden="true" />
-          {SORTS[index]?.label}
+          {SORT_LABELS[PAPER_SORTS[index] ?? "year_desc"]}
           <ChevronDown
             className={`w-3 h-3 transition-transform ${open ? "rotate-180" : ""}`}
             aria-hidden="true"
@@ -468,7 +468,7 @@ function SortMenu({ index, onChange }: { index: number; onChange: (index: number
         {
           selected: String(index),
           onSelect: (id) => onChange(Number(id)),
-          items: SORTS.map((option, i) => ({ id: String(i), label: option.label })),
+          items: PAPER_SORTS.map((key, i) => ({ id: String(i), label: SORT_LABELS[key] })),
         },
       ]}
     />

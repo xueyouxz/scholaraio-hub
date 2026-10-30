@@ -6,6 +6,7 @@ import { Link, useParams } from "react-router-dom";
 import { UNASSIGNED, projectSessionsQuery, projectsQuery } from "../../core/projects";
 import { newSessionUrl } from "../../core/sessions";
 import { usePageTitle } from "../../shared/layout";
+import { ChipGroup } from "../../shared/ui/ChipGroup";
 import { ProviderLogo } from "../../shared/ui/ProviderLogo";
 import { SessionRow } from "../components/SessionRow";
 
@@ -51,24 +52,23 @@ export function ProjectPage() {
           </Link>
         )}
       </div>
-      <fieldset className="flex items-center gap-1.5 mb-3">
-        <legend className="sr-only">按工具筛选</legend>
-        {FILTERS.map((filter) => (
-          <button
-            key={filter.label}
-            type="button"
-            aria-pressed={provider === filter.provider}
-            onClick={() => {
-              setProvider(filter.provider);
-              setLimit(PAGE);
-            }}
-            className={`inline-flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs font-medium transition-colors ${provider === filter.provider ? "bg-primary text-on-primary border-primary" : "bg-surface-container-high text-on-surface-variant border-outline-variant/30 hover:bg-surface-container"}`}
-          >
-            {filter.provider ? <ProviderLogo provider={filter.provider} size={12} /> : null}
-            {filter.label}
-          </button>
-        ))}
-      </fieldset>
+      <div className="mb-3">
+        <ChipGroup<ProviderName | "">
+          label="按工具筛选"
+          value={provider ?? ""}
+          onChange={(value) => {
+            setProvider(value || undefined);
+            setLimit(PAGE);
+          }}
+          chips={FILTERS.map((filter) => ({
+            value: filter.provider ?? "",
+            label: filter.label,
+            icon: filter.provider ? (
+              <ProviderLogo provider={filter.provider} size={12} />
+            ) : undefined,
+          }))}
+        />
+      </div>
       {sessions.error ? (
         <p role="alert" className="text-sm text-error">
           {sessions.error.message}

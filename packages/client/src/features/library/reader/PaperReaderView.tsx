@@ -6,6 +6,7 @@ import { Link, useSearchParams } from "react-router-dom";
 import { libraryUrl } from "../../../core/http";
 import { libraryApi } from "../../../core/library";
 import { newSessionUrl } from "../../../core/sessions";
+import { ChipGroup } from "../../../shared/ui/ChipGroup";
 import { toPaperSummary } from "../paperSummary";
 import { LayerReader } from "./LayerReader";
 import { PaperMarkdown } from "./PaperMarkdown";
@@ -127,24 +128,16 @@ function Reader({
     <div className="flex-1 min-w-0 min-h-0 flex flex-col">
       <div className="shrink-0 flex items-center gap-2 px-5 border-b border-outline-variant/15 bg-surface-container-low h-12 overflow-x-auto">
         {leading}
-        {(
-          [
-            ["overview", "概览"],
-            ["markdown", "全文"],
-            ["pdf", "PDF"],
-          ] as const
-        ).map(([id, label]) => (
-          <button
-            key={id}
-            type="button"
-            aria-pressed={mode === id}
-            disabled={id === "pdf" ? !paper.hasPdf : id === "markdown" ? !paper.hasMarkdown : false}
-            onClick={() => setMode(id)}
-            className={`shrink-0 px-3 py-1.5 rounded-full text-xs font-medium border transition-colors disabled:opacity-30 ${mode === id ? "bg-primary text-on-primary border-primary" : "bg-surface-container-high text-on-surface-variant border-outline-variant/30 hover:bg-surface-container"}`}
-          >
-            {label}
-          </button>
-        ))}
+        <ChipGroup
+          label="阅读方式"
+          value={mode}
+          onChange={setMode}
+          chips={[
+            { value: "overview", label: "概览" },
+            { value: "markdown", label: "全文", disabled: !paper.hasMarkdown },
+            { value: "pdf", label: "PDF", disabled: !paper.hasPdf },
+          ]}
+        />
         <Link
           className="ml-auto shrink-0 p-1.5 rounded-full text-on-surface-variant hover:text-on-surface hover:bg-surface-container"
           aria-label="询问本文"

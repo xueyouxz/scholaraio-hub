@@ -3,6 +3,7 @@ import { BookOpen, FolderPlus, X } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { libraryApi, readerUrl } from "../../../core/library";
+import { Badge } from "../../../shared/ui/Badge";
 import { useDismiss } from "../../../shared/ui/useDismiss";
 import { paperAssetUrl } from "../paperSummary";
 import type { PaperSummary } from "../paperSummary";
@@ -179,11 +180,7 @@ export function PaperDetailPanel({ paper, collectionId, onClose }: Props) {
               </p>
               <div className="flex flex-wrap gap-2">
                 <StatusBadge status={paper.status} />
-                {paper.hasPdf ? (
-                  <span className="text-[10px] font-mono font-bold text-secondary bg-secondary-container/30 px-2 py-0.5 rounded leading-none uppercase">
-                    PDF
-                  </span>
-                ) : null}
+                {paper.hasPdf ? <Badge tone="kind">PDF</Badge> : null}
               </div>
             </div>
 

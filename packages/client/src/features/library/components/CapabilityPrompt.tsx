@@ -4,6 +4,7 @@ import { useEffect, useRef } from "react";
 import { Link } from "react-router-dom";
 import { libraryApi } from "../../../core/library";
 import { useLibraryStream } from "../../../core/libraryEvents";
+import { Badge } from "../../../shared/ui/Badge";
 import { ACTIVE_TASK, TASK_NAMES, TASK_PHASES, capability, taskProgress } from "../tasks";
 
 /**
@@ -77,9 +78,9 @@ export function CapabilityPrompt({
   );
   const badge =
     ready && !running && blocked === null ? (
-      <span className="shrink-0 rounded bg-primary-container/10 px-1.5 py-0.5 text-[9px] font-mono font-bold uppercase leading-none text-primary">
+      <Badge tone="positive" className="shrink-0">
         就绪
-      </span>
+      </Badge>
     ) : null;
   const remedy = blocked?.remedy ? (
     <Link

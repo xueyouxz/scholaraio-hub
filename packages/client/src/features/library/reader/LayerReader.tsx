@@ -1,4 +1,6 @@
 import { Calendar, Hash, Library, Link, Users } from "lucide-react";
+import { Badge } from "../../../shared/ui/Badge";
+import { StatusBadge } from "../components/StatusBadge";
 import type { PaperSummary } from "../paperSummary";
 
 // ─── Shared primitives ────────────────────────────────────────────────────────
@@ -72,28 +74,9 @@ export function LayerReader({
 
         {/* Status badges */}
         <div className="flex flex-wrap gap-2">
-          <span
-            className={[
-              "text-[10px] font-mono font-bold px-2 py-0.5 rounded leading-none uppercase",
-              paper.status === "ingested"
-                ? "text-primary bg-primary-container/10"
-                : paper.status === "pending"
-                  ? "text-on-surface-variant/40 bg-surface-variant/50"
-                  : "text-error bg-error-container/40",
-            ].join(" ")}
-          >
-            {paper.status}
-          </span>
-          {paper.hasFullText ? (
-            <span className="text-[10px] font-mono font-bold text-secondary bg-secondary-container/30 px-2 py-0.5 rounded leading-none uppercase">
-              Markdown
-            </span>
-          ) : null}
-          {paper.hasPdf ? (
-            <span className="text-[10px] font-mono font-bold text-primary bg-primary-container/10 px-2 py-0.5 rounded leading-none uppercase">
-              PDF
-            </span>
-          ) : null}
+          <StatusBadge status={paper.status} />
+          {paper.hasFullText ? <Badge tone="kind">Markdown</Badge> : null}
+          {paper.hasPdf ? <Badge tone="kind">PDF</Badge> : null}
         </div>
 
         {/* Abstract */}

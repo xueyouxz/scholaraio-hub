@@ -184,6 +184,9 @@ All badges follow the **mono-label pattern** base:
 | Neutral / in progress | `text-on-surface-variant` | `bg-surface-container` | counts, pending states |
 | Failure | `text-error` | `bg-error-container/40` | parse or import failures |
 | Kind | `text-secondary` | `bg-secondary-container/30` | PDF / Markdown source |
+| Attention | `text-tertiary` | `bg-tertiary-container/30` | a running session, one waiting for input |
+
+The pattern and these tones are `shared/ui/Badge.tsx`; use it rather than the class string.
 
 ### Inputs & Forms
 - Background: `bg-surface-container` or transparent

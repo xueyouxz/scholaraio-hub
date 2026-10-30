@@ -1,4 +1,5 @@
 import { Check } from "lucide-react";
+import { Badge } from "../../../shared/ui/Badge";
 import { paperAssetUrl } from "../paperSummary";
 import type { PaperSummary } from "../paperSummary";
 
@@ -54,9 +55,9 @@ export function PaperListRow({
         </div>
       ) : null}
       {addedLabel ? (
-        <span className="absolute top-3 right-3 z-10 text-[10px] font-mono font-bold bg-primary/15 text-primary px-2 py-0.5 rounded leading-none uppercase">
+        <Badge tone="positive" className="absolute top-3 right-3 z-10">
           ✓ {addedLabel}
-        </span>
+        </Badge>
       ) : null}
       {/* Cover */}
       <div className="w-36 h-full shrink-0 overflow-hidden bg-surface-container">

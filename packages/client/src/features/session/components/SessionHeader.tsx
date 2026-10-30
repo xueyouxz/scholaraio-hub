@@ -1,5 +1,6 @@
 import type { SessionDetail } from "@scholaraio-hub/shared";
 import { BookOpen, FolderTree } from "lucide-react";
+import { Badge } from "../../../shared/ui/Badge";
 
 export type SessionPanel = "files" | "papers";
 
@@ -28,10 +29,6 @@ export function SessionHeader({
   onTogglePanel: (panel: SessionPanel) => void;
 }) {
   const label = state === "waiting-input" ? "needs input" : running ? "running" : "idle";
-  const pill =
-    label === "idle"
-      ? "bg-surface-container text-on-surface-variant"
-      : "bg-tertiary-container/30 text-tertiary";
   const panelButton = (active: boolean) =>
     `p-1 rounded transition-colors ${active ? "text-primary bg-primary/10" : "text-on-surface-variant hover:text-on-surface hover:bg-surface-container"}`;
   return (
@@ -46,9 +43,7 @@ export function SessionHeader({
           {provider}
           {model ? ` · ${model}` : ""}
         </span>
-        <span className={`text-[10px] font-mono font-bold px-2 py-0.5 rounded uppercase ${pill}`}>
-          {label}
-        </span>
+        <Badge tone={label === "idle" ? "neutral" : "attention"}>{label}</Badge>
         <button
           type="button"
           aria-label="会话文件"

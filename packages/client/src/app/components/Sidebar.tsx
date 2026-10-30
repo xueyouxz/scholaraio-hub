@@ -12,7 +12,7 @@ import {
   Settings,
   Sparkles,
 } from "lucide-react";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import {
   Link,
   NavLink,
@@ -24,6 +24,7 @@ import {
 import { PROJECTS_KEY, UNASSIGNED, projectSessionsQuery, projectsQuery } from "../../core/projects";
 import { newSessionUrl, sessionApi, sessionQuery, sessionUrl } from "../../core/sessions";
 import { LibraryActivityTray } from "../../features/library/components/LibraryActivityTray";
+import { ResizeHandle } from "../../shared/ui/ResizeHandle";
 import { SessionContextMenu } from "./SessionContextMenu";
 import { SessionRow } from "./SessionRow";
 
@@ -263,24 +264,6 @@ export function Sidebar({
     (project, index) => index < PROJECT_LIMIT || project.id === activeProject,
   );
 
-  // Pointer moves arrive faster than frames; apply the latest once per frame.
-  const drag = useRef<{ frame: number; x: number } | null>(null);
-  useEffect(
-    () => () => {
-      if (drag.current) cancelAnimationFrame(drag.current.frame);
-    },
-    [],
-  );
-  const endDrag = (x: number) => {
-    if (!drag.current) return;
-    cancelAnimationFrame(drag.current.frame);
-    drag.current = null;
-    document.body.style.removeProperty("cursor");
-    document.body.style.removeProperty("user-select");
-    onWidthChange(x, true);
-    onResizingChange(false);
-  };
-
   // Every row keeps its icon in the rail's column, so collapsing only hides
   // the labels: nothing moves sideways while the width animates.
   const label = (text: string) => (
@@ -496,39 +479,14 @@ export function Sidebar({
           />
         ) : null}
         {isDesktop && !collapsed ? (
-          <button
-            type="button"
-            aria-label="拖动调整侧边栏宽度"
-            title="拖动调整宽度；也可使用下方滑块"
-            className="absolute right-0 inset-y-0 w-1.5 cursor-col-resize touch-none transition-colors hover:bg-primary/20 active:bg-primary/30"
-            onPointerDown={(e) => {
-              e.currentTarget.setPointerCapture(e.pointerId);
-              drag.current = { frame: 0, x: e.clientX };
-              document.body.style.cursor = "col-resize";
-              document.body.style.userSelect = "none";
-              onResizingChange(true);
-            }}
-            onPointerMove={(e) => {
-              const state = drag.current;
-              if (!state || !e.currentTarget.hasPointerCapture(e.pointerId)) return;
-              state.x = e.clientX;
-              if (state.frame) return;
-              state.frame = requestAnimationFrame(() => {
-                state.frame = 0;
-                onWidthChange(state.x, false);
-              });
-            }}
-            onPointerUp={(e) => {
-              e.currentTarget.releasePointerCapture(e.pointerId);
-              endDrag(e.clientX);
-            }}
-            onPointerCancel={(e) => endDrag(e.clientX)}
-            onKeyDown={(e) => {
-              if (e.key === "ArrowLeft" || e.key === "ArrowRight") {
-                e.preventDefault();
-                onWidthChange(width + (e.key === "ArrowRight" ? 10 : -10));
-              }
-            }}
+          <ResizeHandle
+            label="拖动调整侧边栏宽度"
+            width={width}
+            grow="right"
+            step={10}
+            onResize={onWidthChange}
+            onDraggingChange={onResizingChange}
+            className="absolute right-0 inset-y-0 w-1.5 hover:bg-primary/20 active:bg-primary/30"
           />
         ) : null}
       </aside>

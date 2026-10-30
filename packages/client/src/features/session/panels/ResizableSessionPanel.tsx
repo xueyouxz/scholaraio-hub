@@ -1,5 +1,6 @@
-import { type ReactNode, useEffect, useRef, useState } from "react";
+import { type ReactNode, useEffect, useState } from "react";
 import { readStoredNumber, writeStored } from "../../../core/browserStorage";
+import { ResizeHandle } from "../../../shared/ui/ResizeHandle";
 
 /** Shared resize behavior for the original file and literature side panels. */
 export function ResizableSessionPanel({
@@ -20,13 +21,15 @@ export function ResizableSessionPanel({
     return saved !== undefined && saved >= 220 ? Math.min(600, saved) : 320;
   });
   const [hasOpened, setHasOpened] = useState(open);
-  const drag = useRef<{ x: number; width: number } | null>(null);
   const [dragging, setDragging] = useState(false);
   useEffect(() => {
     if (open) setHasOpened(true);
   }, [open]);
-  const resize = (next: number) => setWidth(Math.max(220, Math.min(window.innerWidth * 0.5, next)));
-  const save = () => writeStored(storageKey, String(width));
+  const resize = (next: number, done: boolean) => {
+    const clamped = Math.max(220, Math.min(window.innerWidth * 0.5, next));
+    setWidth(clamped);
+    if (done) writeStored(storageKey, String(clamped));
+  };
   return (
     <aside
       aria-label={title}
@@ -42,38 +45,14 @@ export function ResizableSessionPanel({
       style={{ width: open ? `min(${width}px, 85vw)` : 0 }}
     >
       <div className="flex h-full shrink-0" style={{ width: `min(${width}px, 85vw)` }}>
-        <div
-          role="separator"
-          aria-label={`调整${title}宽度`}
-          aria-orientation="vertical"
-          aria-valuenow={width}
-          tabIndex={0}
-          className="w-1 cursor-col-resize touch-none hover:bg-primary/30 active:bg-primary/50 shrink-0 transition-colors"
-          onKeyDown={(event) => {
-            if (event.key === "ArrowLeft" || event.key === "ArrowRight") {
-              event.preventDefault();
-              resize(width + (event.key === "ArrowLeft" ? 20 : -20));
-            }
-          }}
-          onBlur={save}
-          onPointerDown={(event) => {
-            event.preventDefault();
-            drag.current = { x: event.clientX, width };
-            setDragging(true);
-            event.currentTarget.setPointerCapture(event.pointerId);
-          }}
-          onPointerMove={(event) => {
-            if (drag.current) resize(drag.current.width + drag.current.x - event.clientX);
-          }}
-          onPointerUp={() => {
-            drag.current = null;
-            setDragging(false);
-            save();
-          }}
-          onPointerCancel={() => {
-            drag.current = null;
-            setDragging(false);
-          }}
+        <ResizeHandle
+          label={`调整${title}宽度`}
+          width={width}
+          grow="left"
+          step={20}
+          onResize={resize}
+          onDraggingChange={setDragging}
+          className="w-1 shrink-0 hover:bg-primary/30 active:bg-primary/50"
         />
         <div className="flex-1 border-l border-outline-variant/10 bg-surface flex flex-col min-h-0 overflow-hidden">
           {hasOpened ? children : null}

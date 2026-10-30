@@ -3,6 +3,7 @@ import { BookOpen, FolderPlus, X } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { libraryApi, readerUrl } from "../../../core/library";
+import { useDismiss } from "../../../shared/ui/useDismiss";
 import { paperAssetUrl } from "../paperSummary";
 import type { PaperSummary } from "../paperSummary";
 import { StatusBadge } from "./StatusBadge";
@@ -103,14 +104,7 @@ export function PaperDetailPanel({ paper, collectionId, onClose }: Props) {
     ? (addPaperMutation.variables?.collectionId ?? null)
     : null;
 
-  useEffect(() => {
-    if (!wsOpen) return;
-    const handler = (e: MouseEvent) => {
-      if (wsRef.current && !wsRef.current.contains(e.target as Node)) setWsOpen(false);
-    };
-    document.addEventListener("mousedown", handler);
-    return () => document.removeEventListener("mousedown", handler);
-  }, [wsOpen]);
+  useDismiss(wsOpen, () => setWsOpen(false), wsRef);
 
   const handleAdd = (targetProjectId: string) => {
     if (!paper || addingTo) return;

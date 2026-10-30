@@ -1,6 +1,7 @@
 import type { ProjectSummary } from "@scholaraio-hub/shared";
 import { Check, ChevronDown, FolderOpen, FolderPlus, FolderX } from "lucide-react";
-import { useEffect, useRef, useState } from "react";
+import { useRef, useState } from "react";
+import { useDismiss } from "../../../shared/ui/useDismiss";
 
 /**
  * Which project a new chat runs in, changeable before the first message: one
@@ -27,21 +28,7 @@ export function ProjectPicker({
 }) {
   const [open, setOpen] = useState(false);
   const menu = useRef<HTMLDivElement>(null);
-  useEffect(() => {
-    if (!open) return;
-    const away = (event: MouseEvent) => {
-      if (menu.current && !menu.current.contains(event.target as Node)) setOpen(false);
-    };
-    const dismiss = (event: KeyboardEvent) => {
-      if (event.key === "Escape") setOpen(false);
-    };
-    document.addEventListener("mousedown", away);
-    document.addEventListener("keydown", dismiss);
-    return () => {
-      document.removeEventListener("mousedown", away);
-      document.removeEventListener("keydown", dismiss);
-    };
-  }, [open]);
+  useDismiss(open, () => setOpen(false), menu);
   const choose = (id: string) => {
     setOpen(false);
     if (id !== (current?.id ?? "")) onChange(id);

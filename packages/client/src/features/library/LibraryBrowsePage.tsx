@@ -4,6 +4,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import { libraryApi } from "../../core/library";
 import { usePageTitle } from "../../shared/layout";
+import { useDismiss } from "../../shared/ui/useDismiss";
 import { CapabilityPrompt } from "./components/CapabilityPrompt";
 import { PaperDetailPanel } from "./components/PaperDetailPanel";
 import { PaperGridCard } from "./components/PaperGridCard";
@@ -152,26 +153,8 @@ export function LibraryBrowsePage() {
     setSearchParams({ view, q, mode }, { replace: true });
   };
 
-  // ── Close dropdowns on outside click ──
-  useEffect(() => {
-    if (!modeOpen && !sortOpen) return;
-    const handler = (e: MouseEvent) => {
-      if (modeRef.current && !modeRef.current.contains(e.target as Node)) setModeOpen(false);
-      if (sortRef.current && !sortRef.current.contains(e.target as Node)) setSortOpen(false);
-    };
-    const handleEscape = (event: KeyboardEvent) => {
-      if (event.key === "Escape") {
-        setModeOpen(false);
-        setSortOpen(false);
-      }
-    };
-    document.addEventListener("mousedown", handler);
-    document.addEventListener("keydown", handleEscape);
-    return () => {
-      document.removeEventListener("mousedown", handler);
-      document.removeEventListener("keydown", handleEscape);
-    };
-  }, [modeOpen, sortOpen]);
+  useDismiss(modeOpen, () => setModeOpen(false), modeRef);
+  useDismiss(sortOpen, () => setSortOpen(false), sortRef);
 
   // ── Sorted search results ──
   // Relevance is the order the library returned them in.

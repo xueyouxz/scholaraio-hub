@@ -8,6 +8,7 @@ import {
   useState,
 } from "react";
 import { createPortal } from "react-dom";
+import { useDismiss } from "../../shared/ui/useDismiss";
 
 export interface SessionMenuActions {
   onRename(): void;
@@ -42,16 +43,12 @@ export function SessionContextMenu({
     });
     menu.current?.querySelector<HTMLButtonElement>("button:not(:disabled)")?.focus();
   }, [x, y]);
+  useDismiss(true, onClose, menu);
   useEffect(() => {
-    const away = (event: MouseEvent) => {
-      if (!menu.current?.contains(event.target as Node)) onClose();
-    };
     const dismiss = () => onClose();
-    document.addEventListener("mousedown", away);
     window.addEventListener("scroll", dismiss, true);
     window.addEventListener("resize", dismiss);
     return () => {
-      document.removeEventListener("mousedown", away);
       window.removeEventListener("scroll", dismiss, true);
       window.removeEventListener("resize", dismiss);
     };

@@ -1,9 +1,10 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { ChevronDown, Download, MessageSquare, X } from "lucide-react";
-import { useEffect, useRef, useState } from "react";
+import { useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import { type ReferenceFormat, libraryApi } from "../../../core/library";
 import { newSessionUrl } from "../../../core/sessions";
+import { useDismiss } from "../../../shared/ui/useDismiss";
 import { useLibrarySelection } from "../selection";
 import { useExportReferences } from "../useExportReferences";
 import { AddToCollectionMenu } from "./AddToCollectionMenu";
@@ -110,14 +111,7 @@ function ExportMenu({
 }) {
   const [open, setOpen] = useState(false);
   const menu = useRef<HTMLDivElement>(null);
-  useEffect(() => {
-    if (!open) return;
-    const away = (event: MouseEvent) => {
-      if (menu.current && !menu.current.contains(event.target as Node)) setOpen(false);
-    };
-    document.addEventListener("mousedown", away);
-    return () => document.removeEventListener("mousedown", away);
-  }, [open]);
+  useDismiss(open, () => setOpen(false), menu);
   return (
     <div className="relative" ref={menu}>
       <button

@@ -6,6 +6,7 @@ import { Link, useNavigate } from "react-router-dom";
 import { collectionUrl, libraryApi } from "../../../core/library";
 import { newSessionUrl } from "../../../core/sessions";
 import { Dialog } from "../../../shared/ui/Dialog";
+import { useDismiss } from "../../../shared/ui/useDismiss";
 import { collectionNameProblem } from "../collectionName";
 import { ImportProgress } from "./import/ImportProgress";
 import { ImportStaging, type Staged } from "./import/sources";
@@ -378,14 +379,7 @@ function InternalPicker({ sources }: { sources: PaperSourcesState }) {
     staleTime: 60_000,
   });
 
-  useEffect(() => {
-    if (!modeOpen) return;
-    const away = (event: MouseEvent) => {
-      if (modeMenu.current && !modeMenu.current.contains(event.target as Node)) setModeOpen(false);
-    };
-    document.addEventListener("mousedown", away);
-    return () => document.removeEventListener("mousedown", away);
-  }, [modeOpen]);
+  useDismiss(modeOpen, () => setModeOpen(false), modeMenu);
 
   const rows = query
     ? (found.data?.results ?? []).map(({ paper }) => ({

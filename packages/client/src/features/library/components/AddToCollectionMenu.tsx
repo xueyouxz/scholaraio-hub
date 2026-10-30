@@ -1,6 +1,7 @@
 import { FolderPlus, Loader2, Plus } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import type { KeyboardEvent as ReactKeyboardEvent } from "react";
+import { useDismiss } from "../../../shared/ui/useDismiss";
 import { collectionNameProblem } from "../collectionName";
 
 interface WorkspaceOption {
@@ -28,15 +29,10 @@ export function AddToCollectionMenu({
   const ref = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
+  useDismiss(open, () => setOpen(false), ref);
   useEffect(() => {
-    if (!open) return;
     // Focus the create input so Enter actually targets it.
-    inputRef.current?.focus();
-    const handler = (e: MouseEvent) => {
-      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
-    };
-    document.addEventListener("mousedown", handler);
-    return () => document.removeEventListener("mousedown", handler);
+    if (open) inputRef.current?.focus();
   }, [open]);
 
   const trimmed = newName.trim();

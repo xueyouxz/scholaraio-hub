@@ -17,6 +17,7 @@ import { Link, useSearchParams } from "react-router-dom";
 import { collectionUrl, libraryApi, readerUrl } from "../../core/library";
 import { newSessionUrl } from "../../core/sessions";
 import { usePageTitle } from "../../shared/layout";
+import { useDismiss } from "../../shared/ui/useDismiss";
 import { CollectionAddPapersDialog } from "./components/CollectionCreateDialog";
 import { PaperDetailPanel } from "./components/PaperDetailPanel";
 import { PaperVirtualList } from "./components/PaperVirtualList";
@@ -500,14 +501,7 @@ function CollectionPaperCard({
 function SortMenu({ index, onChange }: { index: number; onChange: (index: number) => void }) {
   const [open, setOpen] = useState(false);
   const menu = useRef<HTMLDivElement>(null);
-  useEffect(() => {
-    if (!open) return;
-    const away = (event: MouseEvent) => {
-      if (menu.current && !menu.current.contains(event.target as Node)) setOpen(false);
-    };
-    document.addEventListener("mousedown", away);
-    return () => document.removeEventListener("mousedown", away);
-  }, [open]);
+  useDismiss(open, () => setOpen(false), menu);
   return (
     <div className="relative" ref={menu}>
       <button

@@ -1,9 +1,10 @@
 import type { LibraryTask } from "@scholaraio-hub/shared";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Loader2 } from "lucide-react";
-import { useEffect, useRef, useState } from "react";
+import { useRef, useState } from "react";
 import { libraryApi } from "../../../core/library";
 import { useLibraryStream } from "../../../core/libraryEvents";
+import { useDismiss } from "../../../shared/ui/useDismiss";
 import { ACTIVE_TASK, TASK_NAMES, TASK_PHASES, taskProgress } from "../tasks";
 
 /**
@@ -44,14 +45,7 @@ export function LibraryActivityTray({ collapsed }: { collapsed: boolean }) {
   const pendingImports = importing.filter((item) => ACTIVE_TASK.includes(item.status));
   const busy = tasks.length + (pendingImports.length ? 1 : 0);
 
-  useEffect(() => {
-    if (!open) return;
-    const handler = (event: MouseEvent) => {
-      if (panel.current && !panel.current.contains(event.target as Node)) setOpen(false);
-    };
-    document.addEventListener("mousedown", handler);
-    return () => document.removeEventListener("mousedown", handler);
-  }, [open]);
+  useDismiss(open, () => setOpen(false), panel);
 
   const cancel = useMutation({
     mutationFn: libraryApi.cancelTask,

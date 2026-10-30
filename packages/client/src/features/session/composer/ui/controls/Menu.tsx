@@ -9,6 +9,7 @@ import {
   useState,
 } from "react";
 import { createPortal } from "react-dom";
+import { useDismiss } from "../../../../../shared/ui/useDismiss";
 
 export interface MenuItem {
   id: string;
@@ -74,27 +75,13 @@ export function MenuButton({
     });
   }, [open, align]);
 
+  useDismiss(open, () => setOpen(false), rootRef, menuRef);
   useEffect(() => {
     if (!open) return;
-    const inside = (target: EventTarget | null) =>
-      !!target &&
-      (rootRef.current?.contains(target as Node) || menuRef.current?.contains(target as Node));
-    const onPointerDown = (event: PointerEvent) => {
-      if (!inside(event.target)) setOpen(false);
-    };
-    const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key === "Escape") setOpen(false);
-    };
     // A fixed menu would drift from its pill; close it when the layout moves.
     const close = () => setOpen(false);
-    document.addEventListener("pointerdown", onPointerDown);
-    document.addEventListener("keydown", onKeyDown);
     window.addEventListener("resize", close);
-    return () => {
-      document.removeEventListener("pointerdown", onPointerDown);
-      document.removeEventListener("keydown", onKeyDown);
-      window.removeEventListener("resize", close);
-    };
+    return () => window.removeEventListener("resize", close);
   }, [open]);
 
   return (

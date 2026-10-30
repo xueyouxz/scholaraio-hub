@@ -15,7 +15,7 @@ import { Link, useSearchParams } from "react-router-dom";
 import { collectionUrl, libraryApi, readerUrl } from "../../core/library";
 import { newSessionUrl } from "../../core/sessions";
 import { usePageTitle } from "../../shared/layout";
-import { useDismiss } from "../../shared/ui/useDismiss";
+import { ChoiceMenu } from "../../shared/ui/Menu";
 import { CollectionAddPapersDialog } from "./components/CollectionCreateDialog";
 import { PaperDetailPanel } from "./components/PaperDetailPanel";
 import { PaperResults, ViewModeToggle, useViewMode } from "./components/PaperResults";
@@ -463,45 +463,28 @@ function CollectionPaperCard({
 }
 
 function SortMenu({ index, onChange }: { index: number; onChange: (index: number) => void }) {
-  const [open, setOpen] = useState(false);
-  const menu = useRef<HTMLDivElement>(null);
-  useDismiss(open, () => setOpen(false), menu);
   return (
-    <div className="relative" ref={menu}>
-      <button
-        type="button"
-        aria-expanded={open}
-        onClick={() => setOpen((value) => !value)}
-        className="flex items-center gap-1 rounded-full px-2.5 py-1 text-xs font-medium text-on-surface-variant hover:bg-surface-container-high"
-      >
-        <SortAsc className="w-3.5 h-3.5" aria-hidden="true" />
-        {SORTS[index]?.label}
-        <ChevronDown
-          className={`w-3 h-3 transition-transform ${open ? "rotate-180" : ""}`}
-          aria-hidden="true"
-        />
-      </button>
-      {open ? (
-        <div className="absolute left-0 top-8 z-20 w-32 rounded-xl border border-outline-variant/20 bg-surface-container-high p-1.5 shadow-xl">
-          {SORTS.map((option, i) => (
-            <button
-              key={option.key}
-              type="button"
-              onClick={() => {
-                onChange(i);
-                setOpen(false);
-              }}
-              className={`w-full rounded-lg px-3 py-1.5 text-left text-sm transition-colors ${
-                i === index
-                  ? "bg-primary/10 font-semibold text-primary"
-                  : "text-on-surface hover:bg-surface-container-low"
-              }`}
-            >
-              {option.label}
-            </button>
-          ))}
-        </div>
-      ) : null}
-    </div>
+    <ChoiceMenu
+      triggerTitle="排序"
+      triggerClassName="flex items-center gap-1 rounded-full px-2.5 py-1 text-xs font-medium text-on-surface-variant hover:bg-surface-container-high"
+      panelClassName="w-32"
+      trigger={(open) => (
+        <>
+          <SortAsc className="w-3.5 h-3.5" aria-hidden="true" />
+          {SORTS[index]?.label}
+          <ChevronDown
+            className={`w-3 h-3 transition-transform ${open ? "rotate-180" : ""}`}
+            aria-hidden="true"
+          />
+        </>
+      )}
+      sections={[
+        {
+          selected: String(index),
+          onSelect: (id) => onChange(Number(id)),
+          items: SORTS.map((option, i) => ({ id: String(i), label: option.label })),
+        },
+      ]}
+    />
   );
 }

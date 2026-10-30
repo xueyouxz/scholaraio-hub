@@ -4,6 +4,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import { libraryApi } from "../../core/library";
 import { usePageTitle } from "../../shared/layout";
+import { ChoiceMenu } from "../../shared/ui/Menu";
 import { useDismiss } from "../../shared/ui/useDismiss";
 import { CapabilityPrompt } from "./components/CapabilityPrompt";
 import { PaperDetailPanel } from "./components/PaperDetailPanel";
@@ -58,8 +59,6 @@ export function LibraryBrowsePage() {
     });
   const setBrowseSort = (value: number) => saveSort("sort", value);
   const setSearchSort = (value: number) => saveSort("searchSort", value);
-  const [sortOpen, setSortOpen] = useState(false);
-  const sortRef = useRef<HTMLDivElement>(null);
 
   // ── Browse query ──
   const sort = BROWSE_SORT_KEYS[browseSort] ?? "year_desc";
@@ -146,7 +145,6 @@ export function LibraryBrowsePage() {
   };
 
   useDismiss(modeOpen, () => setModeOpen(false), modeRef);
-  useDismiss(sortOpen, () => setSortOpen(false), sortRef);
 
   // ── Sorted search results ──
   // Relevance is the order the library returned them in.
@@ -173,7 +171,6 @@ export function LibraryBrowsePage() {
   const handleSortSelect = (i: number) => {
     if (searched) setSearchSort(i);
     else setBrowseSort(i);
-    setSortOpen(false);
   };
 
   // Single click handler shared by grid cards and list rows in both data
@@ -294,10 +291,7 @@ export function LibraryBrowsePage() {
       </header>
 
       {/* ── Unified toolbar (always visible, same layout in all states) ── */}
-      <div
-        className="shrink-0 flex flex-wrap gap-2 items-center justify-between px-6 mb-4"
-        ref={sortRef}
-      >
+      <div className="shrink-0 flex flex-wrap gap-2 items-center justify-between px-6 mb-4">
         {selectionMode ? (
           <>
             {/* Selection mode: picking papers. The actions live in the
@@ -320,37 +314,27 @@ export function LibraryBrowsePage() {
           <>
             {/* Left: sort pill + divider + count */}
             <div className="flex items-center gap-3">
-              <div className="relative">
-                <button
-                  type="button"
-                  onClick={() => setSortOpen((v) => !v)}
-                  className="flex items-center gap-1.5 px-3 py-1.5 bg-surface-container-high rounded-full text-sm font-medium text-primary hover:bg-surface-container active:scale-95 transition-[background-color,border-color,box-shadow,transform]"
-                >
-                  <SortAsc className="w-3.5 h-3.5" />
-                  {currentSortLabel}
-                  <ChevronDown
-                    className={`w-3.5 h-3.5 transition-transform ${sortOpen ? "rotate-180" : ""}`}
-                  />
-                </button>
-                {sortOpen && (
-                  <div className="absolute top-9 left-0 z-20 w-36 bg-surface-container-high border border-outline-variant/20 rounded-xl p-1.5 shadow-xl">
-                    {sortOptions.map((opt, i) => (
-                      <button
-                        key={opt}
-                        type="button"
-                        onClick={() => handleSortSelect(i)}
-                        className={`w-full text-left px-3 py-1.5 rounded-lg text-sm transition-colors ${
-                          i === currentSortIndex
-                            ? "bg-primary/10 text-primary font-semibold"
-                            : "text-on-surface hover:bg-surface-container"
-                        }`}
-                      >
-                        {opt}
-                      </button>
-                    ))}
-                  </div>
+              <ChoiceMenu
+                triggerTitle="排序"
+                triggerClassName="flex items-center gap-1.5 px-3 py-1.5 bg-surface-container-high rounded-full text-sm font-medium text-primary hover:bg-surface-container active:scale-95 transition-[background-color,border-color,box-shadow,transform]"
+                panelClassName="w-36"
+                trigger={(open) => (
+                  <>
+                    <SortAsc className="w-3.5 h-3.5" />
+                    {currentSortLabel}
+                    <ChevronDown
+                      className={`w-3.5 h-3.5 transition-transform ${open ? "rotate-180" : ""}`}
+                    />
+                  </>
                 )}
-              </div>
+                sections={[
+                  {
+                    selected: String(currentSortIndex),
+                    onSelect: (id) => handleSortSelect(Number(id)),
+                    items: sortOptions.map((label, i) => ({ id: String(i), label })),
+                  },
+                ]}
+              />
               <div className="h-4 w-px bg-outline-variant/30" />
               <p className="text-sm text-on-surface-variant font-sans">{countText}</p>
             </div>

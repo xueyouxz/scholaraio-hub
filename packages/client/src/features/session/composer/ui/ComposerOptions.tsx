@@ -1,10 +1,11 @@
 import type { ProviderInfo, ProviderName, SessionContextUsage } from "@scholaraio-hub/shared";
-import { Brain, ShieldCheck } from "lucide-react";
+import { Brain, ChevronDown, ShieldCheck } from "lucide-react";
+import type { ReactNode } from "react";
 import type { SessionOptions } from "../../../../core/sessions";
+import { ChoiceMenu, type MenuSection } from "../../../../shared/ui/Menu";
 import { ProviderLogo } from "../../../../shared/ui/ProviderLogo";
 import { effortApplies, modelChange, resolveModel } from "../model/options";
 import { ContextMeter } from "./controls/ContextMeter";
-import { MenuButton, type MenuSection } from "./controls/Menu";
 
 /**
  * Everything the composer's option pills need. Choices come from the
@@ -38,6 +39,48 @@ export interface MenuRequest {
 const requested = (request: MenuRequest | undefined, menu: MenuRequest["menu"]) =>
   request?.menu === menu ? request.seq : undefined;
 
+/**
+ * A composer pill that opens a choice menu above itself. The pill row scrolls
+ * sideways (and so clips), so the menu floats on the page instead of the row.
+ */
+function PillMenu({
+  icon,
+  label,
+  title,
+  align = "left",
+  ...menu
+}: {
+  icon?: ReactNode;
+  /** Visible pill text; also the button's accessible name. */
+  label: string;
+  title?: string;
+  align?: "left" | "right";
+  sections: MenuSection[];
+  disabled?: boolean;
+  openRequest?: number;
+}) {
+  return (
+    <ChoiceMenu
+      {...menu}
+      dense
+      floating
+      placement="above"
+      align={align === "right" ? "end" : "start"}
+      triggerLabel={label}
+      triggerTitle={title ? `${title}：${label}` : label}
+      triggerClassName="hub-composer-pill flex items-center gap-1 min-w-0 text-[11px] font-medium px-2 py-1 rounded-lg transition-colors whitespace-nowrap text-on-surface-variant hover:bg-surface-container hover:text-on-surface disabled:opacity-40"
+      panelClassName="min-w-48 max-w-[min(20rem,calc(100vw-1rem))] max-h-[min(24rem,60vh)] overflow-y-auto"
+      trigger={() => (
+        <>
+          {icon}
+          <span className="hub-composer-pill-label truncate">{label}</span>
+          <ChevronDown size={10} aria-hidden="true" className="shrink-0" />
+        </>
+      )}
+    />
+  );
+}
+
 /** Which option menus the provider gives this composer something to choose in. */
 export function availableMenus(controls: ComposerControls): Set<MenuRequest["menu"]> {
   const menus = new Set<MenuRequest["menu"]>();
@@ -55,7 +98,7 @@ export function ProviderMenu({ controls }: { controls: ComposerControls }) {
   if (!providers?.length || !onProviderChange) return null;
   const current = providers.find((item) => item.name === controls.provider);
   return (
-    <MenuButton
+    <PillMenu
       icon={<ProviderLogo provider={controls.provider} size={13} />}
       label={current?.displayName ?? controls.provider}
       title="Agent"
@@ -91,7 +134,7 @@ export function PermissionMenu({
   const selected = controls.options.permissionMode ?? modes[0]?.id ?? "default";
   const current = modes.find((mode) => mode.id === selected);
   return (
-    <MenuButton
+    <PillMenu
       icon={<ShieldCheck size={12} aria-hidden="true" />}
       label={current?.label ?? selected}
       title={current?.description}
@@ -160,7 +203,7 @@ export function EffortMenu({
   const effortLabel = showEffort ? (controls.options.effort ?? model?.defaultEffort) : undefined;
   const label = [thinkingLabel, effortLabel].filter(Boolean).join(" · ") || DEFAULT_LABEL;
   return (
-    <MenuButton
+    <PillMenu
       icon={<Brain size={12} aria-hidden="true" />}
       label={label}
       title="Thinking and effort"
@@ -188,7 +231,7 @@ export function ModelMenu({
     ...models.map((model) => ({ id: model.id, label: model.name, description: model.description })),
   ];
   return (
-    <MenuButton
+    <PillMenu
       label={current?.name ?? selected}
       title="Model"
       align="right"

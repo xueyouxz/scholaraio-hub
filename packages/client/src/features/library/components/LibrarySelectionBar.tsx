@@ -1,10 +1,9 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { ChevronDown, Download, MessageSquare, X } from "lucide-react";
-import { useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import { type ReferenceFormat, libraryApi } from "../../../core/library";
 import { newSessionUrl } from "../../../core/sessions";
-import { useDismiss } from "../../../shared/ui/useDismiss";
+import { MenuOption, Popover } from "../../../shared/ui/Menu";
 import { useLibrarySelection } from "../selection";
 import { useExportReferences } from "../useExportReferences";
 import { AddToCollectionMenu } from "./AddToCollectionMenu";
@@ -109,42 +108,37 @@ function ExportMenu({
   pending: boolean;
   onExport: (format: ReferenceFormat) => void;
 }) {
-  const [open, setOpen] = useState(false);
-  const menu = useRef<HTMLDivElement>(null);
-  useDismiss(open, () => setOpen(false), menu);
   return (
-    <div className="relative" ref={menu}>
-      <button
-        type="button"
-        disabled={pending}
-        aria-expanded={open}
-        onClick={() => setOpen((value) => !value)}
-        className="inline-flex items-center gap-1.5 rounded-full bg-surface-container-high px-3 py-1.5 text-sm font-medium text-on-surface active:scale-95 disabled:opacity-40 border-0 cursor-pointer"
-      >
-        <Download className="w-3.5 h-3.5" aria-hidden="true" />
-        {pending ? "导出中…" : "导出引用"}
-        <ChevronDown
-          className={`w-3.5 h-3.5 transition-transform ${open ? "rotate-180" : ""}`}
-          aria-hidden="true"
-        />
-      </button>
-      {open ? (
-        <div className="absolute bottom-[calc(100%+6px)] right-0 z-30 w-40 rounded-xl border border-outline-variant/20 bg-surface-container-high p-2 shadow-xl">
-          {FORMATS.map((option) => (
-            <button
-              key={option.value}
-              type="button"
-              onClick={() => {
-                setOpen(false);
-                onExport(option.value);
-              }}
-              className="w-full rounded-lg px-3 py-2 text-left text-sm text-on-surface hover:bg-surface-container-low border-0 bg-transparent cursor-pointer"
-            >
-              {option.label}
-            </button>
-          ))}
-        </div>
-      ) : null}
-    </div>
+    <Popover
+      disabled={pending}
+      placement="above"
+      align="end"
+      panelRole="menu"
+      panelClassName="w-40"
+      triggerClassName="inline-flex items-center gap-1.5 rounded-full bg-surface-container-high px-3 py-1.5 text-sm font-medium text-on-surface active:scale-95 disabled:opacity-40 border-0 cursor-pointer"
+      trigger={(open) => (
+        <>
+          <Download className="w-3.5 h-3.5" aria-hidden="true" />
+          {pending ? "导出中…" : "导出引用"}
+          <ChevronDown
+            className={`w-3.5 h-3.5 transition-transform ${open ? "rotate-180" : ""}`}
+            aria-hidden="true"
+          />
+        </>
+      )}
+    >
+      {(close) =>
+        FORMATS.map((option) => (
+          <MenuOption
+            key={option.value}
+            label={option.label}
+            onSelect={() => {
+              close();
+              onExport(option.value);
+            }}
+          />
+        ))
+      }
+    </Popover>
   );
 }

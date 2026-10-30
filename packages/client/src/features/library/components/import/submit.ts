@@ -1,6 +1,7 @@
 import { useQueryClient } from "@tanstack/react-query";
 import { useCallback, useState } from "react";
 import { libraryApi } from "../../../../core/library";
+import { errorMessage } from "../../../../shared/format";
 import { uploadBatches } from "./localFiles";
 
 /** Something chosen for import, not yet handed to the queue. */
@@ -50,7 +51,7 @@ export function useImportSubmission() {
               ? {
                   ...row,
                   state: "failed" as const,
-                  error: error instanceof Error ? error.message : String(error),
+                  error: errorMessage(error, String(error)),
                 }
               : row,
           ),

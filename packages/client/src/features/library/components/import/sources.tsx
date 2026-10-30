@@ -3,7 +3,8 @@ import { useQuery } from "@tanstack/react-query";
 import { Check, FileText, FolderPlus, Globe, Loader2, Plus, Search, Upload, X } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { libraryApi } from "../../../../core/library";
-import { type RejectedFile, formatBytes, locatorIn, looksLikePdf, screenFiles } from "./localFiles";
+import { formatBytes } from "../../../../shared/format";
+import { type RejectedFile, locatorIn, looksLikePdf, screenFiles } from "./localFiles";
 import type { Staged } from "./submit";
 
 export type { Staged } from "./submit";

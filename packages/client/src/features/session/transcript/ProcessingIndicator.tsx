@@ -1,5 +1,6 @@
 import type { ProviderName } from "@scholaraio-hub/shared";
 import { memo, useEffect, useMemo, useState } from "react";
+import { relativeTime } from "../../../shared/format";
 import { ProviderLogo } from "../../../shared/ui/ProviderLogo";
 import { formatDuration } from "./AssistantTurn";
 
@@ -45,7 +46,7 @@ interface Props {
   isProcessing: boolean;
   /** Whose mark closes the transcript. */
   provider: ProviderName;
-  /** When the last turn ended (ISO 8601), shown as "5 minutes ago" while idle. */
+  /** When the last turn ended (ISO 8601), shown as "5分钟前" while idle. */
   lastFinishedAt?: string;
 }
 
@@ -124,7 +125,7 @@ export const ProcessingIndicator = memo(function ProcessingIndicator({
           dateTime={lastFinishedAt}
           title={`上次运行：${new Date(lastFinishedAt).toLocaleString()}`}
         >
-          {timeAgo(lastFinishedAt, now)}
+          {relativeTime(lastFinishedAt, now)}
         </time>
       ) : null}
     </div>
@@ -157,16 +158,4 @@ function useNow(active: boolean): number {
     return () => window.clearInterval(timer);
   }, [active]);
   return now;
-}
-
-/** "just now", "5 minutes ago", "2 hours ago", "3 days ago". */
-export function timeAgo(iso: string, now = Date.now()): string {
-  const seconds = Math.max(0, Math.round((now - new Date(iso).getTime()) / 1000));
-  const unit = (count: number, name: string) => `${count} ${name}${count === 1 ? "" : "s"} ago`;
-  if (seconds < 60) return "just now";
-  const minutes = Math.floor(seconds / 60);
-  if (minutes < 60) return unit(minutes, "minute");
-  const hours = Math.floor(minutes / 60);
-  if (hours < 24) return unit(hours, "hour");
-  return unit(Math.floor(hours / 24), "day");
 }

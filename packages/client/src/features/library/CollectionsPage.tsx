@@ -4,6 +4,7 @@ import { useState } from "react";
 import { Link } from "react-router-dom";
 import { collectionUrl, libraryApi } from "../../core/library";
 import { newSessionUrl } from "../../core/sessions";
+import { errorMessage } from "../../shared/format";
 import { CollectionCreateDialog } from "./components/CollectionCreateDialog";
 
 /**
@@ -28,7 +29,7 @@ export function CollectionsPage() {
       setError("");
       void refresh();
     },
-    onError: (err) => setError(err instanceof Error ? err.message : "重命名失败"),
+    onError: (err) => setError(errorMessage(err, "重命名失败")),
   });
   const archive = useMutation({
     mutationFn: (id: string) => libraryApi.archiveCollection(id),
@@ -36,7 +37,7 @@ export function CollectionsPage() {
       setError("");
       void refresh();
     },
-    onError: (err) => setError(err instanceof Error ? err.message : "归档失败"),
+    onError: (err) => setError(errorMessage(err, "归档失败")),
   });
 
   const list = collections.data ?? [];

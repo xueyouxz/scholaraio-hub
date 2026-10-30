@@ -13,6 +13,7 @@ import {
 import { useCallback, useEffect, useRef, useState } from "react";
 import { sessionApi } from "../../../core/sessions";
 import { Markdown } from "../../../shared/components/Markdown";
+import { errorMessage } from "../../../shared/format";
 import { ResizableSessionPanel } from "./ResizableSessionPanel";
 
 interface FsNode {
@@ -166,7 +167,7 @@ function FileViewer({ sessionId, filePath, onBack, onFullscreen, isFullscreen }:
       })
       .catch((err) => {
         if (err?.name === "AbortError") return;
-        setError(err instanceof Error ? err.message : "Failed to load file");
+        setError(errorMessage(err, "Failed to load file"));
         setLoading(false);
       });
     return () => controller.abort();
@@ -265,8 +266,7 @@ export function SessionFilesPanel({ sessionId, rootName, onClose }: SessionFiles
         const children = entriesToNodes(node.id, result.entries);
         setNodes((prev) => updateNodeChildren(prev, node.id, children));
       } catch (error) {
-        if (!controller.signal.aborted)
-          setError(error instanceof Error ? error.message : "无法读取目录");
+        if (!controller.signal.aborted) setError(errorMessage(error, "无法读取目录"));
       } finally {
         requests.current.delete(node.id);
         setLoadingSet((prev) => {

@@ -21,6 +21,7 @@ import {
 } from "../../core/sessions";
 import { appSettingsQuery } from "../../core/settings";
 import { skillsQuery } from "../../core/skills";
+import { errorMessage } from "../../shared/format";
 import { usePageTitle } from "../../shared/layout";
 import { ProjectPicker } from "./components/ProjectPicker";
 import { ReferenceChips } from "./components/ReferenceChips";
@@ -171,7 +172,7 @@ function NewSessionForm({
       void client.invalidateQueries({ queryKey: PROJECTS_KEY });
       navigate(sessionUrl(session.id));
     } catch (error) {
-      setCreateError(error instanceof Error ? error.message : "创建会话失败");
+      setCreateError(errorMessage(error, "创建会话失败"));
       throw error;
     } finally {
       setSubmitting(false);

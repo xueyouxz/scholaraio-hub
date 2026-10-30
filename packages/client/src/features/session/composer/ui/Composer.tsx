@@ -18,6 +18,7 @@ import {
   useState,
 } from "react";
 import { sessionApi } from "../../../../core/sessions";
+import { errorMessage } from "../../../../shared/format";
 import { useComposerDraft } from "../hooks/useComposerDraft";
 import { useMentionPicker } from "../hooks/useMentionPicker";
 import { useSlashCommandPicker } from "../hooks/useSlashCommandPicker";
@@ -290,7 +291,7 @@ export function Composer({
           latest.current = submitted;
         }
       }
-      setError(error instanceof Error ? error.message : "Could not send. Try again.");
+      setError(errorMessage(error, "Could not send. Try again."));
     } finally {
       submitting.current = false;
       setSending(false);

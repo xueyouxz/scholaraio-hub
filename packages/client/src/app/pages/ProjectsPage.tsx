@@ -12,9 +12,9 @@ import {
   projectsQuery,
 } from "../../core/projects";
 import { newSessionUrl } from "../../core/sessions";
+import { relativeTime } from "../../shared/format";
 import { usePageTitle } from "../../shared/layout";
 import { ProviderLogo } from "../../shared/ui/ProviderLogo";
-import { relativeTime } from "../components/SessionRow";
 
 /** How many sessions each agent keeps in a project, in its own mark. */
 function ProviderCounts({ counts }: { counts: ProjectSummary["sessionCounts"] }) {

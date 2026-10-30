@@ -6,6 +6,7 @@ import { createPortal } from "react-dom";
 import { sessionFileQuery } from "../../../core/sessions";
 import { Markdown } from "../../../shared/components/Markdown";
 import { type FileLink, FileLinkContext, relativeTo } from "../../../shared/components/fileLinks";
+import { formatBytes } from "../../../shared/format";
 import { CopyButton } from "../../../shared/ui/CopyButton";
 import { isMarkdown, languageOf } from "../transcript/renderers/blocks";
 
@@ -49,12 +50,6 @@ export function SessionFileLinks({
 function shownPath(path: string, cwd: string): string {
   const root = cwd.replace(/[\\/]+$/, "");
   return path.startsWith(`${root}/`) ? path.slice(root.length + 1) : path;
-}
-
-function formatSize(bytes: number): string {
-  if (bytes < 1024) return `${bytes} B`;
-  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
-  return `${(bytes / 1024 / 1024).toFixed(1)} MB`;
 }
 
 const rangeOf = (file: FileLink) =>
@@ -182,7 +177,7 @@ function FileView({
           </span>
           {query.data ? (
             <span className="file-viewer-meta">
-              {formatSize(query.data.size)}
+              {formatBytes(query.data.size)}
               {lines ? ` · ${lines.length} 行` : ""}
             </span>
           ) : null}

@@ -1,6 +1,7 @@
 import { Loader2, X } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
+import { errorMessage } from "../../../shared/format";
 import { FileKindIcon } from "./FileKindIcon";
 import { type ViewMode, attachmentKind, viewMode } from "./fileKinds";
 
@@ -61,7 +62,7 @@ function useLoadedFile(source: string | Blob, mode: ViewMode): Loaded {
       },
       (error: unknown) => {
         if (controller.signal.aborted) return;
-        setLoaded({ error: error instanceof Error ? error.message : "文件加载失败" });
+        setLoaded({ error: errorMessage(error, "文件加载失败") });
       },
     );
     return () => {

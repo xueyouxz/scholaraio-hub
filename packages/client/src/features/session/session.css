@@ -1328,12 +1328,6 @@ details[open] > summary .disclosure-chevron {
   justify-content: center;
 }
 
-.file-viewer-backdrop {
-  position: absolute;
-  inset: 0;
-  cursor: default;
-}
-
 .file-viewer {
   position: relative;
   display: flex;

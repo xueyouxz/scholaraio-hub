@@ -1,7 +1,7 @@
 import { Loader2, X } from "lucide-react";
-import { useEffect, useRef, useState } from "react";
-import { createPortal } from "react-dom";
+import { useEffect, useState } from "react";
 import { errorMessage } from "../../../shared/format";
+import { Modal } from "../../../shared/ui/Dialog";
 import { FileKindIcon } from "./FileKindIcon";
 import { type ViewMode, attachmentKind, viewMode } from "./fileKinds";
 
@@ -84,14 +84,6 @@ export function AttachmentViewer({ file, onClose }: { file: ViewedFile; onClose:
   const kind = attachmentKind({ name: file.name, type: file.mediaType });
   const mode = viewMode(kind);
   const loaded = useLoadedFile(file.source, mode);
-  const ref = useRef<HTMLDialogElement>(null);
-  useEffect(() => {
-    const element = ref.current;
-    if (!element) return;
-    element.showModal();
-    // The dialog holds the page inert while it is open; closing it releases that.
-    return () => element.close();
-  }, []);
   const body =
     mode === "none" ? (
       <div className="flex flex-col items-center gap-3 text-center text-white">
@@ -135,27 +127,14 @@ export function AttachmentViewer({ file, onClose }: { file: ViewedFile; onClose:
       </pre>
     );
   // Content keeps a 4rem gutter on each side, so the close control never covers it.
-  // On the body, so the viewer is never part of the row that opened it.
-  return createPortal(
-    <dialog
-      ref={ref}
-      aria-label={file.name}
+  return (
+    <Modal
+      label={file.name}
+      onClose={onClose}
+      closeOnBackdrop
       data-view={mode}
-      // A close event can arrive after the dialog was shown again (an effect
-      // re-run closes and reopens it); only one that left it closed is the user's.
-      onClose={() => {
-        if (!ref.current?.open) onClose();
-      }}
       className="attachment-viewer m-0 h-dvh max-h-none w-dvw max-w-none items-center justify-center border-0 bg-transparent p-0 open:flex"
     >
-      {/* The backdrop closes it on a click; the keyboard's way out is Escape or the close button. */}
-      <button
-        type="button"
-        tabIndex={-1}
-        aria-hidden="true"
-        onClick={onClose}
-        className="absolute inset-0 cursor-default border-0 bg-transparent p-0"
-      />
       <div className="relative">{body}</div>
       <button
         type="button"
@@ -165,7 +144,6 @@ export function AttachmentViewer({ file, onClose }: { file: ViewedFile; onClose:
       >
         <X size={20} aria-hidden="true" />
       </button>
-    </dialog>,
-    document.body,
+    </Modal>
   );
 }

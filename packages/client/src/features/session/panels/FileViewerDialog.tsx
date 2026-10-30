@@ -2,12 +2,12 @@ import { type HighlightOptions, type HighlightResult, code } from "@streamdown/c
 import { useQuery } from "@tanstack/react-query";
 import { Code2, Download, Loader2, X } from "lucide-react";
 import { type ReactNode, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
-import { createPortal } from "react-dom";
 import { sessionFileQuery } from "../../../core/sessions";
 import { Markdown } from "../../../shared/components/Markdown";
 import { type FileLink, FileLinkContext, relativeTo } from "../../../shared/components/fileLinks";
 import { formatBytes } from "../../../shared/format";
 import { CopyButton } from "../../../shared/ui/CopyButton";
+import { Modal } from "../../../shared/ui/Dialog";
 import { isMarkdown, languageOf } from "../transcript/renderers/blocks";
 
 /** Past this, a file shows as plain lines: highlighting it would hold up the page. */
@@ -74,34 +74,9 @@ function FileViewerDialog({
   onOpen: (file: FileLink) => void;
   onClose: () => void;
 }) {
-  const ref = useRef<HTMLDialogElement>(null);
-  useEffect(() => {
-    const element = ref.current;
-    if (!element) return;
-    element.showModal();
-    // The dialog holds the page inert while it is open; closing it releases that.
-    return () => element.close();
-  }, []);
   const path = shownPath(file.path, cwd);
-  return createPortal(
-    <dialog
-      ref={ref}
-      aria-label={path}
-      // A close event can arrive after the dialog was shown again (an effect
-      // re-run closes and reopens it); only one that left it closed is the user's.
-      onClose={() => {
-        if (!ref.current?.open) onClose();
-      }}
-      className="hub-dialog file-viewer-dialog"
-    >
-      {/* The backdrop closes it on a click; the keyboard's way out is Escape or the close button. */}
-      <button
-        type="button"
-        tabIndex={-1}
-        aria-hidden="true"
-        onClick={onClose}
-        className="file-viewer-backdrop"
-      />
+  return (
+    <Modal label={path} onClose={onClose} closeOnBackdrop className="hub-dialog file-viewer-dialog">
       <FileView
         // Another file starts over: its own view mode, its own scroll.
         key={`${file.path}${rangeOf(file)}`}
@@ -111,8 +86,7 @@ function FileViewerDialog({
         onOpen={onOpen}
         onClose={onClose}
       />
-    </dialog>,
-    document.body,
+    </Modal>
   );
 }
 

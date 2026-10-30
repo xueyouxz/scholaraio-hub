@@ -8,6 +8,7 @@ import { useQuery } from "@tanstack/react-query";
 import { Paperclip, Pencil } from "lucide-react";
 import {
   type Dispatch,
+  type RefObject,
   type SetStateAction,
   useEffect,
   useId,
@@ -67,6 +68,20 @@ export interface EditedPrompt {
 }
 
 /**
+ * The session's turn as the composer follows it: whether one runs, how to stop
+ * it, and how to queue a message behind it. A new chat has none.
+ */
+export interface ComposerRun {
+  running: boolean;
+  /** Whether the running turn can be interrupted now (not while it waits for input); `running` if left out. */
+  stoppable?: boolean;
+  onStop?: () => void;
+  stopPending?: boolean;
+  /** Queue a message behind the running turn; it receives the uploaded attachments. */
+  onQueue?: (text: string, attachments: SessionAttachment[]) => Promise<void>;
+}
+
+/**
  * Shared message input:
  * attachments + provider option pills + voice on the left, model + send on the right.
  */
@@ -77,11 +92,7 @@ export function Composer({
   cwd,
   onReference,
   onSend,
-  onQueue,
-  running = false,
-  stoppable = running,
-  onStop,
-  stopPending = false,
+  run,
   disabled = false,
   placeholder = "What would you like to build or change?",
   controls,
@@ -101,13 +112,8 @@ export function Composer({
    */
   onReference?: (reference: LiteratureRef) => void;
   /** Receives the uploaded attachments; files upload as soon as they are added. */
-  onQueue?: (text: string, attachments: SessionAttachment[]) => Promise<void>;
   onSend: (text: string, attachments: SessionAttachment[]) => Promise<void>;
-  running?: boolean;
-  /** Whether the running turn can be interrupted now (not while it waits for input). */
-  stoppable?: boolean;
-  onStop?: () => void;
-  stopPending?: boolean;
+  run?: ComposerRun;
   disabled?: boolean;
   placeholder?: string;
   /** Provider-described option pills; omitted, the composer shows none. */
@@ -123,6 +129,8 @@ export function Composer({
     text: controlledText,
     onTextChange,
   });
+  const running = run?.running ?? false;
+  const { onQueue, onStop } = run ?? {};
   const commandsQuery = useQuery({
     queryKey: ["session-commands", provider, sessionId, cwd],
     queryFn: ({ signal }) => sessionApi.commands(provider, sessionId, signal, cwd),
@@ -167,32 +175,7 @@ export function Composer({
   const submitting = useRef(false);
   const latest = useRef(text);
   latest.current = text;
-  /** The draft set aside while the prompt is corrected; it comes back afterwards. */
-  const setAside = useRef<{ text: string; items: StagedAttachment[] }>(undefined);
-  const started = useRef<EditedPrompt>(undefined);
-  const { adopt, swap } = staged;
-  useEffect(() => {
-    if (!editing || started.current === editing) return;
-    started.current = editing;
-    setAside.current ??= { text: latest.current, items: swap([]) };
-    latest.current = editing.text;
-    setText(editing.text);
-    adopt(editing.attachments);
-    textarea.current?.focus();
-  }, [editing, adopt, swap, setText]);
-  /**
-   * Leave the correction: the draft set aside comes back. Cancelling also
-   * drops the files added for it; the prompt's own files were never touched.
-   */
-  const endEdit = (sent: boolean) => {
-    const saved = setAside.current;
-    setAside.current = undefined;
-    if (!sent) for (const item of staged.items) if (!item.sent) staged.remove(item.key);
-    latest.current = saved?.text ?? "";
-    setText(latest.current);
-    swap(saved?.items ?? []);
-    onEditEnd?.();
-  };
+  const endEdit = usePromptEdit(editing, onEditEnd, { latest, setText, staged, textarea });
   const placeCaret = (position: number) => {
     setCaret(position);
     window.requestAnimationFrame(() => {
@@ -472,7 +455,7 @@ export function Composer({
               <ComposerTrailingOptions controls={controls} request={menuRequest} />
             ) : null}
             <SendActionButton
-              busy={sending || stopPending}
+              busy={sending || !!run?.stopPending}
               canSend={
                 !disabled &&
                 (!running || !!onQueue) &&
@@ -480,7 +463,7 @@ export function Composer({
                 hasContent(text, interim, staged.items.length)
               }
               isRunning={running}
-              stoppable={stoppable}
+              stoppable={run?.stoppable ?? running}
               hasQueueAction={!!onQueue}
               hasStopAction={!!onStop}
               onSend={() => void submit()}
@@ -513,4 +496,54 @@ export function Composer({
       ) : null}
     </div>
   );
+}
+
+/**
+ * Correcting the session's last prompt in place of the draft: when `editing`
+ * arrives the draft and its files are set aside and the prompt takes their
+ * place; the returned `endEdit` brings them back once the correction is sent
+ * or cancelled.
+ */
+function usePromptEdit(
+  editing: EditedPrompt | undefined,
+  onEditEnd: (() => void) | undefined,
+  {
+    latest,
+    setText,
+    staged,
+    textarea,
+  }: {
+    /** The text in the input now, ahead of the next render. */
+    latest: RefObject<string>;
+    setText: (text: string) => void;
+    staged: ReturnType<typeof useStagedAttachments>;
+    textarea: RefObject<HTMLTextAreaElement | null>;
+  },
+) {
+  /** The draft set aside while the prompt is corrected; it comes back afterwards. */
+  const setAside = useRef<{ text: string; items: StagedAttachment[] }>(undefined);
+  const started = useRef<EditedPrompt>(undefined);
+  const { adopt, swap } = staged;
+  useEffect(() => {
+    if (!editing || started.current === editing) return;
+    started.current = editing;
+    setAside.current ??= { text: latest.current, items: swap([]) };
+    latest.current = editing.text;
+    setText(editing.text);
+    adopt(editing.attachments);
+    textarea.current?.focus();
+  }, [editing, adopt, swap, setText, latest, textarea]);
+  /**
+   * Leave the correction: the draft set aside comes back. Cancelling also
+   * drops the files added for it; the prompt's own files were never touched.
+   */
+  return (sent: boolean) => {
+    const saved = setAside.current;
+    setAside.current = undefined;
+    if (!sent) for (const item of staged.items) if (!item.sent) staged.remove(item.key);
+    latest.current = saved?.text ?? "";
+    setText(latest.current);
+    swap(saved?.items ?? []);
+    onEditEnd?.();
+  };
 }

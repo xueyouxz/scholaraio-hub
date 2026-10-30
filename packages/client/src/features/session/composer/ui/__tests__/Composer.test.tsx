@@ -257,7 +257,8 @@ describe("Composer keyboard submission", () => {
   });
 
   it("queues with Ctrl+Enter while idle when a queue action exists", async () => {
-    const { onSend, onQueue } = render({ onQueue: vi.fn(async () => {}) });
+    const onQueue = vi.fn(async () => {});
+    const { onSend } = render({ run: { running: false, onQueue } });
     type("later");
     await press({ key: "Enter", ctrlKey: true });
     expect(onQueue).toHaveBeenCalledWith("later", []);
@@ -265,7 +266,8 @@ describe("Composer keyboard submission", () => {
   });
 
   it("routes Enter to the queue while the session is running", async () => {
-    const { onSend, onQueue } = render({ running: true, onQueue: vi.fn(async () => {}) });
+    const onQueue = vi.fn(async () => {});
+    const { onSend } = render({ run: { running: true, onQueue } });
     type("follow up");
     await press({ key: "Enter" });
     expect(onQueue).toHaveBeenCalledWith("follow up", []);
@@ -273,7 +275,7 @@ describe("Composer keyboard submission", () => {
   });
 
   it("does not send while running when there is no queue action", async () => {
-    const { onSend } = render({ running: true });
+    const { onSend } = render({ run: { running: true } });
     type("blocked");
     await press({ key: "Enter" });
     expect(onSend).not.toHaveBeenCalled();
@@ -775,7 +777,7 @@ describe("Composer action button", () => {
 
   it("stops the running turn while there is nothing to send", () => {
     const onStop = vi.fn();
-    render({ running: true, onStop, onQueue: vi.fn(async () => {}) });
+    render({ run: { running: true, onStop, onQueue: vi.fn(async () => {}) } });
     expect(actions()).toEqual(["Stop"]);
     act(() => button("Stop")?.click());
     expect(onStop).toHaveBeenCalled();
@@ -783,7 +785,7 @@ describe("Composer action button", () => {
 
   it("queues the draft instead while the turn runs", async () => {
     const onQueue = vi.fn(async () => {});
-    const { onSend } = render({ running: true, onStop: vi.fn(), onQueue });
+    const { onSend } = render({ run: { running: true, onStop: vi.fn(), onQueue } });
     type("next");
     expect(actions()).toEqual(["Queue message"]);
     act(() => button("Queue message")?.click());
@@ -793,7 +795,7 @@ describe("Composer action button", () => {
   });
 
   it("sends again once the agent is waiting for input", () => {
-    render({ running: true, stoppable: false, onStop: vi.fn() });
+    render({ run: { running: true, stoppable: false, onStop: vi.fn() } });
     expect(actions()).toEqual(["Send"]);
   });
 

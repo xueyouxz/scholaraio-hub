@@ -1,7 +1,7 @@
 import { readFile, readdir } from "node:fs/promises";
 import { join } from "node:path";
 import type { ScholaraioSkill, ScholaraioSkillDetail, SlashCommand } from "@scholaraio-hub/shared";
-import { getCategoryIdForSkill } from "./scholaraioCategories.js";
+import { getCategoryIdForSkill, getPapersForSkill } from "./scholaraioCategories.js";
 
 interface CachedSkill extends ScholaraioSkillDetail {}
 
@@ -30,11 +30,13 @@ function parseSkillMarkdown(
   const description = readFrontmatterValue(frontmatter, "description") ?? "";
   if (!name) return null;
 
+  const papers = getPapersForSkill(name);
   return {
     name,
     description,
     category: getCategoryIdForSkill(name),
     source: "research",
+    ...(papers ? { papers } : {}),
     body,
     path: absPath,
   };

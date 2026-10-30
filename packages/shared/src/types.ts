@@ -69,6 +69,11 @@ export interface ScholaraioSkill {
   /** Manifest category id; "__uncategorized__" if not in manifest. */
   category: string;
   source: "research";
+  /**
+   * The papers it works on, passed as their ids: exactly one, two or more, or
+   * any number. Absent for a skill that takes no papers.
+   */
+  papers?: "single" | "multi" | "any";
 }
 
 export interface ScholaraioSkillDetail extends ScholaraioSkill {

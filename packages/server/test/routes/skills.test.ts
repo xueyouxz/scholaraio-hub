@@ -48,6 +48,26 @@ describe("Skills Routes", () => {
     for (const s of data.skills) expect(s.source).toBe("research");
   });
 
+  it("says how many papers each skill works on", async () => {
+    await makeSkill(tmp, "show", "one paper");
+    await makeSkill(tmp, "literature-review", "several papers");
+    await makeSkill(tmp, "search", "any papers");
+    await makeSkill(tmp, "ingest", "no papers");
+
+    const routes = createSkillsRoutes({ scholaraioSkillsDir: tmp });
+    routes.onError(handleApiError);
+    const res = await routes.request("/scholaraio");
+    const data = (await res.json().then((body) => body.data)) as {
+      skills: Array<{ name: string; papers?: string }>;
+    };
+    expect(Object.fromEntries(data.skills.map((s) => [s.name, s.papers]))).toEqual({
+      show: "single",
+      "literature-review": "multi",
+      search: "any",
+      ingest: undefined,
+    });
+  });
+
   it("returns skill detail with body", async () => {
     await makeSkill(tmp, "search", "search desc", "# Hello\nbody text");
 

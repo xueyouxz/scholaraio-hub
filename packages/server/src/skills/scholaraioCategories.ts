@@ -1,4 +1,4 @@
-import type { ScholaraioSkillCategory } from "@scholaraio-hub/shared";
+import type { ScholaraioSkill, ScholaraioSkillCategory } from "@scholaraio-hub/shared";
 
 const UNCATEGORIZED_ID = "__uncategorized__";
 
@@ -97,6 +97,24 @@ export function getCategoryIdForSkill(skillName: string): string {
     if (cat.skills.includes(skillName)) return cat.id;
   }
   return UNCATEGORIZED_ID;
+}
+
+/** Categories whose skills work on papers; a chat referring to papers offers them. */
+const PAPER_CATEGORIES = new Set(["reading", "discover", "writing"]);
+
+/** Skills that need a given number of papers; the rest of those categories take any. */
+const PAPER_COUNTS: Record<string, NonNullable<ScholaraioSkill["papers"]>> = {
+  "paper-guided-reading": "single",
+  show: "single",
+  "literature-review": "multi",
+  "research-gap": "multi",
+  "citation-check": "multi",
+};
+
+/** The papers a skill works on; undefined for a skill that takes none. */
+export function getPapersForSkill(skillName: string): ScholaraioSkill["papers"] {
+  if (!PAPER_CATEGORIES.has(getCategoryIdForSkill(skillName))) return undefined;
+  return PAPER_COUNTS[skillName] ?? "any";
 }
 
 export function getCategoryList(): ScholaraioSkillCategory[] {

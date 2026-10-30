@@ -2,6 +2,7 @@ import {
   DEFAULT_PROVIDER,
   type LiteratureRef,
   type ProviderName,
+  type ScholaraioSkill,
   type SessionAttachment,
   mergeReferences,
   sameReference,
@@ -33,11 +34,6 @@ import {
 } from "./composer/model/slashCommands";
 import { Composer, readComposerDraft } from "./composer/ui/Composer";
 import type { ComposerControls } from "./composer/ui/ComposerOptions";
-import {
-  describeCardinalityRequirement,
-  filterReadingContextSkills,
-  isSkillEnabledForSelection,
-} from "./workspaceSkills";
 
 /**
  * New chat (`/sessions`). Everything it starts from is in the URL: `project`
@@ -72,6 +68,20 @@ const PROMPT_SUGGESTIONS = [
   "分析这个问题并给出建议",
 ];
 
+/** Whether a research skill can run on this many referred papers. */
+function takesPapers(skill: ScholaraioSkill, count: number): boolean {
+  if (skill.papers === "single") return count === 1;
+  if (skill.papers === "multi") return count >= 2;
+  return count > 0;
+}
+
+/** What a skill's paper count asks for, told when its chip is disabled. */
+const PAPERS_NEEDED: Record<NonNullable<ScholaraioSkill["papers"]>, string> = {
+  single: "仅支持单篇文献",
+  multi: "需要至少 2 篇文献",
+  any: "适用于任意数量的文献",
+};
+
 function NewSessionForm({
   skillName,
   projectId,
@@ -92,8 +102,9 @@ function NewSessionForm({
   const project = projects.data?.projects.find((item) => item.id === projectId);
   const paperIds = references.flatMap((ref) => (ref.kind === "paper" ? [ref.id] : []));
   const skills = useQuery({ ...skillsQuery, enabled: paperIds.length > 0 });
+  // Skills that work on papers, offered as chips while the chat refers to some.
   const readingSkills = useMemo(
-    () => filterReadingContextSkills(skills.data?.skills ?? []),
+    () => (skills.data?.skills ?? []).filter((skill) => skill.papers),
     [skills.data],
   );
   const draftKey = `new:${projectId}`;
@@ -253,8 +264,8 @@ function NewSessionForm({
         {paperIds.length > 0 && readingSkills.length > 0 ? (
           <div className="flex flex-wrap gap-1.5 mb-2 px-1">
             {readingSkills.map((skill) => {
-              const enabled = isSkillEnabledForSelection(skill.name, paperIds.length);
-              const reason = describeCardinalityRequirement(skill.name);
+              const enabled = takesPapers(skill, paperIds.length);
+              const reason = PAPERS_NEEDED[skill.papers ?? "any"];
               const active = activeSkill === skill.name;
               return (
                 <button

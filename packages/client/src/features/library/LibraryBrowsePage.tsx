@@ -1,5 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
-import { CheckSquare, ChevronDown, LayoutGrid, LayoutList, Search, SortAsc, X } from "lucide-react";
+import { CheckSquare, ChevronDown, Search, SortAsc, X } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import { libraryApi } from "../../core/library";
@@ -7,9 +7,7 @@ import { usePageTitle } from "../../shared/layout";
 import { useDismiss } from "../../shared/ui/useDismiss";
 import { CapabilityPrompt } from "./components/CapabilityPrompt";
 import { PaperDetailPanel } from "./components/PaperDetailPanel";
-import { PaperGridCard } from "./components/PaperGridCard";
-import { PaperVirtualList } from "./components/PaperVirtualList";
-import type { ViewMode } from "./components/PaperVirtualList";
+import { PaperResults, ViewModeToggle, useViewMode } from "./components/PaperResults";
 import { SearchSkeleton } from "./components/SearchSkeleton";
 import { type PaperSort, libraryPapersQuery, sortPapers, toPaperSummary } from "./paperSummary";
 import type { PaperSummary } from "./paperSummary";
@@ -47,13 +45,7 @@ export function LibraryBrowsePage() {
 
   // ── Shared view state ──
   const [viewParams, setViewParams] = useSearchParams();
-  const view: ViewMode = viewParams.get("view") === "list" ? "list" : "grid";
-  const setView = (value: ViewMode) =>
-    setViewParams((previous) => {
-      const next = new URLSearchParams(previous);
-      next.set("view", value);
-      return next;
-    });
+  const [view, setView] = useViewMode();
 
   // ── Unified sort state ──
   const browseSort = Math.max(0, Math.min(2, Number(viewParams.get("sort")) || 0));
@@ -378,32 +370,7 @@ export function LibraryBrowsePage() {
                 <CheckSquare className="w-4 h-4" />
               </button>
               <div className="h-4 w-px bg-outline-variant/30 mx-1" />
-              <button
-                type="button"
-                aria-label="列表视图"
-                aria-pressed={view === "list"}
-                onClick={() => setView("list")}
-                className={`p-1.5 rounded-lg transition-colors ${
-                  view === "list"
-                    ? "bg-primary/10 text-primary"
-                    : "text-on-surface-variant hover:bg-surface-container-high"
-                }`}
-              >
-                <LayoutList className="w-4 h-4" />
-              </button>
-              <button
-                type="button"
-                aria-label="卡片视图"
-                aria-pressed={view === "grid"}
-                onClick={() => setView("grid")}
-                className={`p-1.5 rounded-lg transition-colors ${
-                  view === "grid"
-                    ? "bg-primary/10 text-primary"
-                    : "text-on-surface-variant hover:bg-surface-container-high"
-                }`}
-              >
-                <LayoutGrid className="w-4 h-4" />
-              </button>
+              <ViewModeToggle view={view} onChange={setView} buttonClassName="p-1.5 rounded-lg" />
             </div>
           </>
         )}
@@ -440,33 +407,16 @@ export function LibraryBrowsePage() {
                 ：拖入 PDF、按 DOI 获取，或从 Zotero 导出文件导入。
               </p>
             </div>
-          ) : view === "list" ? (
-            <div className="flex-1 min-h-0">
-              <PaperVirtualList
-                papers={browsePapers}
-                selectedId={selectedPaper?.id}
-                onSelect={handlePaperClick}
-                selectionMode={selectionMode}
-                checkedIds={selection.selected}
-                addedMap={selection.added}
-              />
-            </div>
           ) : (
-            <div className="flex-1 overflow-y-auto">
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3 pb-8">
-                {browsePapers.map((paper) => (
-                  <PaperGridCard
-                    key={paper.id}
-                    paper={paper}
-                    isSelected={!selectionMode && selectedPaper?.id === paper.id}
-                    onClick={() => handlePaperClick(paper)}
-                    selectionMode={selectionMode}
-                    isChecked={selection.selected.has(paper.id)}
-                    addedLabel={selection.added.get(paper.id) ?? null}
-                  />
-                ))}
-              </div>
-            </div>
+            <PaperResults
+              view={view}
+              papers={browsePapers}
+              selectedId={selectedPaper?.id}
+              onSelect={handlePaperClick}
+              selectionMode={selectionMode}
+              checkedIds={selection.selected}
+              addedMap={selection.added}
+            />
           )}
         </div>
       ) : loading ? (
@@ -496,34 +446,17 @@ export function LibraryBrowsePage() {
                 <p className="text-xs text-on-surface-variant">尝试更换检索词或切换检索模式</p>
               </div>
             )
-          ) : view === "list" ? (
-            <div className="flex-1 min-h-0">
-              <PaperVirtualList
-                key={submittedSearch?.query}
-                papers={searchPapers}
-                selectedId={selectedPaper?.id}
-                onSelect={handlePaperClick}
-                selectionMode={selectionMode}
-                checkedIds={selection.selected}
-                addedMap={selection.added}
-              />
-            </div>
           ) : (
-            <div className="flex-1 overflow-y-auto">
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3 pb-8">
-                {searchPapers.map((paper) => (
-                  <PaperGridCard
-                    key={paper.id}
-                    paper={paper}
-                    isSelected={!selectionMode && selectedPaper?.id === paper.id}
-                    onClick={() => handlePaperClick(paper)}
-                    selectionMode={selectionMode}
-                    isChecked={selection.selected.has(paper.id)}
-                    addedLabel={selection.added.get(paper.id) ?? null}
-                  />
-                ))}
-              </div>
-            </div>
+            <PaperResults
+              view={view}
+              papers={searchPapers}
+              listKey={submittedSearch?.query}
+              selectedId={selectedPaper?.id}
+              onSelect={handlePaperClick}
+              selectionMode={selectionMode}
+              checkedIds={selection.selected}
+              addedMap={selection.added}
+            />
           )}
         </div>
       )}

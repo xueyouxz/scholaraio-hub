@@ -3,9 +3,6 @@ import { useRef } from "react";
 import type { PaperSummary } from "../paperSummary";
 import { PaperListRow } from "./PaperListRow";
 
-/** How a page lays papers out: rows (this list) or cards. */
-export type ViewMode = "list" | "grid";
-
 const ROW_HEIGHT = 152;
 const ROW_GAP = 8;
 

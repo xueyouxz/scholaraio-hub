@@ -1,4 +1,4 @@
-import type { ViewMode } from "./PaperVirtualList";
+import type { ViewMode } from "./PaperResults";
 
 function Shimmer({ className }: { className: string }) {
   return <div className={`skeleton-shimmer rounded ${className}`} />;

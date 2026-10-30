@@ -2,8 +2,6 @@ import type { ImportJob } from "@scholaraio-hub/shared";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   ChevronDown,
-  LayoutGrid,
-  LayoutList,
   Loader2,
   MessageSquare,
   Plus,
@@ -20,8 +18,7 @@ import { usePageTitle } from "../../shared/layout";
 import { useDismiss } from "../../shared/ui/useDismiss";
 import { CollectionAddPapersDialog } from "./components/CollectionCreateDialog";
 import { PaperDetailPanel } from "./components/PaperDetailPanel";
-import { PaperVirtualList } from "./components/PaperVirtualList";
-import type { ViewMode } from "./components/PaperVirtualList";
+import { PaperResults, ViewModeToggle, useViewMode } from "./components/PaperResults";
 import { StepTrack, useImportJobs } from "./components/import/ImportProgress";
 import {
   ACTIVE_IMPORT,
@@ -56,7 +53,7 @@ const MODES = [
 export function CollectionPage({ collectionId }: { collectionId: string }) {
   const { setTitle } = usePageTitle();
   const [params, setParams] = useSearchParams();
-  const view: ViewMode = params.get("view") === "list" ? "list" : "grid";
+  const [view, setView] = useViewMode();
   const sortIndex = Math.max(0, Math.min(SORTS.length - 1, Number(params.get("sort")) || 0));
   const setParam = (key: string, value: string) =>
     setParams(
@@ -128,6 +125,9 @@ export function CollectionPage({ collectionId }: { collectionId: string }) {
   );
 
   const [selected, setSelected] = useState<PaperSummary | null>(null);
+  /** Open a paper's details, or close them when it is open already. */
+  const toggleSelected = (paper: PaperSummary) =>
+    setSelected((previous) => (previous?.id === paper.id ? null : paper));
   const [adding, setAdding] = useState(false);
   const shown = submitted ? (found.data?.papers ?? []) : papers;
   const active = inbound.filter((entry) => ACTIVE_IMPORT.includes(entry.item.status)).length;
@@ -203,26 +203,7 @@ export function CollectionPage({ collectionId }: { collectionId: string }) {
             <Search className="w-4 h-4" />
           </button>
         )}
-        <div className="flex items-center gap-0.5">
-          <button
-            type="button"
-            aria-label="列表视图"
-            aria-pressed={view === "list"}
-            onClick={() => setParam("view", "list")}
-            className={`rounded-full p-2 transition-colors ${view === "list" ? "bg-primary/10 text-primary" : "text-on-surface-variant hover:bg-surface-container-high"}`}
-          >
-            <LayoutList className="w-4 h-4" />
-          </button>
-          <button
-            type="button"
-            aria-label="卡片视图"
-            aria-pressed={view === "grid"}
-            onClick={() => setParam("view", "grid")}
-            className={`rounded-full p-2 transition-colors ${view === "grid" ? "bg-primary/10 text-primary" : "text-on-surface-variant hover:bg-surface-container-high"}`}
-          >
-            <LayoutGrid className="w-4 h-4" />
-          </button>
-        </div>
+        <ViewModeToggle view={view} onChange={setView} buttonClassName="rounded-full p-2" />
         <button
           type="button"
           onClick={() => setAdding(true)}
@@ -275,44 +256,27 @@ export function CollectionPage({ collectionId }: { collectionId: string }) {
               </button>
             ) : null}
           </div>
-        ) : view === "list" ? (
-          <div className="flex min-h-0 flex-1 flex-col gap-2">
-            {!submitted && inbound.length ? (
-              <div className="grid shrink-0 grid-cols-1 gap-2 md:grid-cols-2">
-                {inbound.map((entry) => (
-                  <IncomingCard key={entry.item.id} entry={entry} />
-                ))}
-              </div>
-            ) : null}
-            <div className="min-h-0 flex-1">
-              <PaperVirtualList
-                papers={shown}
-                selectedId={selected?.id}
-                onSelect={(paper) =>
-                  setSelected((previous) => (previous?.id === paper.id ? null : paper))
-                }
-              />
-            </div>
-          </div>
         ) : (
-          <div className="min-h-0 flex-1 overflow-y-auto">
-            <div className="grid grid-cols-1 gap-3 pb-8 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-              {!submitted
-                ? inbound.map((entry) => <IncomingCard key={entry.item.id} entry={entry} />)
-                : null}
-              {shown.map((paper) => (
-                <CollectionPaperCard
-                  key={paper.id}
-                  paper={paper}
-                  collectionId={collectionId}
-                  active={selected?.id === paper.id}
-                  onOpen={() =>
-                    setSelected((previous) => (previous?.id === paper.id ? null : paper))
-                  }
-                />
-              ))}
-            </div>
-          </div>
+          <PaperResults
+            view={view}
+            papers={shown}
+            selectedId={selected?.id}
+            onSelect={toggleSelected}
+            leading={
+              submitted
+                ? undefined
+                : inbound.map((entry) => <IncomingCard key={entry.item.id} entry={entry} />)
+            }
+            renderCard={(paper) => (
+              <CollectionPaperCard
+                key={paper.id}
+                paper={paper}
+                collectionId={collectionId}
+                active={selected?.id === paper.id}
+                onOpen={() => toggleSelected(paper)}
+              />
+            )}
+          />
         )}
       </div>
 

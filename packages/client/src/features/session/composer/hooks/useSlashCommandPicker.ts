@@ -7,27 +7,21 @@ import {
   slashTokenAt,
   splitLeadingCommand,
 } from "../model/slashCommands";
+import type { Typeahead } from "../model/typeahead";
 
 /**
  * Slash-command picker state: which suggestions show for the `/word` at the
  * caret, the active one, and the command already chosen at the start of the
  * message (rendered as a badge, so `messageBody` is what the textarea shows).
  */
-export interface SlashPickerState {
-  /** Commands matching the token being typed, or null when not typing one. */
-  matches: SlashCommand[] | null;
+export interface SlashPickerState extends Typeahead<SlashCommand> {
   /** The `/word` being completed, in `messageBody` coordinates. */
   token: SlashToken | null;
-  showList: boolean;
   showBadge: boolean;
   selectedCommand: SlashCommand | null;
   /** `/name` of the badge command, or "". */
   selectedToken: string;
-  activeIndex: number;
   messageBody: string;
-  setActiveIndex: (index: number | ((prev: number) => number)) => void;
-  /** Hide suggestions (Esc / selection). */
-  dismiss: () => void;
   /** Show suggestions again once the user keeps typing. */
   resume: () => void;
 }
@@ -60,7 +54,7 @@ export function useSlashCommandPicker(
   const token = found && selectedToken ? { ...found, leading: false } : found;
   const matches = token && commands?.length ? commandsForToken(commands, token) : null;
 
-  const showList = Boolean(!dismissed && matches && matches.length > 0);
+  const open = Boolean(!dismissed && matches && matches.length > 0);
   const matchSignature = matches?.map((command) => command.name).join("\n") ?? "";
 
   useEffect(() => {
@@ -72,9 +66,9 @@ export function useSlashCommandPicker(
   const resume = useCallback(() => setDismissed(false), []);
 
   return {
-    matches,
+    open,
+    items: matches ?? [],
     token,
-    showList,
     showBadge: !!selectedToken,
     selectedCommand,
     selectedToken,

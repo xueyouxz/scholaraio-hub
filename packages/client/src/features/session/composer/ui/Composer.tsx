@@ -38,6 +38,7 @@ import {
   routeSubmission,
   withInterim,
 } from "../model/submission";
+import { typeaheadKey } from "../model/typeahead";
 import { AttachmentTray } from "./AttachmentTray";
 import {
   type ComposerControls,
@@ -46,10 +47,9 @@ import {
   type MenuRequest,
   availableMenus,
 } from "./ComposerOptions";
-import { MentionSuggestions } from "./MentionSuggestions";
 import { SendActionButton } from "./SendActionButton";
 import { SlashCommandBadge } from "./SlashCommandBadge";
-import { SlashCommandSuggestions } from "./SlashCommandSuggestions";
+import { MentionSuggestions, SlashCommandSuggestions } from "./Suggestions";
 import { VoiceInputButton, type VoiceInputButtonRef } from "./VoiceInputButton";
 
 export { readComposerDraft } from "../hooks/useComposerDraft";
@@ -152,8 +152,8 @@ export function Composer({
   const [caret, setCaret] = useState<number | null>(null);
   const [menuRequest, setMenuRequest] = useState<MenuRequest>();
   const picker = useSlashCommandPicker(text, commands, caret);
-  const mention = useMentionPicker(picker.messageBody, caret, !!onReference && !picker.showList);
-  const mentioning = mention.show && !picker.showList;
+  const mention = useMentionPicker(picker.messageBody, caret, !!onReference && !picker.open);
+  const mentioning = mention.open && !picker.open;
   const fileInput = useRef<HTMLInputElement>(null);
   // A new chat has no session yet; its files go to the draft area until it is created.
   const staged = useStagedAttachments(sessionId ? { sessionId } : "draft");
@@ -316,22 +316,9 @@ export function Composer({
   const attachmentCount = staged.items.length;
   return (
     <div className="relative w-full" aria-label="Message composer">
-      {picker.showList && picker.matches ? (
-        <SlashCommandSuggestions
-          commands={picker.matches}
-          activeIndex={picker.activeIndex}
-          onHover={picker.setActiveIndex}
-          onSelect={selectCommand}
-        />
-      ) : null}
+      {picker.open ? <SlashCommandSuggestions menu={picker} onSelect={selectCommand} /> : null}
       {mentioning ? (
-        <MentionSuggestions
-          options={mention.options}
-          loading={mention.loading}
-          activeIndex={mention.activeIndex}
-          onHover={mention.setActiveIndex}
-          onSelect={selectMention}
-        />
+        <MentionSuggestions menu={mention} loading={mention.loading} onSelect={selectMention} />
       ) : null}
       {editing ? (
         <div className="mb-1.5 flex items-center justify-between gap-3 px-1 text-xs text-on-surface-variant">
@@ -408,58 +395,13 @@ export function Composer({
           onKeyDown={(e) => {
             const isComposing = e.nativeEvent.isComposing || composing.current || e.keyCode === 229;
             if (isComposing) return;
-            if (picker.showList && picker.matches) {
-              const list = picker.matches;
-              const count = list.length;
-              if (e.key === "Escape") {
-                e.preventDefault();
-                picker.dismiss();
-                return;
-              }
-              if (e.key === "ArrowDown" || e.key === "ArrowUp") {
-                e.preventDefault();
-                picker.setActiveIndex(
-                  (index) => (index + (e.key === "ArrowDown" ? 1 : -1) + count) % count,
-                );
-                return;
-              }
-              if (e.key === "Home" || e.key === "End") {
-                e.preventDefault();
-                picker.setActiveIndex(e.key === "Home" ? 0 : count - 1);
-                return;
-              }
-              if ((e.key === "Enter" && !e.shiftKey && !e.ctrlKey) || e.key === "Tab") {
-                const command = list[picker.activeIndex] ?? list[0];
-                if (command) {
-                  e.preventDefault();
-                  selectCommand(command);
-                  return;
-                }
-              }
-            }
-            if (mentioning) {
-              const list = mention.options;
-              const count = list.length;
-              if (e.key === "Escape") {
-                e.preventDefault();
-                mention.dismiss();
-                return;
-              }
-              if (count && (e.key === "ArrowDown" || e.key === "ArrowUp")) {
-                e.preventDefault();
-                mention.setActiveIndex(
-                  (index) => (index + (e.key === "ArrowDown" ? 1 : -1) + count) % count,
-                );
-                return;
-              }
-              if ((e.key === "Enter" && !e.shiftKey && !e.ctrlKey) || e.key === "Tab") {
-                const option = list[mention.activeIndex] ?? list[0];
-                if (option) {
-                  e.preventDefault();
-                  selectMention(option);
-                  return;
-                }
-              }
+            // An open menu takes the keys it steers by before the textarea does.
+            if (
+              typeaheadKey(e, picker, selectCommand) ||
+              typeaheadKey(e, { ...mention, open: mentioning }, selectMention)
+            ) {
+              e.preventDefault();
+              return;
             }
             // Open suggestions take Escape first; then it cancels a correction.
             if (e.key === "Escape" && editing) {

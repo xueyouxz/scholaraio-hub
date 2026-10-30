@@ -2,6 +2,7 @@ import { useQuery } from "@tanstack/react-query";
 import { useEffect, useMemo, useState } from "react";
 import { libraryApi } from "../../../../core/library";
 import { type MentionOption, type MentionToken, mentionTokenAt } from "../model/mentions";
+import type { Typeahead } from "../model/typeahead";
 
 /** How long typing pauses before papers are searched for. */
 const SEARCH_DELAY_MS = 200;
@@ -12,7 +13,11 @@ const PAPER_LIMIT = 8;
  * name matches, then the papers a keyword search finds. Collections are read
  * once and filtered here; papers are searched as the query settles.
  */
-export function useMentionPicker(text: string, caret: number | null, enabled: boolean) {
+export function useMentionPicker(
+  text: string,
+  caret: number | null,
+  enabled: boolean,
+): Typeahead<MentionOption> & { token: MentionToken | null; loading: boolean; resume(): void } {
   const [dismissed, setDismissed] = useState(false);
   const [activeIndex, setActiveIndex] = useState(0);
   const position = Math.min(caret ?? text.length, text.length);
@@ -66,10 +71,10 @@ export function useMentionPicker(text: string, caret: number | null, enabled: bo
   const loading = collections.isLoading || (searched.length > 0 && papers.isFetching);
   return {
     token,
-    options,
+    items: options,
     loading,
-    /** The menu shows while a mention is typed, even before anything matches. */
-    show: Boolean(token && !dismissed),
+    // The menu shows while a mention is typed, even before anything matches.
+    open: Boolean(token && !dismissed),
     activeIndex,
     setActiveIndex,
     dismiss: () => setDismissed(true),

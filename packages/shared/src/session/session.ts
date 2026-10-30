@@ -131,6 +131,17 @@ export const LiteratureRefSchema = z
   .object({ kind: z.enum(["collection", "paper"]), id: z.string().min(1).max(200) })
   .strict();
 export type LiteratureRef = z.infer<typeof LiteratureRefSchema>;
+
+/** Whether two references name the same collection or paper. */
+export function sameReference(a: LiteratureRef, b: LiteratureRef): boolean {
+  return a.kind === b.kind && a.id === b.id;
+}
+
+/** Both lists' references, each once, the first list's first. */
+export function mergeReferences(current: LiteratureRef[], added: LiteratureRef[]): LiteratureRef[] {
+  return [...current, ...added.filter((ref) => !current.some((item) => sameReference(item, ref)))];
+}
+
 /** How many references a session may hold. */
 export const MAX_REFERENCES = 50;
 const References = z.array(LiteratureRefSchema).max(MAX_REFERENCES);

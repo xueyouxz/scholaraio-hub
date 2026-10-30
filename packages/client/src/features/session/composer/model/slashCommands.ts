@@ -6,8 +6,11 @@ export function filterCommands(commands: SlashCommand[], query: string): SlashCo
   return commands.filter((command) => command.name.toLowerCase().startsWith(normalized));
 }
 
+/** What the leading-command helpers read of a command (a research skill has as much). */
+type Named = Pick<SlashCommand, "name">;
+
 /** The command the message already starts with (`/name` or `/name ...`), longest name wins. */
-export function findLeadingCommand(message: string, commands: SlashCommand[]): SlashCommand | null {
+export function findLeadingCommand<C extends Named>(message: string, commands: C[]): C | null {
   return (
     [...commands]
       .sort((a, b) => b.name.length - a.name.length)
@@ -30,7 +33,7 @@ export interface LeadingCommandSplit {
  */
 export function splitLeadingCommand(
   message: string,
-  command: SlashCommand | null,
+  command: Named | null,
   confirmed: boolean,
 ): LeadingCommandSplit {
   if (!command) return { token: "", body: message };
@@ -46,6 +49,22 @@ export function splitLeadingCommand(
 export function joinLeadingCommand(token: string, body: string): string {
   if (!token) return body;
   return `${token}${body ? ` ${body}` : " "}`;
+}
+
+/**
+ * Lead the message with `/name` in place of `current`, the command it leads
+ * with now; choosing `current` again takes it off and keeps the rest.
+ */
+export function toggleLeadingCommand(message: string, current: string | null, name: string) {
+  const { body } = splitLeadingCommand(message, current ? { name: current } : null, true);
+  return current === name ? body : joinLeadingCommand(`/${name}`, body);
+}
+
+/** Put `args` right after the message's leading `/name`, before what the user wrote. */
+export function withCommandArguments(message: string, name: string, args: string[]): string {
+  const { token, body } = splitLeadingCommand(message, { name }, true);
+  if (!token || !args.length) return message;
+  return joinLeadingCommand(token, [args.join(" "), body].filter(Boolean).join(" "));
 }
 
 /** A `/query` being typed: its span in the text and whether it opens the message. */

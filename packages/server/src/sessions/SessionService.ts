@@ -10,6 +10,7 @@ import {
   type SessionDetail,
   type SessionInput,
   type UploadedFile,
+  mergeReferences,
   parseSessionKey,
   sessionKey,
   thinkingModeToConfig,
@@ -88,12 +89,6 @@ function modeAfterAnswer(
   if (toolName === "EnterPlanMode") return "plan";
   if (toolName === "ExitPlanMode") return "default";
   return undefined;
-}
-
-/** Both lists' references, each once, the first list's first. */
-function mergeReferences(current: LiteratureRef[], added: LiteratureRef[]): LiteratureRef[] {
-  const seen = new Set(current.map((ref) => `${ref.kind}:${ref.id}`));
-  return [...current, ...added.filter((ref) => !seen.has(`${ref.kind}:${ref.id}`))];
 }
 
 /** A session's references as the library's scope: whole collections, and single papers. */

@@ -3,6 +3,8 @@ import {
   type LiteratureRef,
   type ProviderName,
   type SessionAttachment,
+  mergeReferences,
+  sameReference,
 } from "@scholaraio-hub/shared";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useMemo, useRef, useState } from "react";
@@ -24,6 +26,11 @@ import { ReferenceChips } from "./components/ReferenceChips";
 import { useProviders } from "./composer/hooks/useProviders";
 import { initialOptions, optionsForProvider } from "./composer/model/options";
 import { readComposerPreference, rememberComposerChoice } from "./composer/model/preferences";
+import {
+  findLeadingCommand,
+  toggleLeadingCommand,
+  withCommandArguments,
+} from "./composer/model/slashCommands";
 import { Composer, readComposerDraft } from "./composer/ui/Composer";
 import type { ComposerControls } from "./composer/ui/ComposerOptions";
 import {
@@ -121,35 +128,12 @@ function NewSessionForm({
     setTitle(project?.name ?? "New Chat");
     return () => setTitle("");
   }, [setTitle, project?.name]);
-  const activeSkill = useMemo(() => {
-    for (const skill of readingSkills) {
-      const token = `/${skill.name}`;
-      if (text === token || text.startsWith(`${token} `)) return skill.name;
-    }
-    return null;
-  }, [text, readingSkills]);
-  const toggleSkill = (name: string) => {
-    const nextToken = `/${name}`;
-    const activeToken = activeSkill ? `/${activeSkill}` : "";
-    const body = !activeSkill
-      ? text
-      : text.startsWith(`${activeToken} `)
-        ? text.slice(activeToken.length + 1)
-        : text === activeToken
-          ? ""
-          : text;
-    if (activeSkill === name) setText(body);
-    else setText(body ? `${nextToken} ${body}` : `${nextToken} `);
-  };
+  const activeSkill = findLeadingCommand(text, readingSkills)?.name ?? null;
+  const toggleSkill = (name: string) => setText(toggleLeadingCommand(text, activeSkill, name));
   /** Research skills receive the referred papers' ids as their arguments. */
   const composePrompt = (message: string) => {
     const trimmed = message.trim();
-    if (!activeSkill || paperIds.length === 0) return trimmed;
-    const token = `/${activeSkill}`;
-    if (trimmed === token) return `${token} ${paperIds.join(" ")}`;
-    if (trimmed.startsWith(`${token} `))
-      return `${token} ${paperIds.join(" ")} ${trimmed.slice(token.length + 1)}`;
-    return trimmed;
+    return activeSkill ? withCommandArguments(trimmed, activeSkill, paperIds) : trimmed;
   };
   // A retry of the same message keeps its id, so the server can tell it apart
   // from a second message.
@@ -307,9 +291,7 @@ function NewSessionForm({
             references={references}
             disabled={submitting}
             onRemove={(removed) =>
-              onReferencesChange(
-                references.filter((item) => item.kind !== removed.kind || item.id !== removed.id),
-              )
+              onReferencesChange(references.filter((item) => !sameReference(item, removed)))
             }
           />
         </div>
@@ -321,8 +303,7 @@ function NewSessionForm({
           provider={provider}
           cwd={project?.path}
           onReference={(ref) => {
-            if (!references.some((item) => item.kind === ref.kind && item.id === ref.id))
-              onReferencesChange([...references, ref]);
+            onReferencesChange(mergeReferences(references, [ref]));
           }}
           onSend={start}
           controls={controls}

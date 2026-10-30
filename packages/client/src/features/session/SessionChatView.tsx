@@ -1,4 +1,10 @@
-import type { LiteratureRef, SessionDetail, SessionMessage } from "@scholaraio-hub/shared";
+import {
+  type LiteratureRef,
+  type SessionDetail,
+  type SessionMessage,
+  mergeReferences,
+  sameReference,
+} from "@scholaraio-hub/shared";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { ArrowDown } from "lucide-react";
 import { useState } from "react";
@@ -39,25 +45,24 @@ export function SessionChatView({ initial }: { initial: SessionDetail }) {
   const kept = session.snapshot?.references ?? initial.references;
   /** Referred to with `@` since the last message; they go with the next one. */
   const [added, setAdded] = useState<LiteratureRef[]>([]);
-  const same = (a: LiteratureRef, b: LiteratureRef) => a.kind === b.kind && a.id === b.id;
-  const references = [...kept, ...added.filter((ref) => !kept.some((item) => same(item, ref)))];
+  const references = mergeReferences(kept, added);
   const changeReferences = useMutation({
     mutationFn: (next: LiteratureRef[]) => sessionApi.setReferences(initial.id, next),
     onSuccess: (detail) => client.setQueryData(sessionQuery(initial.id).queryKey, detail),
   });
   /** Stop referring to one: one not sent yet is simply dropped. */
   const removeReference = (removed: LiteratureRef) => {
-    if (added.some((ref) => same(ref, removed))) {
-      setAdded((current) => current.filter((ref) => !same(ref, removed)));
+    if (added.some((ref) => sameReference(ref, removed))) {
+      setAdded((current) => current.filter((ref) => !sameReference(ref, removed)));
       return;
     }
-    changeReferences.mutate(kept.filter((ref) => !same(ref, removed)));
+    changeReferences.mutate(kept.filter((ref) => !sameReference(ref, removed)));
   };
   /** Send what was added with this message, and forget it once the session has it. */
   const withReferences = async <T,>(sendIt: (refs: LiteratureRef[]) => Promise<T>) => {
     const sent = added;
     const result = await sendIt(sent);
-    setAdded((current) => current.filter((ref) => !sent.some((item) => same(item, ref))));
+    setAdded((current) => current.filter((ref) => !sent.some((item) => sameReference(item, ref))));
     return result;
   };
   const [selectedPaper, setSelectedPaper] = useState<string | null>(null);
@@ -247,7 +252,9 @@ export function SessionChatView({ initial }: { initial: SessionDetail }) {
                     }}
                     onReference={(ref) =>
                       setAdded((current) =>
-                        references.some((item) => same(item, ref)) ? current : [...current, ref],
+                        references.some((item) => sameReference(item, ref))
+                          ? current
+                          : [...current, ref],
                       )
                     }
                     editing={editing}

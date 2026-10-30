@@ -2,7 +2,9 @@ import { describe, expect, it } from "vitest";
 import {
   CreateSessionSchema,
   SendSessionMessageSchema,
+  mergeReferences,
   parseSessionKey,
+  sameReference,
   sessionKey,
 } from "../../src/session/session.js";
 
@@ -56,5 +58,25 @@ describe("application session project contract", () => {
     expect(parseSessionKey("gemini:abc")).toBeUndefined();
     expect(parseSessionKey("claude:../etc")).toBeUndefined();
     expect(parseSessionKey("no-provider")).toBeUndefined();
+  });
+});
+
+describe("literature references", () => {
+  const paper = { kind: "paper", id: "a" } as const;
+  const collection = { kind: "collection", id: "a" } as const;
+
+  it("tells references apart by kind and id", () => {
+    expect(sameReference(paper, { kind: "paper", id: "a" })).toBe(true);
+    expect(sameReference(paper, collection)).toBe(false);
+    expect(sameReference(paper, { kind: "paper", id: "b" })).toBe(false);
+  });
+
+  it("merges two lists, each reference once and the first list first", () => {
+    const other = { kind: "paper", id: "b" } as const;
+    expect(mergeReferences([paper], [other, { ...paper }, collection])).toEqual([
+      paper,
+      other,
+      collection,
+    ]);
   });
 });

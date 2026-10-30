@@ -83,5 +83,5 @@ half a minute; the Hub warns but does not lock it.
   interrupt, approvals).
 - `packages/server/src/sessions/SessionService.ts` — runs, state, queue, stop.
 - `packages/server/src/sessions/Turn.ts` — one run: its stream, replay, checkpoints, ending.
-- `packages/client/src/features/session/` — `hooks/useSessionChat.ts`,
-  `composer/ui/SendActionButton.tsx`, `components/InputRequestPrompt.tsx`.
+- `packages/client/src/features/session/` — `useSessionChat.ts`,
+  `composer/ui/SendActionButton.tsx`, `transcript/InputRequestPrompt.tsx`.

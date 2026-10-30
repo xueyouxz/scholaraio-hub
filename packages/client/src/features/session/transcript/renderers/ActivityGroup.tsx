@@ -1,6 +1,6 @@
 import { type ReactNode, memo, useState } from "react";
-import type { ActivityItem, IndexedPart } from "../../lib/activity";
-import type { PartOf, ToolPart } from "../../lib/parts";
+import type { ActivityItem, IndexedPart } from "../model/activity";
+import type { PartOf, ToolPart } from "../model/parts";
 import { ImageStrip } from "../parts/ImagePart";
 import { Chevron, Spinner, describeToolCall, toolView } from "./ToolCallRow";
 import { summarizeActivity } from "./activitySummary";

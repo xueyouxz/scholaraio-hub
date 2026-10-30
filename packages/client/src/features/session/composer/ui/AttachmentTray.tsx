@@ -1,8 +1,8 @@
 import { FileVideo, Loader2, Play, RotateCw, X } from "lucide-react";
 import { useState } from "react";
-import { AttachmentViewer } from "../../components/AttachmentViewer";
-import { FileKindIcon } from "../../components/FileKindIcon";
-import { fileExtension } from "../../lib/fileKinds";
+import { AttachmentViewer } from "../../attachments/AttachmentViewer";
+import { FileKindIcon } from "../../attachments/FileKindIcon";
+import { fileExtension } from "../../attachments/fileKinds";
 import type { StagedAttachment } from "../hooks/useStagedAttachments";
 
 type TrayActions = {

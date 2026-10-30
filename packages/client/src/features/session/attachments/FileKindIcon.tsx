@@ -11,7 +11,7 @@ import {
   type LucideIcon,
   Presentation,
 } from "lucide-react";
-import type { AttachmentKind } from "../lib/fileKinds";
+import type { AttachmentKind } from "./fileKinds";
 
 /** Each file kind's icon and its tile's tint, so kinds tell apart at a glance. */
 const KIND_ICONS: Record<AttachmentKind, { icon: LucideIcon; tint: string }> = {

@@ -1,8 +1,8 @@
 import { Loader2, X } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { type ViewMode, attachmentKind, viewMode } from "../lib/fileKinds";
 import { FileKindIcon } from "./FileKindIcon";
+import { type ViewMode, attachmentKind, viewMode } from "./fileKinds";
 
 /** Longer text shows its beginning. */
 const MAX_TEXT_CHARS = 512 * 1024;

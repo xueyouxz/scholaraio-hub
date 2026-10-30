@@ -1,7 +1,7 @@
 import { useState } from "react";
-import type { IndexedPart } from "../../lib/activity";
-import type { PartOf } from "../../lib/parts";
-import { AttachmentViewer } from "../AttachmentViewer";
+import { AttachmentViewer } from "../../attachments/AttachmentViewer";
+import type { IndexedPart } from "../model/activity";
+import type { PartOf } from "../model/parts";
 
 type FilePart = PartOf<"file">;
 

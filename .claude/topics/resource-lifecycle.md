@@ -38,5 +38,5 @@ Before merging changes that touch loops, timers, watches, or transport, verify:
   supervisor subscription
 - `packages/scholaraio/scholaraio/hub/watcher.py` — project directory watcher (library service)
 - `packages/server/src/supervisor/` — session supervision / lifecycle
-- Client session stream (`packages/client/src/features/session/hooks/useSessionChat.ts`)
+- Client session stream (`packages/client/src/features/session/useSessionChat.ts`)
   and library events (`packages/client/src/core/libraryEvents.ts`)

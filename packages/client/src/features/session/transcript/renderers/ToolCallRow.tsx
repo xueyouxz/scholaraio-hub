@@ -1,7 +1,7 @@
 import { readToolOutput } from "@scholaraio-hub/shared";
 import { ChevronRight } from "lucide-react";
 import { type ReactNode, memo, useState } from "react";
-import type { ToolPart } from "../../lib/parts";
+import type { ToolPart } from "../model/parts";
 import { DiffStatsLabel } from "./blocks";
 import { totalStats } from "./fileChanges";
 import { fileChanges, rendererFor, toolLabel } from "./registry";

@@ -18,19 +18,19 @@ import {
 } from "../../core/sessions";
 import { useNavigationLayout } from "../../shared/layout";
 import { PaperReaderView } from "../library/reader/PaperReaderView";
-import { SessionFileLinks } from "./components/FileViewerDialog";
-import { InputRequestPrompt } from "./components/InputRequestPrompt";
 import { ReferenceChips } from "./components/ReferenceChips";
-import { ResizableReferencesPanel } from "./components/ReferencesPanel";
-import { ResizableSessionFilesPanel } from "./components/SessionFilesPanel";
 import { SessionHeader, type SessionPanel } from "./components/SessionHeader";
-import { SessionMessages } from "./components/SessionMessages";
 import { useProviders } from "./composer/hooks/useProviders";
 import { rememberComposerChoice } from "./composer/model/preferences";
 import { Composer, type EditedPrompt } from "./composer/ui/Composer";
 import type { ComposerControls } from "./composer/ui/ComposerOptions";
-import { useSessionChat } from "./hooks/useSessionChat";
-import { useStickToBottom } from "./hooks/useStickToBottom";
+import { SessionFileLinks } from "./panels/FileViewerDialog";
+import { ResizableReferencesPanel } from "./panels/ReferencesPanel";
+import { ResizableSessionFilesPanel } from "./panels/SessionFilesPanel";
+import { InputRequestPrompt } from "./transcript/InputRequestPrompt";
+import { SessionMessages } from "./transcript/SessionMessages";
+import { useStickToBottom } from "./transcript/useStickToBottom";
+import { useSessionChat } from "./useSessionChat";
 
 /** An open session: header, transcript, composer and the side panels. */
 export function SessionChatView({ initial }: { initial: SessionDetail }) {

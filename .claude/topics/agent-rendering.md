@@ -17,7 +17,7 @@
   (`[app.ts](src/app.ts:42)`, `/abs/path/app.ts#L42-L50`, `README.md:3`) is marked by a
   remark step (`shared/components/fileLinks.ts`) before Streamdown's sanitizer, which would
   otherwise block a bare relative path, and renders as a button. In a session it opens the
-  file in `features/session/components/FileViewerDialog.tsx` (read through
+  file in `features/session/panels/FileViewerDialog.tsx` (read through
   `/api/sessions/:id/fs/file`, which takes paths relative to the working directory or
   absolute under it), with the linked lines marked; outside a session it is plain text.
 - **Paper reader**: `react-markdown` with `remark-gfm`, `remark-math`, `rehype-katex` and
@@ -53,7 +53,7 @@
 - Use `$…$` / `$$…$$` for any math (loss functions, notation, matrices).
 - Do not paraphrase structured tool results into prose if the UI already renders them
   richly — check the relevant tool renderer under
-  `packages/client/src/features/session/components/renderers/`.
+  `packages/client/src/features/session/transcript/renderers/`.
 
 > If you need a feature not listed here (e.g. ANSI color, local-media-link previews),
 > confirm it exists in the renderer code first — this repo's renderer is not identical to
@@ -61,12 +61,12 @@
 
 ## Session transcript pipeline (client)
 
-`AgentEvent` → `UIChunkWriter` (server) → AI SDK `useChat` (`hooks/useSessionChat.ts`) →
+`AgentEvent` → `UIChunkWriter` (server) → AI SDK `useChat` (`useSessionChat.ts`) →
 `SessionMessages` → `AssistantTurn`:
 
-- `lib/turnTree.ts` lays a message out (pure, unit-tested): subagent parts move under
+- `transcript/model/turnTree.ts` lays a message out (pure, unit-tested): subagent parts move under
   their parent call, the tool calls, reasoning and returned images between two texts fold
-  into one row (`lib/activity.ts`, summarized as "Ran 2 commands, edited app.ts +3 −1" by
+  into one row (`transcript/model/activity.ts`, summarized as "Ran 2 commands, edited app.ts +3 −1" by
   `renderers/activitySummary.ts`), citations are collected once. Calls that ask the user
   something (AskUserQuestion, ExitPlanMode) never fold; a fold holding a pending decision
   opens itself.
@@ -76,21 +76,21 @@
   `structuredPatch`, Codex per-file diffs, Write content), whether it asks the user
   (`asksUser`). Diff stats, the turn-end "Edited N files" card and whether an approval can
   also accept edits all read it from there; don't keep tool-name lists elsewhere.
-- A pending decision is one component, `components/InputRequestPrompt.tsx`: asked inline
+- A pending decision is one component, `transcript/InputRequestPrompt.tsx`: asked inline
   on its call's row, or floating over the transcript when that row is not on screen.
 - Tool code and output are highlighted by Streamdown itself: `renderers/blocks.tsx` wraps
   them in a fence (`startLine=N` in the info string, numbered only for a file read from a
   known line) and renders it with the shared `Markdown` component.
-- `components/parts/registry.tsx` draws each part type; tool calls are dispatched further
-  by tool name in `components/renderers/registry.tsx`. A new part type goes into
-  `TIMELINE_PART_TYPES` (`lib/parts.ts`) and the part registry together; the types keep
+- `transcript/parts/registry.tsx` draws each part type; tool calls are dispatched further
+  by tool name in `transcript/renderers/registry.tsx`. A new part type goes into
+  `TIMELINE_PART_TYPES` (`transcript/model/parts.ts`) and the part registry together; the types keep
   them in step.
 - Every message and every timeline item sits in an `ErrorBoundary`, reset when its part
   changes, so a renderer that throws on half-streamed input recovers.
 - Run state (pending decision, running/idle) is pushed on the open stream as a transient
   `data-session-state` chunk and merged into the snapshot query; polling is the fallback
   when no stream is open.
-- `hooks/useStickToBottom.ts` follows content growth (ResizeObserver) while a turn runs;
+- `transcript/useStickToBottom.ts` follows content growth (ResizeObserver) while a turn runs;
   only the reader's gestures unpin it.
 
 ## Styling the transcript

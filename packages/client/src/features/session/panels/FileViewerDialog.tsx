@@ -6,8 +6,8 @@ import { createPortal } from "react-dom";
 import { sessionFileQuery } from "../../../core/sessions";
 import { Markdown } from "../../../shared/components/Markdown";
 import { type FileLink, FileLinkContext, relativeTo } from "../../../shared/components/fileLinks";
-import { CopyButton } from "./CopyButton";
-import { isMarkdown, languageOf } from "./renderers/blocks";
+import { CopyButton } from "../../../shared/ui/CopyButton";
+import { isMarkdown, languageOf } from "../transcript/renderers/blocks";
 
 /** Past this, a file shows as plain lines: highlighting it would hold up the page. */
 const MAX_HIGHLIGHT_CHARS = 256 * 1024;

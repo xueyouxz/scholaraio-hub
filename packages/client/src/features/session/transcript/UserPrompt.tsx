@@ -1,8 +1,8 @@
 import type { SessionMessage } from "@scholaraio-hub/shared";
 import { Pencil, Split } from "lucide-react";
 import { memo, useState } from "react";
-import { CopyButton } from "./CopyButton";
-import { FileAttachment } from "./FileAttachment";
+import { CopyButton } from "../../../shared/ui/CopyButton";
+import { FileAttachment } from "../attachments/FileAttachment";
 import { ImageThumb } from "./parts/ImagePart";
 
 const MAX_LINES = 12;

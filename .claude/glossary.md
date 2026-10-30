@@ -39,7 +39,7 @@ commits, and instructions so humans and agents mean the same thing.
   [`topics/resource-lifecycle.md`](topics/resource-lifecycle.md)).
 - **Session stream** — A run's UI message stream: the client reads it through
   `useSessionChat` and lays each assistant message out with
-  `packages/client/src/features/session/lib/` (`turnTree.ts`, `activity.ts`).
+  `packages/client/src/features/session/transcript/model/` (`turnTree.ts`, `activity.ts`).
 - **Turn** — One request/response cycle within a session. Process state is `in-turn` while
   a turn is active; the session is `running` (or `waiting-input`). See
   [`topics/session-state.md`](topics/session-state.md).

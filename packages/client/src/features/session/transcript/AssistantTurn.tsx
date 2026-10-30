@@ -1,12 +1,12 @@
 import { type InputRequest, type SessionMessage, parentCallIdOf } from "@scholaraio-hub/shared";
 import { type ReactNode, memo, useMemo } from "react";
+import { CopyButton } from "../../../shared/ui/CopyButton";
 import { ErrorBoundary } from "../../../shared/ui/ErrorBoundary";
-import type { ActivityItem, Segment } from "../lib/activity";
-import type { Part, ToolPart } from "../lib/parts";
-import { buildTurnTree } from "../lib/turnTree";
-import { CopyButton } from "./CopyButton";
 import { FileChangesCard } from "./FileChangesCard";
 import { InputRequestPrompt } from "./InputRequestPrompt";
+import type { ActivityItem, Segment } from "./model/activity";
+import type { Part, ToolPart } from "./model/parts";
+import { buildTurnTree } from "./model/turnTree";
 import { CitationList, type PartContext, renderPart } from "./parts/registry";
 import { ActivityGroup } from "./renderers/ActivityGroup";
 import { ToolCallRow, describeToolCall, toolView } from "./renderers/ToolCallRow";

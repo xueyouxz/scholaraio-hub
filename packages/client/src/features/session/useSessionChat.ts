@@ -8,15 +8,15 @@ import type {
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { DefaultChatTransport } from "ai";
 import { useCallback, useEffect, useMemo, useRef } from "react";
-import { hubHeaders } from "../../../core/http";
-import { PROJECTS_KEY } from "../../../core/projects";
+import { hubHeaders } from "../../core/http";
+import { PROJECTS_KEY } from "../../core/projects";
 import {
   chatPaths,
   isSessionActive,
   sessionApi,
   sessionInput,
   sessionQuery,
-} from "../../../core/sessions";
+} from "../../core/sessions";
 
 /** How often to re-read the snapshot while a turn runs without our stream. */
 const POLL_MS = 1000;

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { ToolPart } from "../../../lib/parts";
+import type { ToolPart } from "../../model/parts";
 import { sameToolCall, toolView } from "../ToolCallRow";
 import { editPatch, patchStats } from "../patch";
 import { rendererFor, toolLabel, toolSummary } from "../registry";

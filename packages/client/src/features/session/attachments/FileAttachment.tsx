@@ -1,8 +1,8 @@
 import { FileVideo, Play } from "lucide-react";
 import { useState } from "react";
-import { attachmentKind, fileExtension } from "../lib/fileKinds";
 import { AttachmentViewer } from "./AttachmentViewer";
 import { FileKindIcon } from "./FileKindIcon";
+import { attachmentKind, fileExtension } from "./fileKinds";
 
 /**
  * A file in the transcript that is not a picture: a video shows its first

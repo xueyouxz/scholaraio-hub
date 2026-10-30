@@ -8,7 +8,7 @@
  * that render nothing (see `isVisiblePart`) neither show nor end a run.
  */
 
-import { rendererFor } from "../components/renderers/registry";
+import { rendererFor } from "../renderers/registry";
 import { type Part, type PartOf, type ToolPart, isVisiblePart } from "./parts";
 
 export interface IndexedPart<P = Part> {

@@ -1,9 +1,9 @@
 import { type LibraryCitation, readNotice } from "@scholaraio-hub/shared";
 import type { ReactNode } from "react";
 import { Link } from "react-router-dom";
-import { citationUrl, linkCitations } from "../../lib/citations";
-import type { Part, PartOf, TimelinePartType, ToolPart } from "../../lib/parts";
-import { FileAttachment } from "../FileAttachment";
+import { FileAttachment } from "../../attachments/FileAttachment";
+import { citationUrl, linkCitations } from "../model/citations";
+import type { Part, PartOf, TimelinePartType, ToolPart } from "../model/parts";
 import { ImageStrip } from "./ImagePart";
 import { ReasoningPart } from "./ReasoningPart";
 import { TextPart } from "./TextPart";

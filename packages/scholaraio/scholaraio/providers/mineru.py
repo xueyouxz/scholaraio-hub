@@ -250,7 +250,7 @@ def check_server(api_url: str = DEFAULT_API_URL) -> bool:
         except ValueError:
             return False
         paths = data.get("paths", {}) if isinstance(data, dict) else {}
-        return isinstance(paths, dict) and PARSE_ENDPOINT in paths
+        return isinstance(paths, dict) and (PARSE_ENDPOINT in paths or "/v1/tasks" in paths)
     except requests.RequestException:
         return False
 
@@ -422,6 +422,30 @@ def convert_pdf(pdf_path: Path, opts: ConvertOptions) -> ConvertResult:
     validation = validate_pdf_for_mineru(pdf_path)
     if not validation.ok:
         return _validation_failure_result(pdf_path, validation, t0)
+
+    # New task servers advertise /v1/tasks; older deployments may hide OpenAPI.
+    paths = {}
+    try:
+        capabilities = requests.get(f"{opts.api_url.rstrip('/')}/openapi.json", timeout=5)
+        capabilities.raise_for_status()
+        paths = capabilities.json().get("paths", {})
+    except (requests.RequestException, ValueError):
+        pass
+    if "/v1/tasks" in paths and PARSE_ENDPOINT not in paths:
+        from zipfile import BadZipFile
+
+        from scholaraio.providers.mineru_tasks import convert_task
+
+        try:
+            convert_task(pdf_path, md_path, base=opts.api_url, tier=opts.backend,
+                         mode=opts.parse_method, timeout=opts.poll_timeout,
+                         start_page=opts.start_page, end_page=opts.end_page)
+            result.success = True
+            result.md_size = md_path.stat().st_size
+        except (requests.RequestException, ValueError, OSError, KeyError, TypeError, IndexError, TimeoutError, BadZipFile) as error:
+            result.error = f"MinerU task parsing failed: {error}"
+        result.elapsed_seconds = time.time() - t0
+        return result
 
     # Build multipart form data
     url = f"{opts.api_url}{PARSE_ENDPOINT}"

@@ -42,13 +42,13 @@ describe("App frontend integration", () => {
 
     expect(res.status).toBe(200);
     expect(html).toContain("client");
-    // The browser calls the library service itself, on the port the page names.
+    // Retain the port metadata for compatibility with older clients.
     expect(html).toContain(`<meta name="scholaraio-library-port" content="9" />`);
     const direct = await server.app.request("/index.html");
     expect(await direct.text()).toContain("scholaraio-library-port");
   });
 
-  it("no longer relays the library API", async () => {
+  it("reports an unavailable library through the same-origin API", async () => {
     const distDir = await mkdtemp(join(tmpdir(), "client-dist-"));
     tempDirs.push(distDir);
     await writeFile(join(distDir, "index.html"), "<!doctype html>", "utf-8");
@@ -59,7 +59,7 @@ describe("App frontend integration", () => {
       library: offlineLibrary(),
     });
     apps.push(server);
-    expect((await server.app.request("/api/library/papers")).status).toBe(404);
+    expect((await server.app.request("/api/library/papers")).status).toBe(503);
   });
 
   it("caches hashed assets for good and never the page", async () => {

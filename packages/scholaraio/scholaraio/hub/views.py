@@ -9,6 +9,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
+from scholaraio.hub.classification import category
 from scholaraio.hub.repository import PaperRecord
 from scholaraio.stores.papers import authors_text, find_pdf
 
@@ -30,6 +31,7 @@ def paper_row(record: PaperRecord) -> dict[str, Any]:
     has_markdown = (directory / "paper.md").exists()
     citation_count = meta.get("citation_count")
     return {
+        **category(record),
         "id": record.id,
         "title": meta.get("title") or directory.name,
         "authors": authors_text(meta.get("authors", [])),

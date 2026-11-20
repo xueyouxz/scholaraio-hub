@@ -104,7 +104,7 @@ class SearchService:
         # Semantic search has three distinct ways of not being ready, and the
         # browser offers a different remedy for each, so say which one it is
         # rather than handing back one opaque failure.
-        if not vectors.runtime_available():
+        if vectors.embedding_provider(cfg) != "openai-compat" and not vectors.runtime_available():
             return {
                 "results": [],
                 "unavailable": "runtime_missing",

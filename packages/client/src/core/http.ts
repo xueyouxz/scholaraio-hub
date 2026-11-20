@@ -1,9 +1,4 @@
-import {
-  type ApiErrorDetails,
-  CSRF_HEADER,
-  LIBRARY_PORT_META,
-  parseApiResponse,
-} from "@scholaraio-hub/shared";
+import { type ApiErrorDetails, CSRF_HEADER, parseApiResponse } from "@scholaraio-hub/shared";
 
 /** 保存 HTTP 状态、业务错误码、请求标识和字段详情。 */
 export class HttpError extends Error {
@@ -56,13 +51,11 @@ export function hubHeaders(init?: HeadersInit): Headers {
   return headers;
 }
 
-/** 根据页面配置生成文献服务地址。 */
+/** Use the page's origin so HTTPS and remote access need only one public endpoint. */
 export function libraryUrl(path: string): string {
-  const port = document
-    .querySelector<HTMLMetaElement>(`meta[name="${LIBRARY_PORT_META}"]`)
-    ?.getAttribute("content");
-  if (!port) throw new Error("The page is missing the library service port. Refresh the page.");
-  return `${window.location.protocol}//${window.location.hostname}:${port}${path}`;
+  if (path && (!path.startsWith("/") || path.startsWith("//")))
+    throw new Error("Library path must start with a single slash");
+  return `${window.location.origin}/api/library${path}`;
 }
 
 /** 编码 URL 中的单个路径参数。 */
@@ -74,7 +67,7 @@ export const REQUEST_TIMEOUT_MS = 30_000;
 export const UPLOAD_TIMEOUT_MS = 120_000;
 
 export type HttpRequestOptions = Omit<RequestInit, "body"> & {
-  timeoutMs?: number;
+  timeoutMs?: number | null;
 } & ({ json: unknown; body?: never } | { json?: never; body?: BodyInit | null });
 
 interface HttpClientOptions {
@@ -101,7 +94,7 @@ export function createHttpClient(config: HttpClientOptions) {
     consume: (response: Response) => Promise<T>,
   ): Promise<T> {
     const { timeoutMs = config.timeoutMs ?? REQUEST_TIMEOUT_MS, signal, json, ...init } = options;
-    if (!Number.isFinite(timeoutMs) || timeoutMs <= 0)
+    if (timeoutMs !== null && (!Number.isFinite(timeoutMs) || timeoutMs <= 0))
       throw new Error("Request timeout must be a positive finite number");
     signal?.throwIfAborted();
     const method = (init.method ?? "GET").toUpperCase();
@@ -115,10 +108,13 @@ export function createHttpClient(config: HttpClientOptions) {
     const controller = new AbortController();
     const abort = () => controller.abort(signal?.reason);
     signal?.addEventListener("abort", abort, { once: true });
-    const timer = setTimeout(
-      () => controller.abort(new DOMException("Request timed out", "TimeoutError")),
-      timeoutMs,
-    );
+    const timer =
+      timeoutMs === null
+        ? undefined
+        : setTimeout(
+            () => controller.abort(new DOMException("Request timed out", "TimeoutError")),
+            timeoutMs,
+          );
     try {
       const response = await (config.fetchImpl ?? fetch)(address, {
         ...init,

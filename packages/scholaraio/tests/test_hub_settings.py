@@ -120,3 +120,14 @@ def test_a_refused_mineru_token_is_reported(library, monkeypatch):
 def test_an_unknown_check_is_refused(library):
     with pytest.raises(ValueError, match="check target"):
         library.settings.check("disk")
+
+
+@pytest.mark.parametrize("backend", ["basic", "flash", "pipeline"])
+def test_local_mineru_backend_persists(tmp_path, backend):
+    library = HubLibrary(tmp_path)
+    try:
+        saved = library.settings.update({"mineruEndpoint": "http://parser:18000", "mineruBackend": backend})
+        assert saved["mineruBackend"] == backend
+        assert saved["mineruEndpoint"] == "http://parser:18000"
+    finally:
+        library.close()

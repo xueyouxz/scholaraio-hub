@@ -164,6 +164,26 @@ describe("统一 HTTP 客户端", () => {
     expect(vi.getTimerCount()).toBe(0);
   });
 
+  it("整库上传可等待超过普通上传时限，同时保留主动取消和资源释放", async () => {
+    vi.useFakeTimers();
+    const controller = new AbortController();
+    const remove = vi.spyOn(controller.signal, "removeEventListener");
+    const fetchMock = abortableFetch("headers");
+    const client = createHttpClient({ baseUrl: "/api", fetchImpl: fetchMock });
+    const pending = client.json("/documents/import", {
+      method: "POST",
+      timeoutMs: null,
+      signal: controller.signal,
+    });
+    const assertion = expect(pending).rejects.toMatchObject({ name: "AbortError" });
+    await vi.advanceTimersByTimeAsync(10 * 60_000);
+    expect(fetchMock.mock.calls[0]?.[1]?.signal?.aborted).toBe(false);
+    expect(vi.getTimerCount()).toBe(0);
+    controller.abort();
+    await assertion;
+    expect(remove).toHaveBeenCalledWith("abort", expect.any(Function));
+  });
+
   it("写操作网络失败不自动重发", async () => {
     const fetchMock = vi.fn<typeof fetch>().mockRejectedValue(new TypeError("Failed to fetch"));
     const client = createHttpClient({ baseUrl: "/api", fetchImpl: fetchMock });

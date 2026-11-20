@@ -9,6 +9,7 @@ from fastapi import FastAPI
 
 from scholaraio.hub import HubLibrary
 from scholaraio.interfaces.api.errors import ERROR_RESPONSES, RequestContext, install_error_handlers
+from scholaraio.interfaces.api.mcp import create_library_mcp
 from scholaraio.interfaces.api.routes import ROUTERS
 from scholaraio.interfaces.api.security import AccessPolicy, install_access_policy
 
@@ -17,16 +18,21 @@ def create_app(
     root: Path, policy: AccessPolicy | None = None, request_restart: Callable[[], None] = lambda: None
 ) -> FastAPI:
     """创建文献服务，装配资源生命周期、访问策略和领域路由。"""
+    mcp = create_library_mcp(lambda: app.state.library.reader)
+    mcp_app = mcp.streamable_http_app()
+
     @asynccontextmanager
     async def lifespan(app: FastAPI):
         library = HubLibrary(root, request_restart)
         app.state.library = library
         try:
-            yield
+            async with mcp.session_manager.run():
+                yield
         finally:
             library.close()
 
     app = FastAPI(title="ScholarAIO library", lifespan=lifespan, responses=ERROR_RESPONSES)
+    app.mount("/mcp", mcp_app)
     install_access_policy(app, policy or AccessPolicy())
     app.add_middleware(RequestContext)
     install_error_handlers(app)

@@ -11,6 +11,7 @@ import {
 } from "./http.js";
 import { hostCheck, parseAllowedHosts, requireCsrfHeader } from "./middleware/security.js";
 import { createEventRoutes } from "./routes/events.js";
+import { createLibraryRoutes } from "./routes/library.js";
 import { createProjectRoutes } from "./routes/projects.js";
 import { createProvidersRoutes } from "./routes/providers.js";
 import { createSessionRoutes } from "./routes/sessions.js";
@@ -35,6 +36,7 @@ export function createApp(services: Services, options: AppOptions = {}) {
   // 本机 HTTP 服务：不发 HSTS；其余默认值（nosniff、同源资源策略、禁止嵌入等）适用于 JSON 与文件接口。
   app.use("/api/*", secureHeaders({ strictTransportSecurity: false }));
   app.use("/api/*", hostCheck(parseAllowedHosts(options.allowedHosts)));
+  app.route("/api/library", createLibraryRoutes(services.library));
   app.use("/api/*", requireCsrfHeader);
   app.route(
     "/api/sessions",

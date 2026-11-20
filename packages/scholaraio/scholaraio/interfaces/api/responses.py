@@ -118,6 +118,9 @@ class LibraryPaper(CamelModel):
     abstract: str
     has_pdf: bool
     has_markdown: bool
+    category: str
+    conference: str | None
+    category_source: Literal["manual", "conference", "unknown"]
     parse_status: Literal["ready", "pending", "failed"]
     error: str | None
     cover_image: str | None
@@ -412,6 +415,8 @@ class LibrarySettings(CamelModel):
     embed_model: str
     embed_source: str
     embed_device: str
+    mineru_endpoint: str
+    mineru_backend: str
     mineru_configured: bool
     mineru_key_length: int = Field(
         description="Length of the stored MinerU token, so the field can mask it at its real length."
@@ -419,6 +424,8 @@ class LibrarySettings(CamelModel):
     llm_configured: bool
     llm_key_length: int = Field(description="Length of the stored LLM API key; 0 when none is configured.")
     embed_api_configured: bool
+    embed_api_base: str
+    embed_key_length: int = Field(description="Length of the resolved embedding API key; the key is never returned.")
     config_path: str = Field(description="The documented file a user can still edit by hand.")
     papers_dir: str = Field(description="Where the library keeps its papers.")
     workspace_dir: str = Field(description="Where each workspace's directory is created.")
@@ -431,3 +438,13 @@ class SettingsCheck(CamelModel):
     ok: bool
     level: Literal["ok", "warning", "error"]
     message: str
+
+
+class CategoryResult(CamelModel):
+    updated: int
+
+
+class BundleImportResult(CamelModel):
+    imported: int
+    skipped: int
+    vectors: int

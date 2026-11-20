@@ -13,6 +13,7 @@ from fastapi import Depends, Request
 from scholaraio.hub import HubLibrary
 from scholaraio.hub.acquire import AcquireService
 from scholaraio.hub.analytics import AnalyticsService
+from scholaraio.hub.bundles import BundleService
 from scholaraio.hub.citations import CitationService
 from scholaraio.hub.collections import CollectionService
 from scholaraio.hub.directories import DirectoryService
@@ -47,6 +48,7 @@ def _service(name: str):
 
 Acquire = Annotated[AcquireService, _service("acquire")]
 Analytics = Annotated[AnalyticsService, _service("analytics")]
+Bundles = Annotated[BundleService, _service("bundles")]
 Citations = Annotated[CitationService, _service("citations")]
 Collections = Annotated[CollectionService, _service("collections")]
 Directories = Annotated[DirectoryService, _service("directories")]

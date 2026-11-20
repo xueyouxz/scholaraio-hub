@@ -109,6 +109,8 @@ try {
     fetch: app.fetch,
     port: config.port,
     hostname: config.host,
+    // Whole-library uploads can take longer than Node's total request deadline.
+    serverOptions: { requestTimeout: 0 },
     createServer: devFrontend
       ? (devFrontend.wrap(createServer) as typeof createServer)
       : createServer,

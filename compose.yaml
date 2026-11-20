@@ -1,0 +1,42 @@
+name: scholaraio
+
+services:
+  hub:
+    image: scholaraio-hub:local
+    build:
+      context: .
+    init: true
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:3400:3400"
+      - "${SCHOLARAIO_TAILSCALE_IP:-100.64.0.5}:3400:3400"
+      # Optional direct library API/MCP access; the web UI uses /api/library on 3400.
+      - "127.0.0.1:3401:3401"
+      - "${SCHOLARAIO_TAILSCALE_IP:-100.64.0.5}:3401:3401"
+    environment:
+      LOG_PRETTY: "false"
+      ALLOWED_HOSTS: "${SCHOLARAIO_TAILSCALE_IP:-100.64.0.5},${SCHOLARAIO_TAILSCALE_HOSTS:-macmini,macmini.zjutvis.tech,scholaraio.zjutvis.cn}"
+    volumes:
+      # Includes papers, settings, runtime, and container-local CLI credentials.
+      - hub-home:/home/node
+    stop_grace_period: 45s
+    healthcheck:
+      test:
+        - CMD
+        - node
+        - --input-type=module
+        - -e
+        - "const r = await fetch('http://127.0.0.1:3400/api/status', { signal: AbortSignal.timeout(5000) }); const s = await r.json(); if (!r.ok || !s.data?.library) process.exit(1);"
+      interval: 30s
+      timeout: 10s
+      start_period: 120s
+      retries: 3
+
+volumes:
+  hub-home:
+
+networks:
+  default:
+    ipam:
+      config:
+        - subnet: "${SCHOLARAIO_DOCKER_SUBNET:-10.254.240.48/28}"

@@ -44,7 +44,7 @@ export function keyPage(baseUrl: string): string | null {
 
 function modelPage(settings: LibrarySettings): string | null {
   const model = settings.embedModel.trim();
-  if (!model.includes("/")) return null;
+  if (settings.embedProvider !== "local" || !model.includes("/")) return null;
   return settings.embedSource === "huggingface"
     ? `https://huggingface.co/${model}`
     : `https://modelscope.cn/models/${model}`;
@@ -78,7 +78,8 @@ export function LibrarySettingsForm() {
   if (!current)
     return <div className="h-72 rounded-xl skeleton-shimmer opacity-50" aria-label="加载中" />;
   const llmKeys = keyPage(current.llmBaseUrl || "https://api.deepseek.com");
-  const embedPage = modelPage(current);
+  const apiEmbedding = current.embedProvider === "openai-compat";
+  const embedPage = apiEmbedding ? keyPage(current.embedApiBase) : modelPage(current);
   return (
     <section aria-labelledby="library-services" className="space-y-2">
       <h2
@@ -92,20 +93,36 @@ export function LibrarySettingsForm() {
           target="mineru"
           icon={FileText}
           title="PDF 解析"
-          summary={current.mineruConfigured ? undefined : "MinerU · 未配置时降级为本地解析"}
-          configured={current.mineruConfigured}
+          summary="连接本地 MinerU，或使用云端 Token"
+          configured={Boolean(current.mineruEndpoint) || current.mineruConfigured}
           recheck={recheck.mineru}
           autoCheck
           link={{ href: "https://mineru.net/apiManage/token", label: "获取 Token" }}
         >
           {(checkButton) => (
-            <SecretSetting
-              field="mineruApiKey"
-              label="MinerU Token"
-              storedLength={current.mineruKeyLength}
-              onSaved={() => saved("mineru")}
-              addon={checkButton}
-            />
+            <>
+              <TextSetting
+                field="mineruEndpoint"
+                label="本地 MinerU 地址"
+                placeholder="http://host.docker.internal:18000…"
+                value={current.mineruEndpoint}
+                onSaved={() => saved("mineru")}
+                addon={checkButton}
+              />
+              <TextSetting
+                field="mineruBackend"
+                label="本地解析档位（flash / basic；旧版用 pipeline）"
+                placeholder="basic…"
+                value={current.mineruBackend}
+                onSaved={() => saved("mineru")}
+              />
+              <SecretSetting
+                field="mineruApiKey"
+                label="云端 MinerU Token（可选）"
+                storedLength={current.mineruKeyLength}
+                onSaved={() => saved("mineru")}
+              />
+            </>
           )}
         </Service>
         <Service
@@ -146,25 +163,76 @@ export function LibrarySettingsForm() {
           )}
         </Service>
         <Service
+          key={current.embedProvider}
           target="embed"
           icon={Sparkles}
           title="语义检索"
-          configured
-          recheck={recheck.embed}
-          autoCheck
-          link={embedPage ? { href: embedPage, label: "模型主页" } : undefined}
+          summary={apiEmbedding ? "通过 Embedding API 生成向量" : "在服务器上运行嵌入模型"}
+          configured={current.embedProvider !== "none"}
+          recheck={apiEmbedding ? 0 : recheck.embed}
+          autoCheck={!apiEmbedding}
+          link={
+            embedPage
+              ? { href: embedPage, label: apiEmbedding ? "获取 API Key" : "模型主页" }
+              : undefined
+          }
         >
           {(checkButton) => (
             <>
-              <TextSetting
-                field="embedModel"
-                label="嵌入模型"
-                placeholder="Qwen/Qwen3-Embedding-0.6B"
-                value={current.embedModel}
+              <SelectSetting
+                field="embedProvider"
+                label="向量生成方式"
+                value={current.embedProvider}
+                options={[
+                  { value: "local", label: "本地模型" },
+                  { value: "openai-compat", label: "API（兼容 OpenAI）" },
+                  { value: "none", label: "停用" },
+                ]}
                 onSaved={() => saved("embed")}
-                addon={checkButton}
               />
-              <CapabilityPrompt kind="semantic" hideWhenReady />
+              {current.embedProvider !== "none" ? (
+                <>
+                  <TextSetting
+                    field="embedModel"
+                    label={apiEmbedding ? "Embedding 模型名称" : "嵌入模型"}
+                    placeholder={
+                      apiEmbedding ? "填写服务商提供的嵌入模型名称" : "Qwen/Qwen3-Embedding-0.6B"
+                    }
+                    value={current.embedModel}
+                    onSaved={() => saved("embed")}
+                    addon={apiEmbedding ? undefined : checkButton}
+                  />
+                  {apiEmbedding ? (
+                    <>
+                      <TextSetting
+                        field="embedApiBase"
+                        label="Embedding API 地址"
+                        placeholder="https://服务商地址/v1"
+                        value={current.embedApiBase}
+                        onSaved={() => saved("embed")}
+                      />
+                      <SecretSetting
+                        field="embedApiKey"
+                        label="Embedding API Key"
+                        storedLength={current.embedKeyLength}
+                        onSaved={() => saved("embed")}
+                        addon={checkButton}
+                      />
+                      <p className="text-xs text-on-surface-variant">
+                        地址填写 API 基础路径，系统会追加 /embeddings。使用专门的嵌入模型；API
+                        模式无需下载本地模型。
+                        生成向量时会发送论文标题、摘要，检索时会发送查询文本。点击自检会发起一次简短
+                        API 请求，可能产生少量费用。
+                      </p>
+                    </>
+                  ) : null}
+                  <p className="text-xs text-on-surface-variant">
+                    更换生成方式、模型或 API
+                    地址后，点击“准备语义检索”重新生成索引，避免混用不同模型的向量。
+                  </p>
+                  <CapabilityPrompt kind="semantic" hideWhenReady />
+                </>
+              ) : null}
             </>
           )}
         </Service>
@@ -361,6 +429,43 @@ function FieldLabel({
         {label}
       </label>
       {state}
+    </div>
+  );
+}
+
+/** A choice is saved immediately, with the server value retained on failure. */
+function SelectSetting({
+  field,
+  label,
+  value,
+  options,
+  onSaved,
+}: {
+  field: string;
+  label: string;
+  value: string;
+  options: { value: string; label: string }[];
+  onSaved: () => void;
+}) {
+  const save = useFieldSave(field, onSaved);
+  const id = `setting-${field}`;
+  return (
+    <div className="flex flex-col gap-1.5">
+      <FieldLabel htmlFor={id} label={label} state={<SaveState dirty={false} save={save} />} />
+      <select
+        id={id}
+        name={field}
+        className={inputClass}
+        value={value}
+        disabled={save.isPending}
+        onChange={(event) => save.mutate(event.target.value)}
+      >
+        {options.map((option) => (
+          <option key={option.value} value={option.value}>
+            {option.label}
+          </option>
+        ))}
+      </select>
     </div>
   );
 }

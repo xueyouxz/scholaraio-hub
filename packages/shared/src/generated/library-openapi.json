@@ -301,6 +301,490 @@
         }
       }
     },
+    "/documents/category": {
+      "post": {
+        "tags": [
+          "documents"
+        ],
+        "summary": "Categorize",
+        "description": "Set a manual category, or clear it to return to conference detection.",
+        "operationId": "categorize_documents_category_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CategoryInput"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiSuccess_CategoryResult_"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiFailure"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiFailure"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiFailure"
+                }
+              }
+            }
+          },
+          "405": {
+            "description": "Method Not Allowed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiFailure"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflict",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiFailure"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "Content Too Large",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiFailure"
+                }
+              }
+            }
+          },
+          "415": {
+            "description": "Unsupported Media Type",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiFailure"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Unprocessable Content",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiFailure"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Too Many Requests",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiFailure"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal Server Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiFailure"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "Bad Gateway",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiFailure"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Service Unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiFailure"
+                }
+              }
+            }
+          },
+          "504": {
+            "description": "Gateway Timeout",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiFailure"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/documents/export": {
+      "post": {
+        "tags": [
+          "documents"
+        ],
+        "summary": "Export",
+        "description": "Download selected PDFs, Markdown/assets or a portable library with vectors.",
+        "operationId": "export_documents_export_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BundleExportInput"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiFailure"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiFailure"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiFailure"
+                }
+              }
+            }
+          },
+          "405": {
+            "description": "Method Not Allowed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiFailure"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflict",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiFailure"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "Content Too Large",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiFailure"
+                }
+              }
+            }
+          },
+          "415": {
+            "description": "Unsupported Media Type",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiFailure"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Unprocessable Content",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiFailure"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Too Many Requests",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiFailure"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal Server Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiFailure"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "Bad Gateway",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiFailure"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Service Unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiFailure"
+                }
+              }
+            }
+          },
+          "504": {
+            "description": "Gateway Timeout",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiFailure"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/documents/import": {
+      "post": {
+        "tags": [
+          "documents"
+        ],
+        "summary": "Import Bundle",
+        "description": "Upload a parsed library bundle or a raw MinerU result ZIP.",
+        "operationId": "import_bundle_documents_import_post",
+        "requestBody": {
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "$ref": "#/components/schemas/Body_import_bundle_documents_import_post"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiSuccess_BundleImportResult_"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiFailure"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiFailure"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiFailure"
+                }
+              }
+            }
+          },
+          "405": {
+            "description": "Method Not Allowed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiFailure"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflict",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiFailure"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "Content Too Large",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiFailure"
+                }
+              }
+            }
+          },
+          "415": {
+            "description": "Unsupported Media Type",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiFailure"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Unprocessable Content",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiFailure"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Too Many Requests",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiFailure"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal Server Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiFailure"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "Bad Gateway",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiFailure"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Service Unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiFailure"
+                }
+              }
+            }
+          },
+          "504": {
+            "description": "Gateway Timeout",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiFailure"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/papers": {
       "get": {
         "tags": [
@@ -6346,6 +6830,54 @@
           "data"
         ]
       },
+      "ApiSuccess_BundleImportResult_": {
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "code": {
+            "type": "string",
+            "const": "success"
+          },
+          "message": {
+            "type": "string"
+          },
+          "data": {
+            "$ref": "#/components/schemas/BundleImportResult"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "code",
+          "message",
+          "data"
+        ]
+      },
+      "ApiSuccess_CategoryResult_": {
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "code": {
+            "type": "string",
+            "const": "success"
+          },
+          "message": {
+            "type": "string"
+          },
+          "data": {
+            "$ref": "#/components/schemas/CategoryResult"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "code",
+          "message",
+          "data"
+        ]
+      },
       "ApiSuccess_CitingList_": {
         "properties": {
           "id": {
@@ -6985,6 +7517,18 @@
           "archivedAt"
         ]
       },
+      "Body_import_bundle_documents_import_post": {
+        "properties": {
+          "file": {
+            "type": "string",
+            "contentMediaType": "application/octet-stream"
+          }
+        },
+        "type": "object",
+        "required": [
+          "file"
+        ]
+      },
       "Body_upload_imports_post": {
         "properties": {
           "files": {
@@ -7009,6 +7553,88 @@
         "type": "object",
         "required": [
           "files"
+        ]
+      },
+      "BundleExportInput": {
+        "properties": {
+          "paperIds": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "maxItems": 500,
+            "minItems": 1
+          },
+          "format": {
+            "type": "string",
+            "enum": [
+              "bundle",
+              "pdf",
+              "markdown"
+            ],
+            "default": "bundle"
+          }
+        },
+        "type": "object",
+        "required": [
+          "paperIds"
+        ]
+      },
+      "BundleImportResult": {
+        "properties": {
+          "imported": {
+            "type": "integer"
+          },
+          "skipped": {
+            "type": "integer"
+          },
+          "vectors": {
+            "type": "integer"
+          }
+        },
+        "type": "object",
+        "required": [
+          "imported",
+          "skipped",
+          "vectors"
+        ]
+      },
+      "CategoryInput": {
+        "properties": {
+          "paperIds": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "maxItems": 500,
+            "minItems": 1
+          },
+          "category": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 120
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "type": "object",
+        "required": [
+          "paperIds"
+        ]
+      },
+      "CategoryResult": {
+        "properties": {
+          "updated": {
+            "type": "integer"
+          }
+        },
+        "type": "object",
+        "required": [
+          "updated"
         ]
       },
       "CitingList": {
@@ -7657,6 +8283,27 @@
           "hasMarkdown": {
             "type": "boolean"
           },
+          "category": {
+            "type": "string"
+          },
+          "conference": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "categorySource": {
+            "type": "string",
+            "enum": [
+              "manual",
+              "conference",
+              "unknown"
+            ]
+          },
           "parseStatus": {
             "type": "string",
             "enum": [
@@ -7737,6 +8384,9 @@
           "abstract",
           "hasPdf",
           "hasMarkdown",
+          "category",
+          "conference",
+          "categorySource",
           "parseStatus",
           "error",
           "coverImage",
@@ -7776,6 +8426,27 @@
           },
           "hasMarkdown": {
             "type": "boolean"
+          },
+          "category": {
+            "type": "string"
+          },
+          "conference": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "categorySource": {
+            "type": "string",
+            "enum": [
+              "manual",
+              "conference",
+              "unknown"
+            ]
           },
           "parseStatus": {
             "type": "string",
@@ -7863,6 +8534,9 @@
           "abstract",
           "hasPdf",
           "hasMarkdown",
+          "category",
+          "conference",
+          "categorySource",
           "parseStatus",
           "error",
           "coverImage",
@@ -7976,6 +8650,12 @@
           "embedDevice": {
             "type": "string"
           },
+          "mineruEndpoint": {
+            "type": "string"
+          },
+          "mineruBackend": {
+            "type": "string"
+          },
           "mineruConfigured": {
             "type": "boolean"
           },
@@ -7992,6 +8672,13 @@
           },
           "embedApiConfigured": {
             "type": "boolean"
+          },
+          "embedApiBase": {
+            "type": "string"
+          },
+          "embedKeyLength": {
+            "type": "integer",
+            "description": "Length of the resolved embedding API key; the key is never returned."
           },
           "configPath": {
             "type": "string",
@@ -8017,11 +8704,15 @@
           "embedModel",
           "embedSource",
           "embedDevice",
+          "mineruEndpoint",
+          "mineruBackend",
           "mineruConfigured",
           "mineruKeyLength",
           "llmConfigured",
           "llmKeyLength",
           "embedApiConfigured",
+          "embedApiBase",
+          "embedKeyLength",
           "configPath",
           "papersDir",
           "workspaceDir"
@@ -8654,6 +9345,28 @@
               }
             ]
           },
+          "mineruEndpoint": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 500
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "mineruBackend": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 40
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "mineruApiKey": {
             "anyOf": [
               {
@@ -8703,6 +9416,17 @@
               {
                 "type": "string",
                 "maxLength": 40
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "embedApiBase": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 500
               },
               {
                 "type": "null"

@@ -8,6 +8,7 @@ from scholaraio.interfaces.api.routes import (
     citations,
     collections,
     directories,
+    documents,
     imports,
     papers,
     runtime,
@@ -19,6 +20,7 @@ from scholaraio.interfaces.api.routes import (
 
 ROUTERS = [
     system.router,
+    documents.router,
     papers.router,
     search.router,
     analytics.router,

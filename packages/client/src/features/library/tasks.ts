@@ -57,19 +57,21 @@ export const CAPABILITIES: Capability[] = [
     describe: (state) =>
       state.semanticReady
         ? `${state.vectors}/${state.papers} 篇已有向量`
-        : `需要为 ${state.papers} 篇论文生成向量（模型 ${state.embedModel}${
-            state.modelReady ? " 已就绪" : " 需先下载"
-          }）`,
+        : state.embedProvider === "openai-compat"
+          ? `通过 API 为 ${state.papers} 篇论文生成向量（模型 ${state.embedModel}），可能产生调用费用`
+          : `需要为 ${state.papers} 篇论文生成向量（模型 ${state.embedModel}${
+              state.modelReady ? " 已就绪" : " 需先下载"
+            }）`,
     ready: (state) => state.semanticReady,
     blocked: (state) =>
-      !state.vectorRuntimeReady
+      state.embedProvider !== "openai-compat" && !state.vectorRuntimeReady
         ? {
             message: "语义检索运行时尚未安装（向量模型依赖，首次安装需要下载数 GB）",
             install: "vector-runtime",
           }
         : state.embedProvider === "none"
           ? {
-              message: "配置中关闭了向量嵌入，在设置里保存一次即可切回本地模型",
+              message: "向量嵌入已停用，请在设置中选择本地模型或 API",
               remedy: { label: "前往设置", to: "/settings" },
             }
           : state.papers === 0

@@ -14,6 +14,7 @@ import { LibrarySelectionProvider } from "./selection";
  */
 const TABS = [
   { path: "", label: "检索", icon: Search },
+  { path: "documents", label: "文献管理 · MCP", icon: Library },
   { path: "collections", label: "文献集合", icon: Library },
   { path: "insights", label: "分析", icon: ChartNoAxesCombined },
 ];

@@ -21,7 +21,7 @@
     "d3": "^7.9.0",
     "katex": "^0.16.47",
     "lucide-react": "^0.511.0",
-    "pdfjs-dist": "5.4.296",
+    "pdfjs-dist": "6.5.438",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
     "react-markdown": "^10.1.0",

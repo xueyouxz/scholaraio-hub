@@ -1,29 +1,18 @@
-import { LIBRARY_PORT_META } from "@scholaraio-hub/shared";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { libraryUrl } from "../http";
 import { libraryApi } from "../library";
 
-/** The page names the library service's port; the browser calls it on the page's host. */
-beforeEach(() => {
-  const meta = document.createElement("meta");
-  meta.name = LIBRARY_PORT_META;
-  meta.content = "3501";
-  document.head.append(meta);
-});
-afterEach(() => {
-  for (const meta of document.head.querySelectorAll("meta")) meta.remove();
-});
-
-const LIBRARY = `${window.location.protocol}//${window.location.hostname}:3501`;
+const LIBRARY = `${window.location.origin}/api/library`;
 
 describe("libraryUrl", () => {
-  it("calls the library service directly, on the host the page came from", () => {
-    expect(libraryUrl("/papers")).toBe(`${LIBRARY}/papers`);
+  it("uses the page's origin for library settings, documents and MCP", () => {
+    for (const path of ["", "/settings", "/papers", "/mcp/"])
+      expect(libraryUrl(path)).toBe(`${LIBRARY}${path}`);
   });
 
-  it("says so when the page does not name the service", () => {
-    for (const meta of document.head.querySelectorAll("meta")) meta.remove();
-    expect(() => libraryUrl("/papers")).toThrow("library service port");
+  it("rejects paths that could replace the public host", () => {
+    for (const path of ["//evil.example/settings", "https://evil.example/settings"])
+      expect(() => libraryUrl(path)).toThrow("single slash");
   });
 });
 

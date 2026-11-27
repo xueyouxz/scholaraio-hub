@@ -34,6 +34,8 @@ import yaml
 _log = logging.getLogger("scholaraio.config")
 
 VALID_LOCAL_MINERU_BACKENDS = {
+    "basic",
+    "flash",
     "pipeline",
     "vlm-auto-engine",
     "vlm-http-client",

@@ -26,6 +26,22 @@ class PaperService:
     def list(self) -> list[dict[str, Any]]:
         return [paper_row(record) for record in self.repository]
 
+    def categorize(self, paper_ids: list[str], category: str | None) -> dict:
+        name = category.strip() if category else None
+        if name and (len(name) > 120 or any(ord(char) < 32 for char in name)):
+            raise InvalidRequest("Category must be 1–120 printable characters")
+        with self.runtime.lock:
+            records = [self.repository.find(pid) for pid in dict.fromkeys(paper_ids)]
+            for record in records:
+                hub = record.meta.setdefault("hub", {})
+                if name:
+                    hub["category"] = name
+                else:
+                    hub.pop("category", None)
+                self.repository.save(record)
+            self.runtime.events.publish("papers")
+        return {"updated": len(records)}
+
     def detail(self, paper_id: str) -> dict[str, Any]:
         return paper_detail(self.repository.find(paper_id))
 

@@ -28,7 +28,7 @@ class LibraryStatus:
                 "embedModel": cfg.embed.model,
                 "modelReady": vectors.model_available(cfg),
                 "vectorRuntimeReady": vectors.runtime_available(),
-                "semanticReady": vector_count > 0,
+                "semanticReady": vector_count > 0 and vectors.index_matches_config(cfg.index_db, cfg),
                 "topicsBuilt": self.artifacts.topics_built(),
                 # How many papers the stored map places; fewer than papers means it is behind.
                 "mappedPapers": self.artifacts.mapped_count(),

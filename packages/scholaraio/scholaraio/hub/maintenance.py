@@ -55,12 +55,13 @@ class MaintenanceJobs:
         cfg = self.runtime.cfg
         if vectors.embedding_provider(cfg) == "none":
             raise InvalidRequest("Vector embeddings are disabled (embed.provider=none)")
-        if not vectors.runtime_available():
+        if vectors.embedding_provider(cfg) != "openai-compat" and not vectors.runtime_available():
             raise InvalidRequest("Vector dependencies are missing. Install the semantic search runtime first")
-        progress.phase("model")
-        vectors.prepare_model(cfg)
+        if vectors.embedding_provider(cfg) == "local":
+            progress.phase("model")
+            vectors.prepare_model(cfg)
         if progress.stopped:
-            return "Stopped after downloading the model"
+            return "Stopped before embedding"
         progress.phase("embed")
         count = vectors.build_vectors(
             cfg.papers_dir,

@@ -110,6 +110,14 @@ class AccessGuard:
                 request_id=scope["state"]["request_id"],
                 code="HOST_NOT_ALLOWED",
             )
+        elif scope["path"].rstrip("/") == "/mcp" and "origin" in headers:
+            response = error_response(
+                403, "MCP accepts native clients without a browser Origin only.",
+                request_id=scope["state"]["request_id"], code="CORS_REJECTED",
+            )
+        elif scope["path"].rstrip("/") == "/mcp":
+            await self.app(scope, receive, send)
+            return
         elif scope["method"] not in SAFE_METHODS and headers.get(CSRF_HEADER.lower()) != CSRF_VALUE:
             response = error_response(
                 403,

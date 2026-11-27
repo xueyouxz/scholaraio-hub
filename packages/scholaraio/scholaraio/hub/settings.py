@@ -13,7 +13,7 @@ from pathlib import Path
 
 import yaml
 
-from scholaraio.core.config import VALID_PDF_PREFERRED_PARSERS
+from scholaraio.core.config import VALID_LOCAL_MINERU_BACKENDS, VALID_PDF_PREFERRED_PARSERS
 from scholaraio.hub.config import config_path, local_config_path
 from scholaraio.hub.errors import InvalidRequest
 from scholaraio.hub.runtime import LibraryRuntime
@@ -27,6 +27,8 @@ VALID_EMBED_DEVICES = {"auto", "cpu", "cuda"}
 
 # Browser field -> (config section, key, allowed values or None for free text).
 FIELDS: dict[str, tuple[str, str, set[str] | None]] = {
+    "mineruEndpoint": ("ingest", "mineru_endpoint", None),
+    "mineruBackend": ("ingest", "mineru_backend_local", VALID_LOCAL_MINERU_BACKENDS),
     "extractor": ("ingest", "extractor", VALID_EXTRACTORS),
     "pdfParser": ("ingest", "pdf_preferred_parser", VALID_PDF_PREFERRED_PARSERS),
     "llmBackend": ("llm", "backend", VALID_LLM_BACKENDS),
@@ -34,6 +36,7 @@ FIELDS: dict[str, tuple[str, str, set[str] | None]] = {
     "llmBaseUrl": ("llm", "base_url", None),
     "embedProvider": ("embed", "provider", VALID_EMBED_PROVIDERS),
     "embedModel": ("embed", "model", None),
+    "embedApiBase": ("embed", "api_base", None),
     "embedSource": ("embed", "source", VALID_EMBED_SOURCES),
     "embedDevice": ("embed", "device", VALID_EMBED_DEVICES),
 }
@@ -76,7 +79,8 @@ class SettingsService:
                 "mineruKeyLength": len(mineru_key),
                 "llmConfigured": bool(llm_key),
                 "llmKeyLength": len(llm_key),
-                "embedApiConfigured": bool((cfg.embed.api_key or "").strip()),
+                "embedApiConfigured": bool(cfg.resolved_embed_api_key().strip()),
+                "embedKeyLength": len(cfg.resolved_embed_api_key().strip()),
                 "configPath": str(config_path(self.runtime.root)),
                 # Where the library keeps papers and where workspaces live.
                 "papersDir": str(cfg.papers_dir.resolve()),
@@ -101,9 +105,13 @@ class SettingsService:
         import requests
 
         cfg = self.runtime.cfg
+        from scholaraio.providers.mineru import check_server
+
+        if check_server(cfg.ingest.mineru_endpoint):
+            return "ok", f"Local MinerU is ready: {cfg.ingest.mineru_endpoint}"
         token = cfg.resolved_mineru_api_key()
         if not token:
-            return "error", "MinerU token is missing. Imports will use local parsing"
+            return "error", "Local MinerU is unreachable and no cloud token is configured"
         try:
             response = requests.get(
                 f"{MINERU_CLOUD_API}/extract/task/{MINERU_PROBE_TASK}",
@@ -143,6 +151,14 @@ class SettingsService:
         cfg = self.runtime.cfg
         if vectors.embedding_provider(cfg) == "none":
             return "error", "Vector embeddings are disabled in the configuration"
+        if vectors.embedding_provider(cfg) == "openai-compat":
+            if not cfg.resolved_embed_api_key().strip():
+                return "error", "Embedding API key is missing"
+            try:
+                dimension = vectors.probe_embedding_api(cfg, timeout=CHECK_TIMEOUT_SECONDS)
+            except Exception as error:
+                return "error", f"Embedding API check failed: {error}"
+            return "ok", f"Embedding API is ready: {cfg.embed.model} ({dimension} dimensions)"
         if not vectors.runtime_available():
             return "warning", "Semantic search runtime is not installed. Install it from the library analytics page"
         if not vectors.model_available(cfg):
@@ -176,14 +192,16 @@ class SettingsService:
             return self.read()
 
     def normalize(self, changes: dict[str, dict[str, str]]) -> None:
-        """Hold the two settings the browser no longer offers a choice for.
+        """Keep PDF uploads on MinerU; preserve the selected embedding provider."""
+        if "embed" in changes and changes["embed"].get("api_base"):
+            from urllib.parse import urlsplit
 
-        Parsing runs on MinerU and embedding runs on the downloaded local
-        model. Someone who edits ``config.yaml`` by hand can still say
-        otherwise; saving from the settings page says this instead.
-        """
-        if "embed" in changes:
-            changes["embed"]["provider"] = "local"
+            address = changes["embed"]["api_base"].rstrip("/")
+            parsed = urlsplit(address)
+            if (parsed.scheme not in {"http", "https"} or not parsed.hostname
+                    or parsed.query or parsed.fragment or parsed.username or parsed.password):
+                raise InvalidRequest("embedApiBase must be an HTTP(S) API base URL without credentials or query parameters")
+            changes["embed"]["api_base"] = address
         if "ingest" in changes:
             changes["ingest"]["pdf_preferred_parser"] = "mineru"
 

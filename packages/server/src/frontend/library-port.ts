@@ -1,10 +1,9 @@
 import { LIBRARY_PORT_META } from "@scholaraio-hub/shared";
 
 /**
- * The page with the library service's port in it. The browser calls the
- * service directly, on the host it loaded the page from; the server does not
- * relay library requests. Development (Vite) and production (the build) both
- * serve the page through this.
+ * Keep the library port metadata for compatibility with older clients.
+ * Current clients use /api/library on the page's origin, so remote HTTPS
+ * deployments do not need a separately exposed library port.
  */
 export function withLibraryPort(html: string, port: number): string {
   const meta = `<meta name="${LIBRARY_PORT_META}" content="${port}" />`;

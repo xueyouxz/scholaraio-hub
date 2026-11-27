@@ -1,8 +1,11 @@
 """What the HTTP layer promises every caller, whatever the route."""
 from __future__ import annotations
 
+import json
 import re
+from io import BytesIO
 from pathlib import Path
+from zipfile import ZipFile
 
 import pytest
 import yaml
@@ -167,3 +170,23 @@ def test_python_and_typescript_declare_the_same_error_codes():
     typescript_codes = set(re.findall(r"^  ([A-Z_]+): \d+", source, re.MULTILINE))
     python_codes = set(ApiFailure.model_json_schema()["properties"]["code"]["enum"])
     assert python_codes == typescript_codes
+
+
+def test_upload_plain_papers_zip_without_manifest(client):
+    payload = BytesIO()
+    with ZipFile(payload, "w") as archive:
+        archive.writestr("papers/alice-2026-example/meta.json", json.dumps({
+            "id": "plain-paper", "title": "Example paper", "authors": ["Alice"],
+        }))
+        archive.writestr("papers/alice-2026-example/paper.md", "# Example paper\nSpectroscopy")
+    upload = {"file": ("papers.zip", payload.getvalue(), "application/zip")}
+
+    response = client.post("/documents/import", files=upload)
+
+    assert response.status_code == 200
+    assert response.json()["data"] == {"imported": 1, "skipped": 0, "vectors": 0}
+    papers = client.get("/papers").json()["data"]["papers"]
+    assert any(paper["id"] == "plain-paper" and paper["hasMarkdown"] for paper in papers)
+    repeated = client.post("/documents/import", files=upload)
+    assert repeated.status_code == 200
+    assert repeated.json()["data"] == {"imported": 0, "skipped": 1, "vectors": 0}

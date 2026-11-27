@@ -43,6 +43,66 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/documents/category": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Categorize
+         * @description Set a manual category, or clear it to return to conference detection.
+         */
+        post: operations["categorize_documents_category_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/documents/export": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Export
+         * @description Download selected PDFs, Markdown/assets or a portable library with vectors.
+         */
+        post: operations["export_documents_export_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/documents/import": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Import Bundle
+         * @description Upload a parsed library bundle or a raw MinerU result ZIP.
+         */
+        post: operations["import_bundle_documents_import_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/papers": {
         parameters: {
             query?: never;
@@ -686,6 +746,20 @@ export interface components {
             message: string;
             data: components["schemas"]["ArchivedCollection"];
         };
+        ApiSuccess_BundleImportResult_: {
+            id: string;
+            /** @constant */
+            code: "success";
+            message: string;
+            data: components["schemas"]["BundleImportResult"];
+        };
+        ApiSuccess_CategoryResult_: {
+            id: string;
+            /** @constant */
+            code: "success";
+            message: string;
+            data: components["schemas"]["CategoryResult"];
+        };
         ApiSuccess_CitingList_: {
             id: string;
             /** @constant */
@@ -872,9 +946,32 @@ export interface components {
             id: string;
             archivedAt: string;
         };
+        Body_import_bundle_documents_import_post: {
+            file: string;
+        };
         Body_upload_imports_post: {
             files: string[];
             collectionId?: string | null;
+        };
+        BundleExportInput: {
+            paperIds: string[];
+            /**
+             * @default bundle
+             * @enum {string}
+             */
+            format: "bundle" | "pdf" | "markdown";
+        };
+        BundleImportResult: {
+            imported: number;
+            skipped: number;
+            vectors: number;
+        };
+        CategoryInput: {
+            paperIds: string[];
+            category?: string | null;
+        };
+        CategoryResult: {
+            updated: number;
         };
         CitingList: {
             citing: components["schemas"]["LibraryPaper"][];
@@ -1036,6 +1133,10 @@ export interface components {
             abstract: string;
             hasPdf: boolean;
             hasMarkdown: boolean;
+            category: string;
+            conference: string | null;
+            /** @enum {string} */
+            categorySource: "manual" | "conference" | "unknown";
             /** @enum {string} */
             parseStatus: "ready" | "pending" | "failed";
             error: string | null;
@@ -1062,6 +1163,10 @@ export interface components {
             abstract: string;
             hasPdf: boolean;
             hasMarkdown: boolean;
+            category: string;
+            conference: string | null;
+            /** @enum {string} */
+            categorySource: "manual" | "conference" | "unknown";
             /** @enum {string} */
             parseStatus: "ready" | "pending" | "failed";
             error: string | null;
@@ -1105,6 +1210,8 @@ export interface components {
             embedModel: string;
             embedSource: string;
             embedDevice: string;
+            mineruEndpoint: string;
+            mineruBackend: string;
             mineruConfigured: boolean;
             /** @description Length of the stored MinerU token, so the field can mask it at its real length. */
             mineruKeyLength: number;
@@ -1112,6 +1219,9 @@ export interface components {
             /** @description Length of the stored LLM API key; 0 when none is configured. */
             llmKeyLength: number;
             embedApiConfigured: boolean;
+            embedApiBase: string;
+            /** @description Length of the resolved embedding API key; the key is never returned. */
+            embedKeyLength: number;
             /** @description The documented file a user can still edit by hand. */
             configPath: string;
             /** @description Where the library keeps its papers. */
@@ -1247,11 +1357,14 @@ export interface components {
             llmModel?: string | null;
             llmBaseUrl?: string | null;
             llmApiKey?: string | null;
+            mineruEndpoint?: string | null;
+            mineruBackend?: string | null;
             mineruApiKey?: string | null;
             embedProvider?: string | null;
             embedModel?: string | null;
             embedSource?: string | null;
             embedDevice?: string | null;
+            embedApiBase?: string | null;
             embedApiKey?: string | null;
         };
         TopicOverview: {
@@ -1420,6 +1533,429 @@ export interface operations {
                 };
                 content: {
                     "application/json": unknown;
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiFailure"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiFailure"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiFailure"];
+                };
+            };
+            /** @description Method Not Allowed */
+            405: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiFailure"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiFailure"];
+                };
+            };
+            /** @description Content Too Large */
+            413: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiFailure"];
+                };
+            };
+            /** @description Unsupported Media Type */
+            415: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiFailure"];
+                };
+            };
+            /** @description Unprocessable Content */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiFailure"];
+                };
+            };
+            /** @description Too Many Requests */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiFailure"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiFailure"];
+                };
+            };
+            /** @description Bad Gateway */
+            502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiFailure"];
+                };
+            };
+            /** @description Service Unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiFailure"];
+                };
+            };
+            /** @description Gateway Timeout */
+            504: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiFailure"];
+                };
+            };
+        };
+    };
+    categorize_documents_category_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CategoryInput"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiSuccess_CategoryResult_"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiFailure"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiFailure"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiFailure"];
+                };
+            };
+            /** @description Method Not Allowed */
+            405: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiFailure"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiFailure"];
+                };
+            };
+            /** @description Content Too Large */
+            413: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiFailure"];
+                };
+            };
+            /** @description Unsupported Media Type */
+            415: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiFailure"];
+                };
+            };
+            /** @description Unprocessable Content */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiFailure"];
+                };
+            };
+            /** @description Too Many Requests */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiFailure"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiFailure"];
+                };
+            };
+            /** @description Bad Gateway */
+            502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiFailure"];
+                };
+            };
+            /** @description Service Unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiFailure"];
+                };
+            };
+            /** @description Gateway Timeout */
+            504: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiFailure"];
+                };
+            };
+        };
+    };
+    export_documents_export_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["BundleExportInput"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiFailure"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiFailure"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiFailure"];
+                };
+            };
+            /** @description Method Not Allowed */
+            405: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiFailure"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiFailure"];
+                };
+            };
+            /** @description Content Too Large */
+            413: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiFailure"];
+                };
+            };
+            /** @description Unsupported Media Type */
+            415: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiFailure"];
+                };
+            };
+            /** @description Unprocessable Content */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiFailure"];
+                };
+            };
+            /** @description Too Many Requests */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiFailure"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiFailure"];
+                };
+            };
+            /** @description Bad Gateway */
+            502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiFailure"];
+                };
+            };
+            /** @description Service Unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiFailure"];
+                };
+            };
+            /** @description Gateway Timeout */
+            504: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiFailure"];
+                };
+            };
+        };
+    };
+    import_bundle_documents_import_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "multipart/form-data": components["schemas"]["Body_import_bundle_documents_import_post"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiSuccess_BundleImportResult_"];
                 };
             };
             /** @description Bad Request */

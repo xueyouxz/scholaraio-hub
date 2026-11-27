@@ -63,11 +63,14 @@ class SettingsInput(CamelModel):
     llm_model: str | None = Field(default=None, max_length=200)
     llm_base_url: str | None = Field(default=None, max_length=500)
     llm_api_key: str | None = Field(default=None, max_length=500)
+    mineru_endpoint: str | None = Field(default=None, max_length=500)
+    mineru_backend: str | None = Field(default=None, max_length=40)
     mineru_api_key: str | None = Field(default=None, max_length=500)
     embed_provider: str | None = Field(default=None, max_length=40)
     embed_model: str | None = Field(default=None, max_length=200)
     embed_source: str | None = Field(default=None, max_length=40)
     embed_device: str | None = Field(default=None, max_length=40)
+    embed_api_base: str | None = Field(default=None, max_length=500)
     embed_api_key: str | None = Field(default=None, max_length=500)
 
 
@@ -92,3 +95,13 @@ class ReadingPositionInput(CamelModel):
     page: int = Field(default=1, ge=1)
     line: int = Field(default=1, ge=1)
     mode: Literal["pdf", "markdown"] = "pdf"
+
+
+class CategoryInput(CamelModel):
+    paper_ids: list[str] = Field(min_length=1, max_length=500)
+    category: str | None = Field(default=None, max_length=120)
+
+
+class BundleExportInput(CamelModel):
+    paper_ids: list[str] = Field(min_length=1, max_length=500)
+    format: Literal["bundle", "pdf", "markdown"] = "bundle"

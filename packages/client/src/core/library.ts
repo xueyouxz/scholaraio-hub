@@ -4,7 +4,7 @@ import type {
   ReadingPosition,
   SettingsCheck,
 } from "@scholaraio-hub/shared";
-import { UPLOAD_TIMEOUT_MS } from "./http";
+import { UPLOAD_TIMEOUT_MS, libraryHttp, readJsonResponse } from "./http";
 import { libraryClient } from "./libraryClient";
 
 /** 文献元数据更新请求。 */
@@ -21,6 +21,22 @@ const { request } = libraryClient;
 
 /** 提供文献、文献集合、导入、设置和维护任务的业务请求。 */
 export const libraryApi = {
+  categorize: (paperIds: string[], category: string | null) =>
+    request("post", "/documents/category", { body: { paperIds, category } }),
+  importBundle: (file: File) => {
+    const form = new FormData();
+    form.append("file", file);
+    return request("post", "/documents/import", { form, timeoutMs: null });
+  },
+  downloadBundle: (paperIds: string[], format: "bundle" | "pdf" | "markdown") =>
+    libraryHttp.read(
+      "/documents/export",
+      { method: "POST", json: { paperIds, format }, timeoutMs: UPLOAD_TIMEOUT_MS },
+      async (response) => {
+        if (!response.ok) await readJsonResponse(response);
+        return response.blob();
+      },
+    ),
   revealDirectory: (target: "data" | "papers" | "workspaces") =>
     request("post", "/directories/{target}/reveal", { path: { target } }),
   images: (id: string, signal?: AbortSignal) =>

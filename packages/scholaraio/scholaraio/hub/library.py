@@ -12,6 +12,7 @@ from pathlib import Path
 from scholaraio.hub.acquire import AcquireService
 from scholaraio.hub.analytics import AnalyticsService
 from scholaraio.hub.artifacts import AnalysisArtifacts
+from scholaraio.hub.bundles import BundleService
 from scholaraio.hub.citations import CitationService
 from scholaraio.hub.collections import CollectionService
 from scholaraio.hub.directories import DirectoryService
@@ -19,6 +20,7 @@ from scholaraio.hub.discover import DiscoverService
 from scholaraio.hub.events import EventBus
 from scholaraio.hub.exports import ExportService
 from scholaraio.hub.imports import ImportQueue
+from scholaraio.hub.library_reader import LibraryReader
 from scholaraio.hub.maintenance import MaintenanceJobs
 from scholaraio.hub.metadata import MetadataService
 from scholaraio.hub.papers import PaperService
@@ -44,9 +46,11 @@ class HubLibrary:
         self.papers = PaperService(runtime)
         self.search = SearchService(runtime, self.collections)
         self.retrieval = RetrievalService(runtime, self.collections, self.search)
+        self.reader = LibraryReader(runtime, self.collections, self.search, self.retrieval)
         self.analytics = AnalyticsService(runtime, artifacts)
         self.citations = CitationService(runtime, self.collections)
         self.metadata = MetadataService(runtime)
+        self.bundles = BundleService(runtime)
         self.exports = ExportService(runtime, self.collections)
         self.settings = SettingsService(runtime)
         self.discover = DiscoverService(runtime)

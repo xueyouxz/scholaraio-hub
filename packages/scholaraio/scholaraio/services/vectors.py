@@ -2,7 +2,7 @@
 vectors.py — 向量嵌入与语义检索
 ==================================
 
-使用 Qwen3-Embedding-0.6B（本地 ModelScope 缓存）生成论文向量。
+通过本地嵌入模型或兼容 OpenAI 的 Embedding API 生成论文向量。
 嵌入文本 = title + abstract，存入 index.db 的 paper_vectors 表。
 
 用法：
@@ -14,7 +14,9 @@ vectors.py — 向量嵌入与语义检索
 from __future__ import annotations
 
 import hashlib
+import heapq
 import importlib
+import math
 import json
 import logging
 import os
@@ -22,6 +24,7 @@ import sqlite3
 import struct
 import time
 from collections.abc import Callable
+from contextlib import closing
 from functools import lru_cache
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -675,6 +678,14 @@ def _resolve_embed_api_key(cfg: Config | None = None) -> str:
     return ""
 
 
+def probe_embedding_api(cfg: Config, *, timeout: int = 20) -> int:
+    """Try one short input, once, without loading any local embedding dependencies."""
+    from dataclasses import replace
+
+    probe_cfg = replace(cfg, embed=replace(cfg.embed, api_timeout=timeout, max_retries=0))
+    return len(_embed_batch_openai_compat(["ScholarAIO embedding connection check"], probe_cfg)[0])
+
+
 def _embed_batch_openai_compat(texts: list[str], cfg: Config | None = None) -> list[list[float]]:
     """Embed texts via OpenAI-compatible ``/v1/embeddings`` API."""
     if not texts:
@@ -748,8 +759,12 @@ def _embed_batch_openai_compat(texts: list[str], cfg: Config | None = None) -> l
 
         for item in sorted(data_items, key=lambda x: x.get("index", 0)):
             vec = item.get("embedding")
-            if not isinstance(vec, list):
+            if (not isinstance(vec, list) or not vec
+                    or any(isinstance(value, bool) or not isinstance(value, (int, float))
+                           or not math.isfinite(value) for value in vec)):
                 raise RuntimeError("Embedding API returned an invalid vector format")
+            if all_vecs and len(vec) != len(all_vecs[0]):
+                raise RuntimeError("Embedding API returned inconsistent vector dimensions")
             all_vecs.append(vec)
 
     return all_vecs
@@ -1174,6 +1189,45 @@ def _vsearch_faiss(
     return results
 
 
+def index_matches_config(db_path: Path, cfg: Config | None = None) -> bool:
+    """Refuse vectors from another model/provider without deleting them during a read."""
+    if not db_path.exists():
+        return True
+    with closing(sqlite3.connect(db_path)) as conn:
+        table = conn.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='vector_metadata'").fetchone()
+        signature = _get_vector_meta(conn, _EMBED_SIG_KEY) if table else None
+    return signature is None or signature == _embed_signature(cfg)
+
+
+def _rank_api_vectors(query: str, db_path: Path, cfg: Config | None,
+                      top_k: int | None, paper_ids: set[str] | None) -> list[tuple[float, str]]:
+    """Exact cosine search for API embeddings, using SQLite and the standard library.
+
+    This path requires no model downloads, NumPy, PyTorch or FAISS. Stream stored
+    vectors and keep only the best matches for ordinary scoped searches.
+    """
+    if paper_ids == set() or (top_k is not None and top_k <= 0):
+        return []
+    query_vector = _embed_text(query, cfg)
+    query_norm = math.hypot(*query_vector)
+    if not query_norm:
+        raise RuntimeError("Embedding API returned a zero query vector")
+    with closing(sqlite3.connect(db_path)) as conn:
+        def candidates():
+            for pid, blob in conn.execute("SELECT paper_id, embedding FROM paper_vectors"):
+                if paper_ids is not None and pid not in paper_ids:
+                    continue
+                vector = _unpack(blob)
+                if len(vector) != len(query_vector):
+                    raise RuntimeError("Vector dimensions differ; prepare semantic search again")
+                norm = math.hypot(*vector)
+                if norm:
+                    score = sum(a * b for a, b in zip(query_vector, vector)) / query_norm / norm
+                    yield score, pid
+        return (sorted(candidates(), reverse=True) if top_k is None
+                else heapq.nlargest(top_k, candidates()))
+
+
 def vsearch(
     query: str,
     db_path: Path,
@@ -1185,10 +1239,10 @@ def vsearch(
     paper_type: str | None = None,
     paper_ids: set[str] | None = None,
 ) -> list[dict]:
-    """语义向量检索，使用 FAISS 加速余弦相似度搜索。
+    """语义向量检索，按余弦相似度返回最相似的论文。
 
-    将查询文本编码为向量，通过 FAISS IndexFlatIP 检索最相似的论文。
-    FAISS 索引在首次查询时自动构建并缓存到磁盘，向量变更后自动失效重建。
+    本地模型使用 FAISS IndexFlatIP，索引按需构建并在向量变更后失效。
+    API 模式使用标准库计算相似度，无需安装本地模型及 FAISS。
 
     Args:
         query: 自然语言查询文本。
@@ -1222,29 +1276,36 @@ def vsearch(
         empty_msg="Vector index is empty; run `scholaraio embed` first",
     )
 
-    # Load the embedding model before FAISS to avoid known faiss/torch crashes on macOS.
-    q_vec = _embed_query_vector(query, cfg)
-    index, faiss_ids = _build_faiss_index(db_path)
-
-    # Metadata filters may place the only qualifying record anywhere in the
-    # exact FAISS ranking, so they still require every candidate. An ID-only
-    # whitelist has a tighter exact bound: fetch top_k plus every vector that
-    # is known to be outside the whitelist. This preserves correctness without
-    # asking FAISS to materialize the entire ranking for the common dense case.
-    if year or journal or paper_type:
-        fetch_k = index.ntotal
-    elif paper_ids is not None:
-        excluded_count = sum(paper_id not in paper_ids for paper_id in faiss_ids)
-        eligible_count = index.ntotal - excluded_count
-        if eligible_count <= 0:
-            return []
-        fetch_k = excluded_count + min(top_k, eligible_count)
+    if not index_matches_config(db_path, cfg):
+        raise FileNotFoundError("Embedding configuration changed; prepare semantic search to rebuild the vector index")
+    if _embed_provider(cfg) == "openai-compat":
+        ranked = _rank_api_vectors(query, db_path, cfg, None if year or journal or paper_type else top_k, paper_ids)
     else:
-        fetch_k = top_k
-    fetch_k = min(fetch_k, index.ntotal)
-    if fetch_k <= 0:
-        return []
-    scores, indices = index.search(q_vec, fetch_k)
+        # Load the embedding model before FAISS to avoid known faiss/torch crashes on macOS.
+        q_vec = _embed_query_vector(query, cfg)
+        index, faiss_ids = _build_faiss_index(db_path)
+
+        # Metadata filters may place the only qualifying record anywhere in the
+        # exact FAISS ranking, so they still require every candidate. An ID-only
+        # whitelist has a tighter exact bound: fetch top_k plus every vector that
+        # is known to be outside the whitelist. This preserves correctness without
+        # asking FAISS to materialize the entire ranking for the common dense case.
+        if year or journal or paper_type:
+            fetch_k = index.ntotal
+        elif paper_ids is not None:
+            excluded_count = sum(paper_id not in paper_ids for paper_id in faiss_ids)
+            eligible_count = index.ntotal - excluded_count
+            if eligible_count <= 0:
+                return []
+            fetch_k = excluded_count + min(top_k, eligible_count)
+        else:
+            fetch_k = top_k
+        fetch_k = min(fetch_k, index.ntotal)
+        if fetch_k <= 0:
+            return []
+        scores, indices = index.search(q_vec, fetch_k)
+
+        ranked = [(float(score), faiss_ids[idx]) for score, idx in zip(scores[0], indices[0]) if idx >= 0]
 
     # Load metadata from FTS5 table
     conn = sqlite3.connect(db_path)
@@ -1269,10 +1330,7 @@ def vsearch(
         conn.close()
 
     results = []
-    for score, idx in zip(scores[0], indices[0]):
-        if idx < 0:
-            continue
-        pid = faiss_ids[idx]
+    for score, pid in ranked:
         meta = meta_map.get(pid, {})
         results.append(
             {
@@ -1331,3 +1389,74 @@ def _post_filter(
         t_lower = paper_type.lower()
         filtered = [r for r in filtered if t_lower in str(r.get("paper_type", "")).lower()]
     return filtered
+
+
+def export_portable_vectors(db_path: Path, paper_ids: set[str]) -> dict:
+    """Export plain JSON float arrays; never transfer executable FAISS/pickle objects."""
+    with sqlite3.connect(db_path) as conn:
+        tables = {row[0] for row in conn.execute("SELECT name FROM sqlite_master WHERE type='table'")}
+        if not {"paper_vectors", "vector_metadata"}.issubset(tables):
+            return {"signature": "", "entries": []}
+        signature = _get_vector_meta(conn, _EMBED_SIG_KEY) or ""
+        entries = []
+        for pid, blob, source_hash in conn.execute("SELECT paper_id, embedding, content_hash FROM paper_vectors"):
+            if pid in paper_ids and len(blob) % 4 == 0:
+                entries.append({"paperId": pid, "values": list(struct.unpack(f"={len(blob) // 4}f", blob)),
+                                "contentHash": source_hash})
+    return {"signature": signature, "entries": entries}
+
+
+def validate_portable_vectors(bundle: dict, metadata: dict[str, dict], cfg: Config) -> list[tuple]:
+    """Validate model, shape, finite normalized floats and matching source metadata."""
+    import math
+
+    entries = bundle.get("entries", [])
+    if not isinstance(entries, list) or len(entries) > 500:
+        raise ValueError("Invalid vector entries")
+    if not entries:
+        return []
+    if bundle.get("signature") != _embed_signature(cfg):
+        raise ValueError("Embedding model differs from this library. Match the model settings before importing vectors")
+    result, dimension, seen = [], None, set()
+    for entry in entries:
+        if not isinstance(entry, dict):
+            raise ValueError("Invalid vector record")
+        pid, values = entry.get("paperId"), entry.get("values")
+        if not isinstance(pid, str) or pid in seen or pid not in metadata:
+            raise ValueError("Vector must reference exactly one bundled paper")
+        seen.add(pid)
+        if not isinstance(values, list) or not 1 <= len(values) <= 16384:
+            raise ValueError("Invalid vector dimensions")
+        if dimension is not None and dimension != len(values):
+            raise ValueError("Inconsistent vector dimensions")
+        dimension = len(values)
+        if any(type(value) not in (float, int) or not math.isfinite(value) or abs(value) > 1.001 for value in values):
+            raise ValueError("Invalid vector values")
+        norm = sum(value * value for value in values)
+        if not 0.98 <= norm <= 1.02:
+            raise ValueError("Vectors must be normalized")
+        meta = metadata[pid]
+        source_hash = _content_hash(str(meta.get("title") or "").strip(), str(meta.get("abstract") or "").strip())
+        if entry.get("contentHash") != source_hash:
+            raise ValueError("Vector source content does not match the paper metadata")
+        result.append((pid, struct.pack(f"={len(values)}f", *values), source_hash))
+    return result
+
+
+def import_portable_vectors(db_path: Path, rows: list[tuple], cfg: Config) -> int:
+    """Preserve a compatible existing index, then invalidate its derived FAISS cache."""
+    if not rows:
+        return 0
+    with sqlite3.connect(db_path) as conn:
+        _ensure_schema(conn)
+        signature = _get_vector_meta(conn, _EMBED_SIG_KEY)
+        count = conn.execute("SELECT COUNT(*) FROM paper_vectors").fetchone()[0]
+        if count and signature != _embed_signature(cfg):
+            raise ValueError("Existing vector index uses a different embedding model")
+        existing = conn.execute("SELECT length(embedding) FROM paper_vectors LIMIT 1").fetchone()
+        if existing and existing[0] != len(rows[0][1]):
+            raise ValueError("Existing vector index has different dimensions")
+        _set_vector_meta(conn, _EMBED_SIG_KEY, _embed_signature(cfg))
+        conn.executemany("INSERT OR REPLACE INTO paper_vectors (paper_id, embedding, content_hash) VALUES (?, ?, ?)", rows)
+    _invalidate_faiss(db_path)
+    return len(rows)

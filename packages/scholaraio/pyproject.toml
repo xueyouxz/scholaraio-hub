@@ -36,7 +36,13 @@ Repository = "https://github.com/zimoliao/scholaraio"
 Issues = "https://github.com/zimoliao/scholaraio/issues"
 
 [project.optional-dependencies]
-hub = ["fastapi>=0.115", "uvicorn>=0.34", "python-multipart>=0.0.20", "pymupdf>=1.24"]
+hub = [
+    "fastapi>=0.115",
+    "uvicorn>=0.34",
+    "python-multipart>=0.0.20",
+    "pymupdf>=1.24",
+    "mcp>=1.28,<2",
+]
 hub-test = ["pytest>=8", "httpx>=0.28"]
 mineru-cloud = [
     "mineru-open-api>=0.5.9",

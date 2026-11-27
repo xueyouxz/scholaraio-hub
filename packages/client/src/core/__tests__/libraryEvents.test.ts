@@ -40,6 +40,7 @@ describe("library change stream", () => {
     const first = subscribeLibraryEvents(() => {});
     const second = subscribeLibraryEvents(() => {});
     expect(instances()).toHaveLength(1);
+    expect(instances()[0]?.url).toBe(`${window.location.origin}/api/library/events`);
 
     first();
     expect(instances()[0]?.closed).toBe(false);

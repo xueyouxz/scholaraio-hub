@@ -35,7 +35,7 @@ type Options<Operation> = Operation extends { parameters: infer Parameters }
   ? Pick<Parameters, Extract<keyof Parameters, "path" | "query">> &
       BodyOptions<Operation> & {
         signal?: AbortSignal;
-        timeoutMs?: number;
+        timeoutMs?: number | null;
       }
   : never;
 
@@ -49,7 +49,7 @@ interface RuntimeOptions {
   body?: unknown;
   form?: FormData;
   signal?: AbortSignal;
-  timeoutMs?: number;
+  timeoutMs?: number | null;
 }
 
 /** 创建受文献 OpenAPI 路径、参数和响应类型约束的客户端。 */

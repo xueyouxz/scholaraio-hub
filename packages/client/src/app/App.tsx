@@ -14,6 +14,11 @@ const CollectionPage = lazy(() =>
     default: module.CollectionPage,
   })),
 );
+const DocumentLibraryPage = lazy(() =>
+  import("../features/library/DocumentLibraryPage").then((module) => ({
+    default: module.DocumentLibraryPage,
+  })),
+);
 const LibraryDashboard = lazy(() => import("../features/library/LibraryDashboard"));
 const ReaderPage = lazy(() =>
   import("../features/library/reader/PaperReaderPage").then((module) => ({
@@ -69,6 +74,7 @@ export function App() {
             <Route path="/library" element={<LibraryLayout />}>
               <Route index element={<LibraryBrowsePage />} />
               <Route path="collections" element={<CollectionsPage />} />
+              <Route path="documents" element={<DocumentLibraryPage />} />
               <Route path="insights" element={<LibraryDashboard />} />
             </Route>
             <Route path="/library/collections/:collectionId" element={<CollectionRoute />} />

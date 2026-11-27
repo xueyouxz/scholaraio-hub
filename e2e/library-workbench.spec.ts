@@ -140,7 +140,7 @@ test("collection → cards → reading → a session that refers to the paper", 
   const selectionBar = page.getByLabel("选中文献的操作");
   await expect(selectionBar.getByText("已选 1 篇", { exact: true })).toBeVisible();
   await selectionBar.getByRole("button", { name: "加入文献集合" }).click();
-  await selectionBar.getByRole("button", { name: collectionName, exact: true }).click();
+  await selectionBar.getByRole("menuitem", { name: collectionName, exact: true }).click();
   await expect(selectionBar).toHaveCount(0);
   await page.goto(collectionPath);
   await page.getByRole("button", { name: "列表视图" }).click();
@@ -319,7 +319,7 @@ test("composer keeps each project's draft, handles IME and recovers failed sends
     }),
   );
   await page.getByRole("button", { name: "项目：不使用项目" }).click();
-  await page.getByRole("button", { name: "选择其他文件夹…" }).click();
+  await page.getByRole("menuitem", { name: "选择其他文件夹…" }).click();
   await expect(page.getByRole("button", { name: "项目：library" })).toBeVisible();
   const chosen = new URL(page.url());
   const projectId = chosen.searchParams.get("project");

@@ -135,8 +135,8 @@ export class ClaudeSession implements AgentSession {
     return this.cli?.isAlive() ?? false;
   }
 
-  interrupt(): Promise<void> {
-    return this.sdkQuery.interrupt();
+  async interrupt(): Promise<void> {
+    await this.sdkQuery.interrupt();
   }
 
   /**

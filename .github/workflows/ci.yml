@@ -42,7 +42,8 @@ jobs:
 
   e2e:
     needs: [lint, typecheck, test]
-    runs-on: ubuntu-latest
+    # Use an Ubuntu release supported by the locked Playwright version.
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
       - uses: ./.github/actions/setup
